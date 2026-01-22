@@ -54,6 +54,11 @@ export class SecureStorage {
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
+
+        // Ciphertext store - for storing full Lit Protocol ciphertexts
+        if (!db.objectStoreNames.contains('ciphertexts')) {
+          db.createObjectStore('ciphertexts', { keyPath: 'hash' });
+        }
       };
     });
   }
@@ -308,17 +313,82 @@ export class SecureStorage {
   }
 
   /**
+   * Store ciphertext with hash as key
+   * @param hash - dataToEncryptHash from Lit Protocol (base64 string)
+   * @param ciphertext - Full Lit Protocol ciphertext (base64 string)
+   */
+  async storeCiphertext(hash: string, ciphertext: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['ciphertexts'], 'readwrite');
+      const store = transaction.objectStore('ciphertexts');
+      
+      const data = {
+        hash,
+        ciphertext,
+        storedAt: Date.now(),
+      };
+      
+      const request = store.put(data);
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get ciphertext by hash
+   * @param hash - dataToEncryptHash from Lit Protocol
+   * @returns Full ciphertext string or null if not found
+   */
+  async getCiphertext(hash: string): Promise<string | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['ciphertexts'], 'readonly');
+      const store = transaction.objectStore('ciphertexts');
+      const request = store.get(hash);
+      
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(result ? result.ciphertext : null);
+      };
+      
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Delete ciphertext by hash
+   * @param hash - dataToEncryptHash from Lit Protocol
+   */
+  async deleteCiphertext(hash: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['ciphertexts'], 'readwrite');
+      const store = transaction.objectStore('ciphertexts');
+      const request = store.delete(hash);
+      
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Clear all data
    */
   async clearAll(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['sessions', 'vaults', 'settings'], 'readwrite');
+      const transaction = this.db!.transaction(['sessions', 'vaults', 'settings', 'ciphertexts'], 'readwrite');
       
       transaction.objectStore('sessions').clear();
       transaction.objectStore('vaults').clear();
       transaction.objectStore('settings').clear();
+      transaction.objectStore('ciphertexts').clear();
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);

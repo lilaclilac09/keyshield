@@ -5,6 +5,37 @@ A decentralized API key management vault built on Solana with advanced privacy f
 - **MPC (Arcium)** - Secure agent-to-agent communication
 - **Threshold Crypto (Lit Protocol)** - Time-locked and wallet-based sharing
 
+## 📐 Architecture Overview
+
+KeyShield is built on a multi-layered architecture that combines client-side encryption, on-chain storage, and privacy-preserving verification:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CLIENT LAYER                          │
+│  Next.js Frontend + Wallet Adapter + Privacy SDKs        │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                 PRIVACY SERVICES                         │
+│  Lit Protocol │ Bonsol ZK │ Arcium MPC                  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│              SOLANA BLOCKCHAIN                           │
+│  KeyShield Program (Pinocchio) - On-chain Vault Storage  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key Components:**
+- **Frontend**: Next.js app with React components for key management
+- **Privacy Layer**: Lit Protocol (encryption), Bonsol (ZK proofs), Arcium (MPC)
+- **On-Chain**: Solana program storing encrypted keys in vault accounts
+- **Security**: Multi-layer encryption with threshold cryptography and zero-knowledge verification
+
+For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## 🏗️ Architecture
 
 ### Backend (Rust/Pinocchio)

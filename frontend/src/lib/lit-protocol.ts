@@ -1,6 +1,6 @@
 import * as LitJsSdk from '@lit-protocol/lit-node-client';
-import { LIT_NETWORK } from '@lit-protocol/constants';
 import { AccessControlConditions } from '@lit-protocol/types';
+import { getCiphertext, keyToHash } from './ciphertext-storage';
 
 let litClient: LitJsSdk.LitNodeClient | null = null;
 
@@ -36,14 +36,50 @@ export async function encryptWithLit(
       dataToEncrypt,
       chain: 'solana',
     },
-    client
+    client as any
   );
 
   return { ciphertext, dataToEncryptHash };
 }
 
 /**
+ * Get ciphertext from off-chain storage using hash
+ * @param hashBytes - dataToEncryptHash as Uint8Array (from on-chain vault)
+ * @returns Full ciphertext string or null if not found
+ */
+export async function getCiphertextFromStorage(hashBytes: Uint8Array): Promise<string | null> {
+  // Convert hash bytes to base64 string for storage key
+  const hashBase64 = btoa(String.fromCharCode(...hashBytes));
+  return await getCiphertext(hashBase64);
+}
+
+/**
  * Decrypt API key with Lit Protocol
+ * @param hashBytes - dataToEncryptHash as Uint8Array (from on-chain vault)
+ * @param accessControlConditions - Access control conditions
+ * @param sessionSigs - Session signatures for authentication
+ * @returns Decrypted API key string
+ */
+export async function decryptWithLitFromHash(
+  hashBytes: Uint8Array,
+  accessControlConditions: AccessControlConditions,
+  sessionSigs: any
+): Promise<string> {
+  // Retrieve full ciphertext from off-chain storage
+  const ciphertext = await getCiphertextFromStorage(hashBytes);
+  if (!ciphertext) {
+    throw new Error('Ciphertext not found in storage. It may have been deleted or never stored.');
+  }
+
+  // Convert hash bytes back to base64 string for Lit Protocol
+  const dataToEncryptHash = btoa(String.fromCharCode(...hashBytes));
+
+  return await decryptWithLit(ciphertext, dataToEncryptHash, accessControlConditions, sessionSigs);
+}
+
+/**
+ * Decrypt API key with Lit Protocol (direct ciphertext version)
+ * Use this if you already have the ciphertext string
  */
 export async function decryptWithLit(
   ciphertext: string,
@@ -61,7 +97,7 @@ export async function decryptWithLit(
       chain: 'solana',
       sessionSigs,
     },
-    client
+    client as any
   );
 
   return decryptedString;

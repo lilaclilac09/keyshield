@@ -27,7 +27,7 @@ const VAULT_SIZE = 288;
 export interface Vault {
   discriminator: Uint8Array;
   owner: PublicKey;
-  encryptedKey: Uint8Array;
+  encryptedKeyHash: Uint8Array; // Lit Protocol dataToEncryptHash (32 bytes), not full ciphertext
   zkCommit: Uint8Array;
   mpcHash: Uint8Array;
   createdAt: number;
@@ -153,22 +153,25 @@ export class ExtensionVaultClient {
 
   /**
    * Build store key instruction
+   * @param encryptedKeyHash - Lit Protocol dataToEncryptHash (32 bytes), not the full ciphertext
    */
   async buildStoreKeyInstruction(
     owner: PublicKey,
-    encryptedKey: Uint8Array,
+    encryptedKeyHash: Uint8Array,
     zkCommit: Uint8Array,
     mpcHash: Uint8Array,
     timestamp: number
   ): Promise<TransactionInstruction> {
     const [vaultPDA] = await this.deriveVaultPDA(owner);
 
-    const instructionData = Buffer.alloc(201);
+    // Instruction data layout:
+    // discriminator (1) + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) = 105 bytes
+    const instructionData = Buffer.alloc(105);
     instructionData.writeUInt8(INSTRUCTION.STORE_KEY, 0);
-    instructionData.set(encryptedKey.slice(0, 128), 1);
-    instructionData.set(zkCommit.slice(0, 32), 129);
-    instructionData.set(mpcHash.slice(0, 32), 161);
-    instructionData.writeBigUInt64LE(BigInt(timestamp), 193);
+    instructionData.set(encryptedKeyHash.slice(0, 32), 1);
+    instructionData.set(zkCommit.slice(0, 32), 33);
+    instructionData.set(mpcHash.slice(0, 32), 65);
+    instructionData.writeBigUInt64LE(BigInt(timestamp), 97);
 
     return new TransactionInstruction({
       programId: this.programId,
@@ -197,11 +200,11 @@ export class ExtensionVaultClient {
     return {
       discriminator: new Uint8Array(data.slice(0, 8)),
       owner: new PublicKey(data.slice(8, 40)),
-      encryptedKey: new Uint8Array(data.slice(40, 168)),
-      zkCommit: new Uint8Array(data.slice(168, 200)),
-      mpcHash: new Uint8Array(data.slice(200, 232)),
-      createdAt: Number(data.readBigUInt64LE(232)),
-      accessFlags: data[240],
+      encryptedKeyHash: new Uint8Array(data.slice(40, 72)), // Now 32 bytes (hash, not ciphertext)
+      zkCommit: new Uint8Array(data.slice(72, 104)),
+      mpcHash: new Uint8Array(data.slice(104, 136)),
+      createdAt: Number(data.readBigUInt64LE(136)),
+      accessFlags: data[144],
     };
   }
 

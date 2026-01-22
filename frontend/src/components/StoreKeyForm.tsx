@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useVault } from '@/hooks/useVault';
+import { showToast } from './ErrorToast';
 import { X, Key, Lock, Clock } from 'lucide-react';
 
 interface StoreKeyFormProps {
@@ -52,6 +53,7 @@ export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
       }
       
       setError(errorMessage);
+      showToast(errorMessage, 'error');
     }
   };
 

@@ -12,11 +12,10 @@ import {
   LedgerWalletAdapter,
   TorusWalletAdapter,
   CoinbaseWalletAdapter,
-  SolletWalletAdapter,
-  SolletExtensionWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
+import { ErrorBoundary } from './ErrorBoundary';
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   // Create QueryClient using useState to ensure proper isolation per client
@@ -61,10 +60,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
                 ? [`${window.location.origin}/favicon.ico`]
                 : ['https://keyshield.app/favicon.ico'],
             },
-            // Enable deep linking for mobile wallets
-            qrModalOptions: {
-              themeMode: 'dark',
-            },
           },
         }),
         // Browser extension wallets (will be detected if available)
@@ -75,8 +70,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         new LedgerWalletAdapter(),
         new TorusWalletAdapter(),
         new CoinbaseWalletAdapter(),
-        new SolletWalletAdapter({ network }),
-        new SolletExtensionWalletAdapter({ network }),
       ];
 
       return walletAdapters;
@@ -89,14 +82,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ConnectionProvider endpoint={endpoint}>
-        <SolanaWalletProvider wallets={wallets} autoConnect>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ConnectionProvider endpoint={endpoint}>
+        <SolanaWalletProvider wallets={wallets} autoConnect={false}>
           <WalletModalProvider>
             {children}
           </WalletModalProvider>
         </SolanaWalletProvider>
-      </ConnectionProvider>
-    </QueryClientProvider>
+        </ConnectionProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

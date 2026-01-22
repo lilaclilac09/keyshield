@@ -3,7 +3,7 @@ import { PublicKey } from '@solana/web3.js';
 export interface Vault {
   discriminator: Uint8Array;
   owner: PublicKey;
-  encryptedKey: Uint8Array;
+  encryptedKeyHash: Uint8Array; // Lit Protocol dataToEncryptHash (32 bytes), not full ciphertext
   zkCommit: Uint8Array;
   mpcHash: Uint8Array;
   createdAt: number;

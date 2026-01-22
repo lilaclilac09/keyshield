@@ -5,30 +5,40 @@ import { KeyShieldClient } from '@/lib/keyshield-client';
 import { Vault, StoreKeyParams } from '@/types';
 import { encryptWithLit, createWalletAccessConditions } from '@/lib/lit-protocol';
 import { getProgramId } from '@/lib/solana';
+import { storeCiphertext, hashToKey } from '@/lib/ciphertext-storage';
+import { detectKeyTypeFromContext, APIKeyType } from '@/lib/api-key-generators';
 
 export function useVault(owner?: PublicKey) {
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
   const queryClient = useQueryClient();
   const vaultOwner = owner || publicKey;
 
-  const client = new KeyShieldClient(connection, getProgramId());
+  let programId;
+  try {
+    programId = getProgramId();
+  } catch (error: any) {
+    throw error;
+  }
+
+  // Create client only if connection exists (for offline mode, we'll handle gracefully)
+  const client = connection ? new KeyShieldClient(connection, programId) : null;
 
   // Fetch vault data
   const vaultQuery = useQuery({
     queryKey: ['vault', vaultOwner?.toString()],
     queryFn: async (): Promise<Vault | null> => {
-      if (!vaultOwner) return null;
+      if (!vaultOwner || !client) return null;
       return await client.getVault(vaultOwner);
     },
-    enabled: !!vaultOwner,
+    enabled: !!vaultOwner && !!client,
     refetchInterval: 5000, // Refetch every 5 seconds
   });
 
   // Store key mutation
   const storeKeyMutation = useMutation({
     mutationFn: async (params: StoreKeyParams) => {
-      if (!publicKey || !sendTransaction) {
-        throw new Error('Wallet not connected');
+      if (!publicKey || !sendTransaction || !client) {
+        throw new Error('Wallet not connected. Please connect a wallet to store keys.');
       }
 
       // Encrypt with Lit Protocol
@@ -38,11 +48,13 @@ export function useVault(owner?: PublicKey) {
         accessConditions
       );
 
-      // Convert ciphertext to bytes (truncate/pad to 128 bytes)
-      const encryptedKeyBytes = new TextEncoder().encode(ciphertext);
-      const encryptedKey = new Uint8Array(128);
-      const copyLength = Math.min(encryptedKeyBytes.length, 128);
-      encryptedKey.set(encryptedKeyBytes.slice(0, copyLength));
+      // Store full ciphertext off-chain (IndexedDB)
+      // The ciphertext is typically 1-5 KB, too large for on-chain storage
+      await storeCiphertext(dataToEncryptHash, ciphertext);
+
+      // Convert hash to bytes for on-chain storage (32 bytes)
+      // dataToEncryptHash is a base64 string from Lit Protocol
+      const hashBytes = Uint8Array.from(atob(dataToEncryptHash), c => c.charCodeAt(0));
 
       // Generate ZK commit (placeholder - would use Bonsol)
       const zkCommit = new Uint8Array(32);
@@ -52,16 +64,28 @@ export function useVault(owner?: PublicKey) {
       const mpcHash = new Uint8Array(32);
       crypto.getRandomValues(mpcHash);
 
+      // Detect key type from API key and field name (if available)
+      const keyType = params.keyName 
+        ? detectKeyTypeFromContext(params.keyName, params.apiKey)
+        : detectKeyTypeFromContext('', params.apiKey);
+      
+      // Map APIKeyType enum to numeric value for on-chain storage
+      const keyTypeValue = keyType === APIKeyType.GitHub ? 1
+        : keyType === APIKeyType.Helius ? 2
+        : keyType === APIKeyType.GoogleGemini ? 3
+        : 0; // Generic
+
       // Build instruction
       // Note: The program will handle account creation if the account doesn't exist
       // For PDAs, account creation must be done by the program using invoke_signed
       const timestamp = Date.now();
       const instruction = await client.buildStoreKeyInstruction(
         publicKey,
-        encryptedKey,
+        hashBytes, // Store hash on-chain, not full ciphertext
         zkCommit,
         mpcHash,
-        timestamp
+        timestamp,
+        keyTypeValue
       );
 
       // Build transaction

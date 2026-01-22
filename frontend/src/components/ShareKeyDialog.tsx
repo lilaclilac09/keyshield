@@ -5,6 +5,7 @@ import { PublicKey } from '@solana/web3.js';
 import { X, Share2, User } from 'lucide-react';
 import { KeyShieldClient } from '@/lib/keyshield-client';
 import { useKeyShieldWallet } from '@/hooks/useWallet';
+import { showToast } from './ErrorToast';
 import { Vault } from '@/types';
 
 interface ShareKeyDialogProps {
@@ -85,6 +86,7 @@ export function ShareKeyDialog({ vault, onClose }: ShareKeyDialogProps) {
       }
       
       setError(errorMessage);
+      showToast(errorMessage, 'error');
     } finally {
       setIsSharing(false);
     }

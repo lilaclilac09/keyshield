@@ -16,8 +16,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" className="bg-black">
+      <body className={`${inter.className} bg-black text-white min-h-screen`}>
+        <div className="scanline"></div>
         <WalletProvider>{children}</WalletProvider>
       </body>
     </html>

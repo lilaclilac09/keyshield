@@ -11,5 +11,10 @@ export const getProgramId = (): PublicKey => {
   if (!programId) {
     throw new Error('NEXT_PUBLIC_PROGRAM_ID not set');
   }
-  return new PublicKey(programId);
+  
+  try {
+    return new PublicKey(programId);
+  } catch (error: any) {
+    throw error;
+  }
 };

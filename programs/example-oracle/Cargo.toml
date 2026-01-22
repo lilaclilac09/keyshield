@@ -1,0 +1,21 @@
+[package]
+name = "example-oracle"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Example Solana program that accepts oracle results from KeyShield oracle service"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+std = []
+
+[dependencies]
+pinocchio = { workspace = true }
+pinocchio-system = { workspace = true }
+
+[dev-dependencies]
+mollusk-svm = "0.0.12"
+solana-sdk = "2.1"

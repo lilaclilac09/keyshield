@@ -78,24 +78,29 @@ export class KeyShieldClient {
    * Build store key instruction
    * Note: For PDAs, the account must be created by the program using invoke_signed
    * The program will create the account if it doesn't exist
+   * 
+   * @param encryptedKeyHash - Lit Protocol dataToEncryptHash (32 bytes), not the full ciphertext
+   * @param keyType - Key type: 0=Generic, 1=GitHub, 2=Helius, 3=GoogleGemini
    */
   async buildStoreKeyInstruction(
     owner: PublicKey,
-    encryptedKey: Uint8Array,
+    encryptedKeyHash: Uint8Array,
     zkCommit: Uint8Array,
     mpcHash: Uint8Array,
-    timestamp: number
+    timestamp: number,
+    keyType: number = 0
   ): Promise<TransactionInstruction> {
     const [vaultPDA, bump] = await this.deriveVaultPDA(owner);
 
     // Instruction data layout:
-    // discriminator (1) + encrypted_key (128) + zk_commit (32) + mpc_hash (32) + timestamp (8) = 201 bytes
-    const instructionData = Buffer.alloc(201);
+    // discriminator (1) + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) + key_type (1) = 106 bytes
+    const instructionData = Buffer.alloc(106);
     instructionData.writeUInt8(INSTRUCTION.STORE_KEY, 0);
-    instructionData.set(encryptedKey.slice(0, 128), 1);
-    instructionData.set(zkCommit.slice(0, 32), 129);
-    instructionData.set(mpcHash.slice(0, 32), 161);
-    instructionData.writeBigUInt64LE(BigInt(timestamp), 193);
+    instructionData.set(encryptedKeyHash.slice(0, 32), 1);
+    instructionData.set(zkCommit.slice(0, 32), 33);
+    instructionData.set(mpcHash.slice(0, 32), 65);
+    instructionData.writeBigUInt64LE(BigInt(timestamp), 97);
+    instructionData.writeUInt8(keyType, 105);
 
     return new TransactionInstruction({
       programId: this.programId,
@@ -166,15 +171,6 @@ export class KeyShieldClient {
   }
 
   /**
-   * Check if vault account exists
-   */
-  async vaultAccountExists(owner: PublicKey): Promise<boolean> {
-    const [vaultPDA] = await this.deriveVaultPDA(owner);
-    const accountInfo = await this.connection.getAccountInfo(vaultPDA);
-    return accountInfo !== null;
-  }
-
-  /**
    * Fetch vault data from on-chain
    */
   async getVault(owner: PublicKey): Promise<Vault | null> {
@@ -190,11 +186,11 @@ export class KeyShieldClient {
     return {
       discriminator: new Uint8Array(data.slice(0, 8)),
       owner: new PublicKey(data.slice(8, 40)),
-      encryptedKey: new Uint8Array(data.slice(40, 168)),
-      zkCommit: new Uint8Array(data.slice(168, 200)),
-      mpcHash: new Uint8Array(data.slice(200, 232)),
-      createdAt: Number(data.readBigUInt64LE(232)),
-      accessFlags: data[240],
+      encryptedKeyHash: new Uint8Array(data.slice(40, 72)), // Now 32 bytes (hash, not ciphertext)
+      zkCommit: new Uint8Array(data.slice(72, 104)),
+      mpcHash: new Uint8Array(data.slice(104, 136)),
+      createdAt: Number(data.readBigUInt64LE(136)),
+      accessFlags: data[144],
     };
   }
 }

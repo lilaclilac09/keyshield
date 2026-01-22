@@ -1,6 +1,11 @@
-import { Client, Reader } from '@arcium-hq/client';
+// TODO: Install and configure @arcium-hq/client when available
+// import { Client, Reader } from '@arcium-hq/client';
 import { PublicKey, Connection } from '@solana/web3.js';
 import { getConnection } from './solana';
+
+// Placeholder types until Arcium SDK is available
+type Client = any;
+type Reader = any;
 
 let arciumClient: Client | null = null;
 let arciumReader: Reader | null = null;
@@ -16,10 +21,11 @@ export async function initArciumClient(): Promise<Client> {
   const cluster = process.env.NEXT_PUBLIC_ARCIUM_CLUSTER || 'testnet';
   // Initialize Arcium client with cluster connection
   // Note: Check @arcium-hq/client docs for exact initialization
-  arciumClient = new Client({
-    cluster,
-    // Add other config as needed
-  });
+  // arciumClient = new Client({
+  //   cluster,
+  //   // Add other config as needed
+  // });
+  throw new Error('Arcium SDK not installed. Install @arcium-hq/client to enable MPC features.');
 
   return arciumClient;
 }
@@ -33,7 +39,8 @@ export async function initArciumReader(): Promise<Reader> {
   }
 
   const connection = getConnection();
-  arciumReader = new Reader(connection);
+  // arciumReader = new Reader(connection);
+  throw new Error('Arcium SDK not installed. Install @arcium-hq/client to enable MPC features.');
 
   return arciumReader;
 }

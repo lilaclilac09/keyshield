@@ -11,6 +11,7 @@
   "dependencies": {
     "@arcium-hq/client": "^0.3.0",
     "@arcium-hq/reader": "^0.3.0",
+    "@google/generative-ai": "^0.24.1",
     "@lit-protocol/constants": "^4.0.0",
     "@lit-protocol/lit-node-client": "^4.0.0",
     "@lit-protocol/types": "^4.0.0",

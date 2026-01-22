@@ -197,11 +197,13 @@ async function handleStoreKey(
       payload.walletAddress
     );
 
-    // Convert to bytes
-    const encryptedKeyBytes = new TextEncoder().encode(ciphertext);
-    const encryptedKey = new Uint8Array(128);
-    const copyLength = Math.min(encryptedKeyBytes.length, 128);
-    encryptedKey.set(encryptedKeyBytes.slice(0, copyLength));
+    // Store full ciphertext off-chain (IndexedDB)
+    // The ciphertext is typically 1-5 KB, too large for on-chain storage
+    await storage.storeCiphertext(dataToEncryptHash, ciphertext);
+
+    // Convert hash to bytes for on-chain storage (32 bytes)
+    // dataToEncryptHash is a base64 string from Lit Protocol
+    const hashBytes = Uint8Array.from(atob(dataToEncryptHash), c => c.charCodeAt(0));
 
     // Generate placeholders (would use actual Bonsol/Arcium in production)
     const zkCommit = new Uint8Array(32);
@@ -214,7 +216,7 @@ async function handleStoreKey(
     const timestamp = Date.now();
     const instruction = await vaultClient.buildStoreKeyInstruction(
       owner,
-      encryptedKey,
+      hashBytes, // Store hash on-chain, not full ciphertext
       zkCommit,
       mpcHash,
       timestamp

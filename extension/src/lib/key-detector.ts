@@ -27,8 +27,13 @@ const KEY_PATTERNS = [
   /^ghs_[a-zA-Z0-9]{36}$/,                    // GitHub server-to-server tokens
   /^ghr_[a-zA-Z0-9]{76}$/,                    // GitHub refresh tokens
   /^AKIA[0-9A-Z]{16}$/,                       // AWS access key IDs
-  /^AIza[0-9A-Za-z\-_]{35}$/,                 // Google API keys
+  /^AIza[0-9A-Za-z\-_]{35}$/,                 // Google API keys (includes Gemini)
   /^ya29\.[0-9A-Za-z\-_]+$/,                  // Google OAuth tokens
+  // Helius API keys - typically 32-64 character alphanumeric strings
+  // Helius keys are often base64-like or hex strings
+  /^[a-zA-Z0-9]{32,64}$/,                     // Helius API keys (32-64 chars, alphanumeric)
+  // Google Gemini API keys - same pattern as Google API keys but we'll detect by field name
+  // The AIza pattern already covers this, but we'll add field name detection
 ];
 
 // Field name patterns that likely contain API keys
@@ -42,6 +47,15 @@ const KEY_FIELD_PATTERNS = [
   /auth[_-]?token/i,
   /bearer[_-]?token/i,
   /private[_-]?key/i,
+  // Helius-specific patterns
+  /helius.*api.*key/i,
+  /helius.*key/i,
+  /helius.*token/i,
+  // Google Gemini/Google AI patterns
+  /gemini.*api.*key/i,
+  /google.*ai.*key/i,
+  /google.*gemini.*key/i,
+  /gemini.*key/i,
 ];
 
 export class KeyDetector {

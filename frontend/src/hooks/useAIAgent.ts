@@ -1,36 +1,133 @@
 /**
  * AI Agent Integration Hook
  * 
- * This hook integrates with awesome-solana-ai agents (e.g., AgenC)
- * for autonomous privacy decisions and key management.
+ * This hook integrates with Google AI (Gemini) for intelligent
+ * vault management, threat detection, and security recommendations.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PublicKey } from '@solana/web3.js';
+import {
+  initGoogleAI,
+  analyzeVaultSecurity,
+  getKeyRotationRecommendation,
+  getAccessControlRecommendations,
+  chatWithAI,
+} from '@/lib/google-ai';
 
 interface AIAgentConfig {
   autoRevokeOnThreat?: boolean;
   autoShareWithAgents?: boolean;
   threatDetectionEnabled?: boolean;
+  googleAIEnabled?: boolean;
+}
+
+interface Threat {
+  id: string;
+  type: string;
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  recommendation: string;
 }
 
 export function useAIAgent(config?: AIAgentConfig) {
-  const [agentStatus, setAgentStatus] = useState<'idle' | 'monitoring' | 'active'>('idle');
-  const [threats, setThreats] = useState<any[]>([]);
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'monitoring' | 'active' | 'error'>('idle');
+  const [threats, setThreats] = useState<Threat[]>([]);
+  const [isGoogleAIConnected, setIsGoogleAIConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // TODO: Integrate with awesome-solana-ai agents
-  // Example integration:
-  // - AgenC for autonomous decisions
-  // - Solana Agent Kit for agent communication
-  // - Threat detection and auto-revocation
-
+  // Check if Google AI is configured
   useEffect(() => {
-    if (config?.threatDetectionEnabled) {
+    const checkGoogleAI = () => {
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_AI_API_KEY;
+        if (apiKey) {
+          initGoogleAI();
+          setIsGoogleAIConnected(true);
+          setAgentStatus('active');
+        } else {
+          setIsGoogleAIConnected(false);
+          setAgentStatus('idle');
+        }
+      } catch (err: any) {
+        setError(err.message);
+        setIsGoogleAIConnected(false);
+        setAgentStatus('error');
+      }
+    };
+
+    checkGoogleAI();
+  }, []);
+
+  // Start monitoring if enabled
+  useEffect(() => {
+    if (config?.threatDetectionEnabled && isGoogleAIConnected) {
       setAgentStatus('monitoring');
-      // Start monitoring for threats
-      // Example: agent.startMonitoring(vaultAddress, onThreatDetected);
     }
-  }, [config]);
+  }, [config, isGoogleAIConnected]);
+
+  const analyzeSecurity = useCallback(async (vaultData: {
+    owner: string;
+    createdAt: number;
+    accessFlags: number;
+    shareCount?: number;
+  }) => {
+    if (!isGoogleAIConnected) {
+      throw new Error('Google AI is not connected. Please set NEXT_PUBLIC_GOOGLE_AI_API_KEY.');
+    }
+
+    try {
+      const analysis = await analyzeVaultSecurity(vaultData);
+      
+      // Convert to threat format
+      const newThreats: Threat[] = analysis.threats.map((threat, index) => ({
+        id: `threat-${Date.now()}-${index}`,
+        type: 'security',
+        severity: analysis.riskLevel,
+        description: threat,
+        recommendation: analysis.recommendations[0] || 'Review security settings',
+      }));
+
+      setThreats(newThreats);
+      return analysis;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
+    }
+  }, [isGoogleAIConnected]);
+
+  const getRotationRecommendation = useCallback(async (keyMetadata: {
+    keyName: string;
+    createdAt: number;
+    lastUsed?: number;
+    accessCount?: number;
+  }) => {
+    if (!isGoogleAIConnected) {
+      throw new Error('Google AI is not connected.');
+    }
+
+    return await getKeyRotationRecommendation(keyMetadata);
+  }, [isGoogleAIConnected]);
+
+  const getAccessRecommendations = useCallback(async (shares: Array<{ recipient: string; timeLock?: number }>) => {
+    if (!isGoogleAIConnected) {
+      throw new Error('Google AI is not connected.');
+    }
+
+    return await getAccessControlRecommendations(shares);
+  }, [isGoogleAIConnected]);
+
+  const chat = useCallback(async (message: string, context?: {
+    vaultOwner?: string;
+    hasVault?: boolean;
+    shareCount?: number;
+  }) => {
+    if (!isGoogleAIConnected) {
+      throw new Error('Google AI is not connected.');
+    }
+
+    return await chatWithAI(message, context);
+  }, [isGoogleAIConnected]);
 
   const revokeAccess = async (vaultAddress: PublicKey, recipient: PublicKey) => {
     // TODO: Implement auto-revocation via agent
@@ -45,6 +142,12 @@ export function useAIAgent(config?: AIAgentConfig) {
   return {
     agentStatus,
     threats,
+    isGoogleAIConnected,
+    error,
+    analyzeSecurity,
+    getRotationRecommendation,
+    getAccessRecommendations,
+    chat,
     revokeAccess,
     shareWithAgent,
   };
