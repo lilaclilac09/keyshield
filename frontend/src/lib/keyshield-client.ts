@@ -5,6 +5,7 @@ import {
   SystemProgram,
   Keypair,
   TransactionInstruction,
+  LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
 import { getConnection } from './solana';
 import { getProgramId } from './solana';
@@ -142,11 +143,9 @@ export class KeyShieldClient {
   }
 
   /**
-   * Create vault account if it doesn't exist
-   * Note: For PDAs, account creation should ideally be handled by the program
-   * This is a helper that checks if account exists
+   * Check if vault account exists
    */
-  async ensureVaultAccountExists(owner: PublicKey): Promise<boolean> {
+  async vaultAccountExists(owner: PublicKey): Promise<boolean> {
     const [vaultPDA] = await this.deriveVaultPDA(owner);
     const accountInfo = await this.connection.getAccountInfo(vaultPDA);
     return accountInfo !== null;

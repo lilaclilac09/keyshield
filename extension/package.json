@@ -1,0 +1,26 @@
+{
+  "name": "keyshield-extension",
+  "version": "1.0.0",
+  "description": "KeyShield Browser Extension",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "cp -r src/icons dist/icons 2>/dev/null || true",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@lit-protocol/lit-node-client": "^4.0.0",
+    "@lit-protocol/constants": "^4.0.0",
+    "@lit-protocol/types": "^4.0.0",
+    "tesseract.js": "^5.0.0",
+    "bs58": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.251",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

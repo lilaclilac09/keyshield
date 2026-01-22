@@ -9,7 +9,6 @@ use pinocchio::{
 
 use crate::{
     error::KeyShieldError,
-    pda::derive_vault_pda,
     state::Vault,
 };
 
@@ -22,7 +21,7 @@ use crate::{
 /// Instruction data:
 /// - zk_proof (variable length) - Bonsol ZK proof for access verification
 pub fn process_access_key(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -31,12 +30,12 @@ pub fn process_access_key(
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     // Verify requester is signer
-    if !requester.is_signer {
+    if !requester.is_signer() {
         return Err(KeyShieldError::AccessDenied.into());
     }
 
     // Read vault data
-    let vault_data = vault.data.borrow();
+    let vault_data = vault.try_borrow_data()?;
     if vault_data.len() < Vault::SIZE {
         return Err(KeyShieldError::VaultNotFound.into());
     }
@@ -53,11 +52,11 @@ pub fn process_access_key(
     let owner = Pubkey::try_from(&owner_bytes[..])
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
-    let zk_commit: [u8; 32] = vault_data[168..200].try_into()
+    let _zk_commit: [u8; 32] = vault_data[168..200].try_into()
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
     // Check if requester is owner
-    if *requester.key == owner {
+    if requester.key() == &owner {
         // Owner has direct access, no proof needed
         return Ok(());
     }

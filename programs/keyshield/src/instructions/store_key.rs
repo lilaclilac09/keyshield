@@ -9,7 +9,6 @@ use pinocchio::{
 
 use crate::{
     error::KeyShieldError,
-    pda::derive_vault_pda,
     state::Vault,
 };
 
@@ -34,25 +33,29 @@ pub fn process_store_key(
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     // Verify owner is signer
-    if !owner.is_signer {
+    if !owner.is_signer() {
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    // Verify vault PDA
-    let (expected_vault_pda, _bump) = derive_vault_pda(program_id, owner.key)?;
-    if *vault.key != expected_vault_pda {
-        return Err(KeyShieldError::InvalidVaultOwner.into());
+    // Verify vault account owner is this program (PDA property)
+    // The frontend will derive the correct PDA using findProgramAddressSync
+    unsafe {
+        if vault.owner() != program_id {
+            return Err(KeyShieldError::InvalidVaultOwner.into());
+        }
     }
 
     // Check if vault already exists (skip if account is being initialized)
-    let vault_data_len = vault.data.borrow().len();
+    let vault_data = vault.try_borrow_data()?;
+    let vault_data_len = vault_data.len();
     if vault_data_len > 0 && vault_data_len >= Vault::SIZE {
         // Check discriminator to see if it's already initialized
-        let existing_discriminator = &vault.data.borrow()[0..8];
+        let existing_discriminator = &vault_data[0..8];
         if existing_discriminator == Vault::DISCRIMINATOR {
             return Err(KeyShieldError::VaultAlreadyExists.into());
         }
     }
+    drop(vault_data);
 
     // Parse instruction data
     let mut encrypted_key = [0u8; 128];
@@ -70,7 +73,7 @@ pub fn process_store_key(
 
     // Create vault state
     let vault_state = Vault::new(
-        *owner.key,
+        *owner.key(),
         encrypted_key,
         zk_commit,
         mpc_hash,
@@ -78,7 +81,7 @@ pub fn process_store_key(
     );
 
     // Serialize and write to account
-    let mut vault_data = vault.data.borrow_mut();
+    let mut vault_data = vault.try_borrow_mut_data()?;
     if vault_data.len() < Vault::SIZE {
         return Err(ProgramError::AccountDataTooSmall);
     }

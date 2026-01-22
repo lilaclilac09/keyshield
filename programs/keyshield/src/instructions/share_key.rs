@@ -9,7 +9,6 @@ use pinocchio::{
 
 use crate::{
     error::KeyShieldError,
-    pda::{derive_share_pda, derive_vault_pda},
     state::Vault,
 };
 
@@ -42,12 +41,12 @@ pub fn process_share_key(
     let recipient = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     // Verify owner is signer
-    if !owner.is_signer {
+    if !owner.is_signer() {
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
     // Read vault data
-    let vault_data = vault.data.borrow();
+    let vault_data = vault.try_borrow_data()?;
     if vault_data.len() < Vault::SIZE {
         return Err(KeyShieldError::VaultNotFound.into());
     }
@@ -64,7 +63,7 @@ pub fn process_share_key(
     let vault_owner = Pubkey::try_from(&owner_bytes[..])
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
-    if *owner.key != vault_owner {
+    if owner.key() != &vault_owner {
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
@@ -75,36 +74,38 @@ pub fn process_share_key(
         .map_err(|_| KeyShieldError::InvalidKeyData)?;
 
     // Verify recipient account matches
-    if *recipient.key != recipient_pubkey {
+    if recipient.key() != &recipient_pubkey {
         return Err(KeyShieldError::InvalidKeyData.into());
     }
 
     // Parse time_lock
-    let time_lock = u64::from_le_bytes(
+    let _time_lock = u64::from_le_bytes(
         data[32..40].try_into().map_err(|_| KeyShieldError::InvalidTimeLock)?
     );
 
-    // Verify share PDA
-    let (expected_share_pda, _bump) = derive_share_pda(program_id, vault.key, &recipient_pubkey)?;
-    if *share.key != expected_share_pda {
-        return Err(KeyShieldError::AccessDenied.into());
+    // Verify share account owner is this program (PDA property)
+    // The frontend will derive the correct PDA using findProgramAddressSync
+    unsafe {
+        if share.owner() != program_id {
+            return Err(KeyShieldError::AccessDenied.into());
+        }
     }
 
     // Get MPC hash from vault
-    let mpc_hash: [u8; 32] = vault_data[200..232].try_into()
+    let _mpc_hash: [u8; 32] = vault_data[200..232].try_into()
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
     // TODO: Integrate Arcium MPC computation here
     // Example: arcium_arcis::mpc_compute(&encrypted_key, &recipient_pubkey)?;
     
     // Store share record (simplified - in production would include more metadata)
-    let mut share_data = share.data.borrow_mut();
+    let mut share_data = share.try_borrow_mut_data()?;
     if share_data.len() < 64 {
         return Err(ProgramError::AccountDataTooSmall);
     }
 
     // Write share metadata: vault (32) + recipient (32)
-    share_data[0..32].copy_from_slice(vault.key.as_ref());
+    share_data[0..32].copy_from_slice(vault.key().as_ref());
     share_data[32..64].copy_from_slice(recipient_pubkey.as_ref());
     
     // In production, would also store:

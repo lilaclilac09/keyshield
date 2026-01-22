@@ -25,7 +25,7 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub const DISCRIMINATOR: [u8; 8] = *b"keyshld";
+    pub const DISCRIMINATOR: [u8; 8] = *b"keyshld\0";
     pub const SIZE: usize = 8 + 32 + 128 + 32 + 32 + 8 + 1 + 47; // 288 bytes
 
     /// Create a new vault instance
