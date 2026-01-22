@@ -160,18 +160,20 @@ export class ExtensionVaultClient {
     encryptedKeyHash: Uint8Array,
     zkCommit: Uint8Array,
     mpcHash: Uint8Array,
-    timestamp: number
+    timestamp: number,
+    keyType: number = 0 // 0=Generic, 1=GitHub, 2=Helius, 3=GoogleGemini
   ): Promise<TransactionInstruction> {
     const [vaultPDA] = await this.deriveVaultPDA(owner);
 
     // Instruction data layout:
-    // discriminator (1) + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) = 105 bytes
-    const instructionData = Buffer.alloc(105);
+    // discriminator (1) + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) + key_type (1) = 106 bytes
+    const instructionData = Buffer.alloc(106);
     instructionData.writeUInt8(INSTRUCTION.STORE_KEY, 0);
     instructionData.set(encryptedKeyHash.slice(0, 32), 1);
     instructionData.set(zkCommit.slice(0, 32), 33);
     instructionData.set(mpcHash.slice(0, 32), 65);
     instructionData.writeBigUInt64LE(BigInt(timestamp), 97);
+    instructionData.writeUInt8(keyType, 105);
 
     return new TransactionInstruction({
       programId: this.programId,

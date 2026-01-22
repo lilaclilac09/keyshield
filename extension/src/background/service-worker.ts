@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener(
  */
 async function handleMessage(
   message: any,
-  sender: chrome.runtime.MessageSender,
+  sender: chrome.runtime.MessageSender | undefined,
   sendResponse: (response: any) => void
 ) {
   try {
@@ -93,6 +93,10 @@ async function handleMessage(
 
       case 'GET_VAULTS_BY_DOMAIN':
         await handleGetVaultsByDomain(message.payload, sendResponse);
+        break;
+
+      case 'SAVE_DETECTED_KEY':
+        await handleSaveDetectedKey(message.payload, sendResponse);
         break;
 
       default:
@@ -179,8 +183,9 @@ async function handleStoreKey(
   payload: {
     apiKey: string;
     keyName: string;
-    domain: string;
+    domain?: string;
     walletAddress: string;
+    keyType?: number; // 0=Generic, 1=GitHub, 2=Helius, 3=GoogleGemini
   },
   sendResponse: (response: any) => void
 ) {
@@ -214,21 +219,24 @@ async function handleStoreKey(
     // Build instruction
     const owner = new PublicKey(payload.walletAddress);
     const timestamp = Date.now();
+    const keyType = payload.keyType || 0; // Default to Generic
     const instruction = await vaultClient.buildStoreKeyInstruction(
       owner,
       hashBytes, // Store hash on-chain, not full ciphertext
       zkCommit,
       mpcHash,
-      timestamp
+      timestamp,
+      keyType
     );
 
     // Store vault metadata locally
     await storage.storeVaultMetadata({
       vaultId: owner.toString(),
       owner: payload.walletAddress,
-      domain: payload.domain,
+      domain: payload.domain || (sender?.tab?.url ? new URL(sender.tab.url).hostname : 'unknown'),
       keyName: payload.keyName,
       createdAt: timestamp,
+      keyType,
     });
 
     sendResponse({
@@ -323,21 +331,102 @@ async function handleDecryptKey(
 }
 
 /**
- * Handle detected keys
+ * Handle detected keys (notification only, dialog is shown by content script)
  */
 async function handleKeysDetected(
   payload: { detected: DetectedKey[] },
   sendResponse: (response: any) => void
 ) {
-  // Show notification to user
-  chrome.notifications.create({
-    type: 'basic',
-    iconUrl: 'icons/icon48.png',
-    title: 'KeyShield: Keys Detected',
-    message: `Found ${payload.detected.length} potential API key(s). Click to save.`,
-  });
+  // Optional: Show notification (dialog is already shown by content script)
+  // chrome.notifications.create({
+  //   type: 'basic',
+  //   iconUrl: 'icons/icon48.png',
+  //   title: 'KeyShield: Keys Detected',
+  //   message: `Found ${payload.detected.length} potential API key(s).`,
+  // });
 
   sendResponse({ success: true });
+}
+
+/**
+ * Handle save detected key request from save dialog
+ */
+async function handleSaveDetectedKey(
+  payload: { detectedKey: DetectedKey },
+  sendResponse: (response: any) => void
+) {
+  try {
+    // Check if wallet is connected
+    if (!currentSession || !currentSession.walletAddress) {
+      sendResponse({ 
+        success: false, 
+        error: 'Wallet not connected',
+        requiresWallet: true 
+      });
+      return;
+    }
+
+    // Check if session is valid
+    if (currentSession.expiresAt < Date.now()) {
+      sendResponse({ 
+        success: false, 
+        error: 'Session expired. Please authenticate again.',
+        requiresAuth: true 
+      });
+      return;
+    }
+
+    const { detectedKey } = payload;
+    const walletAddress = currentSession.walletAddress;
+
+    // Determine key type
+    const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName);
+
+    // Store key using existing STORE_KEY handler logic
+    await handleStoreKey(
+      {
+        apiKey: detectedKey.key,
+        keyName: `${detectedKey.source}-${detectedKey.fieldName || 'unknown'}-${detectedKey.domain}`,
+        walletAddress,
+        keyType,
+        domain: detectedKey.domain,
+      },
+      sendResponse
+    );
+  } catch (error: any) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Detect key type from key string and field name
+ */
+function detectKeyTypeFromKey(key: string, fieldName?: string): number {
+  const lowerFieldName = (fieldName || '').toLowerCase();
+  
+  // Check field name patterns
+  if (/helius/.test(lowerFieldName)) {
+    return 2; // Helius
+  }
+  if (/gemini/.test(lowerFieldName) || /google.*ai/.test(lowerFieldName)) {
+    return 3; // Google Gemini
+  }
+  if (/github/.test(lowerFieldName)) {
+    return 1; // GitHub
+  }
+  
+  // Check key patterns
+  if (/^ghp_|^gho_|^ghu_|^ghs_|^ghr_/.test(key)) {
+    return 1; // GitHub
+  }
+  if (/^AIza/.test(key)) {
+    return 3; // Google Gemini
+  }
+  if (/^[a-zA-Z0-9]{32,64}$/.test(key) && !/^AIza/.test(key)) {
+    return 2; // Helius (heuristic)
+  }
+  
+  return 0; // Generic
 }
 
 /**

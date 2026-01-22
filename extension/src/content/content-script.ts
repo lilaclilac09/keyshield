@@ -5,6 +5,7 @@
 
 import { KeyDetector, DetectedKey } from '../lib/key-detector';
 import { KeyInjector } from '../lib/key-injector';
+import { saveDialog } from './save-dialog';
 
 // Message types
 interface Message {
@@ -117,33 +118,195 @@ function getFieldSelector(field: HTMLElement): string {
   return field.tagName.toLowerCase();
 }
 
+// Detection state
+let lastDetectedKeys: Set<string> = new Set();
+let detectionDebounceTimer: number | null = null;
+const DETECTION_DEBOUNCE_MS = 1000; // 1 second debounce
+
+/**
+ * Check if domain should show save dialog
+ */
+async function shouldShowDialog(domain: string): Promise<boolean> {
+  try {
+    const result = await chrome.storage.local.get(['blockedDomains']);
+    const blockedDomains = result.blockedDomains || [];
+    return !blockedDomains.includes(domain);
+  } catch (error) {
+    return true; // Default to showing if check fails
+  }
+}
+
+/**
+ * Handle detected keys with debouncing and duplicate prevention
+ */
+function handleDetectedKeys(detected: DetectedKey[]): void {
+  // Clear existing debounce timer
+  if (detectionDebounceTimer) {
+    clearTimeout(detectionDebounceTimer);
+  }
+
+  // Debounce detection to prevent spam
+  detectionDebounceTimer = window.setTimeout(async () => {
+    // Filter out duplicates (same key detected recently)
+    const newKeys = detected.filter((key) => {
+      const keyId = `${key.key}-${key.source}`;
+      if (lastDetectedKeys.has(keyId)) {
+        return false;
+      }
+      lastDetectedKeys.add(keyId);
+      return true;
+    });
+
+    if (newKeys.length === 0) {
+      return;
+    }
+
+    // Check if we should show dialog for this domain
+    const domain = window.location.hostname;
+    const shouldShow = await shouldShowDialog(domain);
+
+    if (!shouldShow) {
+      return;
+    }
+
+    // Get the first detected key (or most relevant)
+    const primaryKey = newKeys[0];
+
+    // Show save dialog
+    try {
+      console.log('[KeyShield] Showing save dialog for key:', primaryKey.key.substring(0, 10) + '...');
+      saveDialog.show({
+        detectedKey: primaryKey,
+        onSave: () => {
+          console.log('[KeyShield] Save button clicked');
+          // Send save request to background
+          chrome.runtime.sendMessage({
+            type: 'SAVE_DETECTED_KEY',
+            payload: { detectedKey: primaryKey },
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('[KeyShield] Error saving key:', chrome.runtime.lastError);
+            } else if (response && !response.success) {
+              console.error('[KeyShield] Save failed:', response.error);
+              alert(`Failed to save key: ${response.error}`);
+            } else {
+              console.log('[KeyShield] Key saved successfully');
+            }
+          });
+        },
+        onDismiss: () => {
+          console.log('[KeyShield] Dialog dismissed');
+        },
+        onDontAskAgain: (domain: string) => {
+          console.log('[KeyShield] Blocking domain:', domain);
+          // Add domain to blocked list
+          chrome.storage.local.get(['blockedDomains'], (result) => {
+            const blockedDomains = result.blockedDomains || [];
+            if (!blockedDomains.includes(domain)) {
+              blockedDomains.push(domain);
+              chrome.storage.local.set({ blockedDomains });
+            }
+          });
+        },
+      });
+    } catch (error) {
+      console.error('[KeyShield] Error showing save dialog:', error);
+    }
+
+    // Also send to background for notification (optional)
+    chrome.runtime.sendMessage({
+      type: 'KEYS_DETECTED',
+      payload: { detected: newKeys },
+    });
+
+    // Clean up old detections after 5 minutes
+    setTimeout(() => {
+      newKeys.forEach((key) => {
+        const keyId = `${key.key}-${key.source}`;
+        lastDetectedKeys.delete(keyId);
+      });
+    }, 5 * 60 * 1000);
+  }, DETECTION_DEBOUNCE_MS);
+}
+
 /**
  * Setup automatic key detection monitoring
  */
 function setupAutoDetection() {
   // Monitor form submissions
   const cleanup = KeyDetector.setupFormMonitoring((detected) => {
-    // Send detected keys to background script
-    chrome.runtime.sendMessage({
-      type: 'KEYS_DETECTED',
-      payload: { detected },
-    });
-  });
-
-  // Monitor clipboard (with user permission)
-  // Note: Clipboard monitoring requires user interaction
-  document.addEventListener('paste', async () => {
-    const detected = await KeyDetector.detectClipboard();
-    if (detected) {
-      chrome.runtime.sendMessage({
-        type: 'KEYS_DETECTED',
-        payload: { detected: [detected] },
-      });
+    if (detected.length > 0) {
+      console.log('[KeyShield] Keys detected from form:', detected.length);
+      handleDetectedKeys(detected);
     }
   });
 
+  // Monitor clipboard on paste events (improved)
+  document.addEventListener('paste', async (e) => {
+    console.log('[KeyShield] Paste event detected');
+    // Small delay to ensure clipboard is updated
+    setTimeout(async () => {
+      try {
+        const detected = await KeyDetector.detectClipboard();
+        if (detected) {
+          console.log('[KeyShield] Key detected from clipboard:', detected.key.substring(0, 10) + '...');
+          handleDetectedKeys([detected]);
+        }
+      } catch (error) {
+        console.error('[KeyShield] Error detecting clipboard:', error);
+      }
+    }, 100);
+  });
+
+  // Monitor input events for form fields (enhanced)
+  let inputDebounceTimer: number | null = null;
+  document.addEventListener('input', (e) => {
+    const target = e.target as HTMLInputElement;
+    if (target && (target.type === 'password' || target.type === 'text' || target.tagName === 'TEXTAREA')) {
+      // Debounce input detection
+      if (inputDebounceTimer) {
+        clearTimeout(inputDebounceTimer);
+      }
+      inputDebounceTimer = window.setTimeout(() => {
+        const detected = KeyDetector.detectFormFields();
+        if (detected.length > 0) {
+          handleDetectedKeys(detected);
+        }
+      }, 2000); // Wait 2 seconds after user stops typing
+    }
+  }, true); // Use capture phase to catch all inputs
+
+  // Monitor clipboard changes (periodic check as fallback)
+  let lastClipboardCheck = '';
+  const clipboardCheckInterval = setInterval(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text !== lastClipboardCheck && text.length >= 16) {
+        lastClipboardCheck = text;
+        const detected = await KeyDetector.detectClipboard();
+        if (detected) {
+          handleDetectedKeys([detected]);
+        }
+      }
+    } catch (error) {
+      // Clipboard access denied or not available
+      clearInterval(clipboardCheckInterval);
+    }
+  }, 3000); // Check every 3 seconds
+
   // Cleanup on page unload
-  window.addEventListener('beforeunload', cleanup);
+  window.addEventListener('beforeunload', () => {
+    cleanup();
+    if (clipboardCheckInterval) {
+      clearInterval(clipboardCheckInterval);
+    }
+    if (detectionDebounceTimer) {
+      clearTimeout(detectionDebounceTimer);
+    }
+    if (inputDebounceTimer) {
+      clearTimeout(inputDebounceTimer);
+    }
+  });
 }
 
 // Initialize auto-detection when script loads
