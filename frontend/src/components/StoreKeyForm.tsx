@@ -33,7 +33,25 @@ export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
       });
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to store key');
+      console.error('Store key error:', err);
+      // Extract meaningful error message
+      let errorMessage = 'Failed to store key';
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.toString) {
+        errorMessage = err.toString();
+      }
+      
+      // Check for common errors
+      if (errorMessage.includes('AccountNotFound') || errorMessage.includes('0x1')) {
+        errorMessage = 'Account not found. The vault account needs to be created first. Please try again or contact support.';
+      } else if (errorMessage.includes('insufficient funds') || errorMessage.includes('0x1')) {
+        errorMessage = 'Insufficient SOL. Please add more SOL to your wallet.';
+      } else if (errorMessage.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled.';
+      }
+      
+      setError(errorMessage);
     }
   };
 

@@ -1,7 +1,7 @@
 const path = require('path');
 
 module.exports = {
-  mode: 'production',
+  mode: process.env.NODE_ENV || 'production',
   entry: {
     'background/service-worker': './src/background/service-worker.ts',
     'content/content-script': './src/content/content-script.ts',
@@ -10,20 +10,32 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
+    clean: true,
   },
   module: {
     rules: [
       {
         test: /\.ts$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader',
+          options: {
+            transpileOnly: true,
+          },
+        },
         exclude: /node_modules/,
       },
     ],
   },
   resolve: {
     extensions: ['.ts', '.js'],
+    fallback: {
+      "crypto": false,
+      "stream": false,
+      "buffer": false,
+    },
   },
   optimization: {
-    minimize: false, // Keep readable for debugging
+    minimize: process.env.NODE_ENV === 'production',
   },
+  devtool: process.env.NODE_ENV === 'development' ? 'source-map' : false,
 };

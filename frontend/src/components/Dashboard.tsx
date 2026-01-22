@@ -10,29 +10,35 @@ import { ShareKeyDialog } from './ShareKeyDialog';
 import { Shield, Key, Lock, Share2 } from 'lucide-react';
 
 export function Dashboard() {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:12',message:'Dashboard component rendering',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
   const { isConnected, publicKey } = useKeyShieldWallet();
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:14',message:'Before useVault call',data:{isConnected},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
   const { vault, isLoading } = useVault();
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:16',message:'After useVault call',data:{hasVault:!!vault,isLoading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
 
   if (!isConnected) {
+    // Detect Safari browser
+    const isSafari = typeof window !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <Shield className="w-16 h-16 text-blue-500 mb-4" />
         <h2 className="text-2xl font-semibold mb-4">Connect Your Wallet</h2>
-        <p className="text-gray-400 mb-6">
-          Connect your Solana wallet to start managing your API keys securely
+        <p className="text-gray-400 mb-6 text-center max-w-md">
+          Connect your Solana wallet to start managing your API keys securely.
+          {isSafari && (
+            <span className="text-sm text-blue-400 mt-2 block font-medium">
+              💡 Safari detected: Use WalletConnect to connect with any Solana wallet (Phantom, Solflare, etc.) via QR code
+            </span>
+          )}
         </p>
-        <WalletMultiButton />
+        <div className="flex flex-col items-center gap-3">
+          <WalletMultiButton />
+          {isSafari && (
+            <p className="text-xs text-gray-500 text-center max-w-sm">
+              WalletConnect works with all Solana wallets. Scan the QR code with your mobile wallet or use desktop wallet apps.
+            </p>
+          )}
+        </div>
       </div>
     );
   }

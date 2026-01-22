@@ -7,17 +7,8 @@ import { encryptWithLit, createWalletAccessConditions } from '@/lib/lit-protocol
 import { getProgramId } from '@/lib/solana';
 
 export function useVault(owner?: PublicKey) {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:9',message:'useVault called',data:{hasOwner:!!owner},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:11',message:'Before useQueryClient',data:{hasPublicKey:!!publicKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   const queryClient = useQueryClient();
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:13',message:'After useQueryClient',data:{hasQueryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   const vaultOwner = owner || publicKey;
 
   const client = new KeyShieldClient(connection, getProgramId());
@@ -62,6 +53,8 @@ export function useVault(owner?: PublicKey) {
       crypto.getRandomValues(mpcHash);
 
       // Build instruction
+      // Note: The program will handle account creation if the account doesn't exist
+      // For PDAs, account creation must be done by the program using invoke_signed
       const timestamp = Date.now();
       const instruction = await client.buildStoreKeyInstruction(
         publicKey,
@@ -73,12 +66,6 @@ export function useVault(owner?: PublicKey) {
 
       // Build transaction
       const transaction = new Transaction();
-      
-      // Note: For PDAs, account creation should be handled by the program
-      // The store_key instruction should create the account if it doesn't exist
-      // If you get an "AccountNotFound" error, you may need to add account creation
-      // logic to the Rust program or pre-create accounts
-      
       transaction.add(instruction);
 
       // Get recent blockhash
@@ -89,13 +76,20 @@ export function useVault(owner?: PublicKey) {
       // Send transaction via wallet
       const signature = await sendTransaction(transaction, connection);
       
-      // Wait for confirmation
-      await connection.confirmTransaction(signature, 'confirmed');
+      // Wait for confirmation with error checking
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
 
       return signature;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vault', vaultOwner?.toString()] });
+    },
+    onError: (error: any) => {
+      console.error('Store key mutation error:', error);
     },
   });
 

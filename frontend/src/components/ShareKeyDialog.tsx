@@ -29,7 +29,16 @@ export function ShareKeyDialog({ vault, onClose }: ShareKeyDialogProps) {
     setIsSharing(true);
 
     try {
-      const recipientPubkey = new PublicKey(recipientAddress);
+      // Validate recipient address
+      let recipientPubkey: PublicKey;
+      try {
+        recipientPubkey = new PublicKey(recipientAddress);
+      } catch (e) {
+        setError('Invalid recipient address. Please enter a valid Solana wallet address.');
+        setIsSharing(false);
+        return;
+      }
+      
       const { getProgramId } = await import('@/lib/solana');
       const client = new KeyShieldClient(connection, getProgramId());
       
@@ -52,11 +61,30 @@ export function ShareKeyDialog({ vault, onClose }: ShareKeyDialogProps) {
       transaction.feePayer = publicKey;
 
       const signature = await sendTransaction(transaction, connection);
-      await connection.confirmTransaction(signature, 'confirmed');
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
 
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to share key');
+      console.error('Share key error:', err);
+      let errorMessage = 'Failed to share key';
+      if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      // Check for common errors
+      if (errorMessage.includes('Invalid') && errorMessage.includes('address')) {
+        errorMessage = 'Invalid recipient address. Please enter a valid Solana wallet address.';
+      } else if (errorMessage.includes('insufficient funds')) {
+        errorMessage = 'Insufficient SOL. Please add more SOL to your wallet.';
+      } else if (errorMessage.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsSharing(false);
     }

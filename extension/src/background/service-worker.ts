@@ -91,6 +91,10 @@ async function handleMessage(
         await handleOCRCapture(message.payload, sendResponse);
         break;
 
+      case 'GET_VAULTS_BY_DOMAIN':
+        await handleGetVaultsByDomain(message.payload, sendResponse);
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -434,6 +438,24 @@ async function handleOCRCapture(
     await ocrService.initialize();
     const detected = await ocrService.captureScreenAndDetectKeys(payload.domain);
     sendResponse({ success: true, detected });
+  } catch (error: any) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle get vaults by domain request
+ */
+async function handleGetVaultsByDomain(
+  payload: { domain: string },
+  sendResponse: (response: any) => void
+) {
+  try {
+    if (!storage) {
+      await storage.initialize();
+    }
+    const vaults = await storage.getVaultsByDomain(payload.domain);
+    sendResponse({ success: true, vaults });
   } catch (error: any) {
     sendResponse({ success: false, error: error.message });
   }

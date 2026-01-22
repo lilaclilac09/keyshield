@@ -146,9 +146,18 @@ async function loadVaults() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const domain = new URL(tab.url || '').hostname;
 
-    // Get vaults for current domain
-    // Note: In production, you'd get this from storage
-    const vaults: any[] = []; // Placeholder
+    // Get vaults for current domain from background script
+    const response = await chrome.runtime.sendMessage({
+      type: 'GET_VAULTS_BY_DOMAIN',
+      payload: { domain },
+    });
+
+    if (!response.success) {
+      vaultListContainer.innerHTML = '<div class="loading">Error loading vaults</div>';
+      return;
+    }
+
+    const vaults = response.vaults || [];
 
     if (vaults.length === 0) {
       vaultListContainer.innerHTML = '<div class="loading">No vaults found for this domain</div>';

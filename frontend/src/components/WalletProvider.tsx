@@ -19,12 +19,6 @@ import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // #region agent log
-  if (typeof window !== 'undefined') {
-    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:13',message:'WalletProvider rendering start',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'E'})}).catch(()=>{});
-  }
-  // #endregion
-
   // Create QueryClient using useState to ensure proper isolation per client
   // This is the recommended pattern for Next.js App Router
   const [queryClient] = useState(
@@ -40,12 +34,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       })
   );
 
-  // #region agent log
-  if (typeof window !== 'undefined') {
-    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:30',message:'QueryClient created',data:{hasQueryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'E'})}).catch(()=>{});
-  }
-  // #endregion
-
   const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => {
     return process.env.NEXT_PUBLIC_RPC_URL || clusterApiUrl(network);
@@ -53,21 +41,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const wallets = useMemo(
     () => {
+      // Get WalletConnect project ID from environment or use default
+      const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'c8a62035-6378-4ddd-9cde-ab3967305ebc';
+      
+      // Prioritize WalletConnect for Safari and cross-platform compatibility
+      // WalletConnect allows users to connect with any Solana wallet via QR code
       const walletAdapters = [
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter(),
+        // WalletConnect first - works on all platforms including Safari without extensions
+        // This enables connection via QR code to any Solana wallet (Phantom, Solflare, etc.)
         new WalletConnectWalletAdapter({
           network: network,
           options: {
-            projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'c8a62035-6378-4ddd-9cde-ab3967305ebc', // Using Helius project ID as fallback
+            projectId: walletConnectProjectId,
             metadata: {
               name: 'KeyShield',
-              description: 'Private API Vault on Solana',
+              description: 'Private API Vault on Solana with ZK proofs, MPC, and Lit Protocol',
               url: typeof window !== 'undefined' ? window.location.origin : 'https://keyshield.app',
-              icons: [],
+              icons: typeof window !== 'undefined' 
+                ? [`${window.location.origin}/favicon.ico`]
+                : ['https://keyshield.app/favicon.ico'],
+            },
+            // Enable deep linking for mobile wallets
+            qrModalOptions: {
+              themeMode: 'dark',
             },
           },
         }),
+        // Browser extension wallets (will be detected if available)
+        // These work automatically if the extension is installed
+        new PhantomWalletAdapter(),
+        new SolflareWalletAdapter(),
+        // Additional wallet adapters for broader compatibility
         new LedgerWalletAdapter(),
         new TorusWalletAdapter(),
         new CoinbaseWalletAdapter(),
@@ -80,11 +84,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [network]
   );
 
-  // #region agent log
-  if (typeof window !== 'undefined') {
-    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:50',message:'Rendering QueryClientProvider',data:{hasQueryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'E'})}).catch(()=>{});
+  if (!queryClient) {
+    throw new Error('QueryClient not initialized');
   }
-  // #endregion
 
   return (
     <QueryClientProvider client={queryClient}>

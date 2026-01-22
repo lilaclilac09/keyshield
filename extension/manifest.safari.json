@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "name": "KeyShield - Private API Vault",
+  "version": "1.0.0",
+  "description": "Secure API key management with auto-detection and auto-fill, powered by Solana blockchain",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "clipboardRead",
+    "clipboardWrite",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background/service-worker.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    "content/injected.js"
+  ],
+  "content_security_policy": "script-src 'self'; object-src 'self'"
+}

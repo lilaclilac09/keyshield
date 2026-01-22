@@ -1,188 +1,56 @@
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071821140,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071821140,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071821140,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071821140,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071821141,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071821141,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821142,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821143,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821145,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821146,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821146,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821146,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821146,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821429,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071821430,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071822462,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071822463,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071822464,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071822464,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071822464,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071822464,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071822466,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071822466,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071822466,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071822467,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071822467,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071822468,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071822504,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071822505,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071900826,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900827,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071900826,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071900826,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071900826,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071900826,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071900827,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071900828,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071900853,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900854,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071900855,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900856,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900856,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071900857,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071900858,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071900858,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071902492,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071902492,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071902494,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071902494,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071902495,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071902495,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071902502,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071902502,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071902503,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071902503,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071902503,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071902507,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071902507,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071902507,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071902508,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071902508,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071902508,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071902508,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071902538,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071902539,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:50","message":"Rendering QueryClientProvider","data":{"hasQueryClient":true},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071906921,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:12","message":"Dashboard component rendering","data":{},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"Dashboard.tsx:14","message":"Before useVault call","data":{"isConnected":false},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"useVault.ts:9","message":"useVault called","data":{"hasOwner":false},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:11","message":"Before useQueryClient","data":{"hasPublicKey":false},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"useVault.ts:13","message":"After useQueryClient","data":{"hasQueryClient":true},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
-{"location":"Dashboard.tsx:16","message":"After useVault call","data":{"hasVault":false,"isLoading":false},"timestamp":1769071906922,"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071909291,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071909292,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071909293,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071909293,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071909296,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071909296,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071909296,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071909296,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071914066,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071914062,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071914063,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071914066,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071914077,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071914078,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769071914079,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
-{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769071914079,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072119458,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072119458,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072119459,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072119459,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072119461,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072119461,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072119461,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072119461,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072141172,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072141172,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072141173,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072141173,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072141175,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072141175,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072141175,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072141175,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072153751,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072153755,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072153755,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072153753,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072153766,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072153766,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072153767,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072153767,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072172395,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072172397,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072172395,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072172397,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072172403,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072172403,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072172404,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072172404,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072200524,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072200524,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072200525,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072200525,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072200527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072200527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072200528,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072200528,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072238025,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072238026,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072238026,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072238026,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072238028,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072238028,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072238028,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072238028,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072239525,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072239525,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072239526,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072239526,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072239527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072239527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:13","message":"WalletProvider rendering start","data":{},"timestamp":1769072239527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}
+{"location":"WalletProvider.tsx:30","message":"QueryClient created","data":{"hasQueryClient":true},"timestamp":1769072239527,"sessionId":"debug-session","runId":"run3","hypothesisId":"E"}

@@ -6,6 +6,7 @@ import {
   Keypair,
   TransactionInstruction,
   LAMPORTS_PER_SOL,
+  SYSVAR_RENT_PUBKEY,
 } from '@solana/web3.js';
 import { getConnection } from './solana';
 import { getProgramId } from './solana';
@@ -52,7 +53,31 @@ export class KeyShieldClient {
   }
 
   /**
+   * Check if vault account exists and is initialized
+   */
+  async vaultAccountExists(owner: PublicKey): Promise<boolean> {
+    const [vaultPDA] = await this.deriveVaultPDA(owner);
+    const accountInfo = await this.connection.getAccountInfo(vaultPDA);
+    
+    if (!accountInfo) {
+      return false; // Account doesn't exist
+    }
+    
+    // Check if account is initialized (has discriminator)
+    if (accountInfo.data.length >= 8) {
+      const discriminator = accountInfo.data.slice(0, 8);
+      // Check if it matches our discriminator "keyshld\0"
+      const expectedDiscriminator = Buffer.from('keyshld\0');
+      return discriminator.equals(expectedDiscriminator);
+    }
+    
+    return false;
+  }
+
+  /**
    * Build store key instruction
+   * Note: For PDAs, the account must be created by the program using invoke_signed
+   * The program will create the account if it doesn't exist
    */
   async buildStoreKeyInstruction(
     owner: PublicKey,
@@ -61,7 +86,7 @@ export class KeyShieldClient {
     mpcHash: Uint8Array,
     timestamp: number
   ): Promise<TransactionInstruction> {
-    const [vaultPDA] = await this.deriveVaultPDA(owner);
+    const [vaultPDA, bump] = await this.deriveVaultPDA(owner);
 
     // Instruction data layout:
     // discriminator (1) + encrypted_key (128) + zk_commit (32) + mpc_hash (32) + timestamp (8) = 201 bytes
@@ -75,7 +100,7 @@ export class KeyShieldClient {
     return new TransactionInstruction({
       programId: this.programId,
       keys: [
-        { pubkey: owner, isSigner: true, isWritable: false },
+        { pubkey: owner, isSigner: true, isWritable: true }, // Owner needs to be writable to pay for account creation
         { pubkey: vaultPDA, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],

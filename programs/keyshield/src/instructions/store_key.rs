@@ -45,16 +45,20 @@ pub fn process_store_key(
         }
     }
 
-    // Check if vault already exists (skip if account is being initialized)
+    // Check if vault already exists and is initialized
+    // If account data is empty or smaller than expected, it's uninitialized and we can proceed
     let vault_data = vault.try_borrow_data()?;
     let vault_data_len = vault_data.len();
-    if vault_data_len > 0 && vault_data_len >= Vault::SIZE {
+    
+    // If account has data and is the right size, check if it's already initialized
+    if vault_data_len >= Vault::SIZE {
         // Check discriminator to see if it's already initialized
         let existing_discriminator = &vault_data[0..8];
         if existing_discriminator == Vault::DISCRIMINATOR {
             return Err(KeyShieldError::VaultAlreadyExists.into());
         }
     }
+    // If account is empty or smaller than expected, it's uninitialized - we'll initialize it
     drop(vault_data);
 
     // Parse instruction data
