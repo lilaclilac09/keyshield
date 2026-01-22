@@ -11,8 +11,6 @@ import { getConnection } from './solana';
 import { getProgramId } from './solana';
 import { INSTRUCTION, VAULT_SEED, SHARE_SEED, VAULT_SIZE } from './constants';
 import { Vault, StoreKeyParams, ShareKeyParams } from '@/types';
-import * as borsh from '@solana/codec';
-import { getU8Codec, getU64Codec } from '@solana/codec-numbers';
 
 /**
  * Client SDK for interacting with KeyShield program

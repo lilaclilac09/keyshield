@@ -7,8 +7,17 @@ import { encryptWithLit, createWalletAccessConditions } from '@/lib/lit-protocol
 import { getProgramId } from '@/lib/solana';
 
 export function useVault(owner?: PublicKey) {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:9',message:'useVault called',data:{hasOwner:!!owner},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:11',message:'Before useQueryClient',data:{hasPublicKey:!!publicKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const queryClient = useQueryClient();
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useVault.ts:13',message:'After useQueryClient',data:{hasQueryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const vaultOwner = owner || publicKey;
 
   const client = new KeyShieldClient(connection, getProgramId());

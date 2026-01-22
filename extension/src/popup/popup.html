@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KeyShield</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 400px;
+      min-height: 500px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #333;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .status.authenticated {
+      background: #1a4d2e;
+      color: #4ade80;
+    }
+
+    .status.unauthenticated {
+      background: #4d1a1a;
+      color: #f87171;
+    }
+
+    .button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 8px;
+    }
+
+    .button.primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .button.primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .button.secondary {
+      background: #2a2a2a;
+      color: #e0e0e0;
+      border: 1px solid #444;
+    }
+
+    .button.secondary:hover {
+      background: #333;
+    }
+
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .input-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #b0b0b0;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 14px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .vault-list {
+      margin-top: 20px;
+    }
+
+    .vault-item {
+      padding: 12px;
+      background: #2a2a2a;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .vault-info {
+      flex: 1;
+    }
+
+    .vault-name {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .vault-domain {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">KS</div>
+      <h1>KeyShield</h1>
+    </div>
+
+    <div id="auth-status" class="status unauthenticated">
+      Not authenticated
+    </div>
+
+    <div id="auth-section">
+      <button id="auth-webauthn" class="button primary">
+        Authenticate with Biometric
+      </button>
+      <button id="auth-password" class="button secondary">
+        Use Master Password
+      </button>
+
+      <div id="password-form" class="hidden">
+        <div class="input-group">
+          <label for="password-input">Master Password</label>
+          <input type="password" id="password-input" placeholder="Enter master password">
+        </div>
+        <button id="submit-password" class="button primary">Authenticate</button>
+      </div>
+    </div>
+
+    <div id="main-section" class="hidden">
+      <button id="detect-keys" class="button primary">
+        Detect Keys on Page
+      </button>
+      <button id="auto-fill" class="button secondary">
+        Auto-Fill Keys
+      </button>
+      <button id="ocr-capture" class="button secondary">
+        Capture Screen (OCR)
+      </button>
+
+      <div class="vault-list">
+        <h3 style="margin-bottom: 12px; font-size: 16px;">Your Vaults</h3>
+        <div id="vault-list-container">
+          <div class="loading">Loading vaults...</div>
+        </div>
+      </div>
+
+      <button id="logout" class="button secondary" style="margin-top: 20px;">
+        Logout
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

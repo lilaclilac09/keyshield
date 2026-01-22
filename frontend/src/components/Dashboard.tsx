@@ -10,8 +10,17 @@ import { ShareKeyDialog } from './ShareKeyDialog';
 import { Shield, Key, Lock, Share2 } from 'lucide-react';
 
 export function Dashboard() {
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:12',message:'Dashboard component rendering',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   const { isConnected, publicKey } = useKeyShieldWallet();
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:14',message:'Before useVault call',data:{isConnected},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   const { vault, isLoading } = useVault();
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.tsx:16',message:'After useVault call',data:{hasVault:!!vault,isLoading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
 

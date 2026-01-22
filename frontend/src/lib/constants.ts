@@ -1,7 +1,19 @@
 import { PublicKey } from '@solana/web3.js';
 
-// Program ID - replace with your deployed program ID
-export const PROGRAM_ID = new PublicKey('11111111111111111111111111111111'); // Placeholder
+// Program ID - loaded from environment variable
+export const PROGRAM_ID = (() => {
+  const programId = process.env.NEXT_PUBLIC_PROGRAM_ID;
+  if (!programId) {
+    console.warn('NEXT_PUBLIC_PROGRAM_ID not set, using placeholder');
+    return new PublicKey('11111111111111111111111111111111');
+  }
+  try {
+    return new PublicKey(programId);
+  } catch (e) {
+    console.error('Invalid NEXT_PUBLIC_PROGRAM_ID:', e);
+    return new PublicKey('11111111111111111111111111111111');
+  }
+})();
 
 // Instruction discriminators
 export const INSTRUCTION = {
