@@ -4,11 +4,12 @@
 
 ### Core Documentation
 1. **[README.md](./README.md)** - Project overview, quick start, features
-2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Complete system architecture (572 lines)
-3. **[TEST_AND_ARCHITECTURE_SUMMARY.md](./TEST_AND_ARCHITECTURE_SUMMARY.md)** - Test results + architecture summary
-4. **[START_HERE.md](./START_HERE.md)** - Quick testing guide
-5. **[QUICKSTART.md](./QUICKSTART.md)** - 5-minute quick start
-6. **[SETUP.md](./SETUP.md)** - Detailed setup instructions
+2. **[ARCHITECTURE.md](./ARCHITECTURE.md)** ⭐ - **Complete system architecture (572 lines)** - **Essential reading for understanding the system**
+3. **[FILE_INDEX.md](./FILE_INDEX.md)** - Complete file index organized by folder
+4. **[TEST_AND_ARCHITECTURE_SUMMARY.md](./TEST_AND_ARCHITECTURE_SUMMARY.md)** - Test results + architecture summary
+5. **[START_HERE.md](./START_HERE.md)** - Quick testing guide
+6. **[QUICKSTART.md](./QUICKSTART.md)** - 5-minute quick start
+7. **[SETUP.md](./SETUP.md)** - Detailed setup instructions
 
 ### Testing Documentation
 7. **[TESTING.md](./TESTING.md)** - Complete testing guide
@@ -484,7 +485,8 @@ keyshield/
 See the complete list of documentation files at the top of this document.
 
 **Start Here**: [START_HERE.md](./START_HERE.md)  
-**Architecture**: [ARCHITECTURE.md](./ARCHITECTURE.md)  
+**Architecture**: [ARCHITECTURE.md](./ARCHITECTURE.md) ⭐ - Essential reading  
+**File Index**: [FILE_INDEX.md](./FILE_INDEX.md) - All files organized by folder  
 **Setup**: [SETUP.md](./SETUP.md)  
 **Extension**: [extension/README.md](./extension/README.md)
 

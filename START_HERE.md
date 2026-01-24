@@ -36,10 +36,10 @@ All documentation is saved locally in the `keyshield/` directory:
 
 ### Reference Files
 6. **[README.md](./README.md)** - Project overview
-7. **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture
-8. **[USERFLOW_WORKFLOW.md](./USERFLOW_WORKFLOW.md)** - User flows
-9. **[BUILD_SUMMARY.md](./BUILD_SUMMARY.md)** - Implementation details
-10. **[COMPLETE_DOCUMENTATION.md](./COMPLETE_DOCUMENTATION.md)** - Documentation index
+7. **[ARCHITECTURE.md](./ARCHITECTURE.md)** ⭐ - **Complete system architecture** (572 lines) - Essential for understanding the system design
+8. **[COMPLETE_OVERVIEW.md](./COMPLETE_OVERVIEW.md)** - Complete user flow & architecture overview
+9. **[TEST_AND_ARCHITECTURE_SUMMARY.md](./TEST_AND_ARCHITECTURE_SUMMARY.md)** - Test results + architecture summary
+10. **[LIT_PROTOCOL_V4_UPDATE.md](./LIT_PROTOCOL_V4_UPDATE.md)** - Lit Protocol v4 migration guide
 
 ## 🎯 Testing Steps Summary
 

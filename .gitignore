@@ -20,11 +20,17 @@ Cargo.lock
 
 # Node modules (if not already ignored)
 node_modules/
+**/node_modules/
 frontend/node_modules/
 extension/node_modules/
+
+# Next.js build outputs
+.next/
+**/.next/
+frontend/.next/
+frontend/.next/cache/
 
 # Build outputs
 dist/
 build/
-.next/
 *.so
