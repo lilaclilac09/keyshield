@@ -26,4 +26,5 @@ extension/node_modules/
 # Build outputs
 dist/
 build/
+.next/
 *.so
