@@ -8,6 +8,7 @@ import { getProgramId } from '@/lib/solana';
 import { storeCiphertext, hashToKey } from '@/lib/ciphertext-storage';
 import { detectKeyTypeFromContext, APIKeyType } from '@/lib/api-key-generators';
 import * as LitJsSdk from '@lit-protocol/lit-node-client';
+import { LitAccessControlConditionResource, LitAbility } from '@lit-protocol/auth-helpers';
 
 export function useVault(owner?: PublicKey) {
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
@@ -128,10 +129,12 @@ export function useVault(owner?: PublicKey) {
       // Get Lit session signatures
       const litClient = await initLitClient();
       
-      // Get auth signature
+      // Get auth signature with nonce
+      // Lit Protocol v4 requires nonce - generate it from the client
       const authSig = await LitJsSdk.checkAndSignAuthMessage({
         chain: 'solana',
-      });
+        nonce: await litClient.getLatestBlockhash(),
+      } as any);
 
       // Create access conditions
       const accessConditions = createWalletAccessConditions(publicKey.toString());
@@ -142,10 +145,8 @@ export function useVault(owner?: PublicKey) {
         expiration: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(), // 24 hours
         resourceAbilityRequests: [
           {
-            resource: new LitJsSdk.LitResourceAbilityRequest(
-              new LitJsSdk.LitAccessControlConditionResource(accessConditions),
-              LitJsSdk.LitAbility.AccessControlConditionDecryption
-            ),
+            resource: new LitAccessControlConditionResource(JSON.stringify(accessConditions)),
+            ability: LitAbility.AccessControlConditionDecryption,
           },
         ],
         authNeededCallback: async () => authSig,

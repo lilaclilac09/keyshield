@@ -74,7 +74,7 @@ impl Vault {
         // Clear bits 1-3
         self.access_flags &= !0x0E;
         // Set new key type (shift left by 1, mask to 3 bits)
-        self.access_flags |= ((key_type & 0x07) << 1);
+        self.access_flags |= (key_type & 0x07) << 1;
     }
 }
 

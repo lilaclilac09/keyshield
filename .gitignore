@@ -1,0 +1,29 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Environment files
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Node modules (if not already ignored)
+node_modules/
+frontend/node_modules/
+extension/node_modules/
+
+# Build outputs
+dist/
+build/
+*.so
