@@ -197,7 +197,14 @@
     </div>
 
     <div id="main-section" class="hidden">
-      <button id="detect-keys" class="button primary">
+      <div class="input-group">
+        <label for="quick-save-key">Quick Save API Key</label>
+        <input type="text" id="quick-save-key" placeholder="Paste API key here">
+      </div>
+      <button id="quick-save" class="button primary">
+        Quick Save to Vault
+      </button>
+      <button id="detect-keys" class="button secondary">
         Detect Keys on Page
       </button>
       <button id="auto-fill" class="button secondary">

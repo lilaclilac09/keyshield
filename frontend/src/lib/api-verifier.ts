@@ -89,6 +89,32 @@ export async function verifyOpenAIKey(key: string): Promise<VerificationResult> 
 }
 
 /**
+ * Verify bloXroute API key using health endpoint
+ */
+export async function verifyBloxrouteKey(key: string): Promise<VerificationResult> {
+  try {
+    // bloXroute uses Authorization header with base64 encoded key
+    const response = await fetch('https://api.bloxroute.com/v1/health', {
+      method: 'GET',
+      headers: {
+        'Authorization': key,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      return { valid: true, message: 'bloXroute API key is valid' };
+    } else if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    } else {
+      return { valid: false, error: `Verification failed: ${response.statusText}` };
+    }
+  } catch (error: any) {
+    return { valid: false, error: `Network error: ${error.message}` };
+  }
+}
+
+/**
  * Verify API key based on type
  */
 export async function verifyApiKey(key: string, keyType: APIKeyType): Promise<VerificationResult> {
@@ -99,6 +125,8 @@ export async function verifyApiKey(key: string, keyType: APIKeyType): Promise<Ve
       return await verifyGitHubToken(key);
     case APIKeyType.OpenAI:
       return await verifyOpenAIKey(key);
+    case APIKeyType.Bloxroute:
+      return await verifyBloxrouteKey(key);
     default:
       return { valid: false, error: 'Verification not supported for this provider' };
   }
@@ -112,5 +140,6 @@ export function supportsVerification(keyType: APIKeyType): boolean {
     APIKeyType.Helius,
     APIKeyType.GitHub,
     APIKeyType.OpenAI,
+    APIKeyType.Bloxroute,
   ].includes(keyType);
 }

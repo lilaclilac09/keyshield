@@ -14,6 +14,8 @@ const vaultListContainer = document.getElementById('vault-list-container')!;
 const authWebAuthnBtn = document.getElementById('auth-webauthn')!;
 const authPasswordBtn = document.getElementById('auth-password')!;
 const submitPasswordBtn = document.getElementById('submit-password')!;
+const quickSaveKeyInput = document.getElementById('quick-save-key') as HTMLInputElement;
+const quickSaveBtn = document.getElementById('quick-save')!;
 const detectKeysBtn = document.getElementById('detect-keys')!;
 const autoFillBtn = document.getElementById('auto-fill')!;
 const ocrCaptureBtn = document.getElementById('ocr-capture')!;
@@ -28,6 +30,7 @@ authPasswordBtn.addEventListener('click', () => {
   passwordForm.classList.remove('hidden');
 });
 submitPasswordBtn.addEventListener('click', handlePasswordAuth);
+quickSaveBtn.addEventListener('click', handleQuickSave);
 detectKeysBtn.addEventListener('click', handleDetectKeys);
 autoFillBtn.addEventListener('click', handleAutoFill);
 ocrCaptureBtn.addEventListener('click', handleOCRCapture);
@@ -204,6 +207,48 @@ async function loadVaults() {
     console.error('Failed to load vaults:', error);
     vaultListContainer.innerHTML = '<div class="loading">Error loading vaults</div>';
   }
+}
+
+/**
+ * Handle quick save - opens dashboard with key pre-filled
+ */
+async function handleQuickSave() {
+  try {
+    const apiKey = quickSaveKeyInput.value.trim();
+    if (!apiKey) {
+      alert('Please enter an API key');
+      return;
+    }
+
+    quickSaveBtn.disabled = true;
+    quickSaveBtn.textContent = 'Opening Dashboard...';
+
+    // Get dashboard URL from storage or use default
+    const dashboardUrl = await getDashboardUrl();
+    
+    // Encode key in URL parameter (base64 to avoid special characters)
+    const encodedKey = btoa(apiKey);
+    const urlWithKey = `${dashboardUrl}?quickSave=${encodedKey}`;
+    
+    // Open dashboard in new tab with key in URL
+    chrome.tabs.create({ url: urlWithKey });
+    
+    // Clear input
+    quickSaveKeyInput.value = '';
+  } catch (error: any) {
+    alert(`Error: ${error.message}`);
+  } finally {
+    quickSaveBtn.disabled = false;
+    quickSaveBtn.textContent = 'Quick Save to Vault';
+  }
+}
+
+/**
+ * Get dashboard URL (from storage or default)
+ */
+async function getDashboardUrl(): Promise<string> {
+  const result = await chrome.storage.local.get('dashboardUrl');
+  return result.dashboardUrl || 'http://localhost:3000';
 }
 
 /**

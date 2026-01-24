@@ -36,6 +36,26 @@ export function VaultDisplay({ vault }: VaultDisplayProps) {
   
   const canVerify = supportsVerification(keyType);
 
+  // Get provider icon and badge info
+  const getProviderInfo = () => {
+    switch (keyType) {
+      case APIKeyType.GitHub:
+        return { icon: '🔑', name: 'GitHub', color: 'bg-gray-800', badgeColor: 'bg-gray-700' };
+      case APIKeyType.Helius:
+        return { icon: '⚡', name: 'Helius', color: 'bg-purple-600', badgeColor: 'bg-purple-700' };
+      case APIKeyType.GoogleGemini:
+        return { icon: '🤖', name: 'Google Gemini', color: 'bg-blue-600', badgeColor: 'bg-blue-700' };
+      case APIKeyType.Bloxroute:
+        return { icon: '🚀', name: 'bloXroute', color: 'bg-orange-600', badgeColor: 'bg-orange-700' };
+      case APIKeyType.ZeroX:
+        return { icon: '0x', name: '0x API', color: 'bg-indigo-600', badgeColor: 'bg-indigo-700' };
+      default:
+        return { icon: '🔐', name: 'API Key', color: 'bg-blue-600', badgeColor: 'bg-blue-700' };
+    }
+  };
+
+  const providerInfo = getProviderInfo();
+
   // Sync revealedKey from mutation with local state
   useEffect(() => {
     if (revealedKey && !isRevealed) {
@@ -144,11 +164,16 @@ export function VaultDisplay({ vault }: VaultDisplayProps) {
     <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Shield className="w-6 h-6" />
+          <div className={`w-12 h-12 ${providerInfo.color} rounded-lg flex items-center justify-center text-2xl`}>
+            {providerInfo.icon}
           </div>
           <div>
-            <h3 className="text-xl font-semibold">Secure Vault</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold">Secure Vault</h3>
+              <span className={`px-2 py-0.5 ${providerInfo.badgeColor} rounded text-xs font-medium`}>
+                {providerInfo.name}
+              </span>
+            </div>
             <p className="text-sm text-gray-400">Active and protected</p>
           </div>
         </div>

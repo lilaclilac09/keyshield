@@ -33,6 +33,118 @@ chrome.runtime.onStartup.addListener(async () => {
   await storage.initialize();
 });
 
+// Network header scanning for API keys
+// Listen to outgoing requests to detect API keys in headers
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    // Only scan requests from tabs (not extension pages)
+    if (!details.tabId || details.tabId < 0) {
+      return;
+    }
+
+    // Scan headers for API keys
+    if (details.requestHeaders) {
+      const detectedKeys: Array<{ key: string; header: string; url: string }> = [];
+
+      for (const header of details.requestHeaders) {
+        const headerName = header.name.toLowerCase();
+        const headerValue = header.value || '';
+
+        // Check common API key header names
+        if (
+          headerName === 'authorization' ||
+          headerName === 'x-api-key' ||
+          headerName === '0x-api-key' ||
+          headerName === 'api-key' ||
+          headerName === 'x-auth-token'
+        ) {
+          // Extract potential key from header value
+          let potentialKey = headerValue;
+
+          // Handle Bearer token format
+          if (headerName === 'authorization' && headerValue.startsWith('Bearer ')) {
+            potentialKey = headerValue.substring(7);
+          } else if (headerName === 'authorization' && headerValue.startsWith('token ')) {
+            potentialKey = headerValue.substring(6);
+          }
+
+          // Check if it looks like an API key (length and pattern)
+          if (potentialKey && potentialKey.length >= 16 && /^[a-zA-Z0-9_\-+/=]+$/.test(potentialKey)) {
+            detectedKeys.push({
+              key: potentialKey,
+              header: headerName,
+              url: details.url,
+            });
+          }
+        }
+      }
+
+      // Process detected keys
+      if (detectedKeys.length > 0) {
+        detectedKeys.forEach(async (detected) => {
+          // Get tab URL for context
+          try {
+            const tab = await chrome.tabs.get(details.tabId!);
+            const domain = new URL(tab.url || details.url).hostname;
+
+            // Send KEY_DETECTED message (same as DOM detection)
+            handleKeyDetected(
+              {
+                provider: detectProviderFromHeader(detected.header, detected.key),
+                key: detected.key,
+                url: tab.url || details.url,
+              },
+              () => {} // No response needed for async detection
+            );
+          } catch (error) {
+            console.error('[KeyShield] Error processing header-detected key:', error);
+          }
+        });
+      }
+    }
+  },
+  {
+    urls: ['<all_urls>'],
+  },
+  ['requestHeaders']
+);
+
+/**
+ * Detect provider from header name and key pattern
+ */
+function detectProviderFromHeader(headerName: string, key: string): string {
+  const lowerHeader = headerName.toLowerCase();
+
+  if (lowerHeader === '0x-api-key') {
+    return '0x API';
+  }
+  if (lowerHeader.includes('bloxroute') || lowerHeader.includes('blox')) {
+    return 'bloXroute';
+  }
+  if (lowerHeader.includes('helius')) {
+    return 'Helius';
+  }
+  if (lowerHeader.includes('github')) {
+    return 'GitHub';
+  }
+  if (lowerHeader.includes('openai')) {
+    return 'OpenAI';
+  }
+
+  // Try to detect from key pattern
+  if (/^ghp_/.test(key)) {
+    return 'GitHub';
+  }
+  if (/^sk-/.test(key)) {
+    return 'OpenAI';
+  }
+  if (/^AIza/.test(key)) {
+    return 'Google Gemini';
+  }
+
+  return 'API Key';
+}
+
 // Message handler
 chrome.runtime.onMessage.addListener(
   (message: any, sender, sendResponse) => {

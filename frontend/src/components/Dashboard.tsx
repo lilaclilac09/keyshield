@@ -23,6 +23,35 @@ export function Dashboard() {
   const [showAutoDetection, setShowAutoDetection] = useState(false);
   const { toast, closeToast } = useToast();
 
+  // Check for quickSave URL parameter (from extension popup)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const quickSaveParam = params.get('quickSave');
+      if (quickSaveParam) {
+        try {
+          // Decode base64 key from URL
+          const decodedKey = atob(quickSaveParam);
+          if (decodedKey && decodedKey.length >= 16) {
+            const keyType = detectKeyTypeFromContext('', decodedKey);
+            setDetectedKeys([{
+              key: decodedKey,
+              source: 'extension',
+              fieldName: getGeneratorInfo(keyType).name,
+            }]);
+            setShowAutoDetection(true);
+            setShowStoreForm(true);
+            
+            // Clean up URL
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        } catch (error) {
+          console.error('Failed to decode quickSave parameter:', error);
+        }
+      }
+    }
+  }, []);
+
   // Auto-detect API keys from clipboard
   useEffect(() => {
     const checkClipboard = async () => {
@@ -273,8 +302,12 @@ export function Dashboard() {
         {/* Modals */}
         {showStoreForm && (
           <StoreKeyForm
-            onClose={() => setShowStoreForm(false)}
+            onClose={() => {
+              setShowStoreForm(false);
+              setDetectedKeys([]);
+            }}
             existingVault={vault}
+            initialKey={detectedKeys.length > 0 ? detectedKeys[0].key : undefined}
           />
         )}
 

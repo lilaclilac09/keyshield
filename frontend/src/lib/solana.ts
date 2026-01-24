@@ -9,12 +9,17 @@ export const getConnection = (): Connection => {
 export const getProgramId = (): PublicKey => {
   const programId = process.env.NEXT_PUBLIC_PROGRAM_ID;
   if (!programId) {
-    throw new Error('NEXT_PUBLIC_PROGRAM_ID not set');
+    console.warn('NEXT_PUBLIC_PROGRAM_ID not set, using placeholder');
+    // Return a placeholder PublicKey instead of throwing
+    // This allows the app to load even without a deployed program
+    return new PublicKey('11111111111111111111111111111111');
   }
   
   try {
     return new PublicKey(programId);
   } catch (error: any) {
-    throw error;
+    console.error('Invalid NEXT_PUBLIC_PROGRAM_ID:', error);
+    // Return placeholder on invalid key instead of throwing
+    return new PublicKey('11111111111111111111111111111111');
   }
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from '@solana/wallet-adapter-react';
@@ -12,17 +12,29 @@ import {
   LedgerWalletAdapter,
   TorusWalletAdapter,
   CoinbaseWalletAdapter,
+  UnsafeBurnerWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { ErrorBoundary } from './ErrorBoundary';
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:21',message:'WalletProvider initializing',data:{hasWindow:typeof window !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  }, []);
+  // #endregion
+
   // Create QueryClient using useState to ensure proper isolation per client
   // This is the recommended pattern for Next.js App Router
   const [queryClient] = useState(
-    () =>
-      new QueryClient({
+    () => {
+      // #region agent log
+      if (typeof window !== 'undefined') {
+        fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:28',message:'QueryClient created',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      }
+      // #endregion
+      return new QueryClient({
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
@@ -30,12 +42,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             staleTime: 60 * 1000, // 1 minute
           },
         },
-      })
+      });
+    }
   );
 
   const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => {
-    return process.env.NEXT_PUBLIC_RPC_URL || clusterApiUrl(network);
+    // #region agent log
+    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || clusterApiUrl(network);
+    if (typeof window !== 'undefined') {
+      fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:42',message:'RPC endpoint configured',data:{rpcUrl,hasEnvVar:!!process.env.NEXT_PUBLIC_RPC_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    }
+    // #endregion
+    return rpcUrl;
   }, [network]);
 
   const wallets = useMemo(
@@ -46,7 +65,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Prioritize WalletConnect for Safari and cross-platform compatibility
       // WalletConnect allows users to connect with any Solana wallet via QR code
       const walletAdapters = [
-        // WalletConnect first - works on all platforms including Safari without extensions
+        // Local burner wallet for development/testing (auto-generates keypair, no extension needed)
+        // Useful for Safari testing without browser extensions
+        new UnsafeBurnerWalletAdapter(),
+        // WalletConnect - works on all platforms including Safari without extensions
         // This enables connection via QR code to any Solana wallet (Phantom, Solflare, etc.)
         new WalletConnectWalletAdapter({
           network: network,
@@ -78,8 +100,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   );
 
   if (!queryClient) {
+    // #region agent log
+    if (typeof window !== 'undefined') {
+      fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:84',message:'QueryClient check failed',data:{queryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    }
+    // #endregion
     throw new Error('QueryClient not initialized');
   }
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:95',message:'WalletProvider render complete',data:{walletsCount:wallets.length,endpoint},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  }, [wallets.length, endpoint]);
+  // #endregion
 
   return (
     <ErrorBoundary>

@@ -9,15 +9,23 @@ import { detectKeyType, detectKeyTypeFromContext, APIKeyType, getGeneratorInfo }
 interface StoreKeyFormProps {
   onClose: () => void;
   existingVault?: any;
+  initialKey?: string;
 }
 
-export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
+export function StoreKeyForm({ onClose, existingVault, initialKey }: StoreKeyFormProps) {
   const { storeKey, isStoring } = useVault();
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(initialKey || '');
   const [keyName, setKeyName] = useState('');
   const [provider, setProvider] = useState<APIKeyType>(APIKeyType.Generic);
   const [timeLocked, setTimeLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Update apiKey when initialKey changes
+  useEffect(() => {
+    if (initialKey) {
+      setApiKey(initialKey);
+    }
+  }, [initialKey]);
 
   // Auto-detect provider when API key changes
   useEffect(() => {
