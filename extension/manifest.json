@@ -9,7 +9,8 @@
     "tabs",
     "scripting",
     "clipboardRead",
-    "clipboardWrite"
+    "clipboardWrite",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"

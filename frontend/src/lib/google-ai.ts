@@ -191,9 +191,9 @@ Provide 3-5 specific recommendations for improving access control security.`;
     // Extract recommendations (usually bullet points or numbered list)
     const recommendations = text
       .split('\n')
-      .filter(line => line.trim().match(/^[-*•\d]/))
-      .map(line => line.replace(/^[-*•\d.\s]+/, '').trim())
-      .filter(line => line.length > 0);
+      .filter((line: string) => line.trim().match(/^[-*•\d]/))
+      .map((line: string) => line.replace(/^[-*•\d.\s]+/, '').trim())
+      .filter((line: string) => line.length > 0);
 
     return recommendations.length > 0
       ? recommendations

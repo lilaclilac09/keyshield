@@ -126,7 +126,7 @@ export function WalletSelector({ onSelect }: WalletSelectorProps) {
             
               <div className="max-h-64 overflow-y-auto mt-2 space-y-1">
                 {wallets.map((w) => {
-                  const isCurrentWallet = connected && wallet && wallet.adapter.name === w.adapter.name;
+                  const isCurrentWallet = !!(connected && wallet && wallet.adapter.name === w.adapter.name);
                   const isSelected = selectedWalletName === w.adapter.name;
                 
                 return (

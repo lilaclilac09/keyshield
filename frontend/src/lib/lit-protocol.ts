@@ -1,20 +1,27 @@
-import * as LitJsSdk from '@lit-protocol/lit-node-client';
+import { LitNodeClient } from '@lit-protocol/lit-node-client';
 import { AccessControlConditions } from '@lit-protocol/types';
+import { LitAccessControlConditionResource } from '@lit-protocol/auth-helpers';
 import { getCiphertext, keyToHash } from './ciphertext-storage';
+import * as LitJsSdk from '@lit-protocol/lit-node-client';
 
-let litClient: LitJsSdk.LitNodeClient | null = null;
+// Lit Ability constant - using the string value from constants
+// The ability value is "access-control-condition-decryption" (lowercase with hyphens)
+const LIT_ABILITY_ACCESS_CONTROL_CONDITION_DECRYPTION = 'access-control-condition-decryption' as const;
+
+let litClient: LitNodeClient | null = null;
 
 /**
  * Initialize Lit Protocol client
  */
-export async function initLitClient(): Promise<LitJsSdk.LitNodeClient> {
+export async function initLitClient(): Promise<LitNodeClient> {
   if (litClient) {
     return litClient;
   }
 
   const network = (process.env.NEXT_PUBLIC_LIT_NETWORK || 'datil') as any;
-  litClient = new LitJsSdk.LitNodeClient({
+  litClient = new LitNodeClient({
     litNetwork: network,
+    debug: false,
   });
 
   await litClient.connect();
@@ -30,6 +37,7 @@ export async function encryptWithLit(
 ): Promise<{ ciphertext: string; dataToEncryptHash: string }> {
   const client = await initLitClient();
 
+  // Use the unified encryptString method
   const { ciphertext, dataToEncryptHash } = await LitJsSdk.encryptString(
     {
       accessControlConditions,
@@ -104,7 +112,67 @@ export async function decryptWithLit(
 }
 
 /**
+ * Generate session signatures for Lit Protocol using Solana wallet
+ * This is the new v4 API method that replaces checkAndSignAuthMessage
+ */
+export async function generateSessionSigs(
+  walletPublicKey: string,
+  signMessage?: (message: Uint8Array) => Promise<Uint8Array>
+): Promise<any> {
+  const client = await initLitClient();
+  const accessConditions = createWalletAccessConditions(walletPublicKey);
+
+  // Use getSessionSigs from lit-node-client (v4 API)
+  const sessionSigs = await client.getSessionSigs({
+    chain: 'solana',
+    expiration: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(), // 24 hours
+    resourceAbilityRequests: [
+      {
+        resource: new LitAccessControlConditionResource(
+          JSON.stringify(accessConditions)
+        ),
+        ability: LIT_ABILITY_ACCESS_CONTROL_CONDITION_DECRYPTION,
+      },
+    ],
+    authNeededCallback: async (params: any) => {
+      // For Solana, we need to sign a message with the wallet
+      if (!signMessage) {
+        // Fallback: try to use window.solana directly
+        const provider = (window as any).solana || (window as any).phantom?.solana;
+        if (!provider || !provider.isConnected) {
+          throw new Error('Wallet not connected. Please connect your Solana wallet.');
+        }
+
+        const message = new TextEncoder().encode(params.statement || 'Lit Protocol Authentication');
+        const response = await provider.signMessage(message, 'utf8');
+        
+        return {
+          sig: Array.from(response.signature),
+          derivedVia: 'solana.signMessage',
+          signedMessage: params.statement || message.toString(),
+          address: provider.publicKey.toString(),
+        };
+      }
+
+      // Use provided signMessage function (wallet adapter returns Uint8Array directly)
+      const message = new TextEncoder().encode(params.statement || 'Lit Protocol Authentication');
+      const signature = await signMessage(message);
+      
+      return {
+        sig: Array.from(signature),
+        derivedVia: 'solana.signMessage',
+        signedMessage: params.statement || message.toString(),
+        address: walletPublicKey,
+      };
+    },
+  });
+
+  return sessionSigs;
+}
+
+/**
  * Create access control conditions for wallet-based access
+ * Updated for Lit Protocol v4 unified conditions format
  */
 export function createWalletAccessConditions(walletAddress: string): AccessControlConditions {
   return [
@@ -118,7 +186,7 @@ export function createWalletAccessConditions(walletAddress: string): AccessContr
         value: walletAddress,
       },
     },
-  ];
+  ] as AccessControlConditions;
 }
 
 /**

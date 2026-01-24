@@ -238,6 +238,73 @@ function setupAutoDetection() {
     }
   });
 
+  // DOM content scanning for exposed API keys in page source
+  let domScanInterval: number | null = null;
+  let lastDomScan = 0;
+  const DOM_SCAN_INTERVAL_MS = 5000; // Scan every 5 seconds
+  const DOM_SCAN_DEBOUNCE_MS = 2000; // Debounce rapid DOM changes
+
+  const performDOMScan = () => {
+    const now = Date.now();
+    if (now - lastDomScan < DOM_SCAN_DEBOUNCE_MS) {
+      return; // Debounce rapid scans
+    }
+    lastDomScan = now;
+
+    try {
+      const domKeys = KeyDetector.detectFromDOMContent();
+      if (domKeys.length > 0) {
+        console.log('[KeyShield] Keys detected from DOM content:', domKeys.length);
+        
+        // Send individual KEY_DETECTED messages for each key
+        domKeys.forEach((detectedKey) => {
+          chrome.runtime.sendMessage({
+            type: 'KEY_DETECTED',
+            provider: detectedKey.provider || 'Unknown',
+            key: detectedKey.key,
+            url: location.href,
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.warn('[KeyShield] Error sending KEY_DETECTED:', chrome.runtime.lastError);
+            }
+          });
+        });
+
+        // Also handle through existing flow
+        handleDetectedKeys(domKeys);
+      }
+    } catch (error) {
+      console.error('[KeyShield] Error in DOM scan:', error);
+    }
+  };
+
+  // Initial DOM scan after page load
+  if (document.readyState === 'complete') {
+    setTimeout(performDOMScan, 2000); // Wait 2s after page load
+  } else {
+    window.addEventListener('load', () => {
+      setTimeout(performDOMScan, 2000);
+    });
+  }
+
+  // Periodic DOM scanning
+  domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
+
+  // Use MutationObserver for dynamic content changes
+  const domObserver = new MutationObserver(() => {
+    // Debounce rapid DOM changes
+    if (domScanInterval) {
+      clearInterval(domScanInterval);
+      domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
+    }
+  });
+
+  domObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: false,
+  });
+
   // Monitor clipboard on paste events (improved)
   document.addEventListener('paste', async (e) => {
     console.log('[KeyShield] Paste event detected');
@@ -303,6 +370,10 @@ function setupAutoDetection() {
     if (inputDebounceTimer) {
       clearTimeout(inputDebounceTimer);
     }
+    if (domScanInterval) {
+      clearInterval(domScanInterval);
+    }
+    domObserver.disconnect();
   });
 }
 

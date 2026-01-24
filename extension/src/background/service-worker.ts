@@ -103,6 +103,10 @@ async function handleMessage(
         await handleSaveMultipleKeys(message.payload, sendResponse);
         break;
 
+      case 'KEY_DETECTED':
+        await handleKeyDetected(message.payload, sendResponse);
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -383,8 +387,12 @@ async function handleSaveDetectedKey(
     const { detectedKey } = payload;
     const walletAddress = currentSession.walletAddress;
 
-    // Determine key type
-    const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName);
+    // Determine key type (use provider if available)
+    const keyType = detectKeyTypeFromKey(
+      detectedKey.key, 
+      detectedKey.fieldName,
+      detectedKey.provider
+    );
 
     // Store key using existing STORE_KEY handler logic
     await handleStoreKey(
@@ -440,7 +448,11 @@ async function handleSaveMultipleKeys(
 
     // Process keys in parallel (batch encryption)
     const savePromises = detectedKeys.map(async (detectedKey) => {
-      const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName);
+      const keyType = detectKeyTypeFromKey(
+        detectedKey.key, 
+        detectedKey.fieldName,
+        detectedKey.provider
+      );
       
       return new Promise((resolve, reject) => {
         handleStoreKey(
@@ -489,14 +501,69 @@ async function handleSaveMultipleKeys(
 }
 
 /**
- * Detect key type from key string and field name
+ * Detect key type from key string, field name, and provider
+ * Returns keyType enum value (0=Generic, 1=GitHub, 2=Helius, 3=GoogleGemini, etc.)
+ * Note: May need to expand enum for additional Solana providers
  */
-function detectKeyTypeFromKey(key: string, fieldName?: string): number {
+function detectKeyTypeFromKey(key: string, fieldName?: string, provider?: string): number {
   const lowerFieldName = (fieldName || '').toLowerCase();
+  const lowerProvider = (provider || '').toLowerCase();
   
-  // Check field name patterns
+  // Priority 1: Use provider name if available (most accurate)
+  if (provider) {
+    // Solana RPC Providers
+    if (lowerProvider.includes('helius')) return 2; // Helius
+    if (lowerProvider.includes('quicknode')) return 4; // QuickNode (new type)
+    if (lowerProvider.includes('alchemy')) return 5; // Alchemy (new type)
+    if (lowerProvider.includes('ankr')) return 6; // Ankr (new type)
+    if (lowerProvider.includes('getblock')) return 7; // GetBlock (new type)
+    if (lowerProvider.includes('chainstack')) return 8; // Chainstack (new type)
+    
+    // Solana Data APIs
+    if (lowerProvider.includes('shyft')) return 9; // Shyft (new type)
+    if (lowerProvider.includes('solanafm')) return 10; // SolanaFM (new type)
+    if (lowerProvider.includes('solscan')) return 11; // Solscan (new type)
+    
+    // Trading/MEV APIs
+    if (lowerProvider.includes('bloxroute')) return 12; // bloXroute (new type)
+    if (lowerProvider.includes('0x')) return 13; // 0x API (new type)
+    
+    // Additional Services
+    if (lowerProvider.includes('moralis')) return 14; // Moralis (new type)
+    if (lowerProvider.includes('tatum')) return 15; // Tatum (new type)
+    
+    // Classic APIs
+    if (lowerProvider.includes('github')) return 1; // GitHub
+    if (lowerProvider.includes('gemini') || lowerProvider.includes('google')) return 3; // Google Gemini
+  }
+  
+  // Priority 2: Check field name patterns
   if (/helius/.test(lowerFieldName)) {
     return 2; // Helius
+  }
+  if (/quicknode/.test(lowerFieldName)) {
+    return 4; // QuickNode
+  }
+  if (/alchemy/.test(lowerFieldName)) {
+    return 5; // Alchemy
+  }
+  if (/ankr/.test(lowerFieldName)) {
+    return 6; // Ankr
+  }
+  if (/getblock/.test(lowerFieldName)) {
+    return 7; // GetBlock
+  }
+  if (/chainstack/.test(lowerFieldName)) {
+    return 8; // Chainstack
+  }
+  if (/shyft/.test(lowerFieldName)) {
+    return 9; // Shyft
+  }
+  if (/bloxroute/.test(lowerFieldName)) {
+    return 12; // bloXroute
+  }
+  if (/0x/.test(lowerFieldName)) {
+    return 13; // 0x API
   }
   if (/gemini/.test(lowerFieldName) || /google.*ai/.test(lowerFieldName)) {
     return 3; // Google Gemini
@@ -505,15 +572,24 @@ function detectKeyTypeFromKey(key: string, fieldName?: string): number {
     return 1; // GitHub
   }
   
-  // Check key patterns
+  // Priority 3: Check key patterns
   if (/^ghp_|^gho_|^ghu_|^ghs_|^ghr_/.test(key)) {
     return 1; // GitHub
   }
   if (/^AIza/.test(key)) {
     return 3; // Google Gemini
   }
+  // UUID format (Helius, 0x API)
+  if (/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(key)) {
+    return 2; // Likely Helius or 0x (default to Helius)
+  }
+  // Long alphanumeric (Helius, QuickNode, etc.)
   if (/^[a-zA-Z0-9]{32,64}$/.test(key) && !/^AIza/.test(key)) {
     return 2; // Helius (heuristic)
+  }
+  // Very long strings (bloXroute)
+  if (/^[A-Za-z0-9+/=]{80,}$/.test(key)) {
+    return 12; // bloXroute
   }
   
   return 0; // Generic
@@ -638,6 +714,78 @@ async function handleGetVaultsByDomain(
     const vaults = await storage.getVaultsByDomain(payload.domain);
     sendResponse({ success: true, vaults });
   } catch (error: any) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle key detected from DOM/content scan
+ * Creates notification and handles save flow
+ */
+async function handleKeyDetected(
+  payload: { provider: string; key: string; url: string },
+  sendResponse: (response: any) => void
+) {
+  try {
+    const { provider, key, url } = payload;
+    const domain = new URL(url).hostname;
+    
+    // Check if we've already notified for this key (prevent spam)
+    const notificationKey = `${provider}:${key.slice(0, 12)}`;
+    const notifiedKeys = await storage.getSetting('notifiedKeys') || [];
+    
+    if (notifiedKeys.includes(notificationKey)) {
+      sendResponse({ success: true, alreadyNotified: true });
+      return;
+    }
+
+    // Mark as notified
+    notifiedKeys.push(notificationKey);
+    // Keep only last 100 to prevent storage bloat
+    if (notifiedKeys.length > 100) {
+      notifiedKeys.shift();
+    }
+    await storage.setSetting('notifiedKeys', notifiedKeys);
+
+    // Determine if this is a high-value trading key
+    const isHighValue = ['bloXroute', '0x API'].includes(provider);
+    const warningText = isHighValue 
+      ? '⚠️ High-value trading key detected — exposure risks MEV/front-running!'
+      : '';
+
+    // Create notification
+    const notificationId = await chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+      title: 'KeyShield: API Key Detected',
+      message: `${provider} key found on ${domain}\n${warningText}\nSave securely?`,
+      buttons: [{ title: 'Save to Vault' }, { title: 'Dismiss' }],
+      priority: isHighValue ? 2 : 1,
+    });
+
+    // Handle notification click
+    chrome.notifications.onButtonClicked.addListener((clickedNotificationId, buttonIndex) => {
+      if (clickedNotificationId === notificationId) {
+        if (buttonIndex === 0) {
+          // Save button clicked - open popup or dashboard
+          chrome.action.openPopup();
+        }
+        // Dismiss button or notification closed
+        chrome.notifications.clear(clickedNotificationId);
+      }
+    });
+
+    chrome.notifications.onClicked.addListener((clickedNotificationId) => {
+      if (clickedNotificationId === notificationId) {
+        // Open popup when notification is clicked
+        chrome.action.openPopup();
+        chrome.notifications.clear(clickedNotificationId);
+      }
+    });
+
+    sendResponse({ success: true, notificationId });
+  } catch (error: any) {
+    console.error('[KeyShield] Error handling key detection:', error);
     sendResponse({ success: false, error: error.message });
   }
 }

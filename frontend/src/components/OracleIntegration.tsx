@@ -7,9 +7,7 @@ import { useVault } from '@/hooks/useVault';
 import { OracleService, OracleRequest, OracleResult } from '@/lib/oracle-service';
 import { getConnection, getProgramId } from '@/lib/solana';
 import { APIKeyType } from '@/lib/api-key-generators';
-import * as LitJsSdk from '@lit-protocol/lit-node-client';
-import { LitAccessControlConditionResource, LitAbility } from '@lit-protocol/auth-helpers';
-import { createWalletAccessConditions } from '@/lib/lit-protocol';
+import { createWalletAccessConditions, generateSessionSigs } from '@/lib/lit-protocol';
 import { Zap, Play, CheckCircle, XCircle, Loader } from 'lucide-react';
 
 export function OracleIntegration() {
@@ -27,31 +25,11 @@ export function OracleIntegration() {
       throw new Error('Wallet not connected or does not support signing');
     }
 
-    const { initLitClient } = await import('@/lib/lit-protocol');
-    const litClient = await initLitClient();
-
-    // Get auth signature with nonce
-    // Lit Protocol v4 requires nonce - generate it from the client
-    const authSig = await LitJsSdk.checkAndSignAuthMessage({
-      chain: 'solana',
-      nonce: await litClient.getLatestBlockhash(),
-    } as any);
-
-    // Create access conditions
-    const accessConditions = createWalletAccessConditions(publicKey.toString());
-
-      // Get session signatures
-      const sessionSigs = await litClient.getSessionSigs({
-        chain: 'solana',
-        expiration: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
-        resourceAbilityRequests: [
-          {
-            resource: new LitAccessControlConditionResource(JSON.stringify(accessConditions)),
-            ability: LitAbility.AccessControlConditionDecryption,
-          },
-        ],
-        authNeededCallback: async () => authSig,
-      });
+    // Use new v4 API for session signatures
+    const sessionSigs = await generateSessionSigs(
+      publicKey.toString(),
+      signMessage
+    );
 
     return sessionSigs;
   };

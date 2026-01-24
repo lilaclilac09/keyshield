@@ -135,7 +135,12 @@ export class OracleService {
         body: request.body ? JSON.stringify(request.body) : undefined,
       });
 
-      const data = await response.json().catch(() => ({ text: await response.text() }));
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        data = { text: await response.text() };
+      }
 
       return {
         success: response.ok,

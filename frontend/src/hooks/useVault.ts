@@ -3,15 +3,15 @@ import { PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
 import { useKeyShieldWallet } from './useWallet';
 import { KeyShieldClient } from '@/lib/keyshield-client';
 import { Vault, StoreKeyParams } from '@/types';
-import { encryptWithLit, createWalletAccessConditions, decryptWithLitFromHash, initLitClient } from '@/lib/lit-protocol';
+import { encryptWithLit, createWalletAccessConditions, decryptWithLitFromHash, generateSessionSigs } from '@/lib/lit-protocol';
 import { getProgramId } from '@/lib/solana';
 import { storeCiphertext, hashToKey } from '@/lib/ciphertext-storage';
 import { detectKeyTypeFromContext, APIKeyType } from '@/lib/api-key-generators';
-import * as LitJsSdk from '@lit-protocol/lit-node-client';
-import { LitAccessControlConditionResource, LitAbility } from '@lit-protocol/auth-helpers';
+import { useWallet } from '@solana/wallet-adapter-react';
 
 export function useVault(owner?: PublicKey) {
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
+  const { signMessage } = useWallet();
   const queryClient = useQueryClient();
   const vaultOwner = owner || publicKey;
 
@@ -126,31 +126,18 @@ export function useVault(owner?: PublicKey) {
         throw new Error('Wallet not connected or vault not found');
       }
 
-      // Get Lit session signatures
-      const litClient = await initLitClient();
-      
-      // Get auth signature with nonce
-      // Lit Protocol v4 requires nonce - generate it from the client
-      const authSig = await LitJsSdk.checkAndSignAuthMessage({
-        chain: 'solana',
-        nonce: await litClient.getLatestBlockhash(),
-      } as any);
+      // Get Lit session signatures using new v4 API
+      if (!signMessage) {
+        throw new Error('Wallet does not support message signing');
+      }
+
+      const sessionSigs = await generateSessionSigs(
+        publicKey.toString(),
+        signMessage
+      );
 
       // Create access conditions
       const accessConditions = createWalletAccessConditions(publicKey.toString());
-
-      // Get session signatures
-      const sessionSigs = await litClient.getSessionSigs({
-        chain: 'solana',
-        expiration: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(), // 24 hours
-        resourceAbilityRequests: [
-          {
-            resource: new LitAccessControlConditionResource(JSON.stringify(accessConditions)),
-            ability: LitAbility.AccessControlConditionDecryption,
-          },
-        ],
-        authNeededCallback: async () => authSig,
-      });
 
       // Decrypt using hash from vault
       const decryptedKey = await decryptWithLitFromHash(

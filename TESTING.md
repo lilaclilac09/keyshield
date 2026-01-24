@@ -206,6 +206,152 @@ npm install
 - ✅ Value is base64-encoded ciphertext
 - ✅ Decryption uses this stored ciphertext
 
+## How to Verify On-Chain Storage
+
+### Quick Verification (Browser Console)
+
+1. Open browser DevTools (F12)
+2. Go to Console tab
+3. Copy and paste the contents of `frontend/public/verify-storage.js`
+4. Press Enter
+
+This will automatically:
+- Check IndexedDB for stored ciphertexts
+- Fetch vault account from on-chain
+- Display account structure
+- Verify `encrypted_key_hash` is 32 bytes (not plaintext)
+- Show owner, timestamp, and access flags
+
+### Command Line Verification
+
+```bash
+# Verify vault account
+./scripts/verify-vault.sh <your-wallet-address>
+
+# Or with custom RPC
+./scripts/verify-vault.sh <wallet-address> <rpc-url>
+```
+
+### Manual Verification Steps
+
+1. **Get Vault PDA**:
+   ```bash
+   # Using solana CLI (requires Node.js script for PDA derivation)
+   # Or use browser console helper
+   ```
+
+2. **View Account on Solana Explorer**:
+   - Go to: https://explorer.solana.com/?cluster=devnet
+   - Search for your wallet address
+   - Find the vault PDA account
+   - View account data
+
+3. **Verify Account Structure**:
+   - Account size: 288 bytes
+   - Bytes 0-7: Discriminator "keyshld\0"
+   - Bytes 8-39: Owner public key
+   - Bytes 40-71: **encrypted_key_hash** (32 bytes - should be hash, NOT plaintext!)
+   - Bytes 72-103: zk_commit
+   - Bytes 104-135: mpc_hash
+   - Bytes 136-143: created_at timestamp
+   - Byte 144: access_flags
+
+4. **Critical Security Check**:
+   - Bytes 40-71 should be a random hash (hex/base64)
+   - Should **NOT** contain readable text like "sk-test-..."
+   - If you see your API key in plaintext, that's a security issue!
+
+## How to Test Decryption
+
+### Step-by-Step Decryption Test
+
+1. **Prerequisites**:
+   - Wallet connected to devnet
+   - At least one key stored
+   - Frontend running
+
+2. **Initiate Decryption**:
+   - Click "Retrieve", "Access Key", or "Reveal" button in UI
+   - Approve wallet signature request (Lit Protocol)
+   - Wait 2-5 seconds for decryption
+
+3. **Verify Decryption**:
+   - Decrypted key should match original
+   - Key should auto-hide after 30 seconds
+   - No errors in browser console
+
+4. **Check Decryption Process**:
+   - Open DevTools → Console
+   - Watch for Lit Protocol messages
+   - Verify session signatures are generated
+   - Check for any errors
+
+### Expected Decryption Flow
+
+```
+User clicks "Reveal"
+  ↓
+Lit Protocol prompts for wallet signature
+  ↓
+Session signatures generated
+  ↓
+Ciphertext retrieved from IndexedDB (using hash from vault)
+  ↓
+Lit Protocol decrypts with session signatures
+  ↓
+Decrypted key displayed (auto-hides after 30s)
+```
+
+### Troubleshooting Decryption Issues
+
+**Issue**: "Ciphertext not found in storage"
+- **Solution**: Verify IndexedDB has the ciphertext. Try storing the key again.
+
+**Issue**: "Access denied" even with correct wallet
+- **Solution**: 
+  - Ensure exact same wallet that stored the key
+  - Check wallet address matches vault owner
+  - Verify Lit Protocol session signatures
+  - Check browser console for errors
+
+**Issue**: Decryption takes too long
+- **Solution**: 
+  - Check Lit Protocol network connection (should be "datil")
+  - Verify RPC endpoint is accessible
+  - Check browser console for timeout errors
+
+## Verifying IndexedDB Storage
+
+### Check IndexedDB Manually
+
+1. Open DevTools (F12)
+2. Go to Application tab (Chrome) or Storage tab (Firefox)
+3. Navigate to: IndexedDB → `keyshield-ciphertext` → `ciphertexts`
+4. You should see entries with:
+   - **Key**: `ciphertext:<hash-base64>` (hash from on-chain vault)
+   - **Value**: Full Lit Protocol ciphertext (1-5 KB base64 string)
+   - **storedAt**: Timestamp when stored
+
+### Verify Ciphertext Matches Hash
+
+1. Get `encrypted_key_hash` from on-chain vault (bytes 40-71)
+2. Convert to base64: `btoa(String.fromCharCode(...hashBytes))`
+3. Check IndexedDB for key: `ciphertext:<hash-base64>`
+4. Should find matching ciphertext entry
+
+### Expected IndexedDB Structure
+
+```
+Database: keyshield-ciphertext
+  Object Store: ciphertexts
+    Key: ciphertext:<hash-base64>
+    Value: {
+      hash: "<hash-base64>",
+      ciphertext: "<full-ciphertext-base64>",
+      storedAt: <timestamp>
+    }
+```
+
 ## Troubleshooting
 
 ### Common Issues
