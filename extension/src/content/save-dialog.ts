@@ -8,10 +8,17 @@
 import { DetectedKey } from '../lib/key-detector';
 
 export interface SaveDialogOptions {
-  detectedKey: DetectedKey;
-  onSave: () => void;
+  detectedKey?: DetectedKey; // For backward compatibility
+  detectedKeys?: DetectedKey[]; // For multi-key selection
+  onSave: (selectedKeys: DetectedKey[]) => void;
   onDismiss: () => void;
   onDontAskAgain?: (domain: string) => void;
+}
+
+interface KeyOption {
+  key: DetectedKey;
+  selected: boolean;
+  provider: string;
 }
 
 export class SaveDialog {
@@ -29,9 +36,16 @@ export class SaveDialog {
       this.hide();
 
       this.options = options;
-      const { detectedKey } = options;
+      
+      // Support both single key (backward compat) and multiple keys
+      const detectedKeys = options.detectedKeys || (options.detectedKey ? [options.detectedKey] : []);
+      
+      if (detectedKeys.length === 0) {
+        console.error('[KeyShield SaveDialog] No keys provided');
+        return;
+      }
 
-      console.log('[KeyShield SaveDialog] Showing dialog for key type:', detectedKey.key.substring(0, 10) + '...');
+      console.log('[KeyShield SaveDialog] Showing dialog for', detectedKeys.length, 'key(s)');
 
     // Create overlay backdrop
     this.overlay = document.createElement('div');
@@ -50,11 +64,12 @@ export class SaveDialog {
     // Create dialog container
     this.dialog = document.createElement('div');
     this.dialog.id = 'keyshield-save-dialog';
+    const dialogWidth = isMultiKey ? '420px' : '380px';
     this.dialog.style.cssText = `
       position: fixed;
       bottom: 20px;
       right: 20px;
-      width: 380px;
+      width: ${dialogWidth};
       max-width: calc(100vw - 40px);
       background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -70,12 +85,74 @@ export class SaveDialog {
       pointer-events: auto;
     `;
 
-    // Get key type info
-    const keyType = this.detectKeyType(detectedKey.key, detectedKey.fieldName);
+    // Build key options with selection state
+    const keyOptions: KeyOption[] = detectedKeys.map(key => ({
+      key,
+      selected: true, // Default to selected
+      provider: this.detectKeyType(key.key, key.fieldName),
+    }));
+
+    // Build dialog HTML
+    const isMultiKey = detectedKeys.length > 1;
+    const dialogTitle = isMultiKey 
+      ? `${detectedKeys.length} API Keys Detected`
+      : 'API Key Detected';
+    
+    const firstKey = detectedKeys[0];
+    const keyType = this.detectKeyType(firstKey.key, firstKey.fieldName);
     const keyTypeInfo = this.getKeyTypeInfo(keyType);
 
-    // Mask key preview (first 4 chars + "...")
-    const maskedKey = this.maskKey(detectedKey.key);
+    // Build key list HTML for multi-select
+    const keyListHTML = isMultiKey
+      ? keyOptions.map((option, index) => {
+          const optionKeyType = this.detectKeyType(option.key.key, option.key.fieldName);
+          const optionKeyTypeInfo = this.getKeyTypeInfo(optionKeyType);
+          const maskedKey = this.maskKey(option.key.key);
+          return `
+            <label style="
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              padding: 12px;
+              background: rgba(255, 255, 255, 0.02);
+              border: 1px solid rgba(255, 255, 255, 0.05);
+              border-radius: 8px;
+              cursor: pointer;
+              transition: background 0.2s, border-color 0.2s;
+              margin-bottom: 8px;
+            " onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+              <input 
+                type="checkbox" 
+                id="keyshield-key-${index}" 
+                data-key-index="${index}"
+                checked
+                style="
+                  width: 18px;
+                  height: 18px;
+                  cursor: pointer;
+                  accent-color: #8b5cf6;
+                "
+              >
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span style="font-size: 16px;">${optionKeyTypeInfo.icon}</span>
+                  <span style="font-size: 13px; font-weight: 600; color: #fff;">${optionKeyTypeInfo.name}</span>
+                  <span style="font-size: 11px; color: #888;">• ${this.formatSource(option.key.source)}</span>
+                </div>
+                <div style="
+                  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+                  font-size: 11px;
+                  color: #aaa;
+                  background: rgba(0, 0, 0, 0.3);
+                  padding: 4px 8px;
+                  border-radius: 4px;
+                  word-break: break-all;
+                ">${maskedKey}</div>
+              </div>
+            </label>
+          `;
+        }).join('')
+      : '';
 
     // Build dialog HTML
     this.dialog.innerHTML = `
@@ -99,12 +176,13 @@ export class SaveDialog {
             font-weight: 600;
             margin-bottom: 4px;
             color: #fff;
-          ">API Key Detected</div>
+          ">${dialogTitle}</div>
+          ${!isMultiKey ? `
           <div style="
             font-size: 12px;
             color: #888;
             margin-bottom: 8px;
-          ">${keyTypeInfo.name} • ${this.formatSource(detectedKey.source)}</div>
+          ">${keyTypeInfo.name} • ${this.formatSource(firstKey.source)}</div>
           <div style="
             font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
             font-size: 11px;
@@ -113,7 +191,8 @@ export class SaveDialog {
             padding: 6px 8px;
             border-radius: 4px;
             word-break: break-all;
-          ">${maskedKey}</div>
+          ">${this.maskKey(firstKey.key)}</div>
+          ` : ''}
         </div>
         <button id="keyshield-dialog-close" style="
           background: transparent;
@@ -126,6 +205,17 @@ export class SaveDialog {
           transition: color 0.2s;
         ">×</button>
       </div>
+      
+      ${isMultiKey ? `
+      <div style="
+        max-height: 300px;
+        overflow-y: auto;
+        margin-bottom: 16px;
+        padding-right: 4px;
+      " id="keyshield-key-list">
+        ${keyListHTML}
+      </div>
+      ` : ''}
 
       <div style="
         font-size: 11px;
@@ -136,7 +226,7 @@ export class SaveDialog {
         border-radius: 6px;
         border: 1px solid rgba(139, 92, 246, 0.2);
       ">
-        <strong style="color: #a78bfa;">KeyShield</strong> detected an API key. Save it to your encrypted vault?
+        <strong style="color: #a78bfa;">KeyShield</strong> detected ${isMultiKey ? `${detectedKeys.length} API keys` : 'an API key'}. ${isMultiKey ? 'Select which ones to save' : 'Save it'} to your encrypted vault?
       </div>
 
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
@@ -151,7 +241,7 @@ export class SaveDialog {
           font-size: 13px;
           cursor: pointer;
           transition: transform 0.2s, box-shadow 0.2s;
-        ">Save to Vault</button>
+        ">${isMultiKey ? 'Save Selected' : 'Save to Vault'}</button>
         <button id="keyshield-dialog-dismiss" style="
           padding: 10px 16px;
           background: rgba(255, 255, 255, 0.05);
@@ -246,11 +336,31 @@ export class SaveDialog {
   private attachEventListeners(): void {
     if (!this.dialog || !this.options) return;
 
+    // Get detected keys (support both single and multi)
+    const detectedKeys = this.options.detectedKeys || (this.options.detectedKey ? [this.options.detectedKey] : []);
+
     // Save button
     const saveBtn = this.dialog.querySelector('#keyshield-dialog-save');
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
-        this.options?.onSave();
+        // Get selected keys
+        const selectedKeys: DetectedKey[] = [];
+        if (detectedKeys.length > 1) {
+          // Multi-select mode: get checked checkboxes
+          detectedKeys.forEach((key, index) => {
+            const checkbox = this.dialog?.querySelector(`#keyshield-key-${index}`) as HTMLInputElement;
+            if (checkbox && checkbox.checked) {
+              selectedKeys.push(key);
+            }
+          });
+        } else if (detectedKeys.length === 1) {
+          // Single key mode
+          selectedKeys.push(detectedKeys[0]);
+        }
+        
+        if (selectedKeys.length > 0) {
+          this.options?.onSave(selectedKeys);
+        }
         this.hide();
       });
       saveBtn.addEventListener('mouseenter', () => {

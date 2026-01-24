@@ -3,10 +3,11 @@ import { PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
 import { useKeyShieldWallet } from './useWallet';
 import { KeyShieldClient } from '@/lib/keyshield-client';
 import { Vault, StoreKeyParams } from '@/types';
-import { encryptWithLit, createWalletAccessConditions } from '@/lib/lit-protocol';
+import { encryptWithLit, createWalletAccessConditions, decryptWithLitFromHash, initLitClient } from '@/lib/lit-protocol';
 import { getProgramId } from '@/lib/solana';
 import { storeCiphertext, hashToKey } from '@/lib/ciphertext-storage';
 import { detectKeyTypeFromContext, APIKeyType } from '@/lib/api-key-generators';
+import * as LitJsSdk from '@lit-protocol/lit-node-client';
 
 export function useVault(owner?: PublicKey) {
   const { publicKey, connection, sendTransaction } = useKeyShieldWallet();
@@ -117,11 +118,62 @@ export function useVault(owner?: PublicKey) {
     },
   });
 
+  // Reveal key mutation (decrypt for temporary display)
+  const revealKeyMutation = useMutation({
+    mutationFn: async (): Promise<string> => {
+      if (!publicKey || !vaultQuery.data) {
+        throw new Error('Wallet not connected or vault not found');
+      }
+
+      // Get Lit session signatures
+      const litClient = await initLitClient();
+      
+      // Get auth signature
+      const authSig = await LitJsSdk.checkAndSignAuthMessage({
+        chain: 'solana',
+      });
+
+      // Create access conditions
+      const accessConditions = createWalletAccessConditions(publicKey.toString());
+
+      // Get session signatures
+      const sessionSigs = await litClient.getSessionSigs({
+        chain: 'solana',
+        expiration: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(), // 24 hours
+        resourceAbilityRequests: [
+          {
+            resource: new LitJsSdk.LitResourceAbilityRequest(
+              new LitJsSdk.LitAccessControlConditionResource(accessConditions),
+              LitJsSdk.LitAbility.AccessControlConditionDecryption
+            ),
+          },
+        ],
+        authNeededCallback: async () => authSig,
+      });
+
+      // Decrypt using hash from vault
+      const decryptedKey = await decryptWithLitFromHash(
+        vaultQuery.data.encryptedKeyHash,
+        accessConditions,
+        sessionSigs
+      );
+
+      return decryptedKey;
+    },
+    onError: (error: any) => {
+      console.error('Reveal key mutation error:', error);
+    },
+  });
+
   return {
     vault: vaultQuery.data,
     isLoading: vaultQuery.isLoading,
     error: vaultQuery.error,
     storeKey: storeKeyMutation.mutate,
     isStoring: storeKeyMutation.isPending,
+    revealKey: revealKeyMutation.mutate,
+    revealedKey: revealKeyMutation.data,
+    isRevealing: revealKeyMutation.isPending,
+    revealError: revealKeyMutation.error,
   };
 }

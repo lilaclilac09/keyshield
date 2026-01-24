@@ -99,6 +99,10 @@ async function handleMessage(
         await handleSaveDetectedKey(message.payload, sendResponse);
         break;
 
+      case 'SAVE_MULTIPLE_KEYS':
+        await handleSaveMultipleKeys(message.payload, sendResponse);
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -393,6 +397,92 @@ async function handleSaveDetectedKey(
       },
       sendResponse
     );
+  } catch (error: any) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle save multiple keys request (batch processing)
+ */
+async function handleSaveMultipleKeys(
+  payload: { detectedKeys: DetectedKey[] },
+  sendResponse: (response: any) => void
+) {
+  try {
+    // Check if wallet is connected
+    if (!currentSession || !currentSession.walletAddress) {
+      sendResponse({ 
+        success: false, 
+        error: 'Wallet not connected',
+        requiresWallet: true 
+      });
+      return;
+    }
+
+    // Check if session is valid
+    if (currentSession.expiresAt < Date.now()) {
+      sendResponse({ 
+        success: false, 
+        error: 'Session expired. Please authenticate again.',
+        requiresAuth: true 
+      });
+      return;
+    }
+
+    const { detectedKeys } = payload;
+    const walletAddress = currentSession.walletAddress;
+
+    if (detectedKeys.length === 0) {
+      sendResponse({ success: false, error: 'No keys selected' });
+      return;
+    }
+
+    // Process keys in parallel (batch encryption)
+    const savePromises = detectedKeys.map(async (detectedKey) => {
+      const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName);
+      
+      return new Promise((resolve, reject) => {
+        handleStoreKey(
+          {
+            apiKey: detectedKey.key,
+            keyName: `${detectedKey.source}-${detectedKey.fieldName || 'unknown'}-${detectedKey.domain}`,
+            walletAddress,
+            keyType,
+            domain: detectedKey.domain,
+          },
+          (response) => {
+            if (response.success) {
+              resolve(response);
+            } else {
+              reject(new Error(response.error || 'Failed to save key'));
+            }
+          }
+        );
+      });
+    });
+
+    // Wait for all saves to complete
+    const results = await Promise.allSettled(savePromises);
+    
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+
+    if (failed > 0) {
+      sendResponse({ 
+        success: true, 
+        partial: true,
+        saved: successful,
+        failed: failed,
+        message: `Saved ${successful} of ${detectedKeys.length} keys${failed > 0 ? ` (${failed} failed)` : ''}`
+      });
+    } else {
+      sendResponse({ 
+        success: true, 
+        saved: successful,
+        message: `Successfully saved ${successful} key(s)`
+      });
+    }
   } catch (error: any) {
     sendResponse({ success: false, error: error.message });
   }

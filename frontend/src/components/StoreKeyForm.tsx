@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useVault } from '@/hooks/useVault';
 import { showToast } from './ErrorToast';
 import { X, Key, Lock, Clock } from 'lucide-react';
+import { detectKeyType, detectKeyTypeFromContext, APIKeyType, getGeneratorInfo } from '@/lib/api-key-generators';
 
 interface StoreKeyFormProps {
   onClose: () => void;
@@ -14,8 +15,23 @@ export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
   const { storeKey, isStoring } = useVault();
   const [apiKey, setApiKey] = useState('');
   const [keyName, setKeyName] = useState('');
+  const [provider, setProvider] = useState<APIKeyType>(APIKeyType.Generic);
   const [timeLocked, setTimeLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-detect provider when API key changes
+  useEffect(() => {
+    if (apiKey.trim()) {
+      const detected = detectKeyType(apiKey);
+      setProvider(detected);
+      
+      // Auto-fill key name if empty
+      if (!keyName && detected !== APIKeyType.Generic) {
+        const info = getGeneratorInfo(detected);
+        setKeyName(info.name);
+      }
+    }
+  }, [apiKey]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +90,28 @@ export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as APIKeyType)}
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
+            >
+              <option value={APIKeyType.Generic}>Generic</option>
+              <option value={APIKeyType.Helius}>Helius</option>
+              <option value={APIKeyType.OpenAI}>OpenAI</option>
+              <option value={APIKeyType.GitHub}>GitHub</option>
+              <option value={APIKeyType.GoogleGemini}>Google Gemini</option>
+              <option value={APIKeyType.Stripe}>Stripe</option>
+              <option value={APIKeyType.AWS}>AWS</option>
+            </select>
+            {provider !== APIKeyType.Generic && (
+              <p className="text-xs text-gray-500 mt-1">
+                Auto-detected from key pattern
+              </p>
+            )}
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2">Key Name</label>
             <input

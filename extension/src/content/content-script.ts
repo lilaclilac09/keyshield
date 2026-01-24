@@ -169,28 +169,25 @@ function handleDetectedKeys(detected: DetectedKey[]): void {
       return;
     }
 
-    // Get the first detected key (or most relevant)
-    const primaryKey = newKeys[0];
-
-    // Show save dialog
+    // Show save dialog with all detected keys (for multi-select)
     try {
-      console.log('[KeyShield] Showing save dialog for key:', primaryKey.key.substring(0, 10) + '...');
+      console.log('[KeyShield] Showing save dialog for', newKeys.length, 'detected key(s)');
       saveDialog.show({
-        detectedKey: primaryKey,
-        onSave: () => {
-          console.log('[KeyShield] Save button clicked');
-          // Send save request to background
+        detectedKeys: newKeys,
+        onSave: (selectedKeys: DetectedKey[]) => {
+          console.log('[KeyShield] Save button clicked for', selectedKeys.length, 'selected key(s)');
+          // Send batch save request to background
           chrome.runtime.sendMessage({
-            type: 'SAVE_DETECTED_KEY',
-            payload: { detectedKey: primaryKey },
+            type: 'SAVE_MULTIPLE_KEYS',
+            payload: { detectedKeys: selectedKeys },
           }, (response) => {
             if (chrome.runtime.lastError) {
-              console.error('[KeyShield] Error saving key:', chrome.runtime.lastError);
+              console.error('[KeyShield] Error saving keys:', chrome.runtime.lastError);
             } else if (response && !response.success) {
               console.error('[KeyShield] Save failed:', response.error);
-              alert(`Failed to save key: ${response.error}`);
+              alert(`Failed to save keys: ${response.error}`);
             } else {
-              console.log('[KeyShield] Key saved successfully');
+              console.log('[KeyShield] Keys saved successfully');
             }
           });
         },

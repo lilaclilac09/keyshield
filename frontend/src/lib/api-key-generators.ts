@@ -9,6 +9,9 @@ export enum APIKeyType {
   GitHub = 'github',
   Helius = 'helius',
   GoogleGemini = 'google-gemini',
+  OpenAI = 'openai',
+  Stripe = 'stripe',
+  AWS = 'aws',
   Generic = 'generic',
 }
 
@@ -72,6 +75,27 @@ export function getGeneratorInfo(type: APIKeyType): APIKeyGenerator {
         generateUrl: 'https://makersuite.google.com/app/apikey',
         instructions: '1. Sign in with your Google account\n2. Click "Create API Key"\n3. Copy the generated key',
       };
+    case APIKeyType.OpenAI:
+      return {
+        name: 'OpenAI API Key',
+        type: APIKeyType.OpenAI,
+        generateUrl: 'https://platform.openai.com/api-keys',
+        instructions: '1. Sign in to OpenAI platform\n2. Navigate to API Keys section\n3. Create a new secret key\n4. Copy the key immediately',
+      };
+    case APIKeyType.Stripe:
+      return {
+        name: 'Stripe API Key',
+        type: APIKeyType.Stripe,
+        generateUrl: 'https://dashboard.stripe.com/apikeys',
+        instructions: '1. Sign in to Stripe dashboard\n2. Navigate to Developers > API keys\n3. Create or reveal secret key\n4. Copy the key',
+      };
+    case APIKeyType.AWS:
+      return {
+        name: 'AWS Access Key',
+        type: APIKeyType.AWS,
+        generateUrl: 'https://console.aws.amazon.com/iam/home#/security_credentials',
+        instructions: '1. Sign in to AWS Console\n2. Navigate to IAM > Security credentials\n3. Create access key\n4. Copy the access key ID and secret',
+      };
     default:
       return {
         name: 'Generic API Key',
@@ -91,6 +115,21 @@ export function detectKeyType(key: string): APIKeyType {
   // GitHub tokens
   if (/^ghp_/.test(trimmed) || /^gho_/.test(trimmed) || /^ghu_/.test(trimmed) || /^ghs_/.test(trimmed) || /^ghr_/.test(trimmed)) {
     return APIKeyType.GitHub;
+  }
+  
+  // OpenAI keys (sk- prefix)
+  if (/^sk-[a-zA-Z0-9]{32,}$/.test(trimmed)) {
+    return APIKeyType.OpenAI;
+  }
+  
+  // Stripe keys (pk_/sk_ prefixes)
+  if (/^pk_[a-zA-Z0-9]{24,}$/.test(trimmed) || /^sk_live_[a-zA-Z0-9]{24,}$/.test(trimmed) || /^pk_live_[a-zA-Z0-9]{24,}$/.test(trimmed)) {
+    return APIKeyType.Stripe;
+  }
+  
+  // AWS access key IDs
+  if (/^AKIA[0-9A-Z]{16}$/.test(trimmed)) {
+    return APIKeyType.AWS;
   }
   
   // Google API keys (includes Gemini)
@@ -125,6 +164,18 @@ export function detectKeyTypeFromContext(fieldName: string, key: string): APIKey
   
   if (/github/.test(lowerFieldName)) {
     return APIKeyType.GitHub;
+  }
+  
+  if (/openai/.test(lowerFieldName) || /open.*ai/.test(lowerFieldName)) {
+    return APIKeyType.OpenAI;
+  }
+  
+  if (/stripe/.test(lowerFieldName)) {
+    return APIKeyType.Stripe;
+  }
+  
+  if (/aws/.test(lowerFieldName) || /amazon/.test(lowerFieldName)) {
+    return APIKeyType.AWS;
   }
   
   // Fall back to key pattern detection
