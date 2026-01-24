@@ -104,7 +104,10 @@ async function handleMessage(
         break;
 
       case 'KEY_DETECTED':
-        await handleKeyDetected(message.payload, sendResponse);
+        await handleKeyDetected(
+          { provider: message.provider, key: message.key, url: message.url },
+          sendResponse
+        );
         break;
 
       default:
@@ -719,8 +722,16 @@ async function handleGetVaultsByDomain(
 }
 
 /**
+ * Get dashboard URL from storage (default: localhost:3000 for dev)
+ */
+async function getDashboardUrl(): Promise<string> {
+  const result = await chrome.storage.local.get(['dashboardUrl']);
+  return result.dashboardUrl || 'http://localhost:3000';
+}
+
+/**
  * Handle key detected from DOM/content scan
- * Creates notification and handles save flow
+ * Creates notification and opens dashboard for save/reveal
  */
 async function handleKeyDetected(
   payload: { provider: string; key: string; url: string },
@@ -729,6 +740,7 @@ async function handleKeyDetected(
   try {
     const { provider, key, url } = payload;
     const domain = new URL(url).hostname;
+    const preview = key.slice(0, 20) + '...';
     
     // Check if we've already notified for this key (prevent spam)
     const notificationKey = `${provider}:${key.slice(0, 12)}`;
@@ -750,35 +762,36 @@ async function handleKeyDetected(
     // Determine if this is a high-value trading key
     const isHighValue = ['bloXroute', '0x API'].includes(provider);
     const warningText = isHighValue 
-      ? '⚠️ High-value trading key detected — exposure risks MEV/front-running!'
+      ? ' High-value trading key — exposure risks MEV/front-running. Open dashboard to save securely.'
       : '';
 
-    // Create notification
-    const notificationId = await chrome.notifications.create({
+    // Create notification (create returns notification ID string in MV3)
+    const notificationId = (await chrome.notifications.create({
       type: 'basic',
       iconUrl: chrome.runtime.getURL('icons/icon48.png'),
-      title: 'KeyShield: API Key Detected',
-      message: `${provider} key found on ${domain}\n${warningText}\nSave securely?`,
-      buttons: [{ title: 'Save to Vault' }, { title: 'Dismiss' }],
+      title: 'KeyShield: API Key Detected!',
+      message: `${provider} key (${preview}) found on ${domain}.${warningText}`,
+      buttons: [{ title: 'Open Dashboard to Save' }],
       priority: isHighValue ? 2 : 1,
-    });
+    })) as string;
 
-    // Handle notification click
+    const openDashboard = async () => {
+      const dashboardUrl = await getDashboardUrl();
+      chrome.tabs.create({ url: dashboardUrl });
+    };
+
+    // Handle notification button click
     chrome.notifications.onButtonClicked.addListener((clickedNotificationId, buttonIndex) => {
-      if (clickedNotificationId === notificationId) {
-        if (buttonIndex === 0) {
-          // Save button clicked - open popup or dashboard
-          chrome.action.openPopup();
-        }
-        // Dismiss button or notification closed
+      if (clickedNotificationId === notificationId && buttonIndex === 0) {
+        openDashboard();
         chrome.notifications.clear(clickedNotificationId);
       }
     });
 
+    // Handle notification body click (same action as button)
     chrome.notifications.onClicked.addListener((clickedNotificationId) => {
       if (clickedNotificationId === notificationId) {
-        // Open popup when notification is clicked
-        chrome.action.openPopup();
+        openDashboard();
         chrome.notifications.clear(clickedNotificationId);
       }
     });

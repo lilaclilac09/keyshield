@@ -6,28 +6,113 @@
  * Key Detection System
  * Detects API keys from form fields, clipboard, and screen content
  */
-// Common API key patterns
-const KEY_PATTERNS = [
-    /^sk-[a-zA-Z0-9]{32,}$/, // Stripe, OpenAI secret keys
-    /^pk_[a-zA-Z0-9]{32,}$/, // Stripe public keys
-    /^sk_live_[a-zA-Z0-9]{24,}$/, // Stripe live keys
-    /^pk_live_[a-zA-Z0-9]{24,}$/, // Stripe live public keys
-    /^[a-zA-Z0-9]{32,}$/, // Generic long keys (32+ chars)
-    /^Bearer\s+[a-zA-Z0-9\-_\.]+$/, // Bearer tokens
-    /^x-api-key:\s*[a-zA-Z0-9]+$/i, // API key headers
-    /^ghp_[a-zA-Z0-9]{36}$/, // GitHub personal access tokens
-    /^gho_[a-zA-Z0-9]{36}$/, // GitHub OAuth tokens
-    /^ghu_[a-zA-Z0-9]{36}$/, // GitHub user-to-server tokens
-    /^ghs_[a-zA-Z0-9]{36}$/, // GitHub server-to-server tokens
-    /^ghr_[a-zA-Z0-9]{76}$/, // GitHub refresh tokens
-    /^AKIA[0-9A-Z]{16}$/, // AWS access key IDs
-    /^AIza[0-9A-Za-z\-_]{35}$/, // Google API keys (includes Gemini)
-    /^ya29\.[0-9A-Za-z\-_]+$/, // Google OAuth tokens
-    // Helius API keys - typically 32-64 character alphanumeric strings
-    // Helius keys are often base64-like or hex strings
-    /^[a-zA-Z0-9]{32,64}$/, // Helius API keys (32-64 chars, alphanumeric)
-    // Google Gemini API keys - same pattern as Google API keys but we'll detect by field name
-    // The AIza pattern already covers this, but we'll add field name detection
+// Solana Ecosystem API Patterns (Priority Order)
+const API_PATTERNS = [
+    // ===== TIER 1: Solana RPC & Infrastructure Providers =====
+    {
+        name: 'Helius',
+        regex: /(?:api-key=|X-API-Key:\s*)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})/i,
+        priority: 10
+    },
+    {
+        name: 'QuickNode',
+        regex: /\.(?:quicknode\.pro|quicknode\.com)\/([A-Za-z0-9]{30,})/i,
+        priority: 9
+    },
+    {
+        name: 'Alchemy',
+        regex: /\.(?:alchemy\.com|alchemyapi\.io)\/v2\/([A-Za-z0-9_-]{32,})/i,
+        priority: 9
+    },
+    {
+        name: 'Ankr',
+        regex: /(?:ankr\.com\/([A-Za-z0-9_]{40,})|X-API-Key:\s*([A-Za-z0-9_]{40,}))/i,
+        priority: 8
+    },
+    {
+        name: 'GetBlock',
+        regex: /Authorization:\s*Bearer\s+([A-Za-z0-9]{40,})/i,
+        priority: 8
+    },
+    {
+        name: 'Chainstack',
+        regex: /\.(?:chainstack\.com|chainstacklabs\.com)\/([A-Za-z0-9]{32,})/i,
+        priority: 8
+    },
+    // ===== TIER 2: Solana Data & Analytics APIs =====
+    {
+        name: 'Shyft',
+        regex: /x-api-key[:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 7
+    },
+    {
+        name: 'SolanaFM',
+        regex: /(?:solanafm\.com|api\.solanafm\.com).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 6
+    },
+    {
+        name: 'Solscan',
+        regex: /(?:solscan\.io|api\.solscan\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 6
+    },
+    // ===== TIER 3: Trading & MEV Protection APIs =====
+    {
+        name: 'bloXroute',
+        regex: /(?:Authorization|X-Authorization):\s*([A-Za-z0-9+/=]{80,})/i,
+        priority: 9 // High priority - high-value trading key
+    },
+    {
+        name: '0x API',
+        regex: /(?:0x-api-key|X-API-Key):\s*([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})/i,
+        priority: 8 // High priority - trading/DeFi key
+    },
+    // ===== TIER 4: Additional Solana Services =====
+    {
+        name: 'Moralis',
+        regex: /(?:moralis\.io|api\.moralis\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 5
+    },
+    {
+        name: 'Tatum',
+        regex: /(?:tatum\.io|api\.tatum\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 5
+    },
+    // ===== Classic Dev APIs (Still Important) =====
+    {
+        name: 'OpenAI/Anthropic/Groq',
+        regex: /sk-(?:live|test|proj|ant)_[A-Za-z0-9]{48}/i,
+        priority: 4
+    },
+    {
+        name: 'GitHub PAT',
+        regex: /gh[pousr]_[A-Za-z0-9]{36,}/i,
+        priority: 4
+    },
+    {
+        name: 'Stripe',
+        regex: /[rs]k_(?:live|test)_[A-Za-z0-9]{24,}/i,
+        priority: 3
+    },
+    {
+        name: 'AWS',
+        regex: /AKIA[0-9A-Z]{16}/i,
+        priority: 3
+    },
+    {
+        name: 'Google Cloud',
+        regex: /AIza[0-9A-Za-z_-]{35}/i,
+        priority: 3
+    },
+    {
+        name: 'Twilio',
+        regex: /SK[0-9a-fA-F]{32}/i,
+        priority: 2
+    },
+    {
+        name: 'Cloudflare',
+        regex: /v1\/[0-9a-f]{40}/i,
+        priority: 2
+    },
 ];
 // Field name patterns that likely contain API keys
 const KEY_FIELD_PATTERNS = [
@@ -40,10 +125,23 @@ const KEY_FIELD_PATTERNS = [
     /auth[_-]?token/i,
     /bearer[_-]?token/i,
     /private[_-]?key/i,
-    // Helius-specific patterns
+    // Solana RPC providers
     /helius.*api.*key/i,
     /helius.*key/i,
     /helius.*token/i,
+    /quicknode.*api.*key/i,
+    /quicknode.*key/i,
+    /alchemy.*api.*key/i,
+    /ankr.*api.*key/i,
+    /getblock.*api.*key/i,
+    /chainstack.*api.*key/i,
+    // Solana data APIs
+    /shyft.*api.*key/i,
+    /solanafm.*api.*key/i,
+    /solscan.*api.*key/i,
+    // Trading/MEV APIs
+    /bloxroute.*api.*key/i,
+    /0x.*api.*key/i,
     // Google Gemini/Google AI patterns
     /gemini.*api.*key/i,
     /google.*ai.*key/i,
@@ -66,8 +164,25 @@ class KeyDetector {
             const fieldName = input.name || input.id || input.className;
             const isKeyField = KEY_FIELD_PATTERNS.some((pattern) => pattern.test(fieldName));
             // Check if value matches key patterns
-            const matchesPattern = KEY_PATTERNS.some((pattern) => pattern.test(value));
-            if (isKeyField || matchesPattern) {
+            let matchedProvider;
+            for (const pattern of API_PATTERNS) {
+                const match = value.match(pattern.regex);
+                if (match) {
+                    matchedProvider = pattern.name;
+                    detected.push({
+                        key: match[1] || match[0],
+                        source: 'form',
+                        fieldName,
+                        fieldType: input.type || 'text',
+                        domain,
+                        timestamp: Date.now(),
+                        provider: matchedProvider,
+                    });
+                    break;
+                }
+            }
+            // Fallback: if no pattern matched but field name suggests API key
+            if (!matchedProvider && isKeyField && value.length >= 16) {
                 detected.push({
                     key: value,
                     source: 'form',
@@ -90,13 +205,15 @@ class KeyDetector {
                 return null;
             const trimmed = text.trim();
             // Check if clipboard content matches key patterns
-            for (const pattern of KEY_PATTERNS) {
-                if (pattern.test(trimmed)) {
+            for (const pattern of API_PATTERNS) {
+                const match = trimmed.match(pattern.regex);
+                if (match) {
                     return {
-                        key: trimmed,
+                        key: match[1] || match[0],
                         source: 'clipboard',
                         domain: window.location.hostname,
                         timestamp: Date.now(),
+                        provider: pattern.name,
                     };
                 }
             }
@@ -106,13 +223,15 @@ class KeyDetector {
                 const match = line.match(/^\s*[A-Z_]+[=:]\s*(.+)$/);
                 if (match) {
                     const value = match[1].trim().replace(/['"]/g, '');
-                    for (const pattern of KEY_PATTERNS) {
-                        if (pattern.test(value)) {
+                    for (const pattern of API_PATTERNS) {
+                        const keyMatch = value.match(pattern.regex);
+                        if (keyMatch) {
                             return {
-                                key: value,
+                                key: keyMatch[1] || keyMatch[0],
                                 source: 'clipboard',
                                 domain: window.location.hostname,
                                 timestamp: Date.now(),
+                                provider: pattern.name,
                             };
                         }
                     }
@@ -136,13 +255,15 @@ class KeyDetector {
             if (!trimmed || trimmed.length < 16)
                 continue;
             // Check direct pattern matches
-            for (const pattern of KEY_PATTERNS) {
-                if (pattern.test(trimmed)) {
+            for (const pattern of API_PATTERNS) {
+                const match = trimmed.match(pattern.regex);
+                if (match) {
                     detected.push({
-                        key: trimmed,
+                        key: match[1] || match[0],
                         source: 'ocr',
                         domain,
                         timestamp: Date.now(),
+                        provider: pattern.name,
                     });
                     break;
                 }
@@ -151,13 +272,15 @@ class KeyDetector {
             const keyValueMatch = trimmed.match(/^\s*[A-Z_]+[=:]\s*(.+)$/);
             if (keyValueMatch) {
                 const value = keyValueMatch[1].trim().replace(/['"]/g, '');
-                for (const pattern of KEY_PATTERNS) {
-                    if (pattern.test(value)) {
+                for (const pattern of API_PATTERNS) {
+                    const match = value.match(pattern.regex);
+                    if (match) {
                         detected.push({
-                            key: value,
+                            key: match[1] || match[0],
                             source: 'ocr',
                             domain,
                             timestamp: Date.now(),
+                            provider: pattern.name,
                         });
                         break;
                     }
@@ -222,12 +345,54 @@ class KeyDetector {
         };
     }
     /**
+     * Detect keys from DOM content (innerHTML and innerText)
+     * Scans page source for exposed API keys in code snippets
+     */
+    static detectFromDOMContent() {
+        const detected = [];
+        const domain = window.location.hostname;
+        const alerted = new Set();
+        try {
+            // Scan visible text content
+            const textContent = document.body.innerText || '';
+            // Scan HTML source (catches code in <script> tags, attributes, etc.)
+            const htmlContent = document.body.innerHTML || '';
+            // Combine both for comprehensive scanning
+            const combinedContent = textContent + '\n' + htmlContent;
+            // Check each API pattern
+            for (const pattern of API_PATTERNS) {
+                const matches = [...combinedContent.matchAll(new RegExp(pattern.regex.source, 'gi'))];
+                for (const match of matches) {
+                    const key = match[1] || match[0];
+                    if (!key || key.length < 16)
+                        continue;
+                    // Create unique ID to prevent duplicate alerts
+                    const keyId = `${pattern.name}:${key.slice(0, 12)}`;
+                    if (!alerted.has(keyId)) {
+                        alerted.add(keyId);
+                        detected.push({
+                            key: key.trim(),
+                            source: 'dom',
+                            domain,
+                            timestamp: Date.now(),
+                            provider: pattern.name,
+                        });
+                    }
+                }
+            }
+        }
+        catch (error) {
+            console.warn('[KeyShield] Error scanning DOM content:', error);
+        }
+        return detected;
+    }
+    /**
      * Validate if a string is likely an API key
      */
     static isValidKey(key) {
         if (!key || key.length < 16)
             return false;
-        return KEY_PATTERNS.some((pattern) => pattern.test(key.trim()));
+        return API_PATTERNS.some((pattern) => pattern.regex.test(key.trim()));
     }
 }
 
@@ -409,8 +574,13 @@ class SaveDialog {
             // Remove existing dialog if any
             this.hide();
             this.options = options;
-            const { detectedKey } = options;
-            console.log('[KeyShield SaveDialog] Showing dialog for key type:', detectedKey.key.substring(0, 10) + '...');
+            // Support both single key (backward compat) and multiple keys
+            const detectedKeys = options.detectedKeys || (options.detectedKey ? [options.detectedKey] : []);
+            if (detectedKeys.length === 0) {
+                console.error('[KeyShield SaveDialog] No keys provided');
+                return;
+            }
+            console.log('[KeyShield SaveDialog] Showing dialog for', detectedKeys.length, 'key(s)');
             // Create overlay backdrop
             this.overlay = document.createElement('div');
             this.overlay.id = 'keyshield-save-dialog-overlay';
@@ -427,11 +597,12 @@ class SaveDialog {
             // Create dialog container
             this.dialog = document.createElement('div');
             this.dialog.id = 'keyshield-save-dialog';
+            const dialogWidth = isMultiKey ? '420px' : '380px';
             this.dialog.style.cssText = `
       position: fixed;
       bottom: 20px;
       right: 20px;
-      width: 380px;
+      width: ${dialogWidth};
       max-width: calc(100vw - 40px);
       background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -446,11 +617,71 @@ class SaveDialog {
       transition: transform 0.3s ease-out, opacity 0.3s ease-out;
       pointer-events: auto;
     `;
-            // Get key type info
-            const keyType = this.detectKeyType(detectedKey.key, detectedKey.fieldName);
+            // Build key options with selection state
+            const keyOptions = detectedKeys.map(key => ({
+                key,
+                selected: true, // Default to selected
+                provider: this.detectKeyType(key.key, key.fieldName),
+            }));
+            // Build dialog HTML
+            const isMultiKey = detectedKeys.length > 1;
+            const dialogTitle = isMultiKey
+                ? `${detectedKeys.length} API Keys Detected`
+                : 'API Key Detected';
+            const firstKey = detectedKeys[0];
+            const keyType = this.detectKeyType(firstKey.key, firstKey.fieldName);
             const keyTypeInfo = this.getKeyTypeInfo(keyType);
-            // Mask key preview (first 4 chars + "...")
-            const maskedKey = this.maskKey(detectedKey.key);
+            // Build key list HTML for multi-select
+            const keyListHTML = isMultiKey
+                ? keyOptions.map((option, index) => {
+                    const optionKeyType = this.detectKeyType(option.key.key, option.key.fieldName);
+                    const optionKeyTypeInfo = this.getKeyTypeInfo(optionKeyType);
+                    const maskedKey = this.maskKey(option.key.key);
+                    return `
+            <label style="
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              padding: 12px;
+              background: rgba(255, 255, 255, 0.02);
+              border: 1px solid rgba(255, 255, 255, 0.05);
+              border-radius: 8px;
+              cursor: pointer;
+              transition: background 0.2s, border-color 0.2s;
+              margin-bottom: 8px;
+            " onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+              <input 
+                type="checkbox" 
+                id="keyshield-key-${index}" 
+                data-key-index="${index}"
+                checked
+                style="
+                  width: 18px;
+                  height: 18px;
+                  cursor: pointer;
+                  accent-color: #8b5cf6;
+                "
+              >
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span style="font-size: 16px;">${optionKeyTypeInfo.icon}</span>
+                  <span style="font-size: 13px; font-weight: 600; color: #fff;">${optionKeyTypeInfo.name}</span>
+                  <span style="font-size: 11px; color: #888;">• ${this.formatSource(option.key.source)}</span>
+                </div>
+                <div style="
+                  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+                  font-size: 11px;
+                  color: #aaa;
+                  background: rgba(0, 0, 0, 0.3);
+                  padding: 4px 8px;
+                  border-radius: 4px;
+                  word-break: break-all;
+                ">${maskedKey}</div>
+              </div>
+            </label>
+          `;
+                }).join('')
+                : '';
             // Build dialog HTML
             this.dialog.innerHTML = `
       <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
@@ -473,12 +704,13 @@ class SaveDialog {
             font-weight: 600;
             margin-bottom: 4px;
             color: #fff;
-          ">API Key Detected</div>
+          ">${dialogTitle}</div>
+          ${!isMultiKey ? `
           <div style="
             font-size: 12px;
             color: #888;
             margin-bottom: 8px;
-          ">${keyTypeInfo.name} • ${this.formatSource(detectedKey.source)}</div>
+          ">${keyTypeInfo.name} • ${this.formatSource(firstKey.source)}</div>
           <div style="
             font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
             font-size: 11px;
@@ -487,7 +719,8 @@ class SaveDialog {
             padding: 6px 8px;
             border-radius: 4px;
             word-break: break-all;
-          ">${maskedKey}</div>
+          ">${this.maskKey(firstKey.key)}</div>
+          ` : ''}
         </div>
         <button id="keyshield-dialog-close" style="
           background: transparent;
@@ -500,6 +733,17 @@ class SaveDialog {
           transition: color 0.2s;
         ">×</button>
       </div>
+      
+      ${isMultiKey ? `
+      <div style="
+        max-height: 300px;
+        overflow-y: auto;
+        margin-bottom: 16px;
+        padding-right: 4px;
+      " id="keyshield-key-list">
+        ${keyListHTML}
+      </div>
+      ` : ''}
 
       <div style="
         font-size: 11px;
@@ -510,7 +754,7 @@ class SaveDialog {
         border-radius: 6px;
         border: 1px solid rgba(139, 92, 246, 0.2);
       ">
-        <strong style="color: #a78bfa;">KeyShield</strong> detected an API key. Save it to your encrypted vault?
+        <strong style="color: #a78bfa;">KeyShield</strong> detected ${isMultiKey ? `${detectedKeys.length} API keys` : 'an API key'}. ${isMultiKey ? 'Select which ones to save' : 'Save it'} to your encrypted vault?
       </div>
 
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
@@ -525,7 +769,7 @@ class SaveDialog {
           font-size: 13px;
           cursor: pointer;
           transition: transform 0.2s, box-shadow 0.2s;
-        ">Save to Vault</button>
+        ">${isMultiKey ? 'Save Selected' : 'Save to Vault'}</button>
         <button id="keyshield-dialog-dismiss" style="
           padding: 10px 16px;
           background: rgba(255, 255, 255, 0.05);
@@ -613,11 +857,30 @@ class SaveDialog {
     attachEventListeners() {
         if (!this.dialog || !this.options)
             return;
+        // Get detected keys (support both single and multi)
+        const detectedKeys = this.options.detectedKeys || (this.options.detectedKey ? [this.options.detectedKey] : []);
         // Save button
         const saveBtn = this.dialog.querySelector('#keyshield-dialog-save');
         if (saveBtn) {
             saveBtn.addEventListener('click', () => {
-                this.options?.onSave();
+                // Get selected keys
+                const selectedKeys = [];
+                if (detectedKeys.length > 1) {
+                    // Multi-select mode: get checked checkboxes
+                    detectedKeys.forEach((key, index) => {
+                        const checkbox = this.dialog?.querySelector(`#keyshield-key-${index}`);
+                        if (checkbox && checkbox.checked) {
+                            selectedKeys.push(key);
+                        }
+                    });
+                }
+                else if (detectedKeys.length === 1) {
+                    // Single key mode
+                    selectedKeys.push(detectedKeys[0]);
+                }
+                if (selectedKeys.length > 0) {
+                    this.options?.onSave(selectedKeys);
+                }
                 this.hide();
             });
             saveBtn.addEventListener('mouseenter', () => {
@@ -889,29 +1152,27 @@ function handleDetectedKeys(detected) {
         if (!shouldShow) {
             return;
         }
-        // Get the first detected key (or most relevant)
-        const primaryKey = newKeys[0];
-        // Show save dialog
+        // Show save dialog with all detected keys (for multi-select)
         try {
-            console.log('[KeyShield] Showing save dialog for key:', primaryKey.key.substring(0, 10) + '...');
+            console.log('[KeyShield] Showing save dialog for', newKeys.length, 'detected key(s)');
             saveDialog.show({
-                detectedKey: primaryKey,
-                onSave: () => {
-                    console.log('[KeyShield] Save button clicked');
-                    // Send save request to background
+                detectedKeys: newKeys,
+                onSave: (selectedKeys) => {
+                    console.log('[KeyShield] Save button clicked for', selectedKeys.length, 'selected key(s)');
+                    // Send batch save request to background
                     chrome.runtime.sendMessage({
-                        type: 'SAVE_DETECTED_KEY',
-                        payload: { detectedKey: primaryKey },
+                        type: 'SAVE_MULTIPLE_KEYS',
+                        payload: { detectedKeys: selectedKeys },
                     }, (response) => {
                         if (chrome.runtime.lastError) {
-                            console.error('[KeyShield] Error saving key:', chrome.runtime.lastError);
+                            console.error('[KeyShield] Error saving keys:', chrome.runtime.lastError);
                         }
                         else if (response && !response.success) {
                             console.error('[KeyShield] Save failed:', response.error);
-                            alert(`Failed to save key: ${response.error}`);
+                            alert(`Failed to save keys: ${response.error}`);
                         }
                         else {
-                            console.log('[KeyShield] Key saved successfully');
+                            console.log('[KeyShield] Keys saved successfully');
                         }
                     });
                 },
@@ -958,6 +1219,66 @@ function setupAutoDetection() {
             console.log('[KeyShield] Keys detected from form:', detected.length);
             handleDetectedKeys(detected);
         }
+    });
+    // DOM content scanning for exposed API keys in page source
+    let domScanInterval = null;
+    let lastDomScan = 0;
+    const DOM_SCAN_INTERVAL_MS = 5000; // Scan every 5 seconds
+    const DOM_SCAN_DEBOUNCE_MS = 2000; // Debounce rapid DOM changes
+    const performDOMScan = () => {
+        const now = Date.now();
+        if (now - lastDomScan < DOM_SCAN_DEBOUNCE_MS) {
+            return; // Debounce rapid scans
+        }
+        lastDomScan = now;
+        try {
+            const domKeys = KeyDetector.detectFromDOMContent();
+            if (domKeys.length > 0) {
+                console.log('[KeyShield] Keys detected from DOM content:', domKeys.length);
+                // Send individual KEY_DETECTED messages for each key
+                domKeys.forEach((detectedKey) => {
+                    chrome.runtime.sendMessage({
+                        type: 'KEY_DETECTED',
+                        provider: detectedKey.provider || 'Unknown',
+                        key: detectedKey.key,
+                        url: location.href,
+                    }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn('[KeyShield] Error sending KEY_DETECTED:', chrome.runtime.lastError);
+                        }
+                    });
+                });
+                // Also handle through existing flow
+                handleDetectedKeys(domKeys);
+            }
+        }
+        catch (error) {
+            console.error('[KeyShield] Error in DOM scan:', error);
+        }
+    };
+    // Initial DOM scan after page load
+    if (document.readyState === 'complete') {
+        setTimeout(performDOMScan, 2000); // Wait 2s after page load
+    }
+    else {
+        window.addEventListener('load', () => {
+            setTimeout(performDOMScan, 2000);
+        });
+    }
+    // Periodic DOM scanning
+    domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
+    // Use MutationObserver for dynamic content changes
+    const domObserver = new MutationObserver(() => {
+        // Debounce rapid DOM changes
+        if (domScanInterval) {
+            clearInterval(domScanInterval);
+            domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
+        }
+    });
+    domObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: false,
     });
     // Monitor clipboard on paste events (improved)
     document.addEventListener('paste', async (e) => {
@@ -1023,6 +1344,10 @@ function setupAutoDetection() {
         if (inputDebounceTimer) {
             clearTimeout(inputDebounceTimer);
         }
+        if (domScanInterval) {
+            clearInterval(domScanInterval);
+        }
+        domObserver.disconnect();
     });
 }
 // Initialize auto-detection when script loads

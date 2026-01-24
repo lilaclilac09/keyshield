@@ -211066,28 +211066,113 @@ var tesseract_js_src = __webpack_require__(34995);
  * Key Detection System
  * Detects API keys from form fields, clipboard, and screen content
  */
-// Common API key patterns
-const KEY_PATTERNS = [
-    /^sk-[a-zA-Z0-9]{32,}$/, // Stripe, OpenAI secret keys
-    /^pk_[a-zA-Z0-9]{32,}$/, // Stripe public keys
-    /^sk_live_[a-zA-Z0-9]{24,}$/, // Stripe live keys
-    /^pk_live_[a-zA-Z0-9]{24,}$/, // Stripe live public keys
-    /^[a-zA-Z0-9]{32,}$/, // Generic long keys (32+ chars)
-    /^Bearer\s+[a-zA-Z0-9\-_\.]+$/, // Bearer tokens
-    /^x-api-key:\s*[a-zA-Z0-9]+$/i, // API key headers
-    /^ghp_[a-zA-Z0-9]{36}$/, // GitHub personal access tokens
-    /^gho_[a-zA-Z0-9]{36}$/, // GitHub OAuth tokens
-    /^ghu_[a-zA-Z0-9]{36}$/, // GitHub user-to-server tokens
-    /^ghs_[a-zA-Z0-9]{36}$/, // GitHub server-to-server tokens
-    /^ghr_[a-zA-Z0-9]{76}$/, // GitHub refresh tokens
-    /^AKIA[0-9A-Z]{16}$/, // AWS access key IDs
-    /^AIza[0-9A-Za-z\-_]{35}$/, // Google API keys (includes Gemini)
-    /^ya29\.[0-9A-Za-z\-_]+$/, // Google OAuth tokens
-    // Helius API keys - typically 32-64 character alphanumeric strings
-    // Helius keys are often base64-like or hex strings
-    /^[a-zA-Z0-9]{32,64}$/, // Helius API keys (32-64 chars, alphanumeric)
-    // Google Gemini API keys - same pattern as Google API keys but we'll detect by field name
-    // The AIza pattern already covers this, but we'll add field name detection
+// Solana Ecosystem API Patterns (Priority Order)
+const API_PATTERNS = [
+    // ===== TIER 1: Solana RPC & Infrastructure Providers =====
+    {
+        name: 'Helius',
+        regex: /(?:api-key=|X-API-Key:\s*)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})/i,
+        priority: 10
+    },
+    {
+        name: 'QuickNode',
+        regex: /\.(?:quicknode\.pro|quicknode\.com)\/([A-Za-z0-9]{30,})/i,
+        priority: 9
+    },
+    {
+        name: 'Alchemy',
+        regex: /\.(?:alchemy\.com|alchemyapi\.io)\/v2\/([A-Za-z0-9_-]{32,})/i,
+        priority: 9
+    },
+    {
+        name: 'Ankr',
+        regex: /(?:ankr\.com\/([A-Za-z0-9_]{40,})|X-API-Key:\s*([A-Za-z0-9_]{40,}))/i,
+        priority: 8
+    },
+    {
+        name: 'GetBlock',
+        regex: /Authorization:\s*Bearer\s+([A-Za-z0-9]{40,})/i,
+        priority: 8
+    },
+    {
+        name: 'Chainstack',
+        regex: /\.(?:chainstack\.com|chainstacklabs\.com)\/([A-Za-z0-9]{32,})/i,
+        priority: 8
+    },
+    // ===== TIER 2: Solana Data & Analytics APIs =====
+    {
+        name: 'Shyft',
+        regex: /x-api-key[:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 7
+    },
+    {
+        name: 'SolanaFM',
+        regex: /(?:solanafm\.com|api\.solanafm\.com).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 6
+    },
+    {
+        name: 'Solscan',
+        regex: /(?:solscan\.io|api\.solscan\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 6
+    },
+    // ===== TIER 3: Trading & MEV Protection APIs =====
+    {
+        name: 'bloXroute',
+        regex: /(?:Authorization|X-Authorization):\s*([A-Za-z0-9+/=]{80,})/i,
+        priority: 9 // High priority - high-value trading key
+    },
+    {
+        name: '0x API',
+        regex: /(?:0x-api-key|X-API-Key):\s*([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})/i,
+        priority: 8 // High priority - trading/DeFi key
+    },
+    // ===== TIER 4: Additional Solana Services =====
+    {
+        name: 'Moralis',
+        regex: /(?:moralis\.io|api\.moralis\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 5
+    },
+    {
+        name: 'Tatum',
+        regex: /(?:tatum\.io|api\.tatum\.io).*?[Xx]-[Aa][Pp][Ii]-[Kk][Ee][Yy][:=]\s*([A-Za-z0-9]{32,})/i,
+        priority: 5
+    },
+    // ===== Classic Dev APIs (Still Important) =====
+    {
+        name: 'OpenAI/Anthropic/Groq',
+        regex: /sk-(?:live|test|proj|ant)_[A-Za-z0-9]{48}/i,
+        priority: 4
+    },
+    {
+        name: 'GitHub PAT',
+        regex: /gh[pousr]_[A-Za-z0-9]{36,}/i,
+        priority: 4
+    },
+    {
+        name: 'Stripe',
+        regex: /[rs]k_(?:live|test)_[A-Za-z0-9]{24,}/i,
+        priority: 3
+    },
+    {
+        name: 'AWS',
+        regex: /AKIA[0-9A-Z]{16}/i,
+        priority: 3
+    },
+    {
+        name: 'Google Cloud',
+        regex: /AIza[0-9A-Za-z_-]{35}/i,
+        priority: 3
+    },
+    {
+        name: 'Twilio',
+        regex: /SK[0-9a-fA-F]{32}/i,
+        priority: 2
+    },
+    {
+        name: 'Cloudflare',
+        regex: /v1\/[0-9a-f]{40}/i,
+        priority: 2
+    },
 ];
 // Field name patterns that likely contain API keys
 const KEY_FIELD_PATTERNS = [
@@ -211100,10 +211185,23 @@ const KEY_FIELD_PATTERNS = [
     /auth[_-]?token/i,
     /bearer[_-]?token/i,
     /private[_-]?key/i,
-    // Helius-specific patterns
+    // Solana RPC providers
     /helius.*api.*key/i,
     /helius.*key/i,
     /helius.*token/i,
+    /quicknode.*api.*key/i,
+    /quicknode.*key/i,
+    /alchemy.*api.*key/i,
+    /ankr.*api.*key/i,
+    /getblock.*api.*key/i,
+    /chainstack.*api.*key/i,
+    // Solana data APIs
+    /shyft.*api.*key/i,
+    /solanafm.*api.*key/i,
+    /solscan.*api.*key/i,
+    // Trading/MEV APIs
+    /bloxroute.*api.*key/i,
+    /0x.*api.*key/i,
     // Google Gemini/Google AI patterns
     /gemini.*api.*key/i,
     /google.*ai.*key/i,
@@ -211126,8 +211224,25 @@ class KeyDetector {
             const fieldName = input.name || input.id || input.className;
             const isKeyField = KEY_FIELD_PATTERNS.some((pattern) => pattern.test(fieldName));
             // Check if value matches key patterns
-            const matchesPattern = KEY_PATTERNS.some((pattern) => pattern.test(value));
-            if (isKeyField || matchesPattern) {
+            let matchedProvider;
+            for (const pattern of API_PATTERNS) {
+                const match = value.match(pattern.regex);
+                if (match) {
+                    matchedProvider = pattern.name;
+                    detected.push({
+                        key: match[1] || match[0],
+                        source: 'form',
+                        fieldName,
+                        fieldType: input.type || 'text',
+                        domain,
+                        timestamp: Date.now(),
+                        provider: matchedProvider,
+                    });
+                    break;
+                }
+            }
+            // Fallback: if no pattern matched but field name suggests API key
+            if (!matchedProvider && isKeyField && value.length >= 16) {
                 detected.push({
                     key: value,
                     source: 'form',
@@ -211150,13 +211265,15 @@ class KeyDetector {
                 return null;
             const trimmed = text.trim();
             // Check if clipboard content matches key patterns
-            for (const pattern of KEY_PATTERNS) {
-                if (pattern.test(trimmed)) {
+            for (const pattern of API_PATTERNS) {
+                const match = trimmed.match(pattern.regex);
+                if (match) {
                     return {
-                        key: trimmed,
+                        key: match[1] || match[0],
                         source: 'clipboard',
                         domain: window.location.hostname,
                         timestamp: Date.now(),
+                        provider: pattern.name,
                     };
                 }
             }
@@ -211166,13 +211283,15 @@ class KeyDetector {
                 const match = line.match(/^\s*[A-Z_]+[=:]\s*(.+)$/);
                 if (match) {
                     const value = match[1].trim().replace(/['"]/g, '');
-                    for (const pattern of KEY_PATTERNS) {
-                        if (pattern.test(value)) {
+                    for (const pattern of API_PATTERNS) {
+                        const keyMatch = value.match(pattern.regex);
+                        if (keyMatch) {
                             return {
-                                key: value,
+                                key: keyMatch[1] || keyMatch[0],
                                 source: 'clipboard',
                                 domain: window.location.hostname,
                                 timestamp: Date.now(),
+                                provider: pattern.name,
                             };
                         }
                     }
@@ -211196,13 +211315,15 @@ class KeyDetector {
             if (!trimmed || trimmed.length < 16)
                 continue;
             // Check direct pattern matches
-            for (const pattern of KEY_PATTERNS) {
-                if (pattern.test(trimmed)) {
+            for (const pattern of API_PATTERNS) {
+                const match = trimmed.match(pattern.regex);
+                if (match) {
                     detected.push({
-                        key: trimmed,
+                        key: match[1] || match[0],
                         source: 'ocr',
                         domain,
                         timestamp: Date.now(),
+                        provider: pattern.name,
                     });
                     break;
                 }
@@ -211211,13 +211332,15 @@ class KeyDetector {
             const keyValueMatch = trimmed.match(/^\s*[A-Z_]+[=:]\s*(.+)$/);
             if (keyValueMatch) {
                 const value = keyValueMatch[1].trim().replace(/['"]/g, '');
-                for (const pattern of KEY_PATTERNS) {
-                    if (pattern.test(value)) {
+                for (const pattern of API_PATTERNS) {
+                    const match = value.match(pattern.regex);
+                    if (match) {
                         detected.push({
-                            key: value,
+                            key: match[1] || match[0],
                             source: 'ocr',
                             domain,
                             timestamp: Date.now(),
+                            provider: pattern.name,
                         });
                         break;
                     }
@@ -211282,12 +211405,54 @@ class KeyDetector {
         };
     }
     /**
+     * Detect keys from DOM content (innerHTML and innerText)
+     * Scans page source for exposed API keys in code snippets
+     */
+    static detectFromDOMContent() {
+        const detected = [];
+        const domain = window.location.hostname;
+        const alerted = new Set();
+        try {
+            // Scan visible text content
+            const textContent = document.body.innerText || '';
+            // Scan HTML source (catches code in <script> tags, attributes, etc.)
+            const htmlContent = document.body.innerHTML || '';
+            // Combine both for comprehensive scanning
+            const combinedContent = textContent + '\n' + htmlContent;
+            // Check each API pattern
+            for (const pattern of API_PATTERNS) {
+                const matches = [...combinedContent.matchAll(new RegExp(pattern.regex.source, 'gi'))];
+                for (const match of matches) {
+                    const key = match[1] || match[0];
+                    if (!key || key.length < 16)
+                        continue;
+                    // Create unique ID to prevent duplicate alerts
+                    const keyId = `${pattern.name}:${key.slice(0, 12)}`;
+                    if (!alerted.has(keyId)) {
+                        alerted.add(keyId);
+                        detected.push({
+                            key: key.trim(),
+                            source: 'dom',
+                            domain,
+                            timestamp: Date.now(),
+                            provider: pattern.name,
+                        });
+                    }
+                }
+            }
+        }
+        catch (error) {
+            console.warn('[KeyShield] Error scanning DOM content:', error);
+        }
+        return detected;
+    }
+    /**
      * Validate if a string is likely an API key
      */
     static isValidKey(key) {
         if (!key || key.length < 16)
             return false;
-        return KEY_PATTERNS.some((pattern) => pattern.test(key.trim()));
+        return API_PATTERNS.some((pattern) => pattern.regex.test(key.trim()));
     }
 }
 
@@ -211502,6 +211667,12 @@ async function handleMessage(message, sender, sendResponse) {
             case 'SAVE_DETECTED_KEY':
                 await handleSaveDetectedKey(message.payload, sendResponse);
                 break;
+            case 'SAVE_MULTIPLE_KEYS':
+                await handleSaveMultipleKeys(message.payload, sendResponse);
+                break;
+            case 'KEY_DETECTED':
+                await handleKeyDetected({ provider: message.provider, key: message.key, url: message.url }, sendResponse);
+                break;
             default:
                 sendResponse({ success: false, error: 'Unknown message type' });
         }
@@ -211714,8 +211885,8 @@ async function handleSaveDetectedKey(payload, sendResponse) {
         }
         const { detectedKey } = payload;
         const walletAddress = currentSession.walletAddress;
-        // Determine key type
-        const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName);
+        // Determine key type (use provider if available)
+        const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName, detectedKey.provider);
         // Store key using existing STORE_KEY handler logic
         await handleStoreKey({
             apiKey: detectedKey.key,
@@ -211730,13 +211901,152 @@ async function handleSaveDetectedKey(payload, sendResponse) {
     }
 }
 /**
- * Detect key type from key string and field name
+ * Handle save multiple keys request (batch processing)
  */
-function detectKeyTypeFromKey(key, fieldName) {
+async function handleSaveMultipleKeys(payload, sendResponse) {
+    try {
+        // Check if wallet is connected
+        if (!currentSession || !currentSession.walletAddress) {
+            sendResponse({
+                success: false,
+                error: 'Wallet not connected',
+                requiresWallet: true
+            });
+            return;
+        }
+        // Check if session is valid
+        if (currentSession.expiresAt < Date.now()) {
+            sendResponse({
+                success: false,
+                error: 'Session expired. Please authenticate again.',
+                requiresAuth: true
+            });
+            return;
+        }
+        const { detectedKeys } = payload;
+        const walletAddress = currentSession.walletAddress;
+        if (detectedKeys.length === 0) {
+            sendResponse({ success: false, error: 'No keys selected' });
+            return;
+        }
+        // Process keys in parallel (batch encryption)
+        const savePromises = detectedKeys.map(async (detectedKey) => {
+            const keyType = detectKeyTypeFromKey(detectedKey.key, detectedKey.fieldName, detectedKey.provider);
+            return new Promise((resolve, reject) => {
+                handleStoreKey({
+                    apiKey: detectedKey.key,
+                    keyName: `${detectedKey.source}-${detectedKey.fieldName || 'unknown'}-${detectedKey.domain}`,
+                    walletAddress,
+                    keyType,
+                    domain: detectedKey.domain,
+                }, (response) => {
+                    if (response.success) {
+                        resolve(response);
+                    }
+                    else {
+                        reject(new Error(response.error || 'Failed to save key'));
+                    }
+                });
+            });
+        });
+        // Wait for all saves to complete
+        const results = await Promise.allSettled(savePromises);
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        if (failed > 0) {
+            sendResponse({
+                success: true,
+                partial: true,
+                saved: successful,
+                failed: failed,
+                message: `Saved ${successful} of ${detectedKeys.length} keys${failed > 0 ? ` (${failed} failed)` : ''}`
+            });
+        }
+        else {
+            sendResponse({
+                success: true,
+                saved: successful,
+                message: `Successfully saved ${successful} key(s)`
+            });
+        }
+    }
+    catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+/**
+ * Detect key type from key string, field name, and provider
+ * Returns keyType enum value (0=Generic, 1=GitHub, 2=Helius, 3=GoogleGemini, etc.)
+ * Note: May need to expand enum for additional Solana providers
+ */
+function detectKeyTypeFromKey(key, fieldName, provider) {
     const lowerFieldName = (fieldName || '').toLowerCase();
-    // Check field name patterns
+    const lowerProvider = (provider || '').toLowerCase();
+    // Priority 1: Use provider name if available (most accurate)
+    if (provider) {
+        // Solana RPC Providers
+        if (lowerProvider.includes('helius'))
+            return 2; // Helius
+        if (lowerProvider.includes('quicknode'))
+            return 4; // QuickNode (new type)
+        if (lowerProvider.includes('alchemy'))
+            return 5; // Alchemy (new type)
+        if (lowerProvider.includes('ankr'))
+            return 6; // Ankr (new type)
+        if (lowerProvider.includes('getblock'))
+            return 7; // GetBlock (new type)
+        if (lowerProvider.includes('chainstack'))
+            return 8; // Chainstack (new type)
+        // Solana Data APIs
+        if (lowerProvider.includes('shyft'))
+            return 9; // Shyft (new type)
+        if (lowerProvider.includes('solanafm'))
+            return 10; // SolanaFM (new type)
+        if (lowerProvider.includes('solscan'))
+            return 11; // Solscan (new type)
+        // Trading/MEV APIs
+        if (lowerProvider.includes('bloxroute'))
+            return 12; // bloXroute (new type)
+        if (lowerProvider.includes('0x'))
+            return 13; // 0x API (new type)
+        // Additional Services
+        if (lowerProvider.includes('moralis'))
+            return 14; // Moralis (new type)
+        if (lowerProvider.includes('tatum'))
+            return 15; // Tatum (new type)
+        // Classic APIs
+        if (lowerProvider.includes('github'))
+            return 1; // GitHub
+        if (lowerProvider.includes('gemini') || lowerProvider.includes('google'))
+            return 3; // Google Gemini
+    }
+    // Priority 2: Check field name patterns
     if (/helius/.test(lowerFieldName)) {
         return 2; // Helius
+    }
+    if (/quicknode/.test(lowerFieldName)) {
+        return 4; // QuickNode
+    }
+    if (/alchemy/.test(lowerFieldName)) {
+        return 5; // Alchemy
+    }
+    if (/ankr/.test(lowerFieldName)) {
+        return 6; // Ankr
+    }
+    if (/getblock/.test(lowerFieldName)) {
+        return 7; // GetBlock
+    }
+    if (/chainstack/.test(lowerFieldName)) {
+        return 8; // Chainstack
+    }
+    if (/shyft/.test(lowerFieldName)) {
+        return 9; // Shyft
+    }
+    if (/bloxroute/.test(lowerFieldName)) {
+        return 12; // bloXroute
+    }
+    if (/0x/.test(lowerFieldName)) {
+        return 13; // 0x API
     }
     if (/gemini/.test(lowerFieldName) || /google.*ai/.test(lowerFieldName)) {
         return 3; // Google Gemini
@@ -211744,15 +212054,24 @@ function detectKeyTypeFromKey(key, fieldName) {
     if (/github/.test(lowerFieldName)) {
         return 1; // GitHub
     }
-    // Check key patterns
+    // Priority 3: Check key patterns
     if (/^ghp_|^gho_|^ghu_|^ghs_|^ghr_/.test(key)) {
         return 1; // GitHub
     }
     if (/^AIza/.test(key)) {
         return 3; // Google Gemini
     }
+    // UUID format (Helius, 0x API)
+    if (/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(key)) {
+        return 2; // Likely Helius or 0x (default to Helius)
+    }
+    // Long alphanumeric (Helius, QuickNode, etc.)
     if (/^[a-zA-Z0-9]{32,64}$/.test(key) && !/^AIza/.test(key)) {
         return 2; // Helius (heuristic)
+    }
+    // Very long strings (bloXroute)
+    if (/^[A-Za-z0-9+/=]{80,}$/.test(key)) {
+        return 12; // bloXroute
     }
     return 0; // Generic
 }
@@ -211845,6 +212164,75 @@ async function handleGetVaultsByDomain(payload, sendResponse) {
         sendResponse({ success: true, vaults });
     }
     catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+/**
+ * Get dashboard URL from storage (default: localhost:3000 for dev)
+ */
+async function getDashboardUrl() {
+    const result = await chrome.storage.local.get(['dashboardUrl']);
+    return result.dashboardUrl || 'http://localhost:3000';
+}
+/**
+ * Handle key detected from DOM/content scan
+ * Creates notification and opens dashboard for save/reveal
+ */
+async function handleKeyDetected(payload, sendResponse) {
+    try {
+        const { provider, key, url } = payload;
+        const domain = new URL(url).hostname;
+        const preview = key.slice(0, 20) + '...';
+        // Check if we've already notified for this key (prevent spam)
+        const notificationKey = `${provider}:${key.slice(0, 12)}`;
+        const notifiedKeys = await storage.getSetting('notifiedKeys') || [];
+        if (notifiedKeys.includes(notificationKey)) {
+            sendResponse({ success: true, alreadyNotified: true });
+            return;
+        }
+        // Mark as notified
+        notifiedKeys.push(notificationKey);
+        // Keep only last 100 to prevent storage bloat
+        if (notifiedKeys.length > 100) {
+            notifiedKeys.shift();
+        }
+        await storage.setSetting('notifiedKeys', notifiedKeys);
+        // Determine if this is a high-value trading key
+        const isHighValue = ['bloXroute', '0x API'].includes(provider);
+        const warningText = isHighValue
+            ? ' High-value trading key — exposure risks MEV/front-running. Open dashboard to save securely.'
+            : '';
+        // Create notification (create returns notification ID string in MV3)
+        const notificationId = (await chrome.notifications.create({
+            type: 'basic',
+            iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+            title: 'KeyShield: API Key Detected!',
+            message: `${provider} key (${preview}) found on ${domain}.${warningText}`,
+            buttons: [{ title: 'Open Dashboard to Save' }],
+            priority: isHighValue ? 2 : 1,
+        }));
+        const openDashboard = async () => {
+            const dashboardUrl = await getDashboardUrl();
+            chrome.tabs.create({ url: dashboardUrl });
+        };
+        // Handle notification button click
+        chrome.notifications.onButtonClicked.addListener((clickedNotificationId, buttonIndex) => {
+            if (clickedNotificationId === notificationId && buttonIndex === 0) {
+                openDashboard();
+                chrome.notifications.clear(clickedNotificationId);
+            }
+        });
+        // Handle notification body click (same action as button)
+        chrome.notifications.onClicked.addListener((clickedNotificationId) => {
+            if (clickedNotificationId === notificationId) {
+                openDashboard();
+                chrome.notifications.clear(clickedNotificationId);
+            }
+        });
+        sendResponse({ success: true, notificationId });
+    }
+    catch (error) {
+        console.error('[KeyShield] Error handling key detection:', error);
         sendResponse({ success: false, error: error.message });
     }
 }

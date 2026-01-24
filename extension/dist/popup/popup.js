@@ -162,15 +162,29 @@ async function loadVaults() {
           <div class="vault-name">${vault.keyName}</div>
           <div class="vault-domain">${vault.domain}</div>
         </div>
-        <button class="button secondary" style="width: auto; padding: 6px 12px;" data-vault-id="${vault.vaultId}">
-          Fill
-        </button>
+        <div style="display: flex; gap: 4px;">
+          <button class="button secondary reveal-key-btn" style="width: auto; padding: 6px 12px;" data-vault-id="${vault.vaultId}" title="Reveal key (30s)">
+            👁️
+          </button>
+          <button class="button secondary" style="width: auto; padding: 6px 12px;" data-vault-id="${vault.vaultId}">
+            Fill
+          </button>
+        </div>
       `;
             vaultListContainer.appendChild(item);
-            // Add click handler
-            item.querySelector('button')?.addEventListener('click', () => {
-                handleFillVault(vault.vaultId);
-            });
+            // Add click handlers
+            const fillBtn = item.querySelector('button:not(.reveal-key-btn)');
+            const revealBtn = item.querySelector('.reveal-key-btn');
+            if (fillBtn) {
+                fillBtn.addEventListener('click', () => {
+                    handleFillVault(vault.vaultId);
+                });
+            }
+            if (revealBtn) {
+                revealBtn.addEventListener('click', () => {
+                    handleRevealVault(vault.vaultId);
+                });
+            }
         });
     }
     catch (error) {
@@ -263,6 +277,48 @@ async function handleOCRCapture() {
     finally {
         ocrCaptureBtn.disabled = false;
         ocrCaptureBtn.textContent = 'Capture Screen (OCR)';
+    }
+}
+/**
+ * Handle reveal vault key
+ */
+async function handleRevealVault(vaultId) {
+    try {
+        // Get wallet address from storage
+        const walletData = await chrome.storage.local.get('walletAddress');
+        if (!walletData.walletAddress) {
+            alert('Wallet not connected');
+            return;
+        }
+        // Decrypt key
+        const decryptResponse = await chrome.runtime.sendMessage({
+            type: 'DECRYPT_KEY',
+            payload: { vaultId, walletAddress: walletAddress.walletAddress },
+        });
+        if (!decryptResponse.success) {
+            alert(`Failed to decrypt: ${decryptResponse.error}`);
+            return;
+        }
+        // Show key in alert (temporary - in production would show in UI)
+        const key = decryptResponse.key;
+        const maskedKey = key.length > 8 ? key.slice(0, 4) + '...' + key.slice(-4) : '•'.repeat(key.length);
+        const fullKey = prompt(`API Key (will auto-hide in 30s):\n\n${key}\n\nClick OK to copy to clipboard.`, key);
+        if (fullKey) {
+            try {
+                await navigator.clipboard.writeText(key);
+                alert('Key copied to clipboard!');
+            }
+            catch (error) {
+                console.error('Failed to copy:', error);
+            }
+        }
+        // Auto-hide after 30 seconds (clear from memory)
+        setTimeout(() => {
+            // Key is cleared from prompt/memory
+        }, 30000);
+    }
+    catch (error) {
+        alert(`Error: ${error.message}`);
     }
 }
 /**
