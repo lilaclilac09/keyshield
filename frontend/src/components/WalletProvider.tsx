@@ -19,21 +19,10 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 import { ErrorBoundary } from './ErrorBoundary';
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:21',message:'WalletProvider initializing',data:{hasWindow:typeof window !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-  }, []);
-  // #endregion
-
   // Create QueryClient using useState to ensure proper isolation per client
   // This is the recommended pattern for Next.js App Router
   const [queryClient] = useState(
     () => {
-      // #region agent log
-      if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:28',message:'QueryClient created',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      }
-      // #endregion
       return new QueryClient({
         defaultOptions: {
           queries: {
@@ -48,12 +37,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => {
-    // #region agent log
     const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || clusterApiUrl(network);
-    if (typeof window !== 'undefined') {
-      fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:42',message:'RPC endpoint configured',data:{rpcUrl,hasEnvVar:!!process.env.NEXT_PUBLIC_RPC_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    }
-    // #endregion
     return rpcUrl;
   }, [network]);
 
@@ -100,19 +84,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   );
 
   if (!queryClient) {
-    // #region agent log
-    if (typeof window !== 'undefined') {
-      fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:84',message:'QueryClient check failed',data:{queryClient:!!queryClient},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    }
-    // #endregion
     throw new Error('QueryClient not initialized');
   }
-
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WalletProvider.tsx:95',message:'WalletProvider render complete',data:{walletsCount:wallets.length,endpoint},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-  }, [wallets.length, endpoint]);
-  // #endregion
 
   return (
     <ErrorBoundary>

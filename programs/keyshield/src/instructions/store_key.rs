@@ -2,15 +2,22 @@
 
 use pinocchio::{
     account_info::AccountInfo,
+    instruction::Signer,
     program_error::ProgramError,
     pubkey::Pubkey,
+    seeds,
+    sysvars::rent::Rent,
     ProgramResult,
 };
+
+use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
 
 use crate::{
     error::KeyShieldError,
     state::Vault,
 };
+
+const VAULT_SEED: &[u8] = b"vault";
 
 /// Process store key instruction
 /// 
@@ -23,25 +30,78 @@ pub fn process_store_key(
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
-    // Expected data: encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) + key_type (1) = 105 bytes
-    if data.len() < 105 {
+    // Expected data:
+    // - encrypted_key_hash (32)
+    // - zk_commit (32)
+    // - mpc_hash (32)
+    // - timestamp (8)
+    // - key_type (1)
+    // - vault_bump (1)
+    // = 106 bytes
+    if data.len() < 106 {
         return Err(KeyShieldError::InvalidKeyData.into());
     }
 
     let accounts_iter = &mut accounts.iter();
     let owner = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let _system_program = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     // Verify owner is signer
     if !owner.is_signer() {
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    // Verify vault account owner is this program (PDA property)
-    // The frontend will derive the correct PDA using findProgramAddressSync
-    unsafe {
-        if vault.owner() != program_id {
-            return Err(KeyShieldError::InvalidVaultOwner.into());
+    // Parse PDA bump (passed by client). This allows us to sign CPIs for the PDA without
+    // doing PDA hashing on-chain (no_std-friendly).
+    let vault_bump = data[105];
+    let bump_ref = &[vault_bump];
+    let vault_seeds = seeds!(VAULT_SEED, owner.key().as_ref(), bump_ref);
+    let vault_signer = Signer::from(&vault_seeds);
+
+    // If the vault account is not owned by this program yet, initialize it as a PDA.
+    // We intentionally *don't* try to derive/verify the PDA address on-chain; instead,
+    // `invoke_signed` will only mark the account as signed if seeds+bump match the PDA.
+    if !vault.is_owned_by(program_id) {
+        let rent = Rent::get()?;
+        let min_balance = rent.minimum_balance(Vault::SIZE);
+
+        // Common case: account doesn't exist yet (0 lamports, 0 data).
+        if vault.lamports() == 0 && vault.data_is_empty() {
+            CreateAccount {
+                from: owner,
+                to: vault,
+                lamports: min_balance,
+                space: Vault::SIZE as u64,
+                owner: program_id,
+            }
+            .invoke_signed(&[vault_signer.clone()])?;
+        } else {
+            // Less common: address already has lamports (e.g. someone transferred SOL to the PDA
+            // before initialization). In that case, allocate + assign, and top up rent if needed.
+            if vault.data_len() < Vault::SIZE {
+                Allocate {
+                    account: vault,
+                    space: Vault::SIZE as u64,
+                }
+                .invoke_signed(&[vault_signer.clone()])?;
+            }
+
+            Assign {
+                account: vault,
+                owner: program_id,
+            }
+            .invoke_signed(&[vault_signer.clone()])?;
+
+            let current_balance = vault.lamports();
+            if current_balance < min_balance {
+                Transfer {
+                    from: owner,
+                    to: vault,
+                    lamports: min_balance - current_balance,
+                }
+                .invoke()?;
+            }
         }
     }
 

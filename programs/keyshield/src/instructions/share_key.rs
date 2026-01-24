@@ -2,15 +2,23 @@
 
 use pinocchio::{
     account_info::AccountInfo,
+    instruction::Signer,
     program_error::ProgramError,
     pubkey::Pubkey,
+    seeds,
+    sysvars::rent::Rent,
     ProgramResult,
 };
+
+use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
 
 use crate::{
     error::KeyShieldError,
     state::Vault,
 };
+
+const SHARE_SEED: &[u8] = b"share";
+const SHARE_SIZE: usize = 64;
 
 /// Process share key instruction
 /// 
@@ -19,6 +27,7 @@ use crate::{
 /// 1. [] Vault - PDA account containing the encrypted key
 /// 2. [writable] Share - PDA account for the share record
 /// 3. [] Recipient - The wallet receiving the share
+/// 4. [] System Program
 /// 
 /// Instruction data:
 /// - recipient (32 bytes) - Public key of recipient
@@ -29,8 +38,12 @@ pub fn process_share_key(
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
-    // Minimum data: recipient (32) + time_lock (8) = 40 bytes
-    if data.len() < 40 {
+    // Minimum data:
+    // - recipient (32)
+    // - time_lock (8)
+    // - share_bump (1)
+    // = 41 bytes
+    if data.len() < 41 {
         return Err(KeyShieldError::InvalidKeyData.into());
     }
 
@@ -39,6 +52,7 @@ pub fn process_share_key(
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let share = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let recipient = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let _system_program = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     // Verify owner is signer
     if !owner.is_signer() {
@@ -83,11 +97,55 @@ pub fn process_share_key(
         data[32..40].try_into().map_err(|_| KeyShieldError::InvalidTimeLock)?
     );
 
-    // Verify share account owner is this program (PDA property)
-    // The frontend will derive the correct PDA using findProgramAddressSync
-    unsafe {
-        if share.owner() != program_id {
-            return Err(KeyShieldError::AccessDenied.into());
+    // Parse share PDA bump (passed by client).
+    let share_bump = data[40];
+    let bump_ref = &[share_bump];
+    let share_seeds = seeds!(
+        SHARE_SEED,
+        vault.key().as_ref(),
+        recipient_pubkey.as_ref(),
+        bump_ref
+    );
+    let share_signer = Signer::from(&share_seeds);
+
+    // Initialize share PDA if needed (create/allocate/assign + rent top-up).
+    if !share.is_owned_by(program_id) {
+        let rent = Rent::get()?;
+        let min_balance = rent.minimum_balance(SHARE_SIZE);
+
+        if share.lamports() == 0 && share.data_is_empty() {
+            CreateAccount {
+                from: owner,
+                to: share,
+                lamports: min_balance,
+                space: SHARE_SIZE as u64,
+                owner: program_id,
+            }
+            .invoke_signed(&[share_signer.clone()])?;
+        } else {
+            if share.data_len() < SHARE_SIZE {
+                Allocate {
+                    account: share,
+                    space: SHARE_SIZE as u64,
+                }
+                .invoke_signed(&[share_signer.clone()])?;
+            }
+
+            Assign {
+                account: share,
+                owner: program_id,
+            }
+            .invoke_signed(&[share_signer.clone()])?;
+
+            let current_balance = share.lamports();
+            if current_balance < min_balance {
+                Transfer {
+                    from: owner,
+                    to: share,
+                    lamports: min_balance - current_balance,
+                }
+                .invoke()?;
+            }
         }
     }
 
