@@ -2,8 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Cyberpunk Theme Styles */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+/* Custom KeyShield Font Declarations */
+/* Update font file paths and names based on your actual font files */
+@font-face {
+  font-family: 'KeyShield';
+  src: url('/fonts/keyshield-regular.woff2') format('woff2'),
+       url('/fonts/keyshield-regular.woff') format('woff'),
+       url('/fonts/keyshield-regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'KeyShield';
+  src: url('/fonts/keyshield-medium.woff2') format('woff2'),
+       url('/fonts/keyshield-medium.woff') format('woff'),
+       url('/fonts/keyshield-medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'KeyShield';
+  src: url('/fonts/keyshield-semibold.woff2') format('woff2'),
+       url('/fonts/keyshield-semibold.woff') format('woff'),
+       url('/fonts/keyshield-semibold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'KeyShield';
+  src: url('/fonts/keyshield-bold.woff2') format('woff2'),
+       url('/fonts/keyshield-bold.woff') format('woff'),
+       url('/fonts/keyshield-bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'KeyShield';
+  src: url('/fonts/keyshield-light.woff2') format('woff2'),
+       url('/fonts/keyshield-light.woff') format('woff'),
+       url('/fonts/keyshield-light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --cyber-primary: #8b5cf6;
@@ -14,14 +63,14 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'KeyShield', sans-serif;
   background-color: var(--cyber-bg);
   color: #e5e5e5;
   overflow-x: hidden;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'KeyShield', monospace;
 }
 
 .cyber-glow {
@@ -68,7 +117,7 @@ body {
   position: absolute;
   top: 10px;
   right: 10px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'KeyShield', monospace;
   font-size: 10px;
   color: #10b981;
   text-transform: uppercase;
@@ -84,7 +133,7 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'KeyShield', sans-serif;
 }
 
 @layer utilities {

@@ -11,6 +11,10 @@ module.exports = {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
       },
+      fontFamily: {
+        sans: ['KeyShield', 'sans-serif'],
+        mono: ['KeyShield', 'monospace'],
+      },
     },
   },
   plugins: [],
