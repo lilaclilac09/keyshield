@@ -341,9 +341,232 @@ Transaction Error
 
 ---
 
+## 🔄 Oracle Service Pattern
+
+### Overview
+
+The oracle service pattern enables on-chain programs to consume data from external APIs (GitHub, Helius, Google Gemini) without exposing API keys on-chain.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ORACLE SERVICE FLOW                       │
+└─────────────────────────────────────────────────────────────┘
+
+1. User Request (Oracle Call)
+   │
+   ▼
+2. Oracle Service
+   │
+   ├─► Read Vault from On-Chain
+   │   └─► Get encrypted_key_hash (32 bytes)
+   │
+   ├─► Retrieve Full Ciphertext from Off-Chain Storage
+   │   └─► IndexedDB: ciphertext:${hash} → full ciphertext (1-5 KB)
+   │
+   ├─► Decrypt API Key using Lit Protocol
+   │   └─► Requires session signatures from wallet
+   │
+   ├─► Call External API (GitHub/Helius/Google Gemini)
+   │   └─► Use decrypted API key in request
+   │
+   └─► Return Results
+       │
+       ├─► Display to User (Off-Chain)
+       └─► (Optional) Post to On-Chain Program
+           └─► example-oracle program stores results
+```
+
+### Implementation
+
+**Oracle Service** (`frontend/src/lib/oracle-service.ts`):
+- Reads vault from on-chain
+- Retrieves full ciphertext from IndexedDB
+- Decrypts using Lit Protocol
+- Calls external APIs
+- Returns results
+
+**Oracle UI** (`frontend/src/components/OracleIntegration.tsx`):
+- Configures API endpoint
+- Executes oracle calls
+- Displays results
+- Optionally posts to on-chain program
+
+**Example On-Chain Program** (`programs/example-oracle/`):
+- Accepts oracle results via instruction
+- Stores results in account
+- Verifies oracle authority
+
+## 🏗️ On-Chain vs Off-Chain Architecture Decisions
+
+### On-Chain Components
+
+**What is stored on-chain:**
+- **Lit Protocol `dataToEncryptHash`** (32 bytes) - Reference to encrypted data
+- **Access control metadata** - Owner, permissions, key type
+- **ZK commitments** (32 bytes) - For proof verification
+- **MPC hashes** (32 bytes) - For secure sharing
+- **Timestamps** (8 bytes) - For time-locked access
+- **Key type** (encoded in access_flags) - GitHub, Helius, GoogleGemini, Generic
+
+**Why on-chain:**
+- Immutable record of key ownership
+- Decentralized access control
+- Transparent permissions
+- ZK proof verification
+- Share account management
+
+### Off-Chain Components
+
+**What is stored off-chain:**
+- **Full Lit Protocol ciphertext** (1-5 KB) - Stored in IndexedDB
+- **Key detection logic** - Browser extension monitors forms/clipboard
+- **Encryption/Decryption operations** - Lit Protocol client-side
+- **External API calls** - GitHub, Helius, Google Gemini
+- **Oracle service execution** - Reads vault, decrypts, calls APIs
+- **ZK proof generation** - Bonsol proof generation (async)
+- **MPC computation** - Arcium MPC operations (async)
+
+**Why off-chain:**
+- **Size constraints**: Lit Protocol ciphertexts are 1-5 KB, too large for efficient on-chain storage
+- **Cost efficiency**: Storing large data on-chain is expensive
+- **Privacy**: Full ciphertext only needed for decryption, not for verification
+- **Flexibility**: Off-chain storage allows for easier updates and migrations
+- **Performance**: External API calls cannot be made from on-chain programs
+
+### Hybrid Pattern
+
+**On-Chain**:
+- Stores encrypted key reference (`dataToEncryptHash`) + metadata
+- Provides access control and permissions
+- Enables ZK proof verification
+- Manages share accounts
+
+**Off-Chain Oracle**:
+- Reads vault account from on-chain
+- Retrieves full ciphertext from IndexedDB using hash
+- Decrypts API key using Lit Protocol
+- Calls external API (GitHub/Helius/Google Gemini)
+- Posts results to on-chain program via transaction (optional)
+
+## 🔍 API Key Auto-Detection Flow
+
+### Detection Sources
+
+1. **Form Fields**: Monitors input fields for API key patterns
+2. **Clipboard**: Detects keys when copied to clipboard
+3. **OCR**: (Future) Detects keys from screen content
+
+### Detection Patterns
+
+**GitHub**:
+- `ghp_` - Personal access tokens
+- `gho_` - OAuth tokens
+- `ghu_` - User-to-server tokens
+- `ghs_` - Server-to-server tokens
+- `ghr_` - Refresh tokens
+
+**Helius**:
+- 32-64 character alphanumeric strings
+- Detected by field name patterns: `helius.*api.*key`
+
+**Google Gemini**:
+- `AIza...` pattern (35+ characters)
+- Detected by field name patterns: `gemini.*api.*key`, `google.*ai.*key`
+
+### Auto-Detection UI
+
+**Dashboard Integration**:
+- Shows detected keys in alert banner
+- Allows quick save to vault
+- Displays key type and source
+- One-click save action
+
+**Key Generation Helpers**:
+- Redirects to service pages for key generation
+- GitHub: https://github.com/settings/tokens/new
+- Helius: https://dashboard.helius.dev/
+- Google Gemini: https://makersuite.google.com/app/apikey
+
+## 🔐 Lit Protocol Ciphertext Storage Pattern
+
+### Problem
+
+Lit Protocol `encryptString()` returns ciphertexts that are typically 1-5 KB (base64 strings). Storing these directly on-chain is:
+- **Expensive**: Large account data increases rent costs
+- **Inefficient**: Most Solana accounts are optimized for smaller data
+- **Unnecessary**: Full ciphertext only needed for decryption, not verification
+
+### Solution
+
+**On-Chain Storage** (32 bytes):
+- Store `dataToEncryptHash` from Lit Protocol
+- This is a unique identifier/reference to the encrypted data
+- Used to retrieve full ciphertext from off-chain storage
+
+**Off-Chain Storage** (1-5 KB):
+- Store full `ciphertext` in IndexedDB
+- Key: `ciphertext:${dataToEncryptHash}` (base64)
+- Value: Full ciphertext string (base64)
+
+**Retrieval Flow**:
+1. Read vault from on-chain → get `encrypted_key_hash`
+2. Convert hash bytes to base64 string
+3. Query IndexedDB: `ciphertext:${hashBase64}`
+4. Retrieve full ciphertext
+5. Use for Lit Protocol decryption
+
+### Implementation
+
+**Ciphertext Storage** (`frontend/src/lib/ciphertext-storage.ts`):
+- `storeCiphertext(hash, ciphertext)` - Store full ciphertext
+- `getCiphertext(hash)` - Retrieve full ciphertext
+- Uses IndexedDB for persistence
+
+**Vault State** (`programs/keyshield/src/state.rs`):
+- Changed from `encrypted_key: [u8; 128]` to `encrypted_key_hash: [u8; 32]`
+- Total vault size remains 288 bytes (adjusted reserved space)
+
+**Encryption Flow** (`frontend/src/hooks/useVault.ts`):
+- Encrypt with Lit Protocol → get `{ ciphertext, dataToEncryptHash }`
+- Store full `ciphertext` in IndexedDB
+- Store only `dataToEncryptHash` on-chain (32 bytes)
+
+**Decryption Flow** (`frontend/src/lib/lit-protocol.ts`):
+- `getCiphertextFromStorage(hashBytes)` - Retrieve from IndexedDB
+- `decryptWithLitFromHash(hashBytes, ...)` - Decrypt using retrieved ciphertext
+
+## 🔌 Integration with External Services
+
+### GitHub Integration
+
+**API Key Type**: `APIKeyType.GitHub`
+**Detection**: `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` patterns
+**Usage**: Bearer token in `Authorization` header
+**Oracle Endpoint**: `https://api.github.com{endpoint}`
+
+### Helius Integration
+
+**API Key Type**: `APIKeyType.Helius`
+**Detection**: 32-64 char alphanumeric + field name patterns
+**Usage**: `x-api-key` header
+**Oracle Endpoint**: `https://api.helius.dev{endpoint}`
+
+### Google Gemini Integration
+
+**API Key Type**: `APIKeyType.GoogleGemini`
+**Detection**: `AIza...` pattern + field name patterns
+**Usage**: Query parameter `?key={apiKey}` or header
+**Oracle Endpoint**: `https://generativelanguage.googleapis.com/v1{endpoint}`
+
+---
+
 This architecture ensures:
 - ✅ Privacy: Keys never stored in plaintext
 - ✅ Security: Multiple layers of verification
 - ✅ Decentralization: On-chain storage with off-chain computation
-- ✅ Scalability: Efficient account structure
+- ✅ Scalability: Efficient account structure (32 bytes on-chain, 1-5 KB off-chain)
 - ✅ Flexibility: Support for various access patterns
+- ✅ Cost Efficiency: Minimal on-chain storage (hash reference only)
+- ✅ Oracle Pattern: Enables on-chain programs to consume external API data
