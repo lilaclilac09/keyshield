@@ -6,12 +6,29 @@
  */
 
 export enum APIKeyType {
+  // Classic APIs
   GitHub = 'github',
-  Helius = 'helius',
   GoogleGemini = 'google-gemini',
   OpenAI = 'openai',
   Stripe = 'stripe',
   AWS = 'aws',
+  // Solana Ecosystem - RPC Providers
+  Helius = 'helius',
+  QuickNode = 'quicknode',
+  Alchemy = 'alchemy',
+  Ankr = 'ankr',
+  GetBlock = 'getblock',
+  Chainstack = 'chainstack',
+  // Solana Ecosystem - Data APIs
+  Shyft = 'shyft',
+  SolanaFM = 'solanafm',
+  Solscan = 'solscan',
+  // Solana Ecosystem - Trading/MEV
+  Bloxroute = 'bloxroute',
+  ZeroX = '0x',
+  // Additional Services
+  Moralis = 'moralis',
+  Tatum = 'tatum',
   Generic = 'generic',
 }
 
@@ -54,19 +71,13 @@ export function generateGoogleGeminiKey(): void {
  */
 export function getGeneratorInfo(type: APIKeyType): APIKeyGenerator {
   switch (type) {
+    // Classic APIs
     case APIKeyType.GitHub:
       return {
         name: 'GitHub Personal Access Token',
         type: APIKeyType.GitHub,
         generateUrl: 'https://github.com/settings/tokens/new',
         instructions: '1. Click "Generate new token"\n2. Select scopes (repo, workflow, etc.)\n3. Copy the token immediately (it won\'t be shown again)',
-      };
-    case APIKeyType.Helius:
-      return {
-        name: 'Helius API Key',
-        type: APIKeyType.Helius,
-        generateUrl: 'https://dashboard.helius.dev/',
-        instructions: '1. Sign in to Helius dashboard\n2. Navigate to API Keys section\n3. Create a new API key\n4. Copy the key',
       };
     case APIKeyType.GoogleGemini:
       return {
@@ -95,6 +106,101 @@ export function getGeneratorInfo(type: APIKeyType): APIKeyGenerator {
         type: APIKeyType.AWS,
         generateUrl: 'https://console.aws.amazon.com/iam/home#/security_credentials',
         instructions: '1. Sign in to AWS Console\n2. Navigate to IAM > Security credentials\n3. Create access key\n4. Copy the access key ID and secret',
+      };
+    // Solana Ecosystem - RPC Providers
+    case APIKeyType.Helius:
+      return {
+        name: 'Helius API Key',
+        type: APIKeyType.Helius,
+        generateUrl: 'https://dashboard.helius.dev/',
+        instructions: '1. Sign in to Helius dashboard\n2. Navigate to API Keys section\n3. Create a new API key\n4. Copy the key',
+      };
+    case APIKeyType.QuickNode:
+      return {
+        name: 'QuickNode API Key',
+        type: APIKeyType.QuickNode,
+        generateUrl: 'https://www.quicknode.com/dashboard',
+        instructions: '1. Sign in to QuickNode dashboard\n2. Navigate to API Keys\n3. Create a new endpoint\n4. Copy the API key',
+      };
+    case APIKeyType.Alchemy:
+      return {
+        name: 'Alchemy API Key',
+        type: APIKeyType.Alchemy,
+        generateUrl: 'https://dashboard.alchemy.com/',
+        instructions: '1. Sign in to Alchemy dashboard\n2. Create a new app\n3. Copy the API key from app details',
+      };
+    case APIKeyType.Ankr:
+      return {
+        name: 'Ankr API Key',
+        type: APIKeyType.Ankr,
+        generateUrl: 'https://www.ankr.com/rpc/',
+        instructions: '1. Sign in to Ankr\n2. Navigate to RPC service\n3. Create API key\n4. Copy the key',
+      };
+    case APIKeyType.GetBlock:
+      return {
+        name: 'GetBlock API Key',
+        type: APIKeyType.GetBlock,
+        generateUrl: 'https://getblock.io/dashboard',
+        instructions: '1. Sign in to GetBlock\n2. Navigate to API Keys\n3. Create new key\n4. Copy the Bearer token',
+      };
+    case APIKeyType.Chainstack:
+      return {
+        name: 'Chainstack API Key',
+        type: APIKeyType.Chainstack,
+        generateUrl: 'https://console.chainstack.com/',
+        instructions: '1. Sign in to Chainstack\n2. Create a project\n3. Get API key from project settings\n4. Copy the key',
+      };
+    // Solana Ecosystem - Data APIs
+    case APIKeyType.Shyft:
+      return {
+        name: 'Shyft API Key',
+        type: APIKeyType.Shyft,
+        generateUrl: 'https://shyft.to/get-api-key',
+        instructions: '1. Sign up for Shyft\n2. Navigate to API Keys\n3. Create new key\n4. Copy the x-api-key',
+      };
+    case APIKeyType.SolanaFM:
+      return {
+        name: 'SolanaFM API Key',
+        type: APIKeyType.SolanaFM,
+        generateUrl: 'https://solana.fm/api',
+        instructions: '1. Visit SolanaFM API page\n2. Sign up for API access\n3. Get your API key\n4. Copy the key',
+      };
+    case APIKeyType.Solscan:
+      return {
+        name: 'Solscan API Key',
+        type: APIKeyType.Solscan,
+        generateUrl: 'https://public-api.solscan.io/',
+        instructions: '1. Visit Solscan API page\n2. Sign up for API access\n3. Get your API key\n4. Copy the key',
+      };
+    // Solana Ecosystem - Trading/MEV
+    case APIKeyType.Bloxroute:
+      return {
+        name: 'bloXroute API Key',
+        type: APIKeyType.Bloxroute,
+        generateUrl: 'https://bloxroute.com/',
+        instructions: '1. Contact bloXroute for API access\n2. Get authorization token\n3. Copy the long authorization string',
+      };
+    case APIKeyType.ZeroX:
+      return {
+        name: '0x API Key',
+        type: APIKeyType.ZeroX,
+        generateUrl: 'https://0x.org/docs/api',
+        instructions: '1. Sign up for 0x API\n2. Get API key from dashboard\n3. Copy the UUID key',
+      };
+    // Additional Services
+    case APIKeyType.Moralis:
+      return {
+        name: 'Moralis API Key',
+        type: APIKeyType.Moralis,
+        generateUrl: 'https://admin.moralis.io/',
+        instructions: '1. Sign in to Moralis\n2. Navigate to Web3 APIs\n3. Get API key\n4. Copy the key',
+      };
+    case APIKeyType.Tatum:
+      return {
+        name: 'Tatum API Key',
+        type: APIKeyType.Tatum,
+        generateUrl: 'https://tatum.io/',
+        instructions: '1. Sign up for Tatum\n2. Get API key from dashboard\n3. Copy the key',
       };
     default:
       return {

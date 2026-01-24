@@ -131,9 +131,9 @@ export async function generateSessionSigs(
         resource: new LitAccessControlConditionResource(
           JSON.stringify(accessConditions)
         ),
-        ability: LIT_ABILITY_ACCESS_CONTROL_CONDITION_DECRYPTION,
-      },
-    ],
+        ability: LIT_ABILITY_ACCESS_CONTROL_CONDITION_DECRYPTION as any,
+      } as any,
+    ] as any,
     authNeededCallback: async (params: any) => {
       // For Solana, we need to sign a message with the wallet
       if (!signMessage) {

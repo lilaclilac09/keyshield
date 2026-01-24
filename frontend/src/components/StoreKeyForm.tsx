@@ -97,13 +97,37 @@ export function StoreKeyForm({ onClose, existingVault }: StoreKeyFormProps) {
               onChange={(e) => setProvider(e.target.value as APIKeyType)}
               className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
             >
-              <option value={APIKeyType.Generic}>Generic</option>
-              <option value={APIKeyType.Helius}>Helius</option>
-              <option value={APIKeyType.OpenAI}>OpenAI</option>
-              <option value={APIKeyType.GitHub}>GitHub</option>
-              <option value={APIKeyType.GoogleGemini}>Google Gemini</option>
-              <option value={APIKeyType.Stripe}>Stripe</option>
-              <option value={APIKeyType.AWS}>AWS</option>
+              <optgroup label="Solana RPC Providers">
+                <option value={APIKeyType.Helius}>Helius</option>
+                <option value={APIKeyType.QuickNode}>QuickNode</option>
+                <option value={APIKeyType.Alchemy}>Alchemy</option>
+                <option value={APIKeyType.Ankr}>Ankr</option>
+                <option value={APIKeyType.GetBlock}>GetBlock</option>
+                <option value={APIKeyType.Chainstack}>Chainstack</option>
+              </optgroup>
+              <optgroup label="Solana Data APIs">
+                <option value={APIKeyType.Shyft}>Shyft</option>
+                <option value={APIKeyType.SolanaFM}>SolanaFM</option>
+                <option value={APIKeyType.Solscan}>Solscan</option>
+              </optgroup>
+              <optgroup label="Trading & MEV">
+                <option value={APIKeyType.Bloxroute}>bloXroute</option>
+                <option value={APIKeyType.ZeroX}>0x API</option>
+              </optgroup>
+              <optgroup label="Additional Services">
+                <option value={APIKeyType.Moralis}>Moralis</option>
+                <option value={APIKeyType.Tatum}>Tatum</option>
+              </optgroup>
+              <optgroup label="Classic APIs">
+                <option value={APIKeyType.GitHub}>GitHub</option>
+                <option value={APIKeyType.OpenAI}>OpenAI</option>
+                <option value={APIKeyType.GoogleGemini}>Google Gemini</option>
+                <option value={APIKeyType.Stripe}>Stripe</option>
+                <option value={APIKeyType.AWS}>AWS</option>
+              </optgroup>
+              <optgroup label="Other">
+                <option value={APIKeyType.Generic}>Generic</option>
+              </optgroup>
             </select>
             {provider !== APIKeyType.Generic && (
               <p className="text-xs text-gray-500 mt-1">
