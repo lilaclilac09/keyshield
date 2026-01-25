@@ -215,45 +215,6 @@ Layer 4: Secure Sharing (MPC)
 
 ---
 
-### Oracle Service Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ORACLE SERVICE FLOW                       │
-└─────────────────────────────────────────────────────────────┘
-
-1. User Request (Oracle Call)
-   │
-   ▼
-2. Oracle Service
-   │
-   ├─► Read Vault from On-Chain
-   │   └─► Get encrypted_key_hash (32 bytes)
-   │
-   ├─► Retrieve Full Ciphertext from Off-Chain Storage
-   │   └─► IndexedDB: ciphertext:${hash} → full ciphertext (1-5 KB)
-   │
-   ├─► Decrypt API Key using Lit Protocol
-   │   └─► Requires session signatures from wallet
-   │
-   ├─► Call External API (GitHub/Helius/Google Gemini)
-   │   └─► Use decrypted API key in request
-   │
-   └─► Return Results
-       │
-       ├─► Display to User (Off-Chain)
-       └─► (Optional) Post to On-Chain Program
-           └─► example-oracle program stores results
-```
-
-**Oracle Pattern Benefits:**
-- On-chain programs can consume external API data
-- API keys never exposed on-chain
-- Decentralized access control via Lit Protocol
-- Results can be posted on-chain for transparency
-
----
-
 ### On-Chain vs Off-Chain Architecture
 
 #### On-Chain Components (288 bytes total)
@@ -280,7 +241,6 @@ Layer 4: Secure Sharing (MPC)
 - **Key detection logic** - Browser extension monitors forms/clipboard
 - **Encryption/Decryption operations** - Lit Protocol client-side
 - **External API calls** - GitHub, Helius, Google Gemini
-- **Oracle service execution** - Reads vault, decrypts, calls APIs
 - **ZK proof generation** - Bonsol proof generation (async)
 - **MPC computation** - Arcium MPC operations (async)
 
@@ -364,8 +324,7 @@ Production Environment
 ### Ready for Manual Testing 🧪
 1. **End-to-End Workflow** - Store → Retrieve → Decrypt
 2. **Access Control** - Test wallet-based access restrictions
-3. **Oracle Service** - Test external API calls with decrypted keys
-4. **Extension** - Browser extension for auto-detection (next phase)
+3. **Extension** - Browser extension for auto-detection (next phase)
 
 ---
 
@@ -399,4 +358,3 @@ The architecture ensures:
 - ✅ Scalability: Efficient account structure (32 bytes on-chain, 1-5 KB off-chain)
 - ✅ Flexibility: Support for various access patterns
 - ✅ Cost Efficiency: Minimal on-chain storage (hash reference only)
-- ✅ Oracle Pattern: Enables on-chain programs to consume external API data

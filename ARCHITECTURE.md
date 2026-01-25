@@ -341,63 +341,6 @@ Transaction Error
 
 ---
 
-## 🔄 Oracle Service Pattern
-
-### Overview
-
-The oracle service pattern enables on-chain programs to consume data from external APIs (GitHub, Helius, Google Gemini) without exposing API keys on-chain.
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ORACLE SERVICE FLOW                       │
-└─────────────────────────────────────────────────────────────┘
-
-1. User Request (Oracle Call)
-   │
-   ▼
-2. Oracle Service
-   │
-   ├─► Read Vault from On-Chain
-   │   └─► Get encrypted_key_hash (32 bytes)
-   │
-   ├─► Retrieve Full Ciphertext from Off-Chain Storage
-   │   └─► IndexedDB: ciphertext:${hash} → full ciphertext (1-5 KB)
-   │
-   ├─► Decrypt API Key using Lit Protocol
-   │   └─► Requires session signatures from wallet
-   │
-   ├─► Call External API (GitHub/Helius/Google Gemini)
-   │   └─► Use decrypted API key in request
-   │
-   └─► Return Results
-       │
-       ├─► Display to User (Off-Chain)
-       └─► (Optional) Post to On-Chain Program
-           └─► example-oracle program stores results
-```
-
-### Implementation
-
-**Oracle Service** (`frontend/src/lib/oracle-service.ts`):
-- Reads vault from on-chain
-- Retrieves full ciphertext from IndexedDB
-- Decrypts using Lit Protocol
-- Calls external APIs
-- Returns results
-
-**Oracle UI** (`frontend/src/components/OracleIntegration.tsx`):
-- Configures API endpoint
-- Executes oracle calls
-- Displays results
-- Optionally posts to on-chain program
-
-**Example On-Chain Program** (`programs/example-oracle/`):
-- Accepts oracle results via instruction
-- Stores results in account
-- Verifies oracle authority
-
 ## 🏗️ On-Chain vs Off-Chain Architecture Decisions
 
 ### On-Chain Components
@@ -544,21 +487,19 @@ Lit Protocol `encryptString()` returns ciphertexts that are typically 1-5 KB (ba
 **API Key Type**: `APIKeyType.GitHub`
 **Detection**: `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` patterns
 **Usage**: Bearer token in `Authorization` header
-**Oracle Endpoint**: `https://api.github.com{endpoint}`
+**Usage**: Bearer token in `Authorization` header
 
 ### Helius Integration
 
 **API Key Type**: `APIKeyType.Helius`
 **Detection**: 32-64 char alphanumeric + field name patterns
 **Usage**: `x-api-key` header
-**Oracle Endpoint**: `https://api.helius.dev{endpoint}`
 
 ### Google Gemini Integration
 
 **API Key Type**: `APIKeyType.GoogleGemini`
 **Detection**: `AIza...` pattern + field name patterns
 **Usage**: Query parameter `?key={apiKey}` or header
-**Oracle Endpoint**: `https://generativelanguage.googleapis.com/v1{endpoint}`
 
 ---
 
@@ -569,4 +510,3 @@ This architecture ensures:
 - ✅ Scalability: Efficient account structure (32 bytes on-chain, 1-5 KB off-chain)
 - ✅ Flexibility: Support for various access patterns
 - ✅ Cost Efficiency: Minimal on-chain storage (hash reference only)
-- ✅ Oracle Pattern: Enables on-chain programs to consume external API data

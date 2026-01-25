@@ -244,40 +244,6 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Flow 4: Oracle Service (Use Key for External API)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  USER CONFIGURES ORACLE CALL                                    │
-│  • Selects vault with stored API key                           │
-│  • Enters API endpoint (e.g., GitHub API)                      │
-│  • Clicks "Execute Oracle Call"                                 │
-└─────────────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Oracle Service: getDecryptedApiKey()                           │
-│  • Reads vault from on-chain                                    │
-│  • Gets encrypted_key_hash                                      │
-│  • Retrieves ciphertext from IndexedDB                          │
-│  • Decrypts with Lit Protocol                                   │
-└─────────────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Oracle Service: callExternalAPI()                              │
-│  • Uses decrypted API key in request                            │
-│  • Calls external API (GitHub/Helius/Google Gemini)             │
-│  • Returns API response                                         │
-└─────────────────────────────────────────────────────────────────┘
-                    │
-                    ├─► Display results to user (off-chain)
-                    │
-                    └─► (Optional) Post results to on-chain program
-                        • example-oracle program stores results
-                        • Enables on-chain programs to consume API data
-```
-
 ---
 
 ## 🔐 Security Architecture (4 Layers)
@@ -369,12 +335,7 @@ Value: Full Lit Protocol ciphertext (1-5 KB, base64 string)
 - **How**: Read vault → Get ciphertext → Lit decryption
 - **Security**: Wallet signature required for decryption
 
-### 4. Oracle Service
-- **Where**: Dashboard Oracle Integration component
-- **How**: Decrypt key → Call external API → Return results
-- **Use Case**: On-chain programs consuming external API data
-
-### 5. Key Sharing (Future)
+### 4. Key Sharing (Future)
 - **Where**: Dashboard Share Key dialog
 - **How**: MPC computation → Share account creation
 - **Security**: Time-locked access, encrypted sharing
@@ -411,14 +372,13 @@ Value: Full Lit Protocol ciphertext (1-5 KB, base64 string)
 ```
 keyshield/
 ├── programs/
-│   ├── keyshield/              # Main Solana program
-│   │   ├── src/
-│   │   │   ├── lib.rs          # Entry point
-│   │   │   ├── state.rs        # Vault state
-│   │   │   ├── pda.rs          # PDA derivation
-│   │   │   └── instructions/   # Instruction handlers
-│   │   └── Cargo.toml
-│   └── example-oracle/         # Oracle example program
+│   └── keyshield/              # Main Solana program
+│       ├── src/
+│       │   ├── lib.rs          # Entry point
+│       │   ├── state.rs        # Vault state
+│       │   ├── pda.rs          # PDA derivation
+│       │   └── instructions/   # Instruction handlers
+│       └── Cargo.toml
 │
 ├── frontend/                   # Next.js dashboard
 │   ├── src/
@@ -452,7 +412,6 @@ keyshield/
 4. **Extension**: Auto-detection + notification flow
 5. **On-Chain Storage**: Hash-based pattern
 6. **Off-Chain Storage**: IndexedDB ciphertext storage
-7. **Oracle Service**: External API integration
 
 ### In Progress 🚧
 1. **Bonsol Integration**: ZK proof generation (stub)

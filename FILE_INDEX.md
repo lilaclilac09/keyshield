@@ -105,7 +105,6 @@ This document lists all files in the KeyShield project, organized by folder stru
 - **ErrorBoundary.tsx** - Error boundary component
 - **ErrorToast.tsx** - Error toast notification
 - **GoogleAIConnector.tsx** - Google AI integration component
-- **OracleIntegration.tsx** - Oracle service integration
 - **ShareKeyDialog.tsx** - Dialog for sharing keys
 - **StoreKeyForm.tsx** - Form for storing keys
 - **VaultDisplay.tsx** - Display vault information
@@ -127,7 +126,6 @@ This document lists all files in the KeyShield project, organized by folder stru
 - **google-ai.ts** - Google AI integration
 - **keyshield-client.ts** - Client SDK for program interaction
 - **lit-protocol.ts** - Lit Protocol integration
-- **oracle-service.ts** - Oracle service implementation
 - **solana.ts** - Solana connection utilities
 
 ### frontend/src/types/
@@ -136,20 +134,6 @@ This document lists all files in the KeyShield project, organized by folder stru
 ---
 
 ## 📂 programs/ - Solana Programs
-
-### programs/example-oracle/
-- **Cargo.toml** - Rust dependencies
-
-#### programs/example-oracle/src/
-- **error.rs** - Custom error types
-- **lib.rs** - Program entrypoint
-
-#### programs/example-oracle/src/instructions/
-- **mod.rs** - Instruction module
-- **store_result.rs** - Store result instruction handler
-
-#### programs/example-oracle/src/
-- **state.rs** - Oracle state structure
 
 ### programs/keyshield/
 - **Cargo.toml** - Rust dependencies
