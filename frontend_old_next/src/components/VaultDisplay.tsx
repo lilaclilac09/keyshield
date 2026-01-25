@@ -45,10 +45,6 @@ export function VaultDisplay({ vault }: VaultDisplayProps) {
         return { icon: '⚡', name: 'Helius', color: 'bg-purple-600', badgeColor: 'bg-purple-700' };
       case APIKeyType.GoogleGemini:
         return { icon: '🤖', name: 'Google Gemini', color: 'bg-blue-600', badgeColor: 'bg-blue-700' };
-      case APIKeyType.Bloxroute:
-        return { icon: '🚀', name: 'bloXroute', color: 'bg-orange-600', badgeColor: 'bg-orange-700' };
-      case APIKeyType.ZeroX:
-        return { icon: '0x', name: '0x API', color: 'bg-indigo-600', badgeColor: 'bg-indigo-700' };
       default:
         return { icon: '🔐', name: 'API Key', color: 'bg-blue-600', badgeColor: 'bg-blue-700' };
     }

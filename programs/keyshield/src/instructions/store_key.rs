@@ -7,6 +7,7 @@ use pinocchio::{
     pubkey::Pubkey,
     seeds,
     sysvars::rent::Rent,
+    sysvars::Sysvar,
     ProgramResult,
 };
 

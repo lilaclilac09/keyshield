@@ -52,7 +52,10 @@ pub fn process_access_key(
     let owner = Pubkey::try_from(&owner_bytes[..])
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
-    let _zk_commit: [u8; 32] = vault_data[168..200].try_into()
+    // Vault layout (see `state::Vault` and `store_key` writer):
+    // discriminator [0..8], owner [8..40], encrypted_key_hash [40..72],
+    // zk_commit [72..104], mpc_hash [104..136], created_at [136..144], access_flags [144]
+    let _zk_commit: [u8; 32] = vault_data[72..104].try_into()
         .map_err(|_| KeyShieldError::VaultNotFound)?;
 
     // Check if requester is owner

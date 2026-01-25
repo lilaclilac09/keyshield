@@ -1,0 +1,24 @@
+
+{
+  "manifest_version": 3,
+  "name": "KeyShield - Sovereign Vault",
+  "version": "1.0.0",
+  "description": "Securely detect and vault your API keys.",
+  "permissions": [
+    "storage",
+    "notifications",
+    "clipboardRead"
+  ],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}

@@ -2,18 +2,10 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
+import { WalletAdapterNetwork, type Adapter } from '@solana/wallet-adapter-base';
 import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { 
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-  WalletConnectWalletAdapter,
-  LedgerWalletAdapter,
-  TorusWalletAdapter,
-  CoinbaseWalletAdapter,
-  UnsafeBurnerWalletAdapter,
-} from '@solana/wallet-adapter-wallets';
+import { WalletConnectWalletAdapter } from '@solana/wallet-adapter-walletconnect';
 import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -46,12 +38,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Get WalletConnect project ID from environment or use default
       const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'c8a62035-6378-4ddd-9cde-ab3967305ebc';
       
-      // Prioritize WalletConnect for Safari and cross-platform compatibility
+      // Use WalletConnect for cross-platform compatibility
       // WalletConnect allows users to connect with any Solana wallet via QR code
-      const walletAdapters = [
-        // Local burner wallet for development/testing (auto-generates keypair, no extension needed)
-        // Useful for Safari testing without browser extensions
-        new UnsafeBurnerWalletAdapter(),
+      const walletAdapters: Adapter[] = [
         // WalletConnect - works on all platforms including Safari without extensions
         // This enables connection via QR code to any Solana wallet (Phantom, Solflare, etc.)
         new WalletConnectWalletAdapter({
@@ -68,14 +57,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             },
           },
         }),
-        // Browser extension wallets (will be detected if available)
-        // These work automatically if the extension is installed
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter(),
-        // Additional wallet adapters for broader compatibility
-        new LedgerWalletAdapter(),
-        new TorusWalletAdapter(),
-        new CoinbaseWalletAdapter(),
+        // Browser extension wallets will be auto-detected by the wallet adapter
+        // if the user has them installed (Phantom, Solflare, etc.)
       ];
 
       return walletAdapters;

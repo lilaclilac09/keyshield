@@ -93,14 +93,18 @@ export class KeyShieldClient {
     const [vaultPDA, bump] = await this.deriveVaultPDA(owner);
 
     // Instruction data layout:
-    // discriminator (1) + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) + key_type (1) = 106 bytes
-    const instructionData = Buffer.alloc(106);
+    // discriminator (1)
+    // + encrypted_key_hash (32) + zk_commit (32) + mpc_hash (32) + timestamp (8) + key_type (1)
+    // + vault_bump (1)
+    // = 107 bytes
+    const instructionData = Buffer.alloc(107);
     instructionData.writeUInt8(INSTRUCTION.STORE_KEY, 0);
     instructionData.set(encryptedKeyHash.slice(0, 32), 1);
     instructionData.set(zkCommit.slice(0, 32), 33);
     instructionData.set(mpcHash.slice(0, 32), 65);
     instructionData.writeBigUInt64LE(BigInt(timestamp), 97);
     instructionData.writeUInt8(keyType, 105);
+    instructionData.writeUInt8(bump, 106);
 
     return new TransactionInstruction({
       programId: this.programId,
@@ -150,21 +154,25 @@ export class KeyShieldClient {
     timeLock?: number
   ): Promise<TransactionInstruction> {
     const [vaultPDA] = await this.deriveVaultPDA(owner);
-    const [sharePDA] = await this.deriveSharePDA(vaultPDA, recipient);
+    const [sharePDA, shareBump] = await this.deriveSharePDA(vaultPDA, recipient);
 
-    // Instruction data: discriminator (1) + recipient (32) + time_lock (8) = 41 bytes
-    const instructionData = Buffer.alloc(41);
+    // Instruction data:
+    // discriminator (1) + recipient (32) + time_lock (8) + share_bump (1) = 42 bytes
+    const instructionData = Buffer.alloc(42);
     instructionData.writeUInt8(INSTRUCTION.SHARE_KEY, 0);
     instructionData.set(recipient.toBuffer(), 1);
     instructionData.writeBigUInt64LE(BigInt(timeLock || 0), 33);
+    instructionData.writeUInt8(shareBump, 41);
 
     return new TransactionInstruction({
       programId: this.programId,
       keys: [
-        { pubkey: owner, isSigner: true, isWritable: false },
+        // Owner is payer if share PDA must be created.
+        { pubkey: owner, isSigner: true, isWritable: true },
         { pubkey: vaultPDA, isSigner: false, isWritable: false },
         { pubkey: sharePDA, isSigner: false, isWritable: true },
         { pubkey: recipient, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
       data: instructionData,
     });
