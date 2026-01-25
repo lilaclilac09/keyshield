@@ -1,27 +1,23 @@
 # 📁 KeyShield - Complete File Index
 
-This document lists all files in the KeyShield project, organized by folder structure.
+This document lists project files organized by folder structure. Generated
+artifacts and dependency folders (such as `node_modules/`, `target/`, and
+`.git/`) are intentionally excluded.
 
 ## 📚 Root Directory Files
 
 ### Documentation Files (.md)
-- **ARCHITECTURE.md** ⭐ - Complete system architecture (572 lines) - Essential reading
-- **COMPLETE_OVERVIEW.md** - Complete user flow & architecture overview
-- **DECRYPTION_TESTING.md** - Decryption flow testing documentation
+- **ARCHITECTURE.md** ⭐ - Complete system architecture
+- **COMPLETE_OVERVIEW.md** - User flow & architecture overview
+- **FILE_INDEX.md** - This file index
 - **LIT_PROTOCOL_V4_UPDATE.md** - Lit Protocol v4 migration guide
-- **QUICK_VERIFICATION.md** - Quick verification steps
-- **QUICKSTART.md** - 5-minute quick start guide
 - **README.md** - Project overview, quick start, features
-- **SETUP.md** - Detailed setup instructions
-- **START_HERE.md** - Quick testing guide and documentation index
-- **TEST_AND_ARCHITECTURE_SUMMARY.md** - Test results + architecture summary
-- **TEST_RESULTS.md** - Test results and status
-- **TESTING.md** - Complete testing guide
 
 ### Configuration Files
 - **.gitattributes** - Git attributes configuration
 - **.gitignore** - Git ignore rules
 - **Cargo.toml** - Rust workspace configuration
+- **Cargo.lock** - Rust dependency lockfile
 
 ### Scripts (.sh)
 - **demo.sh** - Demo script
@@ -78,58 +74,40 @@ This document lists all files in the KeyShield project, organized by folder stru
 
 ---
 
-## 📂 frontend/ - Next.js Frontend
+## 📂 frontend/ - Web UI (Vite)
 
 ### Root Files
-- **fix-server-error.md** - Server error fix documentation
-- **next.config.js** - Next.js configuration
-- **next-env.d.ts** - Next.js TypeScript definitions
+- **.gitignore** - Frontend git ignore rules
+- **App.tsx** - Root app component
+- **DEPLOYMENT_TEST.md** - Deployment test guide
+- **README.md** - Frontend overview
+- **TEST_INSTRUCTIONS.md** - Testing instructions
+- **background.js** - Extension background script
+- **constants.tsx** - Frontend constants
+- **content.js** - Extension content script
+- **index.html** - HTML entrypoint
+- **index.tsx** - Frontend entrypoint
+- **manifest.json** - Extension manifest
+- **metadata.json** - Extension metadata
 - **package.json** - Frontend dependencies
 - **package-lock.json** - Locked dependencies
-- **postcss.config.js** - PostCSS configuration
-- **tailwind.config.js** - Tailwind CSS configuration
 - **tsconfig.json** - TypeScript configuration
+- **types.ts** - Shared type definitions
+- **vite.config.ts** - Vite configuration
 
-### frontend/public/
-- **verify-storage.js** - Storage verification script
+### frontend/components/
+- **AddKeyModal.tsx** - Add key modal
+- **AuthScreen.tsx** - Authentication screen
+- **DetectionOverlay.tsx** - Detection overlay UI
+- **OCRModal.tsx** - OCR modal
+- **ProviderIcons.tsx** - Provider icon set
+- **ReportViewer.tsx** - Report viewer
+- **SolanaProvider.tsx** - Solana provider wrapper
+- **VaultItemCard.tsx** - Vault item card
+- **WalletConnector.tsx** - Wallet connection UI
 
-### frontend/src/app/
-- **globals.css** - Global CSS styles
-- **layout.tsx** - Root layout with WalletProvider
-- **page.tsx** - Main dashboard page
-
-### frontend/src/components/
-- **AutoDetectionTest.tsx** - Auto-detection test component
-- **CyberpunkOverlay.tsx** - Cyberpunk-themed overlay
-- **Dashboard.tsx** - Main dashboard component
-- **ErrorBoundary.tsx** - Error boundary component
-- **ErrorToast.tsx** - Error toast notification
-- **GoogleAIConnector.tsx** - Google AI integration component
-- **ShareKeyDialog.tsx** - Dialog for sharing keys
-- **StoreKeyForm.tsx** - Form for storing keys
-- **VaultDisplay.tsx** - Display vault information
-- **WalletProvider.tsx** - Solana wallet context provider
-- **WalletSelector.tsx** - Wallet selector component
-
-### frontend/src/hooks/
-- **useAIAgent.ts** - AI agent integration hook
-- **useVault.ts** - Vault data hook
-- **useWallet.tsx** - Wallet hook
-
-### frontend/src/lib/
-- **api-key-generators.ts** - API key generation helpers
-- **api-verifier.ts** - API verification utilities
-- **arcium.ts** - Arcium MPC integration
-- **bonsol.ts** - Bonsol ZK proof integration
-- **ciphertext-storage.ts** - Ciphertext storage utilities
-- **constants.ts** - Program constants
-- **google-ai.ts** - Google AI integration
-- **keyshield-client.ts** - Client SDK for program interaction
-- **lit-protocol.ts** - Lit Protocol integration
-- **solana.ts** - Solana connection utilities
-
-### frontend/src/types/
-- **index.ts** - TypeScript type definitions
+### frontend/hooks/
+- **useVaults.ts** - Vault list hook
 
 ---
 
@@ -169,19 +147,21 @@ This document lists all files in the KeyShield project, organized by folder stru
 ## 📊 File Statistics
 
 ### By Type
-- **Markdown (.md)**: 18 files
+- **Markdown (.md)**: 13 files
 - **TypeScript (.ts/.tsx)**: 26 files
-- **Rust (.rs)**: 13 files
+- **Rust (.rs)**: 8 files
 - **Shell Scripts (.sh)**: 11 files
-- **JSON**: 9 files
-- **Configuration**: 8 files (Cargo.toml, tsconfig.json, etc.)
-- **Other**: 5 files (HTML, CSS, JS)
+- **JSON (.json)**: 11 files
+- **JavaScript (.js)**: 3 files
+- **HTML (.html)**: 3 files
+- **TOML (.toml)**: 2 files
+- **Other**: 5 files
 
 ### By Directory
-- **Root**: 17 files
-- **extension/**: 30+ files
-- **frontend/**: 40+ files
-- **programs/**: 13 files
+- **Root**: 13 files
+- **extension/**: 29 files
+- **frontend/**: 28 files
+- **programs/**: 9 files
 - **scripts/**: 2 files
 - **test/**: 1 file
 
@@ -192,15 +172,15 @@ This document lists all files in the KeyShield project, organized by folder stru
 ### Must-Read Documentation
 1. **[ARCHITECTURE.md](./ARCHITECTURE.md)** ⭐ - Complete system architecture
 2. **[README.md](./README.md)** - Project overview
-3. **[START_HERE.md](./START_HERE.md)** - Quick start guide
-4. **[COMPLETE_OVERVIEW.md](./COMPLETE_OVERVIEW.md)** - User flows & architecture
+3. **[COMPLETE_OVERVIEW.md](./COMPLETE_OVERVIEW.md)** - User flows & architecture
+4. **[LIT_PROTOCOL_V4_UPDATE.md](./LIT_PROTOCOL_V4_UPDATE.md)** - Lit Protocol v4 guide
 
 ### Key Source Files
-- **frontend/src/lib/keyshield-client.ts** - Main client SDK
-- **frontend/src/lib/lit-protocol.ts** - Lit Protocol integration
+- **frontend/components/WalletConnector.tsx** - Wallet connection UI
+- **frontend/components/DetectionOverlay.tsx** - Detection overlay
 - **programs/keyshield/src/lib.rs** - Solana program entrypoint
 - **extension/src/lib/key-detector.ts** - Key detection logic
 
 ---
 
-**Last Updated**: 2026-01-24
+**Last Updated**: 2026-01-25
