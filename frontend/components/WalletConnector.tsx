@@ -51,7 +51,7 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
           <div className="text-[9px] font-bold uppercase tracking-tight opacity-60">
             {connected && publicKey 
               ? `ADDR: ${publicKey.toBase58().slice(0, 12)}...` 
-              : 'SUPPORTED: PHANTOM / BACKPACK / BURNER'}
+              : 'SUPPORTED: PHANTOM / SOLFLARE / BACKPACK / BURNER'}
           </div>
         </div>
       </button>

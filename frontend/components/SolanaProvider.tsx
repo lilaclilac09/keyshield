@@ -2,7 +2,12 @@
 import React, { useMemo } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import { UnsafeBurnerWalletAdapter } from '@solana/wallet-adapter-wallets';
+import {
+  BackpackWalletAdapter,
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+  UnsafeBurnerWalletAdapter,
+} from '@solana/wallet-adapter-wallets';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 
@@ -18,10 +23,13 @@ export const SolanaProvider: React.FC<Props> = ({ children }) => {
   // wallets that we want to support
   const wallets = useMemo(
     () => [
+      new PhantomWalletAdapter({ network }),
+      new SolflareWalletAdapter({ network }),
+      new BackpackWalletAdapter({ network }),
       // Included as requested for easy Safari/Local testing without extensions
       new UnsafeBurnerWalletAdapter(),
     ],
-    []
+    [network]
   );
 
   return (
