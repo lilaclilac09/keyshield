@@ -66,6 +66,17 @@
       color: #f87171;
     }
 
+    .status.loading {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
     .button {
       width: 100%;
       padding: 12px;
@@ -183,6 +194,9 @@
       <button id="auth-webauthn" class="button primary">
         Authenticate with Biometric
       </button>
+      <button id="bypass-biometric" class="button secondary" style="display: none;">
+        Bypass Biometric → Use Master Password
+      </button>
       <button id="auth-password" class="button secondary">
         Use Master Password
       </button>
@@ -192,11 +206,22 @@
           <label for="password-input">Master Password</label>
           <input type="password" id="password-input" placeholder="Enter master password">
         </div>
-        <button id="submit-password" class="button primary">Authenticate</button>
+        <button id="submit-password" class="button primary">Unlock Vault</button>
       </div>
     </div>
 
     <div id="main-section" class="hidden">
+      <!-- Wallet Connect Section -->
+      <div id="wallet-connect-section" style="margin-bottom: 20px;">
+        <div id="wallet-status" class="status unauthenticated" style="margin-bottom: 12px;">
+          Wallet Not Connected
+        </div>
+        <button id="wallet-connect-btn" class="button primary">
+          Connect Phantom Wallet
+        </button>
+        <div id="wallet-address" style="font-size: 12px; color: #888; margin-top: 8px; text-align: center;"></div>
+      </div>
+
       <div class="input-group">
         <label for="quick-save-key">Quick Save API Key</label>
         <input type="text" id="quick-save-key" placeholder="Paste API key here">

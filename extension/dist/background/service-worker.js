@@ -211620,6 +211620,100 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
     await storage.initialize();
 });
+// Network header scanning for API keys
+// Listen to outgoing requests to detect API keys in headers
+chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
+    // Only scan requests from tabs (not extension pages)
+    if (!details.tabId || details.tabId < 0) {
+        return;
+    }
+    // Scan headers for API keys
+    if (details.requestHeaders) {
+        const detectedKeys = [];
+        for (const header of details.requestHeaders) {
+            const headerName = header.name.toLowerCase();
+            const headerValue = header.value || '';
+            // Check common API key header names
+            if (headerName === 'authorization' ||
+                headerName === 'x-api-key' ||
+                headerName === '0x-api-key' ||
+                headerName === 'api-key' ||
+                headerName === 'x-auth-token') {
+                // Extract potential key from header value
+                let potentialKey = headerValue;
+                // Handle Bearer token format
+                if (headerName === 'authorization' && headerValue.startsWith('Bearer ')) {
+                    potentialKey = headerValue.substring(7);
+                }
+                else if (headerName === 'authorization' && headerValue.startsWith('token ')) {
+                    potentialKey = headerValue.substring(6);
+                }
+                // Check if it looks like an API key (length and pattern)
+                if (potentialKey && potentialKey.length >= 16 && /^[a-zA-Z0-9_\-+/=]+$/.test(potentialKey)) {
+                    detectedKeys.push({
+                        key: potentialKey,
+                        header: headerName,
+                        url: details.url,
+                    });
+                }
+            }
+        }
+        // Process detected keys
+        if (detectedKeys.length > 0) {
+            detectedKeys.forEach(async (detected) => {
+                // Get tab URL for context
+                try {
+                    const tab = await chrome.tabs.get(details.tabId);
+                    const domain = new URL(tab.url || details.url).hostname;
+                    // Send KEY_DETECTED message (same as DOM detection)
+                    handleKeyDetected({
+                        provider: detectProviderFromHeader(detected.header, detected.key),
+                        key: detected.key,
+                        url: tab.url || details.url,
+                    }, () => { } // No response needed for async detection
+                    );
+                }
+                catch (error) {
+                    console.error('[KeyShield] Error processing header-detected key:', error);
+                }
+            });
+        }
+    }
+}, {
+    urls: ['<all_urls>'],
+}, ['requestHeaders']);
+/**
+ * Detect provider from header name and key pattern
+ */
+function detectProviderFromHeader(headerName, key) {
+    const lowerHeader = headerName.toLowerCase();
+    if (lowerHeader === '0x-api-key') {
+        return '0x API';
+    }
+    if (lowerHeader.includes('bloxroute') || lowerHeader.includes('blox')) {
+        return 'bloXroute';
+    }
+    if (lowerHeader.includes('helius')) {
+        return 'Helius';
+    }
+    if (lowerHeader.includes('github')) {
+        return 'GitHub';
+    }
+    if (lowerHeader.includes('openai')) {
+        return 'OpenAI';
+    }
+    // Try to detect from key pattern
+    if (/^ghp_/.test(key)) {
+        return 'GitHub';
+    }
+    if (/^sk-/.test(key)) {
+        return 'OpenAI';
+    }
+    if (/^AIza/.test(key)) {
+        return 'Google Gemini';
+    }
+    return 'API Key';
+}
 // Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleMessage(message, sender, sendResponse);
@@ -211672,6 +211766,15 @@ async function handleMessage(message, sender, sendResponse) {
                 break;
             case 'KEY_DETECTED':
                 await handleKeyDetected({ provider: message.provider, key: message.key, url: message.url }, sendResponse);
+                break;
+            case 'CONNECT_WALLET':
+                await handleConnectWallet(sendResponse);
+                break;
+            case 'DISCONNECT_WALLET':
+                await handleDisconnectWallet(sendResponse);
+                break;
+            case 'GET_WALLET_STATUS':
+                await handleGetWalletStatus(sendResponse);
                 break;
             default:
                 sendResponse({ success: false, error: 'Unknown message type' });
@@ -212233,6 +212336,110 @@ async function handleKeyDetected(payload, sendResponse) {
     }
     catch (error) {
         console.error('[KeyShield] Error handling key detection:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+}
+/**
+ * Handle wallet connection (Phantom)
+ * In extension context, we inject into the active tab to access Phantom
+ */
+async function handleConnectWallet(sendResponse) {
+    try {
+        // Get active tab to inject connection script
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab.id || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+            // Can't inject into chrome:// pages, open a new tab for connection
+            const connectionPage = chrome.runtime.getURL('wallet-connect.html');
+            chrome.tabs.create({ url: connectionPage });
+            sendResponse({
+                success: false,
+                error: 'Opening connection page. Please connect your wallet there.',
+                requiresPage: true
+            });
+            return;
+        }
+        try {
+            // Inject script to connect to Phantom wallet
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: async () => {
+                    // Check if Phantom is available
+                    if (typeof window.solana !== 'undefined' && window.solana.isPhantom) {
+                        try {
+                            const resp = await window.solana.connect({ onlyIfTrusted: false });
+                            return { success: true, publicKey: resp.publicKey.toString() };
+                        }
+                        catch (err) {
+                            return { success: false, error: err.message || 'Connection rejected' };
+                        }
+                    }
+                    return { success: false, error: 'Phantom wallet not found. Please install Phantom extension.' };
+                },
+            });
+            const result = results[0]?.result;
+            if (result?.success && result.publicKey) {
+                // Store wallet address in session
+                if (currentSession) {
+                    currentSession.walletAddress = result.publicKey;
+                }
+                // Also store in chrome.storage for persistence
+                await chrome.storage.local.set({ walletAddress: result.publicKey });
+                sendResponse({ success: true, address: result.publicKey });
+            }
+            else {
+                sendResponse({ success: false, error: result?.error || 'Failed to connect to Phantom wallet' });
+            }
+        }
+        catch (error) {
+            // If injection fails, guide user to install Phantom
+            sendResponse({
+                success: false,
+                error: 'Please install Phantom wallet extension from https://phantom.app and refresh this page',
+                requiresInstall: true
+            });
+        }
+    }
+    catch (error) {
+        sendResponse({ success: false, error: error.message || 'Failed to connect wallet' });
+    }
+}
+/**
+ * Handle wallet disconnection
+ */
+async function handleDisconnectWallet(sendResponse) {
+    try {
+        if (currentSession) {
+            currentSession.walletAddress = undefined;
+        }
+        await chrome.storage.local.remove('walletAddress');
+        sendResponse({ success: true });
+    }
+    catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+/**
+ * Get wallet connection status
+ */
+async function handleGetWalletStatus(sendResponse) {
+    try {
+        const walletData = await chrome.storage.local.get('walletAddress');
+        const address = walletData.walletAddress || (currentSession?.walletAddress);
+        if (address) {
+            sendResponse({
+                success: true,
+                connected: true,
+                address
+            });
+        }
+        else {
+            sendResponse({
+                success: true,
+                connected: false
+            });
+        }
+    }
+    catch (error) {
         sendResponse({ success: false, error: error.message });
     }
 }

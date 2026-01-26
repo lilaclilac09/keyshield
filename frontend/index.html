@@ -53,6 +53,23 @@
       .wallet-adapter-button:not([disabled]):hover {
         background-color: #ff6200 !important;
       }
+      /* Print styles for Report Viewer */
+      @media print {
+        @page {
+          margin: 1in;
+          size: letter;
+        }
+        body {
+          background: white !important;
+          color: black !important;
+        }
+        .print-break-after {
+          page-break-after: always;
+        }
+        .no-print {
+          display: none !important;
+        }
+      }
     </style>
 <script type="importmap">
 {

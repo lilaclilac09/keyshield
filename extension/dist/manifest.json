@@ -10,7 +10,8 @@
     "scripting",
     "clipboardRead",
     "clipboardWrite",
-    "notifications"
+    "notifications",
+    "webRequest"
   ],
   "host_permissions": [
     "<all_urls>"

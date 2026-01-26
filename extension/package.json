@@ -8,7 +8,7 @@
     "build:chrome": "npm run build",
     "build:firefox": "npm run build",
     "build:all": "./build-all.sh",
-    "copy-assets": "mkdir -p dist/icons && cp -r src/icons/* dist/icons/ 2>/dev/null || true && cp manifest.json dist/ 2>/dev/null || true",
+    "copy-assets": "mkdir -p dist/icons dist/popup && cp -r src/icons/*.png dist/icons/ 2>/dev/null || true && cp src/popup/popup.html dist/popup/ 2>/dev/null || true && cp manifest.json dist/ 2>/dev/null || true",
     "dev": "webpack --mode development --watch",
     "clean": "rm -rf dist dist-chrome dist-firefox dist-safari",
     "type-check": "tsc --noEmit"

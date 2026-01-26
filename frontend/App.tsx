@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Key, Shield, LogOut, Link2Off, Plus } from 'lucide-react';
+import { Search, X, Key, Shield, LogOut, Link2Off, Plus, FileText } from 'lucide-react';
 import { VaultItem } from './types';
 import { VaultItemCard } from './components/VaultItemCard';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
+import { ReportViewer, generateVaultReport } from './components/ReportViewer';
 import { CyberpunkOverlay } from './constants';
 import { SolanaProvider } from './components/SolanaProvider';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -17,10 +18,26 @@ const MainContent: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState('All Items');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const [prefilledData, setPrefilledData] = useState<Partial<VaultItem> | undefined>(undefined);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { items, allItems, addItem, deleteItem } = useVaults(searchQuery, activeFilter);
+  
+  // Debug: Log authentication state
+  useEffect(() => {
+    console.log('🔐 KeyShield Auth State:', { isAuthenticated, publicKey: publicKey?.toBase58() });
+  }, [isAuthenticated, publicKey]);
+
+  // Initial load check
+  useEffect(() => {
+    console.log('📊 KeyShield: MainContent loaded, items count:', allItems.length);
+  }, [allItems.length]);
+  
+  const reportPages = React.useMemo(() => {
+    const walletAddr = publicKey?.toBase58();
+    return generateVaultReport(allItems, undefined, walletAddr);
+  }, [allItems, publicKey]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -94,6 +111,14 @@ const MainContent: React.FC = () => {
         initialData={prefilledData}
       />
 
+      {isReportOpen && (
+        <ReportViewer 
+          pages={reportPages} 
+          onClose={() => setIsReportOpen(false)}
+          mode="clean"
+        />
+      )}
+
       <header className="h-16 bg-transparent px-8 flex items-center justify-between border-b border-white/[0.03]">
         <div className="flex items-center gap-4">
           <Shield size={18} className="text-orange-600/60" />
@@ -141,6 +166,14 @@ const MainContent: React.FC = () => {
                 <Search size={18} />
               </button>
 
+              <button 
+                onClick={() => setIsReportOpen(true)}
+                className="p-2 transition-all hover:text-orange-500 text-zinc-700"
+                title="View Report"
+              >
+                <FileText size={18} />
+              </button>
+
               <div className="flex items-center gap-2 px-3 py-1 bg-[#1e1f20] rounded-sm border border-zinc-800/50">
                 <Shield size={12} className="text-zinc-600" />
                 <span className="text-xs font-bold text-zinc-500 font-mono">{allItems.length.toString().padStart(2, '0')}</span>
@@ -185,6 +218,10 @@ const SidebarItem = ({ label, active, onClick, icon }: { label: string, active?:
 );
 
 const App: React.FC = () => {
+  React.useEffect(() => {
+    console.log('✅ KeyShield App: Component mounted');
+  }, []);
+
   return (
     <SolanaProvider>
       <MainContent />

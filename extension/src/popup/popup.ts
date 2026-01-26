@@ -9,10 +9,15 @@ const mainSection = document.getElementById('main-section')!;
 const passwordForm = document.getElementById('password-form')!;
 const passwordInput = document.getElementById('password-input') as HTMLInputElement;
 const vaultListContainer = document.getElementById('vault-list-container')!;
+const walletConnectSection = document.getElementById('wallet-connect-section')!;
+const walletStatus = document.getElementById('wallet-status')!;
+const walletConnectBtn = document.getElementById('wallet-connect-btn')!;
+const walletAddressDisplay = document.getElementById('wallet-address')!;
 
 // Buttons
 const authWebAuthnBtn = document.getElementById('auth-webauthn')!;
 const authPasswordBtn = document.getElementById('auth-password')!;
+const bypassBiometricBtn = document.getElementById('bypass-biometric')!;
 const submitPasswordBtn = document.getElementById('submit-password')!;
 const quickSaveKeyInput = document.getElementById('quick-save-key') as HTMLInputElement;
 const quickSaveBtn = document.getElementById('quick-save')!;
@@ -21,15 +26,34 @@ const autoFillBtn = document.getElementById('auto-fill')!;
 const ocrCaptureBtn = document.getElementById('ocr-capture')!;
 const logoutBtn = document.getElementById('logout')!;
 
+// State
+let useMasterPassword = false;
+let isAuthenticating = false;
+
 // Check authentication status on load
 checkAuthStatus();
 
 // Event listeners
 authWebAuthnBtn.addEventListener('click', handleWebAuthnAuth);
 authPasswordBtn.addEventListener('click', () => {
+  useMasterPassword = true;
   passwordForm.classList.remove('hidden');
+  authWebAuthnBtn.style.display = 'none';
+  bypassBiometricBtn.style.display = 'none';
+});
+bypassBiometricBtn.addEventListener('click', () => {
+  useMasterPassword = true;
+  passwordForm.classList.remove('hidden');
+  authWebAuthnBtn.style.display = 'none';
+  bypassBiometricBtn.style.display = 'none';
+});
+passwordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !isAuthenticating) {
+    handlePasswordAuth();
+  }
 });
 submitPasswordBtn.addEventListener('click', handlePasswordAuth);
+walletConnectBtn.addEventListener('click', handleWalletConnect);
 quickSaveBtn.addEventListener('click', handleQuickSave);
 detectKeysBtn.addEventListener('click', handleDetectKeys);
 autoFillBtn.addEventListener('click', handleAutoFill);
@@ -45,9 +69,18 @@ async function checkAuthStatus() {
     
     if (response.success && response.authenticated) {
       showAuthenticated();
+      await checkWalletStatus();
       loadVaults();
     } else {
       showUnauthenticated();
+      // Auto-try WebAuthn on load (only if not explicitly using master password)
+      if (!useMasterPassword) {
+        setTimeout(() => {
+          if (!useMasterPassword && authSection && !authSection.classList.contains('hidden')) {
+            handleWebAuthnAuth();
+          }
+        }, 300);
+      }
     }
   } catch (error) {
     console.error('Failed to check auth status:', error);
@@ -59,10 +92,76 @@ async function checkAuthStatus() {
  * Show authenticated UI
  */
 function showAuthenticated() {
-  authStatus.textContent = 'Authenticated';
+  authStatus.textContent = 'Vault Unlocked ✅';
   authStatus.className = 'status authenticated';
   authSection.classList.add('hidden');
   mainSection.classList.remove('hidden');
+  isAuthenticating = false;
+}
+
+/**
+ * Check wallet connection status
+ */
+async function checkWalletStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_WALLET_STATUS' });
+    if (response.success && response.connected && response.address) {
+      walletStatus.textContent = 'Wallet Connected';
+      walletStatus.className = 'status authenticated';
+      walletAddressDisplay.textContent = `${response.address.slice(0, 4)}...${response.address.slice(-4)}`;
+      walletConnectBtn.textContent = 'Disconnect Wallet';
+      walletConnectBtn.classList.remove('primary');
+      walletConnectBtn.classList.add('secondary');
+    } else {
+      walletStatus.textContent = 'Wallet Not Connected';
+      walletStatus.className = 'status unauthenticated';
+      walletAddressDisplay.textContent = '';
+      walletConnectBtn.textContent = 'Connect Phantom Wallet';
+      walletConnectBtn.classList.remove('secondary');
+      walletConnectBtn.classList.add('primary');
+    }
+  } catch (error) {
+    console.error('Failed to check wallet status:', error);
+    walletStatus.textContent = 'Wallet Not Connected';
+    walletStatus.className = 'status unauthenticated';
+  }
+}
+
+/**
+ * Handle wallet connect/disconnect
+ */
+async function handleWalletConnect() {
+  try {
+    const isConnected = walletConnectBtn.textContent?.includes('Disconnect');
+    
+    if (isConnected) {
+      // Disconnect
+      const response = await chrome.runtime.sendMessage({ type: 'DISCONNECT_WALLET' });
+      if (response.success) {
+        await checkWalletStatus();
+      }
+    } else {
+      // Connect
+      walletConnectBtn.disabled = true;
+      walletConnectBtn.textContent = 'Connecting...';
+      
+      const response = await chrome.runtime.sendMessage({ type: 'CONNECT_WALLET' });
+      
+      if (response.success && response.address) {
+        await checkWalletStatus();
+      } else {
+        walletStatus.textContent = `Connection failed: ${response.error || 'Please install Phantom wallet'}`;
+        walletStatus.className = 'status unauthenticated';
+        walletConnectBtn.textContent = 'Connect Phantom Wallet';
+      }
+    }
+  } catch (error: any) {
+    walletStatus.textContent = `Error: ${error.message || 'Connection failed'}`;
+    walletStatus.className = 'status unauthenticated';
+    walletConnectBtn.textContent = 'Connect Phantom Wallet';
+  } finally {
+    walletConnectBtn.disabled = false;
+  }
 }
 
 /**
@@ -74,15 +173,27 @@ function showUnauthenticated() {
   authSection.classList.remove('hidden');
   mainSection.classList.add('hidden');
   passwordForm.classList.add('hidden');
+  useMasterPassword = false;
+  isAuthenticating = false;
+  // Reset button visibility
+  authWebAuthnBtn.style.display = '';
+  bypassBiometricBtn.style.display = '';
+  authWebAuthnBtn.disabled = false;
+  authWebAuthnBtn.textContent = 'Authenticate with Biometric';
 }
 
 /**
  * Handle WebAuthn authentication
  */
 async function handleWebAuthnAuth() {
+  if (isAuthenticating || useMasterPassword) return;
+  
   try {
+    isAuthenticating = true;
     authWebAuthnBtn.disabled = true;
     authWebAuthnBtn.textContent = 'Authenticating...';
+    authStatus.textContent = 'Authenticating...';
+    authStatus.className = 'status loading';
 
     const response = await chrome.runtime.sendMessage({
       type: 'AUTHENTICATE',
@@ -91,13 +202,26 @@ async function handleWebAuthnAuth() {
 
     if (response.success) {
       showAuthenticated();
+      await checkWalletStatus();
       loadVaults();
     } else {
-      alert(`Authentication failed: ${response.error}`);
+      // Show error but allow fallback to password
+      authStatus.textContent = `Biometric failed: ${response.error || 'Use master password'}`;
+      authStatus.className = 'status unauthenticated';
+      // Show bypass button if not already visible
+      if (bypassBiometricBtn.style.display === 'none') {
+        bypassBiometricBtn.style.display = '';
+      }
     }
   } catch (error: any) {
-    alert(`Error: ${error.message}`);
+    authStatus.textContent = `Error: ${error.message || 'Authentication failed'}`;
+    authStatus.className = 'status unauthenticated';
+    // Show bypass button
+    if (bypassBiometricBtn.style.display === 'none') {
+      bypassBiometricBtn.style.display = '';
+    }
   } finally {
+    isAuthenticating = false;
     authWebAuthnBtn.disabled = false;
     authWebAuthnBtn.textContent = 'Authenticate with Biometric';
   }
@@ -107,15 +231,21 @@ async function handleWebAuthnAuth() {
  * Handle password authentication
  */
 async function handlePasswordAuth() {
+  if (isAuthenticating) return;
+  
   try {
-    const password = passwordInput.value;
+    const password = passwordInput.value.trim();
     if (!password) {
-      alert('Please enter a password');
+      authStatus.textContent = 'Please enter a password';
+      authStatus.className = 'status unauthenticated';
       return;
     }
 
+    isAuthenticating = true;
     submitPasswordBtn.disabled = true;
     submitPasswordBtn.textContent = 'Authenticating...';
+    authStatus.textContent = 'Authenticating...';
+    authStatus.className = 'status loading';
 
     const response = await chrome.runtime.sendMessage({
       type: 'AUTHENTICATE',
@@ -126,13 +256,19 @@ async function handlePasswordAuth() {
       passwordInput.value = '';
       passwordForm.classList.add('hidden');
       showAuthenticated();
+      await checkWalletStatus();
       loadVaults();
     } else {
-      alert(`Authentication failed: ${response.error}`);
+      authStatus.textContent = `Authentication failed: ${response.error || 'Invalid password'}`;
+      authStatus.className = 'status unauthenticated';
+      passwordInput.value = '';
+      passwordInput.focus();
     }
   } catch (error: any) {
-    alert(`Error: ${error.message}`);
+    authStatus.textContent = `Error: ${error.message || 'Authentication failed'}`;
+    authStatus.className = 'status unauthenticated';
   } finally {
+    isAuthenticating = false;
     submitPasswordBtn.disabled = false;
     submitPasswordBtn.textContent = 'Authenticate';
   }
@@ -356,7 +492,7 @@ async function handleRevealVault(vaultId: string) {
     // Decrypt key
     const decryptResponse = await chrome.runtime.sendMessage({
       type: 'DECRYPT_KEY',
-      payload: { vaultId, walletAddress: walletAddress.walletAddress },
+      payload: { vaultId, walletAddress: walletData.walletAddress },
     });
 
     if (!decryptResponse.success) {
@@ -398,8 +534,8 @@ async function handleFillVault(vaultId: string) {
     }
 
     // Get wallet address from storage (would be set during setup)
-    const walletAddress = await chrome.storage.local.get('walletAddress');
-    if (!walletAddress.walletAddress) {
+    const walletData = await chrome.storage.local.get('walletAddress');
+    if (!walletData.walletAddress) {
       alert('Wallet not connected');
       return;
     }
@@ -407,7 +543,7 @@ async function handleFillVault(vaultId: string) {
     // Decrypt key
     const decryptResponse = await chrome.runtime.sendMessage({
       type: 'DECRYPT_KEY',
-      payload: { vaultId, walletAddress: walletAddress.walletAddress },
+      payload: { vaultId, walletAddress: walletData.walletAddress },
     });
 
     if (!decryptResponse.success) {

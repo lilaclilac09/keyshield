@@ -222,6 +222,18 @@ async function handleMessage(
         );
         break;
 
+      case 'CONNECT_WALLET':
+        await handleConnectWallet(sendResponse);
+        break;
+
+      case 'DISCONNECT_WALLET':
+        await handleDisconnectWallet(sendResponse);
+        break;
+
+      case 'GET_WALLET_STATUS':
+        await handleGetWalletStatus(sendResponse);
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -911,6 +923,109 @@ async function handleKeyDetected(
     sendResponse({ success: true, notificationId });
   } catch (error: any) {
     console.error('[KeyShield] Error handling key detection:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle wallet connection (Phantom)
+ * In extension context, we inject into the active tab to access Phantom
+ */
+async function handleConnectWallet(sendResponse: (response: any) => void) {
+  try {
+    // Get active tab to inject connection script
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab.id || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+      // Can't inject into chrome:// pages, open a new tab for connection
+      const connectionPage = chrome.runtime.getURL('wallet-connect.html');
+      chrome.tabs.create({ url: connectionPage });
+      sendResponse({ 
+        success: false, 
+        error: 'Opening connection page. Please connect your wallet there.',
+        requiresPage: true 
+      });
+      return;
+    }
+
+    try {
+      // Inject script to connect to Phantom wallet
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: async () => {
+          // Check if Phantom is available
+          if (typeof (window as any).solana !== 'undefined' && (window as any).solana.isPhantom) {
+            try {
+              const resp = await (window as any).solana.connect({ onlyIfTrusted: false });
+              return { success: true, publicKey: resp.publicKey.toString() };
+            } catch (err: any) {
+              return { success: false, error: err.message || 'Connection rejected' };
+            }
+          }
+          return { success: false, error: 'Phantom wallet not found. Please install Phantom extension.' };
+        },
+      });
+
+      const result = results[0]?.result;
+      if (result?.success && result.publicKey) {
+        // Store wallet address in session
+        if (currentSession) {
+          currentSession.walletAddress = result.publicKey;
+        }
+        // Also store in chrome.storage for persistence
+        await chrome.storage.local.set({ walletAddress: result.publicKey });
+        sendResponse({ success: true, address: result.publicKey });
+      } else {
+        sendResponse({ success: false, error: result?.error || 'Failed to connect to Phantom wallet' });
+      }
+    } catch (error: any) {
+      // If injection fails, guide user to install Phantom
+      sendResponse({ 
+        success: false, 
+        error: 'Please install Phantom wallet extension from https://phantom.app and refresh this page',
+        requiresInstall: true 
+      });
+    }
+  } catch (error: any) {
+    sendResponse({ success: false, error: error.message || 'Failed to connect wallet' });
+  }
+}
+
+/**
+ * Handle wallet disconnection
+ */
+async function handleDisconnectWallet(sendResponse: (response: any) => void) {
+  try {
+    if (currentSession) {
+      currentSession.walletAddress = undefined;
+    }
+    await chrome.storage.local.remove('walletAddress');
+    sendResponse({ success: true });
+  } catch (error: any) {
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Get wallet connection status
+ */
+async function handleGetWalletStatus(sendResponse: (response: any) => void) {
+  try {
+    const walletData = await chrome.storage.local.get('walletAddress');
+    const address = walletData.walletAddress || (currentSession?.walletAddress);
+    
+    if (address) {
+      sendResponse({ 
+        success: true, 
+        connected: true, 
+        address 
+      });
+    } else {
+      sendResponse({ 
+        success: true, 
+        connected: false 
+      });
+    }
+  } catch (error: any) {
     sendResponse({ success: false, error: error.message });
   }
 }

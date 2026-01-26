@@ -2,6 +2,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Add console log to verify script is loading
+console.log('🚀 KeyShield: Initializing application...');
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,6 +15,10 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );
+
+console.log('✅ KeyShield: Application mounted successfully');
