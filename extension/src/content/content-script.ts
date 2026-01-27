@@ -278,33 +278,16 @@ function setupAutoDetection() {
     }
   };
 
-  // Initial DOM scan - multiple attempts for reliability
-  const performInitialScans = () => {
-    // Immediate scan (if DOM ready)
-    if (document.body && document.body.children.length > 0) {
-      performDOMScan();
-    }
-    
-    // Retry after 1s
-    setTimeout(performDOMScan, 1000);
-    
-    // Retry after 2s
-    setTimeout(performDOMScan, 2000);
-    
-    // Retry after 5s (for slow-loading content)
-    setTimeout(performDOMScan, 5000);
-  };
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    performInitialScans();
+  // Initial DOM scan after page load
+  if (document.readyState === 'complete') {
+    setTimeout(performDOMScan, 2000); // Wait 2s after page load
   } else {
-    document.addEventListener('DOMContentLoaded', performInitialScans);
     window.addEventListener('load', () => {
-      setTimeout(performDOMScan, 1000);
+      setTimeout(performDOMScan, 2000);
     });
   }
 
-  // Periodic DOM scanning (every 5 seconds)
+  // Periodic DOM scanning
   domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
 
   // Use MutationObserver for dynamic content changes

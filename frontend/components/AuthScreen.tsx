@@ -2,7 +2,6 @@
 import React from 'react';
 import { Shield } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
-import { PhantomEmbeddedConnector } from './PhantomEmbeddedConnector';
 
 interface Props {
   onAuthenticated: () => void;
@@ -23,19 +22,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
         </div>
 
         <div className="w-full space-y-6">
-          {/* Phantom Embedded Wallet - No extension needed */}
-          <PhantomEmbeddedConnector onConnect={onAuthenticated} />
-          
-          {/* Standard Wallet Adapters - Extension-based */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-[#9d4edd]/20"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-[#0f001f] px-4 text-[#e0aaff]/50 text-xs font-medium">OR</span>
-            </div>
-          </div>
-          
           <WalletConnector onConnect={onAuthenticated} />
           
           <button

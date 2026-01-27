@@ -5,7 +5,6 @@ import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
 import { ReportViewer, generateVaultReport } from './components/ReportViewer';
 import { SolanaProvider } from './components/SolanaProvider';
-import { PhantomEmbeddedProvider } from './components/PhantomEmbeddedProvider';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { VaultTable } from './components/VaultTable';
@@ -115,11 +114,9 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <PhantomEmbeddedProvider>
-      <SolanaProvider>
-        <MainContent />
-      </SolanaProvider>
-    </PhantomEmbeddedProvider>
+    <SolanaProvider>
+      <MainContent />
+    </SolanaProvider>
   );
 };
 
