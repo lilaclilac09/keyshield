@@ -12,18 +12,21 @@
     <style>
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #131314;
-        color: #e3e3e3;
+        background-color: #0f001f;
+        color: #ffd6f5;
         overflow-x: hidden;
       }
       .font-mono {
         font-family: 'JetBrains Mono', monospace;
       }
       .cyber-glow {
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+        box-shadow: 0 0 20px rgba(255, 46, 99, 0.4), 0 0 40px rgba(157, 78, 221, 0.2);
       }
-      .cyber-glow-red {
-        box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+      .cyber-glow-pink {
+        box-shadow: 0 0 15px rgba(255, 46, 99, 0.5);
+      }
+      .cyber-glow-purple {
+        box-shadow: 0 0 15px rgba(157, 78, 221, 0.4);
       }
       @keyframes scanline {
         0% { transform: translateY(-100%); }
@@ -39,19 +42,21 @@
         background: linear-gradient(to bottom, transparent, rgba(139, 92, 246, 0.05), transparent);
         animation: scanline 8s linear infinite;
       }
-      /* Override Wallet Modal Colors for Cyberpunk Theme */
+      /* Override Wallet Modal Colors for Vibrant Feminine Theme */
       .wallet-adapter-modal-wrapper {
-        background: #1e1f20 !important;
-        border: 1px solid #2e2e30 !important;
-        color: #fafafa !important;
+        background: #1e0a3c !important;
+        border: 1px solid #9d4edd !important;
+        color: #ffd6f5 !important;
       }
       .wallet-adapter-button {
-        background-color: #2b2c2d !important;
-        border: 1px solid #3c3d3e !important;
+        background-color: #1e0a3c !important;
+        border: 1px solid #9d4edd !important;
         transition: all 0.2s !important;
+        color: #ffd6f5 !important;
       }
       .wallet-adapter-button:not([disabled]):hover {
-        background-color: #ff6200 !important;
+        background-color: #ff2e63 !important;
+        border-color: #ff2e63 !important;
       }
       /* Print styles for Report Viewer */
       @media print {

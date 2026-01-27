@@ -2,12 +2,18 @@
 import React from 'react';
 
 export const THEME = {
-  primary: '#ff6200', // Helius Orange
-  background: '#131314', // Gemini Dark Mode background
-  surface: '#1e1f20', // Gemini Dark Mode surface
+  // Vibrant Feminine Color Palette
+  background: '#0f001f', // Deep midnight navy
+  surface: '#1e0a3c', // Rich purple (cards/table rows)
+  primary: '#ff2e63', // Hot neon pink (primary accent)
+  secondary: '#9d4edd', // Electric violet (secondary accent)
+  success: '#00f5d4', // Bright turquoise (success badges)
+  warning: '#ff9f1c', // Coral (warnings)
+  textPrimary: '#ffd6f5', // Light pink-white (primary text)
+  textSecondary: '#e0aaff', // Soft purple (secondary text)
+  hover: '#c77dff', // Lavender (hover/glow)
+  helius: '#ff6200', // Helius orange (for Helius touch)
   border: '#2e2e30',
-  textMuted: '#8e918f',
-  text: '#e3e3e3',
 };
 
 export const CyberpunkOverlay: React.FC = () => (

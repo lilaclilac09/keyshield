@@ -77,3 +77,90 @@ export const GenericKeyIcon = ({ size = 20, ...props }: IconProps) => (
     <path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3L15.5 7.5z" />
   </svg>
 );
+
+// Provider color mapping with vibrant feminine palette
+const PROVIDER_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+  'helius.dev': {
+    bg: 'bg-[#ff2e63]/20',
+    border: 'border-[#ff2e63]/30',
+    text: 'text-[#ff2e63]',
+    badge: '#ff2e63', // Hot neon pink
+  },
+  'openai.com': {
+    bg: 'bg-[#00f5d4]/20',
+    border: 'border-[#00f5d4]/30',
+    text: 'text-[#00f5d4]',
+    badge: '#00f5d4', // Bright turquoise
+  },
+  'github.com': {
+    bg: 'bg-[#c77dff]/20',
+    border: 'border-[#c77dff]/30',
+    text: 'text-[#c77dff]',
+    badge: '#c77dff', // Lavender
+  },
+  'stripe.com': {
+    bg: 'bg-[#9d4edd]/20',
+    border: 'border-[#9d4edd]/30',
+    text: 'text-[#9d4edd]',
+    badge: '#9d4edd', // Electric violet
+  },
+  'alchemy.com': {
+    bg: 'bg-[#ff9f1c]/20',
+    border: 'border-[#ff9f1c]/30',
+    text: 'text-[#ff9f1c]',
+    badge: '#ff9f1c', // Coral
+  },
+  'quicknode.com': {
+    bg: 'bg-[#e0aaff]/20',
+    border: 'border-[#e0aaff]/30',
+    text: 'text-[#e0aaff]',
+    badge: '#e0aaff', // Soft purple
+  },
+  '0x.org': {
+    bg: 'bg-[#ff2e63]/20',
+    border: 'border-[#ff2e63]/30',
+    text: 'text-[#ff2e63]',
+    badge: '#ff2e63',
+  },
+  'bloxroute.com': {
+    bg: 'bg-[#9d4edd]/20',
+    border: 'border-[#9d4edd]/30',
+    text: 'text-[#9d4edd]',
+    badge: '#9d4edd',
+  },
+};
+
+// Default colors
+const DEFAULT_COLORS = {
+  bg: 'bg-[#1e0a3c]',
+  border: 'border-[#9d4edd]/20',
+  text: 'text-[#e0aaff]',
+  badge: '#e0aaff',
+};
+
+export const getProviderIcon = (domain: string): React.ComponentType<IconProps> => {
+  const normalizedDomain = domain.toLowerCase();
+  
+  if (normalizedDomain.includes('helius')) return HeliusIcon;
+  if (normalizedDomain.includes('openai')) return OpenAIIcon;
+  if (normalizedDomain.includes('github')) return GitHubIcon;
+  if (normalizedDomain.includes('stripe')) return StripeIcon;
+  if (normalizedDomain.includes('alchemy')) return AlchemyIcon;
+  if (normalizedDomain.includes('quicknode')) return QuickNodeIcon;
+  if (normalizedDomain.includes('0x') || normalizedDomain.includes('zero')) return ZeroXIcon;
+  if (normalizedDomain.includes('bloxroute')) return BloXrouteIcon;
+  
+  return GenericKeyIcon;
+};
+
+export const getProviderColor = (domain: string) => {
+  const normalizedDomain = domain.toLowerCase();
+  
+  for (const [key, colors] of Object.entries(PROVIDER_COLORS)) {
+    if (normalizedDomain.includes(key.replace('.com', '').replace('.dev', '').replace('.org', ''))) {
+      return colors;
+    }
+  }
+  
+  return DEFAULT_COLORS;
+};

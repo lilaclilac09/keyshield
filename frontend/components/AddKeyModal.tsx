@@ -77,31 +77,31 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-mono">
       <div 
-        className="absolute inset-0 bg-[#131314]/80 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-[#0f001f]/80 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
       
-      <div className="relative w-full max-w-lg bg-[#1e1f20] border border-zinc-800/50 rounded-sm shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-8 border-b border-zinc-800/50">
+      <div className="relative w-full max-w-lg bg-[#1e0a3c] border border-[#9d4edd]/30 rounded-lg shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between p-8 border-b border-[#9d4edd]/20 bg-gradient-to-r from-[#ff2e63]/10 to-[#9d4edd]/10">
           <div className="flex flex-col">
-            <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">INITIALIZE_NEW_RECORD</h2>
-            <p className="text-[9px] text-zinc-600 uppercase tracking-[0.4em] font-bold mt-2">Buffer: Encrypted_Storage</p>
+            <h2 className="text-lg font-bold text-[#ffd6f5]">Create New Key</h2>
+            <p className="text-xs text-[#e0aaff]/70 mt-1">Encrypted storage with Lit Protocol v4</p>
           </div>
           <button 
             onClick={onClose}
-            className="text-[10px] font-bold text-zinc-600 hover:text-white uppercase tracking-widest transition-colors"
+            className="text-[#e0aaff]/60 hover:text-[#ff2e63] transition-colors p-2 hover:bg-[#ff2e63]/10 rounded-lg"
           >
-            DISMISS
+            ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">RECORD_LABEL</label>
+            <label className="text-sm font-medium text-[#e0aaff]">Key Name</label>
             <input 
               required
-              placeholder="e.g. PRODUCTION_API_GATEWAY"
-              className="w-full bg-[#131314] border border-zinc-800/50 rounded-sm px-4 py-3 text-[11px] focus:outline-none focus:border-zinc-700 transition-all placeholder:text-zinc-800 text-zinc-200 uppercase"
+              placeholder="e.g. Production API Key"
+              className="w-full bg-[#0f001f] border border-[#9d4edd]/20 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#ff2e63]/50 focus:ring-2 focus:ring-[#ff2e63]/20 transition-all placeholder:text-[#e0aaff]/30 text-[#ffd6f5]"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -109,9 +109,9 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
 
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">PROVIDER_ID</label>
+              <label className="text-sm font-medium text-[#e0aaff]">Provider</label>
               <select 
-                className="w-full bg-[#131314] border border-zinc-800/50 rounded-sm px-4 py-3 text-[11px] appearance-none focus:outline-none focus:border-zinc-700 transition-all cursor-pointer uppercase text-zinc-200"
+                className="w-full bg-[#0f001f] border border-[#9d4edd]/20 rounded-lg px-4 py-3 text-sm appearance-none focus:outline-none focus:border-[#ff2e63]/50 focus:ring-2 focus:ring-[#ff2e63]/20 transition-all cursor-pointer text-[#ffd6f5]"
                 value={provider.id}
                 onChange={(e) => {
                   const found = PROVIDERS.find(p => p.id === e.target.value);
@@ -119,16 +119,16 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
                 }}
               >
                 {PROVIDERS.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id} className="bg-[#1e0a3c]">{p.name.replace(/_/g, ' ')}</option>
                 ))}
               </select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">EXPIRY_DATE</label>
+              <label className="text-sm font-medium text-[#e0aaff]">Expiry Date (Optional)</label>
               <input 
                 type="date"
-                className="w-full bg-[#131314] border border-zinc-800/50 rounded-sm px-4 py-3 text-[11px] focus:outline-none focus:border-zinc-700 transition-all [color-scheme:dark] text-zinc-200"
+                className="w-full bg-[#0f001f] border border-[#9d4edd]/20 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#ff2e63]/50 focus:ring-2 focus:ring-[#ff2e63]/20 transition-all [color-scheme:dark] text-[#ffd6f5]"
                 value={expiryDate}
                 onChange={(e) => setExpiryDate(e.target.value)}
               />
@@ -136,48 +136,48 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           </div>
 
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">SECRET_VAL</label>
+            <label className="text-sm font-medium text-[#e0aaff]">Secret Key</label>
             <div className="relative">
               <input 
                 required
                 type={showValue ? 'text' : 'password'}
-                placeholder="INPUT_SECRET_BUFFER"
-                className="w-full bg-[#131314] border border-zinc-800/50 rounded-sm px-4 py-3 text-[11px] focus:outline-none focus:border-zinc-700 transition-all placeholder:text-zinc-800 pr-20 text-zinc-200"
+                placeholder="Enter your API key"
+                className="w-full bg-[#0f001f] border border-[#9d4edd]/20 rounded-lg px-4 py-3 pr-20 text-sm focus:outline-none focus:border-[#ff2e63]/50 focus:ring-2 focus:ring-[#ff2e63]/20 transition-all placeholder:text-[#e0aaff]/30 text-[#ffd6f5]"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
               <button 
                 type="button"
                 onClick={() => setShowValue(!showValue)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-zinc-600 hover:text-zinc-300 uppercase tracking-widest"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-[#e0aaff]/60 hover:text-[#ff2e63] transition-colors"
               >
-                {showValue ? 'HIDE' : 'SHOW'}
+                {showValue ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">METADATA_NOTES</label>
+            <label className="text-sm font-medium text-[#e0aaff]">Notes (Optional)</label>
             <textarea 
-              placeholder="SYSTEM_METADATA_EXT..."
-              rows={2}
-              className="w-full bg-[#131314] border border-zinc-800/50 rounded-sm px-4 py-3 text-[11px] focus:outline-none focus:border-zinc-700 transition-all placeholder:text-zinc-800 resize-none uppercase text-zinc-200"
+              placeholder="Add any additional notes..."
+              rows={3}
+              className="w-full bg-[#0f001f] border border-[#9d4edd]/20 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#ff2e63]/50 focus:ring-2 focus:ring-[#ff2e63]/20 transition-all placeholder:text-[#e0aaff]/30 resize-none text-[#ffd6f5]"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
-          <div className="pt-6 flex items-center justify-between border-t border-zinc-800/50">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-bold text-zinc-700 uppercase tracking-widest">Encryption: AES_256_GCM</span>
-              <span className="text-[8px] font-bold text-zinc-700 uppercase tracking-widest">Protocol: LIT_SESSION_V3</span>
+          <div className="pt-6 flex items-center justify-between border-t border-[#9d4edd]/20">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-[#e0aaff]/50">Encryption: AES-256-GCM</span>
+              <span className="text-xs text-[#e0aaff]/50">Protocol: Lit Protocol v4</span>
             </div>
             <button 
               type="submit"
               disabled={isEncrypting || !name || !value}
-              className="bg-indigo-700 hover:bg-indigo-600 disabled:bg-zinc-800 disabled:text-zinc-700 text-white text-[11px] font-bold px-10 py-3 rounded-sm transition-all uppercase tracking-[0.2em]"
+              className="bg-gradient-to-r from-[#ff2e63] to-[#9d4edd] hover:from-[#ff2e63]/90 hover:to-[#9d4edd]/90 disabled:from-[#1e0a3c] disabled:to-[#1e0a3c] disabled:text-[#e0aaff]/30 text-white text-sm font-medium px-8 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,46,99,0.3)] hover:shadow-[0_0_20px_rgba(255,46,99,0.5)]"
             >
-              {isEncrypting ? 'PROCESS...' : 'COMMIT_VAULT'}
+              {isEncrypting ? 'Encrypting...' : 'Create Key'}
             </button>
           </div>
         </form>
