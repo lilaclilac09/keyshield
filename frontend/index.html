@@ -94,5 +94,10 @@
 </head>
 <body>
     <div id="root"></div>
+    <!-- #region agent log -->
+    <script>
+      fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/index.html:93',message:'index_html_loaded',data:{userAgent:navigator.userAgent},timestamp:Date.now(),sessionId:'debug-session',runId:'pre',hypothesisId:'H5'})}).catch(()=>{});
+    </script>
+    <!-- #endregion -->
 </body>
 </html>

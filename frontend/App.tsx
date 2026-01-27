@@ -21,6 +21,9 @@ const MainContent: React.FC = () => {
   const [prefilledData, setPrefilledData] = useState<Partial<VaultItem> | undefined>(undefined);
 
   const { items, allItems, addItem, deleteItem } = useVaults(searchQuery, 'All Items');
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/App.tsx:26',message:'main_content_render',data:{isAuthenticated,itemsCount:items.length,allItemsCount:allItems.length,hasPublicKey:!!publicKey},timestamp:Date.now(),sessionId:'debug-session',runId:'pre',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   
   // Debug: Log authentication state
   useEffect(() => {
@@ -60,6 +63,9 @@ const MainContent: React.FC = () => {
 
 
   if (!isAuthenticated) {
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/App.tsx:66',message:'render_auth_screen',data:{isAuthenticated},timestamp:Date.now(),sessionId:'debug-session',runId:'pre',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
     return <AuthScreen onAuthenticated={() => setIsAuthenticated(true)} />;
   }
 
@@ -100,7 +106,17 @@ const MainContent: React.FC = () => {
 
         <main className="flex-1 p-8 overflow-auto">
           <div className="max-w-7xl mx-auto">
-            <VaultTable items={items} onDelete={deleteItem} />
+            {allItems.length === 0 ? (
+              <div className="mt-32 text-center text-2xl text-pink-300">
+                No keys yet — store your first pretty key!
+              </div>
+            ) : items.length === 0 ? (
+              <div className="mt-24 text-center text-xl text-pink-300">
+                No matches for this search.
+              </div>
+            ) : (
+              <VaultTable items={items} onDelete={deleteItem} />
+            )}
           </div>
         </main>
       </div>
