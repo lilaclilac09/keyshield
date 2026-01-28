@@ -6,6 +6,7 @@ use pinocchio::{
     program_error::ProgramError,
     pubkey::Pubkey,
     seeds,
+    sysvars::Sysvar,
     sysvars::rent::Rent,
     ProgramResult,
 };

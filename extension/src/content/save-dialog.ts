@@ -39,6 +39,7 @@ export class SaveDialog {
       
       // Support both single key (backward compat) and multiple keys
       const detectedKeys = options.detectedKeys || (options.detectedKey ? [options.detectedKey] : []);
+      const isMultiKey = detectedKeys.length > 1;
       
       if (detectedKeys.length === 0) {
         console.error('[KeyShield SaveDialog] No keys provided');
@@ -93,7 +94,6 @@ export class SaveDialog {
     }));
 
     // Build dialog HTML
-    const isMultiKey = detectedKeys.length > 1;
     const dialogTitle = isMultiKey 
       ? `${detectedKeys.length} API Keys Detected`
       : 'API Key Detected';

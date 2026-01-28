@@ -427,11 +427,21 @@ async function handleDecryptKey(
   payload: { vaultId: string; walletAddress: string },
   sendResponse: (response: any) => void
 ) {
+  const result = await decryptKeyForVault(payload);
+  sendResponse(result);
+}
+
+/**
+ * Decrypt key for a vault using on-chain hash + local ciphertext
+ */
+async function decryptKeyForVault(payload: {
+  vaultId: string;
+  walletAddress: string;
+}): Promise<{ success: boolean; key?: string; error?: string }> {
   try {
     // Check authentication
     if (!currentSession || currentSession.expiresAt < Date.now()) {
-      sendResponse({ success: false, error: 'Not authenticated' });
-      return;
+      return { success: false, error: 'Not authenticated' };
     }
 
     // Get vault from on-chain
@@ -439,15 +449,18 @@ async function handleDecryptKey(
     const vault = await vaultClient.getVault(owner);
 
     if (!vault) {
-      sendResponse({ success: false, error: 'Vault not found' });
-      return;
+      return { success: false, error: 'Vault not found' };
     }
 
-    // Decrypt with Lit Protocol
-    // Note: In production, you'd need to get sessionSigs from Lit
-    // For now, this is a placeholder
-    const ciphertext = new TextDecoder().decode(vault.encryptedKey);
-    const dataToEncryptHash = ''; // Would get from vault metadata
+    // Reconstruct Lit hash from on-chain bytes
+    const hashBytes = vault.encryptedKeyHash;
+    const dataToEncryptHash = btoa(String.fromCharCode(...hashBytes));
+
+    // Load ciphertext from local storage using the hash
+    const ciphertext = await storage.getCiphertext(dataToEncryptHash);
+    if (!ciphertext) {
+      return { success: false, error: 'Ciphertext not found for vault' };
+    }
 
     // TODO: Get sessionSigs from Lit Protocol
     const sessionSigs = {}; // Placeholder
@@ -459,9 +472,9 @@ async function handleDecryptKey(
       sessionSigs
     );
 
-    sendResponse({ success: true, key: decryptedKey });
+    return { success: true, key: decryptedKey };
   } catch (error: any) {
-    sendResponse({ success: false, error: error.message });
+    return { success: false, error: error.message };
   }
 }
 
@@ -750,13 +763,13 @@ async function handleTriggerAutoFill(
     const vault = vaults[0];
 
     // Decrypt key
-    const decryptResult = await handleDecryptKey(
-      { vaultId: vault.vaultId, walletAddress: vault.owner },
-      () => {}
-    );
+    const decryptResult = await decryptKeyForVault({
+      vaultId: vault.vaultId,
+      walletAddress: vault.owner,
+    });
 
-    if (!decryptResult.success) {
-      sendResponse(decryptResult);
+    if (!decryptResult.success || !decryptResult.key) {
+      sendResponse({ success: false, error: decryptResult.error || 'Failed to decrypt key' });
       return;
     }
 
