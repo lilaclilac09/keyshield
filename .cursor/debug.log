@@ -1,0 +1,12 @@
+{"location":"frontend /index.tsx:16","message":"clerk_key_present","data":{"hasPublishableKey":true},"timestamp":1769602851200,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H1"}
+{"location":"frontend /index.tsx:28","message":"react_render_called","data":{},"timestamp":1769602851201,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H2"}
+{"location":"frontend /index.tsx:20","message":"root_created","data":{"rootElementExists":true},"timestamp":1769602851201,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H2"}
+{"location":"frontend /App.tsx:173","message":"app_render","data":{},"timestamp":1769602851205,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H3"}
+{"location":"frontend /App.tsx:173","message":"app_render","data":{},"timestamp":1769602851205,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H3"}
+{"location":"frontend /index.tsx:16","message":"clerk_key_present","data":{"hasPublishableKey":true},"timestamp":1769602851786,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H1"}
+{"location":"frontend /index.tsx:20","message":"root_created","data":{"rootElementExists":true},"timestamp":1769602851788,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H2"}
+{"location":"frontend /index.tsx:28","message":"react_render_called","data":{},"timestamp":1769602851788,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H2"}
+{"location":"frontend /App.tsx:173","message":"app_render","data":{},"timestamp":1769602851802,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H3"}
+{"location":"frontend /App.tsx:173","message":"app_render","data":{},"timestamp":1769602851802,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H3"}
+{"location":"frontend /App.tsx:174","message":"auth_state","data":{"isSignedIn":false,"hasBypassFlag":false},"timestamp":1769602952424,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H1"}
+{"location":"frontend /App.tsx:174","message":"auth_state","data":{"isSignedIn":false,"hasBypassFlag":false},"timestamp":1769602952424,"sessionId":"debug-session","runId":"pre-fix","hypothesisId":"H1"}
