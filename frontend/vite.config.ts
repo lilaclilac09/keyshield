@@ -4,10 +4,16 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    return {
+    const config = {
       server: {
         port: 3000,
-        host: '0.0.0.0',
+        strictPort: true,
+        host: 'localhost',
+        hmr: {
+          protocol: 'ws',
+          host: 'localhost',
+          port: 3000,
+        },
       },
       plugins: [react()],
       define: {
@@ -20,4 +26,5 @@ export default defineConfig(({ mode }) => {
         }
       }
     };
+    return config;
 });

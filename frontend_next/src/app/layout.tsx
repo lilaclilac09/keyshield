@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
+import ClerkHeader from "./ClerkHeader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,16 +16,8 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body>
-          <header className="header">
-            <SignedOut>
-              <SignInButton />
-              <SignUpButton />
-            </SignedOut>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-          </header>
+        <body className="app-shell">
+          <ClerkHeader />
           {children}
         </body>
       </html>
