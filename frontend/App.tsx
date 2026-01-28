@@ -4,15 +4,12 @@ import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
 import { ReportViewer, generateVaultReport } from './components/ReportViewer';
-import { SolanaProvider } from './components/SolanaProvider';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { VaultTable } from './components/VaultTable';
-import { useWallet } from '@solana/wallet-adapter-react';
 import { useVaults } from './hooks/useVaults';
 
 const MainContent: React.FC = () => {
-  const { publicKey } = useWallet();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSidebarItem, setActiveSidebarItem] = useState('vault');
@@ -22,13 +19,13 @@ const MainContent: React.FC = () => {
 
   const { items, allItems, addItem, deleteItem } = useVaults(searchQuery, 'All Items');
   // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/App.tsx:26',message:'main_content_render',data:{isAuthenticated,itemsCount:items.length,allItemsCount:allItems.length,hasPublicKey:!!publicKey},timestamp:Date.now(),sessionId:'debug-session',runId:'pre',hypothesisId:'H2'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7244/ingest/578c6ea9-707c-43da-8c19-a1de0e50bb6b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/App.tsx:26',message:'main_content_render',data:{isAuthenticated,itemsCount:items.length,allItemsCount:allItems.length},timestamp:Date.now(),sessionId:'debug-session',runId:'pre',hypothesisId:'H2'})}).catch(()=>{});
   // #endregion
   
   // Debug: Log authentication state
   useEffect(() => {
-    console.log('🔐 KeyShield Auth State:', { isAuthenticated, publicKey: publicKey?.toBase58() });
-  }, [isAuthenticated, publicKey]);
+    console.log('🔐 KeyShield Auth State:', { isAuthenticated });
+  }, [isAuthenticated]);
 
   // Initial load check
   useEffect(() => {
@@ -36,9 +33,8 @@ const MainContent: React.FC = () => {
   }, [allItems.length]);
   
   const reportPages = React.useMemo(() => {
-    const walletAddr = publicKey?.toBase58();
-    return generateVaultReport(allItems, undefined, walletAddr);
-  }, [allItems, publicKey]);
+    return generateVaultReport(allItems, undefined, undefined);
+  }, [allItems]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -130,9 +126,7 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <SolanaProvider>
-      <MainContent />
-    </SolanaProvider>
+    <MainContent />
   );
 };
 

@@ -39,7 +39,7 @@ KeyShield is built on a multi-layered architecture that combines client-side enc
 ## 🏗️ Architecture
 
 ### Backend (Rust/Pinocchio)
-- **Program**: `programs/keyshield/` - Solana program using Pinocchio framework
+- **Program**: `programs/keyshield/` - Solana program using Pinocchio (no Anchor). Pinocchio is wired in [`programs/keyshield/src/lib.rs`](programs/keyshield/src/lib.rs) (`program_entrypoint!`, `default_allocator!`, `nostd_panic_handler!`) and in [`programs/keyshield/Cargo.toml`](programs/keyshield/Cargo.toml) (`pinocchio`, `pinocchio-token`, `pinocchio-system`).
 - **Instructions**:
   - `StoreKey` - Store encrypted API keys on-chain
   - `AccessKey` - Access keys with ZK proof verification
@@ -58,7 +58,6 @@ KeyShield is built on a multi-layered architecture that combines client-side enc
 - **Rust** (latest stable)
 - **Node.js** 18+
 - **Solana CLI** (latest)
-- **Anchor CLI** (optional, for testing)
 
 ### 1. Build the Program
 
@@ -69,13 +68,20 @@ cargo build-sbf
 
 ### 2. Deploy the Program
 
-```bash
-# Set your program ID
-solana program deploy target/deploy/keyshield.so --program-id keyshield-keypair.json
+From the repo root (Pinocchio flow; no Anchor):
 
-# Or use Anchor (if configured)
-anchor build
-anchor deploy --provider.cluster devnet
+```bash
+# Build and deploy using the program keypair
+./scripts/deploy.sh devnet
+```
+
+Or manually:
+
+```bash
+cargo build-sbf
+solana program deploy target/deploy/keyshield.so \
+  --program-id target/deploy/keyshield-keypair.json \
+  --url devnet
 ```
 
 ### 3. Set Up Frontend
@@ -170,18 +176,15 @@ See `frontend/src/lib/arcium.ts` for integration stubs.
 
 ## 🧪 Testing
 
-### Unit Tests (Rust)
+### Rust Tests
 
-```bash
-cargo test-sbf
-```
+- Host unit tests (fast): `cargo test`
+- SBF target tests: `cargo test-sbf`
 
-### Integration Tests
+### Program checks
 
-```bash
-# Using Mollusk (recommended for Pinocchio)
-cargo test --features test-bpf
-```
+- Basic deploy/structure checks: `./test-program.sh` (uses Solana CLI on devnet)
+- Manual build+deploy: `cargo build-sbf` then `solana program deploy target/deploy/keyshield.so --program-id target/deploy/keyshield-keypair.json --url devnet`
 
 ### Frontend Tests
 

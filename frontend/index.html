@@ -7,8 +7,6 @@
     <title>KeyShield Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <!-- Solana Wallet Adapter Styles -->
-    <link rel="stylesheet" href="https://unpkg.com/@solana/wallet-adapter-react-ui/styles.css">
     <style>
       body {
         font-family: 'Inter', sans-serif;
@@ -42,22 +40,6 @@
         background: linear-gradient(to bottom, transparent, rgba(139, 92, 246, 0.05), transparent);
         animation: scanline 8s linear infinite;
       }
-      /* Override Wallet Modal Colors for Vibrant Feminine Theme */
-      .wallet-adapter-modal-wrapper {
-        background: #1e0a3c !important;
-        border: 1px solid #9d4edd !important;
-        color: #ffd6f5 !important;
-      }
-      .wallet-adapter-button {
-        background-color: #1e0a3c !important;
-        border: 1px solid #9d4edd !important;
-        transition: all 0.2s !important;
-        color: #ffd6f5 !important;
-      }
-      .wallet-adapter-button:not([disabled]):hover {
-        background-color: #ff2e63 !important;
-        border-color: #ff2e63 !important;
-      }
       /* Print styles for Report Viewer */
       @media print {
         @page {
@@ -82,12 +64,7 @@
     "react": "https://esm.sh/react@^19.2.3",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "@solana/web3.js": "https://esm.sh/@solana/web3.js@1.98.0",
-    "@solana/wallet-adapter-base": "https://esm.sh/@solana/wallet-adapter-base@0.9.25",
-    "@solana/wallet-adapter-react": "https://esm.sh/@solana/wallet-adapter-react@0.15.35",
-    "@solana/wallet-adapter-react-ui": "https://esm.sh/@solana/wallet-adapter-react-ui@0.9.35",
-    "@solana/wallet-adapter-wallets": "https://esm.sh/@solana/wallet-adapter-wallets@0.19.32"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
   }
 }
 </script>

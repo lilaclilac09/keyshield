@@ -1,7 +1,6 @@
 
 import React from 'react';
 import { Search, Plus, Shield } from 'lucide-react';
-import { WalletConnect } from './WalletConnect';
 
 interface Props {
   title: string;
@@ -33,7 +32,6 @@ export const Header: React.FC<Props> = ({
           </div>
           <p className="text-sm text-[#e0aaff]/70">{subtitle}</p>
         </div>
-        <WalletConnect />
       </div>
 
       <div className="flex items-center gap-4">

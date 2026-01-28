@@ -1,7 +1,6 @@
 
 import React from 'react';
 import { Shield } from 'lucide-react';
-import { WalletConnector } from './WalletConnector';
 
 interface Props {
   onAuthenticated: () => void;
@@ -25,13 +24,11 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
         </div>
 
         <div className="w-full space-y-6">
-          <WalletConnector onConnect={onAuthenticated} />
-          
           <button
             onClick={onAuthenticated}
-            className="w-full text-center py-3 opacity-50 hover:opacity-100 transition-opacity text-sm text-[#e0aaff]/60 hover:text-[#ff2e63]"
+            className="w-full text-center py-4 bg-gradient-to-r from-[#ff2e63] to-[#9d4edd] hover:from-[#ff2e63]/90 hover:to-[#9d4edd]/90 text-white rounded-lg font-medium text-sm transition-all duration-200 shadow-[0_0_15px_rgba(255,46,99,0.3)] hover:shadow-[0_0_20px_rgba(255,46,99,0.5)]"
           >
-            Skip Authentication (Dev Mode)
+            Continue
           </button>
         </div>
       </div>
