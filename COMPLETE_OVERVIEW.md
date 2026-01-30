@@ -18,10 +18,11 @@
 10. **[QUICK_VERIFICATION.md](./QUICK_VERIFICATION.md)** - Quick verification steps
 
 ### Extension Documentation
-11. **[extension/README.md](./extension/README.md)** - Extension overview
-12. **[extension/INSTALL.md](./extension/INSTALL.md)** - Extension installation guide
-13. **[extension/TEST_CHECKLIST.md](./extension/TEST_CHECKLIST.md)** - Extension testing checklist
-14. **[extension/DEBUGGING.md](./extension/DEBUGGING.md)** - Extension debugging guide
+11. **[disabled_extension/README.md](./disabled_extension/README.md)** - Standalone extension overview (disabled)
+12. **[disabled_extension/INSTALL.md](./disabled_extension/INSTALL.md)** - Standalone extension installation guide (disabled)
+13. **[disabled_extension/TEST_CHECKLIST.md](./disabled_extension/TEST_CHECKLIST.md)** - Standalone extension testing checklist (disabled)
+14. **[disabled_extension/DEBUGGING.md](./disabled_extension/DEBUGGING.md)** - Standalone extension debugging guide (disabled)
+15. **[frontend/README.md](./frontend /README.md)** - Active frontend/extension (combined)
 
 ### Technical Documentation
 15. **[LIT_PROTOCOL_V4_UPDATE.md](./LIT_PROTOCOL_V4_UPDATE.md)** - Lit Protocol v4 migration guide
@@ -389,7 +390,8 @@ keyshield/
 │   │   └── types/              # TypeScript types
 │   └── package.json
 │
-├── extension/                  # Chrome extension
+├── disabled_extension/         # Standalone Chrome extension (disabled)
+├── frontend /                  # Active web app + extension (combined)
 │   ├── src/
 │   │   ├── background/         # Service worker
 │   │   ├── content/            # Content scripts
@@ -429,10 +431,10 @@ keyshield/
    ```
 
 2. **Load Extension**:
-   - Chrome → `chrome://extensions` → Load unpacked → `extension/dist`
+   - Chrome → `chrome://extensions` → Load unpacked → `frontend /dist` (active) or `disabled_extension/dist` (standalone, disabled)
 
 3. **Test Flow**:
-   - Open test page: `extension/test-page.html`
+   - Open test page: `disabled_extension/test-page.html`
    - Extension detects keys → Notification appears
    - Click notification → Opens dashboard
    - Connect wallet → Store key → Reveal key
@@ -447,7 +449,7 @@ See the complete list of documentation files at the top of this document.
 **Architecture**: [ARCHITECTURE.md](./ARCHITECTURE.md) ⭐ - Essential reading  
 **File Index**: [FILE_INDEX.md](./FILE_INDEX.md) - All files organized by folder  
 **Setup**: [SETUP.md](./SETUP.md)  
-**Extension**: [extension/README.md](./extension/README.md)
+**Extension**: [frontend/README.md](./frontend /README.md) (active), [disabled_extension/README.md](./disabled_extension/README.md) (standalone, disabled)
 
 ---
 

@@ -4,5 +4,8 @@
   "scripts": {
     "dev": "cd \"frontend \" && npm run dev",
     "demo": "bash demo.sh"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.98.4"
   }
 }

@@ -576,6 +576,228 @@ Lit Protocol `encryptString()` returns ciphertexts that are typically 1-5 KB (ba
 
 ---
 
+## 📅 Development Plans & Implementation Status
+
+### Completed Plans
+
+#### 1. **Search + Onchain List Fix** ✅
+**Goal**: Fix the search function to work with onchain-connected hybrid list instead of purely local storage.
+
+**Implementation**:
+- **Hybrid Model**: Onchain as source of truth for vault existence + local storage for searchable metadata (name, domain, type)
+- **Data Flow**: 
+  1. Wallet connects (Clerk Solana SIWS or localStorage fallback)
+  2. Derive Vault PDA: `seeds ["vault", owner]`
+  3. Fetch vault from Solana RPC (`connection.getAccountInfo(vaultPDA)`)
+  4. Load local metadata from `localStorage` or `chrome.storage.local`
+  5. Merge into unified list with onchain data + searchable metadata
+  6. Search filters merged list in-memory (no RPC for each search)
+
+- **Key Files**:
+  - `frontend/hooks/useVaults.ts` - Implements merge on load, search filtering
+  - `frontend/lib/solana.ts` - PDA derivation, onchain fetch, metadata storage APIs
+  - `frontend/App.tsx` - Wallet bridge (Clerk + localStorage fallback)
+
+- **Clerk Solana Wallet Bridge**: Clerk SIWS enabled for wallet sign-in; `user.web3Wallets[0].web3WalletAddress` provides Solana pubkey; fallback to `localStorage.getItem('keyshield_wallet_address')`
+
+- **Metadata Storage**: 
+  - Keys: `keyshield_meta_<vaultId>` (vault PDA base58)
+  - Value: `{ name, domain?, type, notes?, tags? }`
+  - Location: `localStorage` (browser), `chrome.storage.local` (extension)
+
+#### 2. **Extension Development** ✅
+**Goal**: Build browser extension for automatic API key detection and secure storage.
+
+**Implementation**:
+- **Detection Sources**:
+  - Form fields (monitors input for API key patterns)
+  - Clipboard (detects keys when copied)
+  - OCR (planned for future)
+
+- **Supported Providers**:
+  - **GitHub**: `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` patterns
+  - **Helius**: 32-64 char alphanumeric + field name patterns
+  - **Google Gemini**: `AIza...` pattern (35+ chars)
+
+- **Key Files**:
+  - `disabled_extension/src/content/content-script.ts` - Key detection logic (standalone extension, now disabled)
+  - `disabled_extension/src/background/service-worker.ts` - Extension background service (standalone extension, now disabled)
+  - `disabled_extension/src/lib/vault-client.ts` - Vault interaction client (standalone extension, now disabled)
+  - `disabled_extension/src/lib/key-detector.ts` - Pattern matching for keys (standalone extension, now disabled)
+  - `disabled_extension/src/storage/secure-storage.ts` - IndexedDB for ciphertext storage (standalone extension, now disabled)
+  - `frontend/content.js` - Active extension content script
+  - `frontend/background.js` - Active extension background script
+
+- **Build Scripts**: `build-chrome.sh`, `build-firefox.sh`, `build-safari.sh` for multi-browser support
+
+#### 3. **Lit Protocol Ciphertext Storage Optimization** ✅
+**Problem**: Lit Protocol ciphertexts are 1-5 KB, too expensive to store fully on-chain.
+
+**Solution**:
+- **On-Chain** (32 bytes): Store only `dataToEncryptHash` from Lit Protocol
+- **Off-Chain** (1-5 KB): Store full ciphertext in IndexedDB
+- **Retrieval**: Read hash from vault account → query IndexedDB → decrypt with Lit
+
+**Key Changes**:
+- Vault state: Changed from `encrypted_key: [u8; 128]` to `encrypted_key_hash: [u8; 32]`
+- Added `frontend/src/lib/ciphertext-storage.ts` for IndexedDB operations
+- Total vault size remains 288 bytes (adjusted reserved space)
+
+### In-Progress Plans
+
+#### 4. **Local and Devnet Testing** 🔄
+**Goal**: Implement comprehensive testing strategy following LiteSVM/Mollusk/Surfpool pyramid.
+
+**Testing Pyramid**:
+```
+┌─────────────────────┐
+│  Devnet Smoke Test  │  ← Cluster verification
+├─────────────────────┤
+│  Surfpool Integration│ ← Realistic local environment
+├─────────────────────┤
+│  Mollusk Unit Tests │  ← Fast in-process tests
+└─────────────────────┘
+```
+
+**Status**:
+- **Unit Tests (Mollusk)**: ✅ Partially implemented
+  - Location: `programs/keyshield/tests/`
+  - Files: `store_key.rs`, `access_key.rs`, `share_key.rs`, `common/mod.rs`
+  - Coverage: StoreKey, AccessKey, ShareKey instructions
+  - Run: `cargo build-sbf && cargo test`
+
+- **Integration Tests (Surfpool)**: 🔄 In progress
+  - Script: `scripts/integration-surfpool.mjs`
+  - Setup: `surfpool start --background`
+  - Flow: StoreKey → AccessKey → verify vault account
+  - Run: `node scripts/integration-surfpool.mjs`
+
+- **Devnet Smoke Tests**: 📝 Documented
+  - Scripts: `scripts/deploy.sh`, `scripts/verify-vault.sh`
+  - Process: Deploy to devnet → verify vault account
+  - Manual: `./scripts/deploy.sh devnet && ./scripts/verify-vault.sh <wallet>`
+
+- **CI/CD**: 📝 Planned
+  - File: `.github/workflows/test.yml`
+  - Jobs: unit-tests → integration-tests → devnet-smoke (optional)
+
+**Test Layout**:
+```
+programs/keyshield/tests/
+├── common/
+│   └── mod.rs           # PDA helpers, fixtures
+├── store_key.rs         # StoreKey instruction tests
+├── access_key.rs        # AccessKey instruction tests
+└── share_key.rs         # ShareKey instruction tests
+
+scripts/
+├── integration-surfpool.mjs   # Surfpool E2E test
+└── integration-surfpool.sh    # Surfpool setup script
+```
+
+**Test Coverage**:
+- **StoreKey**: Success, double init (VaultAlreadyExists), wrong signer
+- **AccessKey**: Owner access, non-owner no proof, non-owner with proof
+- **ShareKey**: Owner creates share, non-owner reject
+
+#### 5. **Refined Plan - Multi-Stage Implementation** 📋
+**Overview**: Consolidated plan combining hybrid list, testing, and roadmap features.
+
+**Completed** ✅:
+1. Hybrid onchain list (merge on load, in-memory search)
+2. Add/update/delete with onchain + metadata
+3. Mollusk unit tests (fixtures, store_key, access_key, share_key)
+
+**In Progress** 🔄:
+4. Surfpool integration script + devnet documentation
+
+**Roadmap** 📝:
+1. **Multi-browser detection/paste** (2-3 days)
+   - Test Chrome, Firefox, Safari
+   - Paste event + `navigator.clipboard.readText()`
+   - Handle `chrome.runtime.lastError` for inject
+   - File: `disabled_extension/src/content/content-script.ts` (standalone extension, now disabled) or `frontend/content.js` (active)
+
+2. **Vault Audit Report** (3-5 days)
+   - ReportViewer component
+   - `generateReport()` for vaults + metadata
+   - html2pdf.js for export
+   - Dashboard report page + extension button
+   - Client-side only (no backend)
+   - Files: `disabled_extension/src/report/`, `disabled_extension/src/lib/report-generator.ts` (standalone extension, now disabled), `frontend/components/ReportViewer.tsx` (active)
+
+### Implementation Priority Order
+
+**Phase 1** (Completed):
+1. ✅ Hybrid search + onchain list
+2. ✅ Lit Protocol ciphertext optimization
+3. ✅ Extension key detection
+4. ✅ Clerk Solana wallet integration
+
+**Phase 2** (Current):
+1. 🔄 Complete Surfpool integration tests
+2. 🔄 Document devnet testing process
+3. 📝 Setup CI/CD pipeline
+
+**Phase 3** (Next 1-2 weeks):
+1. 📝 Multi-browser detection polish
+2. 📝 Vault audit report generator
+3. 📝 OCR service for screenshot detection
+4. 📝 Enhanced sharing mechanisms
+
+### Key Architectural Decisions
+
+1. **Hybrid List Architecture**:
+   - **Decision**: Onchain for vault existence + local for searchable metadata
+   - **Rationale**: Cost efficiency, fast search, privacy for display names
+   - **Trade-off**: Potential metadata drift across devices (acceptable for MVP)
+
+2. **Lit Protocol Storage Pattern**:
+   - **Decision**: 32-byte hash onchain, full ciphertext in IndexedDB
+   - **Rationale**: 96% storage reduction (128 bytes → 32 bytes)
+   - **Trade-off**: Requires local storage availability (solved with IndexedDB)
+
+3. **Testing Strategy**:
+   - **Decision**: Mollusk (unit) → Surfpool (integration) → Devnet (smoke)
+   - **Rationale**: Fast feedback loop, realistic testing, cluster verification
+   - **Trade-off**: Additional tooling setup (Surfpool)
+
+4. **One Vault Per Owner**:
+   - **Decision**: Single Vault PDA per owner (`seeds: ["vault", owner]`)
+   - **Rationale**: Simplifies initial implementation, reduces rent costs
+   - **Trade-off**: Limits scalability (future: add index seed for multiple vaults)
+
+### Performance Metrics
+
+- **Transaction Size**: 
+  - StoreKey: 106 bytes instruction data
+  - AccessKey: Variable (proof size dependent)
+  - ShareKey: 41+ bytes instruction data
+
+- **Account Size**:
+  - Vault: 288 bytes (optimized from 416 bytes after ciphertext change)
+  - Share: 64+ bytes
+
+- **Compute Units**:
+  - ZK verification: ~200k CU (Bonsol integration)
+  - StoreKey: <5k CU (measured with Mollusk)
+
+- **Storage Efficiency**:
+  - Onchain: 32 bytes (hash reference)
+  - Offchain: 1-5 KB (full ciphertext)
+  - Reduction: 96%+ vs. storing full ciphertext onchain
+
+### Known Limitations & Future Work
+
+1. **Single Vault Per Owner**: Need PDA index seed for multiple vaults
+2. **Metadata Sync**: No cross-device sync (future: onchain metadata hash)
+3. **ZK Proof Verification**: Currently placeholder (Bonsol integration pending)
+4. **MPC Operations**: Currently placeholder (Arcium integration pending)
+5. **OCR Detection**: Planned but not yet implemented
+6. **Multi-Sig Sharing**: Future enhancement for team vaults
+
+---
+
 This architecture ensures:
 - ✅ Privacy: Keys never stored in plaintext
 - ✅ Security: Multiple layers of verification
@@ -583,3 +805,5 @@ This architecture ensures:
 - ✅ Scalability: Efficient account structure (32 bytes on-chain, 1-5 KB off-chain)
 - ✅ Flexibility: Support for various access patterns
 - ✅ Cost Efficiency: Minimal on-chain storage (hash reference only)
+- ✅ Testability: Comprehensive testing pyramid (unit → integration → smoke)
+- ✅ Maintainability: Clear separation of concerns and well-documented plans

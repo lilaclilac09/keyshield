@@ -27,7 +27,9 @@ artifacts and dependency folders (such as `node_modules/`, `target/`, and
 
 ---
 
-## 📂 extension/ - Browser Extension
+## 📂 disabled_extension/ - Browser Extension (Disabled)
+
+**Note:** This extension code has been disabled. The active extension functionality is now in `frontend/` with its own manifest.json and extension files.
 
 ### Root Files
 - **DEBUGGING.md** - Extension debugging guide
@@ -47,29 +49,35 @@ artifacts and dependency folders (such as `node_modules/`, `target/`, and
 - **tsconfig.json** - TypeScript configuration
 - **webpack.config.js** - Webpack build configuration
 
-### extension/src/background/
+### disabled_extension/src/background/
 - **service-worker.ts** - Background service worker (MV3)
 
-### extension/src/content/
+### disabled_extension/src/content/
 - **content-script.ts** - Content script for key detection
 - **save-dialog.ts** - Save dialog component
 
-### extension/src/icons/
+### disabled_extension/src/icons/
 - **create-icons.sh** - Icon generation script
 - **README.md** - Icons documentation
 
-### extension/src/lib/
+### disabled_extension/src/lib/
 - **auth.ts** - Authentication utilities
 - **key-detector.ts** - API key detection logic
 - **key-injector.ts** - Key injection utilities
 - **ocr-service.ts** - OCR service for key detection
 - **vault-client.ts** - Vault client for extension
+- **log-client.ts** - Log client for report generation
+- **report-generator.ts** - Report data generator
 
-### extension/src/popup/
+### disabled_extension/src/popup/
 - **popup.html** - Popup HTML
 - **popup.ts** - Popup TypeScript logic
 
-### extension/src/storage/
+### disabled_extension/src/report/
+- **report.html** - Report page HTML
+- **report.ts** - Report page logic
+
+### disabled_extension/src/storage/
 - **secure-storage.ts** - Secure storage utilities
 
 ---
