@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["entrypoint"],"mod":["error","instructions","pda","state"]};

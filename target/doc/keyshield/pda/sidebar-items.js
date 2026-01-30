@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["derive_share_pda","derive_vault_pda"]};

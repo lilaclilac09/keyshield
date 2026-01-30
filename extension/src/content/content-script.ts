@@ -216,6 +216,21 @@ function handleDetectedKeys(detected: DetectedKey[]): void {
       payload: { detected: newKeys },
     });
 
+    // Log detection events for report (source, masked preview, domain, time)
+    const maskKey = (key: string) =>
+      key.length > 8 ? key.slice(0, 4) + '...' + key.slice(-4) : '••••';
+    chrome.runtime.sendMessage({
+      type: 'LOG_DETECTION',
+      payload: {
+        entries: newKeys.map((k) => ({
+          source: k.source,
+          keyPreview: maskKey(k.key),
+          domain: k.domain,
+          timestamp: k.timestamp ?? Date.now(),
+        })),
+      },
+    });
+
     // Clean up old detections after 5 minutes
     setTimeout(() => {
       newKeys.forEach((key) => {

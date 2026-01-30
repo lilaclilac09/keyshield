@@ -1,0 +1,8 @@
+{
+  "name": "keyshield",
+  "private": true,
+  "scripts": {
+    "dev": "cd \"frontend \" && npm run dev",
+    "demo": "bash demo.sh"
+  }
+}

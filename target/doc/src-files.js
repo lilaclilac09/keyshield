@@ -1,2 +1,0 @@
-createSrcSidebar('[["keyshield",["",[["instructions",[],["access_key.rs","mod.rs","share_key.rs","store_key.rs"]]],["error.rs","lib.rs","pda.rs","state.rs"]]]]');
-//{"start":19,"fragment_lengths":[139]}

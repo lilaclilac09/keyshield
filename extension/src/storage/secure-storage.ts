@@ -17,9 +17,28 @@ interface VaultMetadata {
   createdAt: number;
 }
 
+/** Log entry payload (before encryption). */
+export interface LogEntryPayload {
+  type: 'detection' | 'autofill' | 'saved';
+  source?: string;
+  keyPreview?: string;
+  domain?: string;
+  keyId?: string;
+  success?: boolean;
+  timestamp: number;
+}
+
+/** Stored log row: id + wallet + timestamp for indexing, payload encrypted. */
+interface StoredLogRow {
+  id: string;
+  walletAddress: string;
+  timestamp: number;
+  encryptedPayload: string;
+}
+
 export class SecureStorage {
   private dbName = 'keyshield-storage';
-  private dbVersion = 1;
+  private dbVersion = 2;
   private db: IDBDatabase | null = null;
   private encryptionKey: CryptoKey | null = null;
 
@@ -58,6 +77,12 @@ export class SecureStorage {
         // Ciphertext store - for storing full Lit Protocol ciphertexts
         if (!db.objectStoreNames.contains('ciphertexts')) {
           db.createObjectStore('ciphertexts', { keyPath: 'hash' });
+        }
+
+        // Logs store - detection/autofill/saved events (payload encrypted)
+        if (!db.objectStoreNames.contains('logs')) {
+          const logStore = db.createObjectStore('logs', { keyPath: 'id' });
+          logStore.createIndex('wallet_timestamp', ['walletAddress', 'timestamp'], { unique: false });
         }
       };
     });
@@ -377,18 +402,95 @@ export class SecureStorage {
   }
 
   /**
+   * Append a log entry (payload encrypted at rest).
+   */
+  async appendLog(entry: LogEntryPayload & { walletAddress: string }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const id = `log_${entry.timestamp}_${Math.random().toString(36).slice(2, 10)}`;
+    const payload = {
+      type: entry.type,
+      source: entry.source,
+      keyPreview: entry.keyPreview,
+      domain: entry.domain,
+      keyId: entry.keyId,
+      success: entry.success,
+      timestamp: entry.timestamp,
+    };
+    const encryptedPayload = await this.encrypt(JSON.stringify(payload));
+
+    const row: StoredLogRow = {
+      id,
+      walletAddress: entry.walletAddress,
+      timestamp: entry.timestamp,
+      encryptedPayload,
+    };
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['logs'], 'readwrite');
+      const store = transaction.objectStore('logs');
+      const request = store.put(row);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get logs for a wallet, optionally filtered by date and type.
+   */
+  async getLogs(
+    walletAddress: string,
+    options?: { from?: number; to?: number; types?: LogEntryPayload['type'][] }
+  ): Promise<(LogEntryPayload & { id: string })[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['logs'], 'readonly');
+      const store = transaction.objectStore('logs');
+      const index = store.index('wallet_timestamp');
+      const range = IDBKeyRange.bound(
+        [walletAddress, options?.from ?? 0],
+        [walletAddress, options?.to ?? Number.MAX_SAFE_INTEGER]
+      );
+      const request = index.getAll(range);
+
+      request.onsuccess = async () => {
+        const rows: StoredLogRow[] = request.result || [];
+        const types = options?.types;
+        const out: (LogEntryPayload & { id: string })[] = [];
+        for (const row of rows) {
+          try {
+            const payload = JSON.parse(await this.decrypt(row.encryptedPayload)) as LogEntryPayload;
+            if (types && types.length > 0 && !types.includes(payload.type)) continue;
+            out.push({ ...payload, id: row.id });
+          } catch {
+            // Skip corrupted entries
+          }
+        }
+        out.sort((a, b) => a.timestamp - b.timestamp);
+        resolve(out);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Clear all data
    */
   async clearAll(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['sessions', 'vaults', 'settings', 'ciphertexts'], 'readwrite');
-      
+      const transaction = this.db!.transaction(
+        ['sessions', 'vaults', 'settings', 'ciphertexts', 'logs'],
+        'readwrite'
+      );
+
       transaction.objectStore('sessions').clear();
       transaction.objectStore('vaults').clear();
       transaction.objectStore('settings').clear();
       transaction.objectStore('ciphertexts').clear();
+      transaction.objectStore('logs').clear();
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
