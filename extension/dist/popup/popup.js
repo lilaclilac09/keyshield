@@ -25,6 +25,7 @@ const quickSaveBtn = document.getElementById('quick-save');
 const detectKeysBtn = document.getElementById('detect-keys');
 const autoFillBtn = document.getElementById('auto-fill');
 const ocrCaptureBtn = document.getElementById('ocr-capture');
+const viewLogsReportBtn = document.getElementById('view-logs-report');
 const logoutBtn = document.getElementById('logout');
 // State
 let useMasterPassword = false;
@@ -56,6 +57,9 @@ quickSaveBtn.addEventListener('click', handleQuickSave);
 detectKeysBtn.addEventListener('click', handleDetectKeys);
 autoFillBtn.addEventListener('click', handleAutoFill);
 ocrCaptureBtn.addEventListener('click', handleOCRCapture);
+viewLogsReportBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('report/report.html') });
+});
 logoutBtn.addEventListener('click', handleLogout);
 /**
  * Check authentication status
@@ -345,9 +349,15 @@ async function handleQuickSave() {
         quickSaveBtn.textContent = 'Opening Dashboard...';
         // Get dashboard URL from storage or use default
         const dashboardUrl = await getDashboardUrl();
+        const walletResult = await chrome.storage.local.get('walletAddress');
+        const walletAddress = walletResult.walletAddress;
         // Encode key in URL parameter (base64 to avoid special characters)
         const encodedKey = btoa(apiKey);
-        const urlWithKey = `${dashboardUrl}?quickSave=${encodedKey}`;
+        const separator = dashboardUrl.includes('?') ? '&' : '?';
+        let urlWithKey = `${dashboardUrl}${separator}quickSave=${encodedKey}`;
+        if (walletAddress) {
+            urlWithKey += `&wallet=${encodeURIComponent(walletAddress)}`;
+        }
         // Open dashboard in new tab with key in URL
         chrome.tabs.create({ url: urlWithKey });
         // Clear input

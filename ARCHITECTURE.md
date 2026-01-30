@@ -393,6 +393,79 @@ Transaction Error
 - Calls external API (GitHub/Helius/Google Gemini)
 - Posts results to on-chain program via transaction (optional)
 
+## 📋 Dashboard Vault List and Search (Hybrid Onchain + Local)
+
+The dashboard list of vault items is **not fully on-chain**: on-chain is the source of truth for *which* vault(s) exist; local storage holds **searchable metadata** (name, domain, type). Search runs in-memory over the merged list. No separate database or indexer is required.
+
+### Design Rationale
+
+- **Full on-chain list**: Prohibitive cost and size (names/domains would bloat accounts).
+- **Pure local list**: Stale and disconnected from chain; no single source of truth.
+- **Hybrid**: On-chain answers “what exists”; local holds display/search fields; merge on load; search stays fast and in-memory.
+
+### Data Flow
+
+```
+Wallet (Clerk SIWS or localStorage fallback)
+    │
+    ▼
+[frontend] loadVaultList(walletAddress)
+    │
+    ├─► Derive Vault PDA: seeds ["vault", owner], programId
+    ├─► connection.getAccountInfo(vaultPDA)
+    │
+    ├─► If account exists:
+    │   ├─► getVaultMetadataAsync(vaultId)  → localStorage or chrome.storage.local
+    │   ├─► Decode created_at from account.data[136..144]
+    │   └─► Merge: { id: vaultPda, ...meta, createdAt, value: "" }
+    │
+    └─► Return merged VaultItem[] (0 or 1 with current one-vault-per-owner)
+        │
+        ▼
+[useVaults] setVaultItems(merged)
+    │
+    ▼
+[useVaults] filteredItems = useMemo(() =>
+  vaultItems.filter(by searchQuery on name/domain and activeFilter)
+)
+    │
+    ▼
+UI: list + search (no extra RPC for search)
+```
+
+### Clerk Solana Wallet Bridge
+
+- **Source of wallet address**: When Clerk Solana SIWS is enabled (Clerk Dashboard → User & Auth → Web3 → Enable Solana), the signed-in user gets `user.web3Wallets[0].web3WalletAddress` (Solana pubkey). Users sign in with Phantom (or another Solana wallet); Clerk links the wallet to the user record.
+- **Fallback**: If SIWS is not used, the app reads `localStorage.getItem('keyshield_wallet_address')` so a wallet can be set elsewhere (e.g. extension).
+- **Usage**: Dashboard passes this wallet into `useVaults(searchQuery, activeFilter, userId, walletAddress)`. When `walletAddress` is set, the list is driven by on-chain vault(s) + local metadata; when not set, legacy path uses Clerk `userId` and localStorage/chrome.storage only.
+
+### Vault Metadata Storage (Local / Extension)
+
+- **Keys**: `keyshield_meta_<vaultId>` where `vaultId` is the vault PDA base58 (or owner, depending on context).
+- **Value**: JSON `{ name, domain?, type, notes?, tags? }` for display and search only (no secret value).
+- **Where**:
+  - **Browser**: `localStorage` only.
+  - **Extension**: Both `localStorage` and `chrome.storage.local` are written/read so the dashboard and extension (e.g. popup, background) share the same metadata when running in the extension context.
+- **APIs** (`frontend/lib/solana.ts`): `getVaultMetadata` (sync, localStorage), `getVaultMetadataAsync` (async, uses chrome.storage when available), `setVaultMetadata` (writes to both when chrome.storage exists).
+
+### Merge and Search Behavior
+
+- **Merge on load**: For each on-chain vault account (currently one per owner), load local metadata by vault id, decode `created_at` from vault account data (bytes 136–144, u64 le), and build one `VaultItem` per vault. `value` is never set in the list (keys are revealed/decrypted elsewhere, e.g. extension + Lit).
+- **Search**: Unchanged from pre-hybrid: `useVaults` filters the merged list in a `useMemo` by `searchQuery` (name, domain) and `activeFilter` (e.g. “All Items”, “API Keys”). No RPC or backend call for search; in-memory only. For very large lists (e.g. 1k+ items), add debounce on the search input if needed.
+- **One vault per owner**: The current program uses a single Vault PDA per owner (`seeds: ["vault", owner]`). The merged list has at most one item per wallet unless the program is extended (e.g. PDA index seed for multiple vaults per owner).
+
+### Add / Update / Delete (Wallet Connected)
+
+- **Add**: When a wallet is connected, “add key” is handled by the extension/on-chain flow (store_key + local metadata). The dashboard `addItem` is a no-op when `walletAddress` is set; new keys are added via the extension, then the list is refetched via `loadVaultList`.
+- **Update**: `updateMetadata(vaultId, data)` updates local metadata only (name, domain, type, notes, tags) and refreshes the in-memory list. No on-chain instruction for metadata in the current design.
+- **Delete**: Removes local metadata for that vault id and refetches the list from chain (`loadVaultList`). On-chain vault closure (if supported by the program) can be added later.
+
+### Relevant Files
+
+- **List + merge + search**: [frontend/hooks/useVaults.ts](frontend /hooks/useVaults.ts) — `loadVaultList(walletAddress)`, `filteredItems`, `updateMetadata`, `deleteItem`.
+- **On-chain fetch + metadata**: [frontend/lib/solana.ts](frontend /lib/solana.ts) — `PROGRAM_ID`, `deriveVaultPDA`, `getConnection`, `loadVaultList`, `getVaultMetadata` / `getVaultMetadataAsync`, `setVaultMetadata`, `decodeCreatedAt`.
+- **Wallet into list**: [frontend/App.tsx](frontend /App.tsx) — `getSolanaWalletAddress(user)` (Clerk `web3Wallets[0].web3WalletAddress` + localStorage fallback), passed to `useVaults(..., walletAddress)`.
+
 ## 🔍 API Key Auto-Detection Flow
 
 ### Detection Sources

@@ -1032,7 +1032,14 @@ async function handleKeyDetected(
     })) as string;
 
     const openDashboard = async () => {
-      const dashboardUrl = await getDashboardUrl();
+      let dashboardUrl = await getDashboardUrl();
+      const wallet =
+        currentSession?.walletAddress ||
+        (await chrome.storage.local.get('walletAddress')).walletAddress;
+      if (wallet) {
+        dashboardUrl += dashboardUrl.includes('?') ? '&' : '?';
+        dashboardUrl += 'wallet=' + encodeURIComponent(wallet);
+      }
       chrome.tabs.create({ url: dashboardUrl });
     };
 

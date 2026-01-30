@@ -4,19 +4,33 @@
 
 mod common;
 
-use common::{program_id, vault_pda};
+use common::{program_id, set_sbf_out_dir, vault_pda};
 use mollusk_svm::{
     program::keyed_account_for_system_program,
     result::Check,
     Mollusk,
 };
 use solana_sdk::{
-    account::AccountSharedData,
+    account::{AccountSharedData, WritableAccount},
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
     system_program,
 };
+
+/// Vault account size (must match state::Vault::SIZE).
+const VAULT_SIZE: usize = 288;
+
+/// Create an uninitialized vault account with 288 bytes so the program can Assign and write.
+fn uninitialized_vault_account() -> AccountSharedData {
+    AccountSharedData::create(
+        1_000_000,
+        vec![0u8; VAULT_SIZE],
+        system_program::id(),
+        false,
+        0,
+    )
+}
 
 fn build_store_key_data(
     encrypted_key_hash: [u8; 32],
@@ -38,10 +52,10 @@ fn build_store_key_data(
 
 #[test]
 fn test_store_key_success() {
-    std::env::set_var("SBF_OUT_DIR", "target/deploy");
+    set_sbf_out_dir();
 
     let program_id = program_id();
-    let mut mollusk = Mollusk::new(&program_id, "keyshield");
+    let mollusk = Mollusk::new(&program_id, "keyshield");
 
     let owner = Pubkey::new_unique();
     let (vault_pda, vault_bump) = vault_pda(&owner);
@@ -49,7 +63,7 @@ fn test_store_key_success() {
     let owner_lamports = 10_000_000;
     let owner_account = AccountSharedData::new(owner_lamports, 0, &system_program::id());
 
-    let vault_account = AccountSharedData::default();
+    let vault_account = uninitialized_vault_account();
 
     let data = build_store_key_data(
         [1u8; 32],
@@ -82,12 +96,12 @@ fn test_store_key_success() {
         &[Check::success()],
     );
 
-    assert!(result.program_result.is_ok());
+    assert!(!result.program_result.is_err());
 }
 
 #[test]
 fn test_store_key_double_init_fails() {
-    std::env::set_var("SBF_OUT_DIR", "target/deploy");
+    set_sbf_out_dir();
 
     let program_id = program_id();
     let mollusk = Mollusk::new(&program_id, "keyshield");
@@ -97,7 +111,7 @@ fn test_store_key_double_init_fails() {
 
     let owner_lamports = 10_000_000;
     let owner_account = AccountSharedData::new(owner_lamports, 0, &system_program::id());
-    let vault_account = AccountSharedData::default();
+    let vault_account = uninitialized_vault_account();
 
     let data = build_store_key_data(
         [1u8; 32],
@@ -125,7 +139,11 @@ fn test_store_key_double_init_fails() {
     ];
 
     let result = mollusk.process_instruction(&instruction, &accounts);
-    assert!(result.program_result.is_ok());
+    assert!(
+        !result.program_result.is_err(),
+        "first StoreKey should succeed, got {:?}",
+        result.program_result
+    );
 
     let resulting = result.resulting_accounts;
     let owner_after = resulting.iter().find(|(k, _)| *k == owner).map(|(_, a)| a.clone()).unwrap();
@@ -157,16 +175,16 @@ fn test_store_key_double_init_fails() {
 
 #[test]
 fn test_store_key_owner_must_be_signer() {
-    std::env::set_var("SBF_OUT_DIR", "target/deploy");
+    set_sbf_out_dir();
 
     let program_id = program_id();
-    let mut mollusk = Mollusk::new(&program_id, "keyshield");
+    let mollusk = Mollusk::new(&program_id, "keyshield");
 
     let owner = Pubkey::new_unique();
     let (vault_pda, vault_bump) = vault_pda(&owner);
 
     let owner_account = AccountSharedData::new(10_000_000, 0, &system_program::id());
-    let vault_account = AccountSharedData::default();
+    let vault_account = uninitialized_vault_account();
 
     let data = build_store_key_data(
         [1u8; 32],
@@ -177,7 +195,7 @@ fn test_store_key_owner_must_be_signer() {
         vault_bump,
     );
 
-    let mut instruction = Instruction::new_with_bytes(
+    let instruction = Instruction::new_with_bytes(
         program_id,
         &data,
         vec![

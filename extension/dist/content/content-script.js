@@ -576,6 +576,7 @@ class SaveDialog {
             this.options = options;
             // Support both single key (backward compat) and multiple keys
             const detectedKeys = options.detectedKeys || (options.detectedKey ? [options.detectedKey] : []);
+            const isMultiKey = detectedKeys.length > 1;
             if (detectedKeys.length === 0) {
                 console.error('[KeyShield SaveDialog] No keys provided');
                 return;
@@ -624,7 +625,6 @@ class SaveDialog {
                 provider: this.detectKeyType(key.key, key.fieldName),
             }));
             // Build dialog HTML
-            const isMultiKey = detectedKeys.length > 1;
             const dialogTitle = isMultiKey
                 ? `${detectedKeys.length} API Keys Detected`
                 : 'API Key Detected';
@@ -1200,6 +1200,19 @@ function handleDetectedKeys(detected) {
             type: 'KEYS_DETECTED',
             payload: { detected: newKeys },
         });
+        // Log detection events for report (source, masked preview, domain, time)
+        const maskKey = (key) => key.length > 8 ? key.slice(0, 4) + '...' + key.slice(-4) : '••••';
+        chrome.runtime.sendMessage({
+            type: 'LOG_DETECTION',
+            payload: {
+                entries: newKeys.map((k) => ({
+                    source: k.source,
+                    keyPreview: maskKey(k.key),
+                    domain: k.domain,
+                    timestamp: k.timestamp ?? Date.now(),
+                })),
+            },
+        });
         // Clean up old detections after 5 minutes
         setTimeout(() => {
             newKeys.forEach((key) => {
@@ -1256,29 +1269,16 @@ function setupAutoDetection() {
             console.error('[KeyShield] Error in DOM scan:', error);
         }
     };
-    // Initial DOM scan - multiple attempts for reliability
-    const performInitialScans = () => {
-        // Immediate scan (if DOM ready)
-        if (document.body && document.body.children.length > 0) {
-            performDOMScan();
-        }
-        // Retry after 1s
-        setTimeout(performDOMScan, 1000);
-        // Retry after 2s
-        setTimeout(performDOMScan, 2000);
-        // Retry after 5s (for slow-loading content)
-        setTimeout(performDOMScan, 5000);
-    };
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        performInitialScans();
+    // Initial DOM scan after page load
+    if (document.readyState === 'complete') {
+        setTimeout(performDOMScan, 2000); // Wait 2s after page load
     }
     else {
-        document.addEventListener('DOMContentLoaded', performInitialScans);
         window.addEventListener('load', () => {
-            setTimeout(performDOMScan, 1000);
+            setTimeout(performDOMScan, 2000);
         });
     }
-    // Periodic DOM scanning (every 5 seconds)
+    // Periodic DOM scanning
     domScanInterval = window.setInterval(performDOMScan, DOM_SCAN_INTERVAL_MS);
     // Use MutationObserver for dynamic content changes
     const domObserver = new MutationObserver(() => {

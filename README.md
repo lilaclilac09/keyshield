@@ -174,22 +174,61 @@ Enables secure multi-party computation for agent-to-agent key sharing.
 
 See `frontend/src/lib/arcium.ts` for integration stubs.
 
-## 🧪 Testing
+## Testing
 
-### Rust Tests
+### Unit tests (Mollusk)
 
-- Host unit tests (fast): `cargo test`
-- SBF target tests: `cargo test-sbf`
-
-### Program checks
-
-- Basic deploy/structure checks: `./test-program.sh` (uses Solana CLI on devnet)
-- Manual build+deploy: `cargo build-sbf` then `solana program deploy target/deploy/keyshield.so --program-id target/deploy/keyshield-keypair.json --url devnet`
-
-### Frontend Tests
+Unit tests use [Mollusk](https://solana.com/docs/programs/testing/mollusk) to run the compiled program in a minified SVM. Build the program first, then run tests:
 
 ```bash
-cd frontend
+cargo build-sbf
+cargo test -p keyshield
+```
+
+Tests live in `programs/keyshield/tests/` (`store_key.rs`, `access_key.rs`, `share_key.rs`) and use shared fixtures in `tests/common/mod.rs`. SBF program path is resolved from `CARGO_MANIFEST_DIR` so tests work from any working directory.
+
+### Integration (Surfpool)
+
+For a local Surfnet (Surfpool) run:
+
+1. Install Surfpool: `cargo install surfpool` (or `curl -sL https://run.surfpool.run | bash`)
+2. From repo root, run the integration script (starts Surfnet if needed, deploys program, verifies):
+
+```bash
+./scripts/integration-surfpool.sh
+```
+
+Optional Node script (connects to `http://localhost:8899`, derives vault PDA, checks account):
+
+```bash
+npm install @solana/web3.js   # from repo root if needed
+node scripts/integration-surfpool.mjs
+```
+
+### Devnet smoke
+
+Deploy to devnet and verify the vault account:
+
+```bash
+./scripts/deploy.sh devnet
+```
+
+After performing one StoreKey (e.g. from the extension or app), verify on-chain:
+
+```bash
+./scripts/verify-vault.sh <wallet-pubkey>
+```
+
+Or manually: `solana account <vault-pda> --url https://api.devnet.solana.com`
+
+### CI
+
+GitHub Actions (`.github/workflows/test.yml`) runs unit tests (Mollusk) then integration (Surfpool): build-sbf, `cargo test -p keyshield`, then install Surfpool, start Surfnet, and run `scripts/integration-surfpool.sh`.
+
+### Frontend tests
+
+```bash
+cd "frontend "
 npm test
 ```
 

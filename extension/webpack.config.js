@@ -6,6 +6,7 @@ module.exports = {
     'background/service-worker': './src/background/service-worker.ts',
     'content/content-script': './src/content/content-script.ts',
     'popup/popup': './src/popup/popup.ts',
+    'report/report': './src/report/report.ts',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

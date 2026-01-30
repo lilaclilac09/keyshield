@@ -191296,7 +191296,7 @@ var __webpack_exports__ = {};
 class SecureStorage {
     constructor() {
         this.dbName = 'keyshield-storage';
-        this.dbVersion = 1;
+        this.dbVersion = 2;
         this.db = null;
         this.encryptionKey = null;
     }
@@ -191329,6 +191329,11 @@ class SecureStorage {
                 // Ciphertext store - for storing full Lit Protocol ciphertexts
                 if (!db.objectStoreNames.contains('ciphertexts')) {
                     db.createObjectStore('ciphertexts', { keyPath: 'hash' });
+                }
+                // Logs store - detection/autofill/saved events (payload encrypted)
+                if (!db.objectStoreNames.contains('logs')) {
+                    const logStore = db.createObjectStore('logs', { keyPath: 'id' });
+                    logStore.createIndex('wallet_timestamp', ['walletAddress', 'timestamp'], { unique: false });
                 }
             };
         });
@@ -191590,17 +191595,82 @@ class SecureStorage {
         });
     }
     /**
+     * Append a log entry (payload encrypted at rest).
+     */
+    async appendLog(entry) {
+        if (!this.db)
+            throw new Error('Database not initialized');
+        const id = `log_${entry.timestamp}_${Math.random().toString(36).slice(2, 10)}`;
+        const payload = {
+            type: entry.type,
+            source: entry.source,
+            keyPreview: entry.keyPreview,
+            domain: entry.domain,
+            keyId: entry.keyId,
+            success: entry.success,
+            timestamp: entry.timestamp,
+        };
+        const encryptedPayload = await this.encrypt(JSON.stringify(payload));
+        const row = {
+            id,
+            walletAddress: entry.walletAddress,
+            timestamp: entry.timestamp,
+            encryptedPayload,
+        };
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['logs'], 'readwrite');
+            const store = transaction.objectStore('logs');
+            const request = store.put(row);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    /**
+     * Get logs for a wallet, optionally filtered by date and type.
+     */
+    async getLogs(walletAddress, options) {
+        if (!this.db)
+            throw new Error('Database not initialized');
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['logs'], 'readonly');
+            const store = transaction.objectStore('logs');
+            const index = store.index('wallet_timestamp');
+            const range = IDBKeyRange.bound([walletAddress, options?.from ?? 0], [walletAddress, options?.to ?? Number.MAX_SAFE_INTEGER]);
+            const request = index.getAll(range);
+            request.onsuccess = async () => {
+                const rows = request.result || [];
+                const types = options?.types;
+                const out = [];
+                for (const row of rows) {
+                    try {
+                        const payload = JSON.parse(await this.decrypt(row.encryptedPayload));
+                        if (types && types.length > 0 && !types.includes(payload.type))
+                            continue;
+                        out.push({ ...payload, id: row.id });
+                    }
+                    catch {
+                        // Skip corrupted entries
+                    }
+                }
+                out.sort((a, b) => a.timestamp - b.timestamp);
+                resolve(out);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+    /**
      * Clear all data
      */
     async clearAll() {
         if (!this.db)
             throw new Error('Database not initialized');
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['sessions', 'vaults', 'settings', 'ciphertexts'], 'readwrite');
+            const transaction = this.db.transaction(['sessions', 'vaults', 'settings', 'ciphertexts', 'logs'], 'readwrite');
             transaction.objectStore('sessions').clear();
             transaction.objectStore('vaults').clear();
             transaction.objectStore('settings').clear();
             transaction.objectStore('ciphertexts').clear();
+            transaction.objectStore('logs').clear();
             transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
         });
@@ -211764,6 +211834,12 @@ async function handleMessage(message, sender, sendResponse) {
             case 'SAVE_MULTIPLE_KEYS':
                 await handleSaveMultipleKeys(message.payload, sendResponse);
                 break;
+            case 'LOG_DETECTION':
+                await handleLogDetection(message.payload, sendResponse);
+                break;
+            case 'GET_REPORT_LOGS':
+                await handleGetReportLogs(message.payload, sendResponse);
+                break;
             case 'KEY_DETECTED':
                 await handleKeyDetected({ provider: message.provider, key: message.key, url: message.url }, sendResponse);
                 break;
@@ -211923,31 +211999,39 @@ async function handleGetVault(payload, sendResponse) {
  * Decrypt key for auto-fill
  */
 async function handleDecryptKey(payload, sendResponse) {
+    const result = await decryptKeyForVault(payload);
+    sendResponse(result);
+}
+/**
+ * Decrypt key for a vault using on-chain hash + local ciphertext
+ */
+async function decryptKeyForVault(payload) {
     try {
         // Check authentication
         if (!currentSession || currentSession.expiresAt < Date.now()) {
-            sendResponse({ success: false, error: 'Not authenticated' });
-            return;
+            return { success: false, error: 'Not authenticated' };
         }
         // Get vault from on-chain
         const owner = new PublicKey(payload.walletAddress);
         const vault = await vaultClient.getVault(owner);
         if (!vault) {
-            sendResponse({ success: false, error: 'Vault not found' });
-            return;
+            return { success: false, error: 'Vault not found' };
         }
-        // Decrypt with Lit Protocol
-        // Note: In production, you'd need to get sessionSigs from Lit
-        // For now, this is a placeholder
-        const ciphertext = new TextDecoder().decode(vault.encryptedKey);
-        const dataToEncryptHash = ''; // Would get from vault metadata
+        // Reconstruct Lit hash from on-chain bytes
+        const hashBytes = vault.encryptedKeyHash;
+        const dataToEncryptHash = btoa(String.fromCharCode(...hashBytes));
+        // Load ciphertext from local storage using the hash
+        const ciphertext = await storage.getCiphertext(dataToEncryptHash);
+        if (!ciphertext) {
+            return { success: false, error: 'Ciphertext not found for vault' };
+        }
         // TODO: Get sessionSigs from Lit Protocol
         const sessionSigs = {}; // Placeholder
         const decryptedKey = await vaultClient.decryptWithLit(ciphertext, dataToEncryptHash, payload.walletAddress, sessionSigs);
-        sendResponse({ success: true, key: decryptedKey });
+        return { success: true, key: decryptedKey };
     }
     catch (error) {
-        sendResponse({ success: false, error: error.message });
+        return { success: false, error: error.message };
     }
 }
 /**
@@ -211962,6 +212046,60 @@ async function handleKeysDetected(payload, sendResponse) {
     //   message: `Found ${payload.detected.length} potential API key(s).`,
     // });
     sendResponse({ success: true });
+}
+/**
+ * Handle log detection events (for report)
+ */
+async function handleLogDetection(payload, sendResponse) {
+    try {
+        let walletAddress = currentSession?.walletAddress;
+        if (!walletAddress) {
+            const data = await chrome.storage.local.get('walletAddress');
+            walletAddress = data.walletAddress;
+        }
+        if (!walletAddress || !payload.entries?.length) {
+            sendResponse({ success: true });
+            return;
+        }
+        await storage.initialize();
+        for (const entry of payload.entries) {
+            await storage.appendLog({
+                type: 'detection',
+                source: entry.source,
+                keyPreview: entry.keyPreview,
+                domain: entry.domain,
+                timestamp: entry.timestamp,
+                walletAddress,
+            });
+        }
+        sendResponse({ success: true });
+    }
+    catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+/**
+ * Handle get report logs (for report generator)
+ */
+async function handleGetReportLogs(payload, sendResponse) {
+    try {
+        let walletAddress = currentSession?.walletAddress;
+        if (!walletAddress) {
+            const data = await chrome.storage.local.get('walletAddress');
+            walletAddress = data.walletAddress;
+        }
+        if (!walletAddress) {
+            sendResponse({ success: true, logs: [], vaultSummary: [] });
+            return;
+        }
+        await storage.initialize();
+        const logs = await storage.getLogs(walletAddress, payload?.options);
+        const vaultSummary = await storage.getAllVaults();
+        sendResponse({ success: true, logs, vaultSummary });
+    }
+    catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
 }
 /**
  * Handle save detected key request from save dialog
@@ -212056,6 +212194,18 @@ async function handleSaveMultipleKeys(payload, sendResponse) {
         const results = await Promise.allSettled(savePromises);
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
+        // Log "saved" for each successful save
+        const timestamp = Date.now();
+        for (let i = 0; i < results.length; i++) {
+            if (results[i].status === 'fulfilled') {
+                await storage.appendLog({
+                    type: 'saved',
+                    domain: detectedKeys[i].domain,
+                    timestamp,
+                    walletAddress,
+                });
+            }
+        }
         if (failed > 0) {
             sendResponse({
                 success: true,
@@ -212191,6 +212341,15 @@ async function handleTriggerAutoFill(payload, sender, sendResponse) {
         // Get vaults for this domain
         const vaults = await storage.getVaultsByDomain(payload.domain);
         if (vaults.length === 0) {
+            if (currentSession?.walletAddress) {
+                await storage.appendLog({
+                    type: 'autofill',
+                    domain: payload.domain,
+                    success: false,
+                    timestamp: Date.now(),
+                    walletAddress: currentSession.walletAddress,
+                });
+            }
             sendResponse({ success: false, error: 'No keys found for this domain' });
             return;
         }
@@ -212198,9 +212357,20 @@ async function handleTriggerAutoFill(payload, sender, sendResponse) {
         // In production, show user a selection UI
         const vault = vaults[0];
         // Decrypt key
-        const decryptResult = await handleDecryptKey({ vaultId: vault.vaultId, walletAddress: vault.owner }, () => { });
-        if (!decryptResult.success) {
-            sendResponse(decryptResult);
+        const decryptResult = await decryptKeyForVault({
+            vaultId: vault.vaultId,
+            walletAddress: vault.owner,
+        });
+        if (!decryptResult.success || !decryptResult.key) {
+            await storage.appendLog({
+                type: 'autofill',
+                keyId: vault.vaultId,
+                domain: payload.domain,
+                success: false,
+                timestamp: Date.now(),
+                walletAddress: vault.owner,
+            });
+            sendResponse({ success: false, error: decryptResult.error || 'Failed to decrypt key' });
             return;
         }
         // Send injection message to content script
@@ -212210,9 +212380,31 @@ async function handleTriggerAutoFill(payload, sender, sendResponse) {
                 payload: { key: decryptResult.key },
             });
         }
+        await storage.appendLog({
+            type: 'autofill',
+            keyId: vault.vaultId,
+            domain: payload.domain,
+            success: true,
+            timestamp: Date.now(),
+            walletAddress: vault.owner,
+        });
         sendResponse({ success: true });
     }
     catch (error) {
+        if (currentSession?.walletAddress) {
+            try {
+                await storage.appendLog({
+                    type: 'autofill',
+                    domain: payload.domain,
+                    success: false,
+                    timestamp: Date.now(),
+                    walletAddress: currentSession.walletAddress,
+                });
+            }
+            catch {
+                // ignore log errors
+            }
+        }
         sendResponse({ success: false, error: error.message });
     }
 }
@@ -212315,7 +212507,13 @@ async function handleKeyDetected(payload, sendResponse) {
             priority: isHighValue ? 2 : 1,
         }));
         const openDashboard = async () => {
-            const dashboardUrl = await getDashboardUrl();
+            let dashboardUrl = await getDashboardUrl();
+            const wallet = currentSession?.walletAddress ||
+                (await chrome.storage.local.get('walletAddress')).walletAddress;
+            if (wallet) {
+                dashboardUrl += dashboardUrl.includes('?') ? '&' : '?';
+                dashboardUrl += 'wallet=' + encodeURIComponent(wallet);
+            }
             chrome.tabs.create({ url: dashboardUrl });
         };
         // Handle notification button click
