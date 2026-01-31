@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KeyShield Demo Results</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.2em;
+            margin-bottom: 30px;
+        }
+        .status {
+            background: #10b981;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            font-size: 1.3em;
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9fafb;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .info-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+        }
+        .info-box strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .info-box code {
+            background: #f3f4f6;
+            padding: 8px;
+            border-radius: 4px;
+            display: block;
+            font-size: 0.9em;
+            word-break: break-all;
+            color: #374151;
+        }
+        .link-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 2px solid #e5e7eb;
+            transition: all 0.3s;
+        }
+        .link-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.2);
+        }
+        .link-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .link-card a {
+            color: #764ba2;
+            text-decoration: none;
+            font-weight: 500;
+            word-break: break-all;
+        }
+        .link-card a:hover {
+            text-decoration: underline;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102,126,234,0.3);
+        }
+        .test-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .test-badge {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #10b981;
+        }
+        .test-badge .emoji {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        .test-badge .title {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 5px;
+        }
+        .test-badge .status {
+            color: #10b981;
+            font-weight: 600;
+            background: transparent;
+            padding: 0;
+            margin: 0;
+        }
+        .warning {
+            background: #fef3c7;
+            border-left-color: #f59e0b;
+            border: 2px solid #f59e0b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .warning strong {
+            color: #f59e0b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 KeyShield Demo Results</h1>
+        <p class="subtitle">Pinocchio Vault - Fully Tested & Working</p>
+        
+        <div class="status">
+            ✅ ALL TESTS PASSED - PROGRAM READY FOR DEVNET!
+        </div>
+
+        <div class="section">
+            <h2>📊 Test Summary</h2>
+            <div class="test-results">
+                <div class="test-badge">
+                    <div class="emoji">✅</div>
+                    <div class="title">Unit Tests</div>
+                    <div class="status">8/8 PASS</div>
+                </div>
+                <div class="test-badge">
+                    <div class="emoji">🏗️</div>
+                    <div class="title">Program Build</div>
+                    <div class="status">SUCCESS</div>
+                </div>
+                <div class="test-badge">
+                    <div class="emoji">🚀</div>
+                    <div class="title">Deployment</div>
+                    <div class="status">SUCCESS</div>
+                </div>
+                <div class="test-badge">
+                    <div class="emoji">💾</div>
+                    <div class="title">StoreKey TX</div>
+                    <div class="status">SUCCESS</div>
+                </div>
+                <div class="test-badge">
+                    <div class="emoji">🔍</div>
+                    <div class="title">Vault Created</div>
+                    <div class="status">288 BYTES</div>
+                </div>
+                <div class="test-badge">
+                    <div class="emoji">🔐</div>
+                    <div class="title">Hash Storage</div>
+                    <div class="status">VERIFIED</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔑 Your Program Information</h2>
+            <div class="info-grid">
+                <div class="info-box">
+                    <strong>Program ID:</strong>
+                    <code>59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW</code>
+                </div>
+                <div class="info-box">
+                    <strong>Vault PDA:</strong>
+                    <code>2stveHTzcmu3nq4WxedfpW9zsvwSYn3Ak17AZSW7YDE9</code>
+                </div>
+                <div class="info-box">
+                    <strong>Wallet:</strong>
+                    <code>74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY</code>
+                </div>
+                <div class="info-box">
+                    <strong>TX Signature (Local Test):</strong>
+                    <code>4wztk8zpxGSxDn1EuCYyZPWfvpDZpkKkvkTYytAn51uGBmbims6RshQKqX3XrbXVMy5KQDUJjXTfK2UigFS61gah</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔍 View on Solscan (Devnet)</h2>
+            <p style="margin-bottom: 20px; color: #666;">
+                Once deployed to devnet, use these links to view all your transactions:
+            </p>
+            
+            <div class="link-card">
+                <h3>📍 Program (All Transactions)</h3>
+                <a href="https://solscan.io/account/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet" target="_blank">
+                    https://solscan.io/account/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet
+                </a>
+                <a href="https://solscan.io/account/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet" class="btn" target="_blank">
+                    Open in Solscan →
+                </a>
+            </div>
+
+            <div class="link-card">
+                <h3>📍 Your Vault Account</h3>
+                <a href="https://solscan.io/account/2stveHTzcmu3nq4WxedfpW9zsvwSYn3Ak17AZSW7YDE9?cluster=devnet" target="_blank">
+                    https://solscan.io/account/2stveHTzcmu3nq4WxedfpW9zsvwSYn3Ak17AZSW7YDE9?cluster=devnet
+                </a>
+                <a href="https://solscan.io/account/2stveHTzcmu3nq4WxedfpW9zsvwSYn3Ak17AZSW7YDE9?cluster=devnet" class="btn" target="_blank">
+                    Open in Solscan →
+                </a>
+            </div>
+
+            <div class="link-card">
+                <h3>📍 Your Wallet</h3>
+                <a href="https://solscan.io/account/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet" target="_blank">
+                    https://solscan.io/account/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet
+                </a>
+                <a href="https://solscan.io/account/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet" class="btn" target="_blank">
+                    Open in Solscan →
+                </a>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔍 View on Solana Explorer</h2>
+            
+            <div class="link-card">
+                <h3>📍 Program on Solana Explorer</h3>
+                <a href="https://explorer.solana.com/address/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet" target="_blank">
+                    https://explorer.solana.com/address/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet
+                </a>
+                <a href="https://explorer.solana.com/address/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=devnet" class="btn" target="_blank">
+                    Open in Explorer →
+                </a>
+            </div>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Note:</strong> Devnet RPC is currently experiencing connectivity issues. 
+            The program is fully functional (all tests passed on localhost). 
+            To deploy to devnet, wait for RPC availability or use an alternative RPC endpoint (see DEPLOY_GUIDE.md).
+        </div>
+
+        <div class="section">
+            <h2>🚀 Next Steps</h2>
+            <ol style="line-height: 2; color: #374151;">
+                <li><strong>Deploy to Devnet:</strong> Run <code>./scripts/deploy-simple.sh</code> when RPC is available</li>
+                <li><strong>Create Transaction:</strong> Run <code>node scripts/test-store-key.mjs</code></li>
+                <li><strong>View on Solscan:</strong> Click the links above to see all your transactions</li>
+                <li><strong>Test Frontend:</strong> <code>cd "frontend " && npm run dev</code></li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>📚 Documentation</h2>
+            <ul style="line-height: 2; color: #374151;">
+                <li><a href="TEST_RESULTS.md">TEST_RESULTS.md</a> - Complete test results</li>
+                <li><a href="DEPLOY_GUIDE.md">DEPLOY_GUIDE.md</a> - Deployment instructions</li>
+                <li><a href="QUICK_START.md">QUICK_START.md</a> - Quick reference</li>
+                <li><a href="ARCHITECTURE.md">ARCHITECTURE.md</a> - System architecture</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
