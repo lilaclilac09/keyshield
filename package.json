@@ -2,7 +2,7 @@
   "name": "keyshield",
   "private": true,
   "scripts": {
-    "dev": "cd \"frontend \" && npm run dev",
+    "dev": "cd \"frontend\" && npm run dev",
     "demo": "bash demo.sh",
     "docs:pitch-pdf": "marp docs/pitch/PITCH_DECK.md --allow-local-files -o docs/pitch/PITCH_DECK.pdf"
   },
