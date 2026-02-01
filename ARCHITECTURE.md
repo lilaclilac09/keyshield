@@ -1058,3 +1058,128 @@ This architecture ensures:
 - ✅ Cost Efficiency: Minimal on-chain storage (hash reference only)
 - ✅ Testability: Comprehensive testing pyramid (unit → integration → smoke)
 - ✅ Maintainability: Clear separation of concerns and well-documented plans
+---
+
+## 🔐 Clerk Authentication Integration (February 2026 Update)
+
+### Authentication Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CLERK AUTHENTICATION                      │
+│                                                              │
+│  User Signs In → Clerk Session → userId                    │
+│                                      │                       │
+│                           ┌──────────┴──────────┐           │
+│                           │                     │           │
+│                      NO WALLET            WALLET CONNECTED  │
+│                           │                     │           │
+│                           ▼                     ▼           │
+│              localStorage (userId)    Solana Vault PDA      │
+│              + Local encryption       + Lit Protocol        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Dual Storage Strategy
+
+**Primary Key**: Clerk `userId` (e.g., `user_2xxxxxxxxxxxxx`)
+
+**Storage Modes**:
+
+1. **Clerk-Only Mode** (No wallet connected)
+   - Keys stored in `localStorage` keyed by `keyshield_vaults_${userId}`
+   - Local encryption (fallback for users without crypto wallets)
+   - Fast, no transaction fees
+
+2. **Clerk + Solana Wallet Mode** (Wallet connected)
+   - Keys encrypted with Lit Protocol (threshold encryption)
+   - 32-byte hash stored on-chain in Solana Vault PDA
+   - Full ciphertext in IndexedDB
+   - Wallet address mapped to Clerk userId for account linking
+
+### Implementation Files
+
+**Clerk Setup** (`frontend/index.tsx`):
+```typescript
+import { ClerkProvider } from '@clerk/clerk-react';
+
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+<ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+  <WalletProvider wallets={wallets} autoConnect={false}>
+    <App />
+  </WalletProvider>
+</ClerkProvider>
+```
+
+**Auth Routing** (`frontend/App.tsx`):
+```typescript
+import { useUser, SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
+
+const App = () => (
+  <>
+    <SignedIn><Dashboard /></SignedIn>
+    <SignedOut><AuthScreen /></SignedOut>
+  </>
+);
+```
+
+**Vault Hook** (`frontend/hooks/useVaults.ts`):
+```typescript
+export const useVaults = (
+  searchQuery: string,
+  activeFilter: string,
+  userId: string | undefined,        // Clerk user ID (required)
+  walletAddress: string | undefined  // Solana wallet (optional)
+) => {
+  // Load strategy:
+  // - If walletAddress: loadVaultList(walletAddress) → on-chain
+  // - Else: loadLocalVaultsByUserId(userId) → localStorage
+}
+```
+
+### User Journey
+
+1. **Sign In** → Clerk authentication (email, OAuth, Web3)
+2. **Get userId** → `user.id` from `useUser()`
+3. **Optional: Connect Wallet** → Solana wallet (Phantom, Solflare, OKX)
+4. **Add Keys**:
+   - **With wallet**: Lit Protocol → IndexedDB → Solana transaction
+   - **Without wallet**: localStorage only (local encryption)
+5. **Link Wallet to Clerk User** → Store mapping in metadata
+
+### Wallet Linking
+
+**Mapping Structure** (localStorage):
+```typescript
+keyshield_user_wallets_{userId} = {
+  wallets: [
+    { address: "F6AhY...", nickname: "Main Wallet", addedAt: 1738456789 },
+    { address: "2stve...", nickname: "Dev Wallet", addedAt: 1738456790 }
+  ]
+}
+```
+
+### Configuration
+
+**Environment Variables** (`.env.local`):
+```bash
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_your_clerk_key
+VITE_RPC_URL=https://api.devnet.solana.com
+VITE_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8
+```
+
+**Clerk Dashboard Settings**:
+- Enable Web3 authentication
+- Add Solana as supported chain
+- Configure only: **Solana** and **OKX** wallet providers
+- Set sign-in/sign-up URLs
+
+### Benefits of Clerk Integration
+
+- **Universal access**: Users can access vaults without owning crypto
+- **Progressive enhancement**: Start with email, add wallet later
+- **Account recovery**: Clerk handles password reset, 2FA
+- **Multi-wallet support**: Link multiple Solana wallets to one userId
+- **Cross-device sync**: Metadata synced via Clerk (vault list cached locally)
+

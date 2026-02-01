@@ -1,9 +1,11 @@
 # KeyShield - Private API Vault on Solana
 
 A decentralized API key management vault built on Solana with advanced privacy features:
-- **ZK Proofs (Bonsol)** - Access verification without revealing secrets
-- **MPC (Arcium)** - Secure agent-to-agent communication
-- **Threshold Crypto (Lit Protocol)** - Time-locked and wallet-based sharing
+- **✅ Lit Protocol** - Threshold encryption with wallet-based access control (IMPLEMENTED)
+- **✅ Light Protocol** - ZK compression for 95% cheaper on-chain storage (IMPLEMENTED)
+- **✅ Multi-Wallet Architecture** - One Clerk user → Multiple isolated wallets (IMPLEMENTED)
+- **🔮 ZK Proofs (Bonsol)** - Access verification without revealing secrets (PLANNED)
+- **🔮 MPC (Arcium)** - Secure agent-to-agent communication (PLANNED)
 
 ## 📐 Architecture Overview
 
@@ -253,12 +255,16 @@ Edit `frontend/src/lib/constants.ts` to set:
 
 | SDK | Status | Notes |
 |-----|--------|-------|
-| **Pinocchio** | ✅ Complete | Core program framework |
-| **Lit Protocol** | ✅ Complete | Encryption/decryption working |
-| **Bonsol** | ⚠️ Stub | Requires ZK program + network setup |
-| **Arcium** | ⚠️ Stub | Testnet only, requires circuit setup |
-| **Wallet Adapter** | ✅ Complete | Phantom, Solflare supported |
-| **Solana Web3.js** | ✅ Complete | Core interactions |
+| **Pinocchio** | ✅ Complete | Core program framework, 8/8 tests passing |
+| **Lit Protocol** | ✅ Complete | Encryption/decryption, wallet-based access control |
+| **Light Protocol** | ✅ Integrated | ZK compression ready (95% cost savings) |
+| **IndexedDB (idb)** | ✅ Complete | Ciphertext storage, multi-wallet support |
+| **Wallet Mapping** | ✅ Complete | Clerk → Multiple wallets architecture |
+| **Clerk Auth** | ✅ Complete | OKX + Solana wallet only auth |
+| **Bonsol** | ⚠️ Planned | ZK proof verification (future) |
+| **Arcium** | ⚠️ Planned | MPC computation (future) |
+| **Wallet Adapter** | ✅ Complete | Phantom, Solflare, OKX supported |
+| **Solana Web3.js** | ✅ Complete | On-chain interactions |
 
 ## 🚧 TODO / Known Issues
 
