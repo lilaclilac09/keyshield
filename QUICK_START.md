@@ -1,5 +1,40 @@
 # ⚡ KeyShield Quick Start
 
+## 🚀 Quick Fix for `make deploy` (Future Upgrades)
+
+Use Helius for devnet so `make deploy CLUSTER=devnet` is faster and more reliable:
+
+```bash
+# Add Helius key (persistent) — replace with your key
+echo 'export HELIUS_API_KEY=YOUR_HELIUS_API_KEY' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Then `make deploy CLUSTER=devnet` will auto-use Helius.
+
+---
+
+## 🖥️ Launch the Frontend
+
+In **frontend** (Vite app), set env and run:
+
+1. **Create `frontend/.env.local`** with (use your Helius key in the RPC URL):
+   ```
+   VITE_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8
+   VITE_RPC_URL=https://devnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
+   ```
+
+2. **Run the app:**
+   ```bash
+   cd "frontend "
+   npm install   # if needed
+   npm run dev
+   ```
+
+3. Open **http://localhost:3000** — connect wallet, create vault, store keys, test everything.
+
+---
+
 ## 🎯 Deploy & Test in 2 Commands
 
 ### Option 1: Automated (Recommended)
