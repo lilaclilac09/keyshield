@@ -1,5 +1,10 @@
 # KeyShield Architecture Overview
 
+> **📖 For detailed vault architecture documentation, see [VAULT_ARCHITECTURE.md](./VAULT_ARCHITECTURE.md)**
+> - Explains ONE wallet → ONE vault → MULTIPLE keys model
+> - On-chain structure (472 bytes per vault)
+> - Storage costs and data flow
+
 ## 🏛️ High-Level Architecture
 
 ```

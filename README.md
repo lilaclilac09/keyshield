@@ -36,7 +36,9 @@ KeyShield is built on a multi-layered architecture that combines client-side enc
 - **On-Chain**: Solana program storing encrypted keys in vault accounts
 - **Security**: Multi-layer encryption with threshold cryptography and zero-knowledge verification
 
-**📖 For complete architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md)** ⭐ - Essential reading (572 lines covering system design, data flows, security layers, and integration patterns).
+**📖 Documentation:**
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - Complete system architecture (572 lines)
+- [VAULT_ARCHITECTURE.md](./VAULT_ARCHITECTURE.md) - **NEW** ⭐ Vault storage model explained (ONE wallet → ONE vault → MULTIPLE keys)
 
 ## 🏗️ Architecture
 
