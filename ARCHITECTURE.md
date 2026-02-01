@@ -104,6 +104,257 @@ programs/keyshield/src/
     └── share_key.rs        # Share key handler
 ```
 
+## 🔐 Complete Store Flow: Client-Side Encryption to On-Chain Storage
+
+### Overview
+
+KeyShield implements a complete end-to-end flow for securely storing API keys with threshold encryption and on-chain verification. The flow combines Lit Protocol for encryption, IndexedDB for off-chain ciphertext storage, and Solana for on-chain hash storage.
+
+### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    USER ENTERS API KEY                              │
+│                    (AddKeyModal Component)                          │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 1: Lit Protocol Encryption                                   │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  encryptWithLit(apiKey, walletPubkey)                         │  │
+│  │  • Connect to Lit Network (datil-dev)                         │  │
+│  │  • Build access conditions (Solana wallet)                    │  │
+│  │  • Encrypt API key with threshold cryptography                │  │
+│  │  • Returns: { ciphertext (1-5KB), dataToEncryptHash (32B) }   │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 2: IndexedDB Storage (Off-Chain)                             │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  storeCiphertext(dataToEncryptHash, ciphertext)               │  │
+│  │  • Database: keyshield_ciphertext                             │  │
+│  │  • Key: ciphertext:${base64(hash)}                            │  │
+│  │  • Value: { ciphertext, createdAt, walletPubkey }             │  │
+│  │  • Size: 1-5 KB (full Lit Protocol ciphertext)                │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 3: Transaction Building                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  buildStoreKeyTransaction(connection, owner, hash, keyType)   │  │
+│  │  • Derive Vault PDA: seeds ["vault", owner]                   │  │
+│  │  • Build instruction data (107 bytes):                        │  │
+│  │    [0]       discriminator: 0x00 (StoreKey)                   │  │
+│  │    [1..32]   encrypted_key_hash: 32 bytes from Lit            │  │
+│  │    [33..64]  zk_commit: 32 bytes (zeros for now)              │  │
+│  │    [65..96]  mpc_hash: 32 bytes (zeros for now)               │  │
+│  │    [97..104] timestamp: u64 LE (Date.now())                   │  │
+│  │    [105]     key_type: u8 (0=Generic, 1=GitHub, etc.)         │  │
+│  │    [106]     vault_bump: u8 (from PDA derivation)             │  │
+│  │  • Create Transaction with accounts:                          │  │
+│  │    - Owner (signer, writable)                                 │  │
+│  │    - Vault PDA (writable)                                     │  │
+│  │    - System Program (read-only)                               │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 4: Wallet Signature                                          │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  wallet.signTransaction(transaction)                          │  │
+│  │  • Triggers wallet popup (Phantom/Solflare)                   │  │
+│  │  • User reviews and approves transaction                      │  │
+│  │  • Wallet signs with private key                              │  │
+│  │  • Returns signed transaction                                 │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 5: Send to Solana Network                                    │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  sendAndConfirmStoreKeyTransaction(connection, signedTx)      │  │
+│  │  • Serialize signed transaction                               │  │
+│  │  • Send to RPC endpoint (devnet/mainnet)                      │  │
+│  │  • Wait for confirmation                                      │  │
+│  │  • Returns transaction signature                              │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 6: On-Chain Processing                                       │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  process_store_key() in programs/keyshield/src/instructions/  │  │
+│  │  • Validate accounts (owner is signer)                        │  │
+│  │  • Parse instruction data (106 bytes)                         │  │
+│  │  • Check vault doesn't already exist                          │  │
+│  │  • Initialize vault PDA if needed (CreateAccount/Allocate)    │  │
+│  │  • Write to Vault Account (288 bytes):                        │  │
+│  │    [0..7]     discriminator: "keyshld\0"                      │  │
+│  │    [8..39]    owner: Pubkey                                   │  │
+│  │    [40..71]   encrypted_key_hash: [u8; 32] ← ONLY HASH!       │  │
+│  │    [72..103]  zk_commit: [u8; 32]                             │  │
+│  │    [104..135] mpc_hash: [u8; 32]                              │  │
+│  │    [136..143] created_at: u64                                 │  │
+│  │    [144]      access_flags: u8 (key type)                     │  │
+│  │    [145..287] _reserved: [u8; 143]                            │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 7: Save Metadata Locally                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  setVaultMetadata(vaultPDA, metadata)                         │  │
+│  │  • Key: keyshield_meta_<vaultPDA>                             │  │
+│  │  • Value: { name, domain, type, notes, tags }                 │  │
+│  │  • Storage: localStorage + chrome.storage.local (extension)   │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 8: Refresh Vault List                                        │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  loadVaultList(walletAddress)                                 │  │
+│  │  • Fetch vault account from Solana                            │  │
+│  │  • Merge with local metadata                                  │  │
+│  │  • Update UI with new vault item                              │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SUCCESS! KEY STORED                              │
+│  • Hash stored on-chain (32 bytes)                                 │
+│  • Ciphertext stored off-chain (1-5 KB)                            │
+│  • Metadata stored locally (name, domain, etc.)                    │
+│  • Transaction signature available for verification                │
+│  • View on Solscan: https://solscan.io/tx/{signature}?cluster=dev  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Why Only Hash Goes On-Chain
+
+**Problem**: Lit Protocol ciphertexts are 1-5 KB, which is:
+- **Expensive**: Large account data increases rent costs significantly
+- **Inefficient**: Most Solana accounts are optimized for smaller data
+- **Unnecessary**: Full ciphertext only needed for decryption, not verification
+
+**Solution**: Store only 32-byte hash reference on-chain
+
+**Benefits**:
+- **96%+ storage reduction**: 32 bytes vs 1-5 KB
+- **Lower rent costs**: Smaller accounts = less SOL required
+- **Same security**: Hash uniquely identifies ciphertext
+- **Fast retrieval**: IndexedDB lookup by hash is instant
+
+**Trade-offs**:
+- Requires local storage (IndexedDB) availability
+- Ciphertext not accessible if IndexedDB is cleared
+- Future: Can add IPFS/Arweave backup for ciphertext
+
+### Implementation Files
+
+**Lit Protocol Client** (`frontend /lib/lit-protocol.ts`):
+- `initLitClient()` - Connect to Lit Network
+- `encryptWithLit(apiKey, walletPubkey)` - Encrypt with wallet condition
+- `decryptWithLit(hashBytes, wallet)` - Decrypt with session signatures
+- `normalizeHashTo32Bytes(hash)` - Ensure hash is exactly 32 bytes
+
+**IndexedDB Storage** (`frontend /lib/ciphertext-storage.ts`):
+- `storeCiphertext(hash, ciphertext)` - Store in IndexedDB
+- `getCiphertext(hash)` - Retrieve by hash
+- `hasCiphertext(hash)` - Check existence
+- Database: `keyshield_ciphertext`, Store: `ciphertext`
+
+**Transaction Builder** (`frontend /lib/store-transaction.ts`):
+- `buildStoreKeyTransaction()` - Build instruction and transaction
+- `sendAndConfirmStoreKeyTransaction()` - Send and wait for confirmation
+- `vaultExists()` - Check if vault already exists
+- `domainToKeyType()` - Map domain to key type enum
+
+**Vault Hook** (`frontend /hooks/useVaults.ts`):
+- `addItem()` - Complete store flow (encrypt → store → sign → send)
+- `storeStatus` - Track progress (encrypting → signing → confirming → success)
+- `storeError` - User-friendly error messages
+- `lastSignature` - Transaction signature for verification
+
+**UI Components** (`frontend /components/AddKeyModal.tsx`):
+- Real-time status updates during store flow
+- Wallet signature prompt indication
+- Success message with Solscan link
+- Error handling with retry option
+
+**Program Handler** (`programs/keyshield/src/instructions/store_key.rs`):
+- Validates accounts and instruction data
+- Initializes vault PDA if needed
+- Writes hash and metadata to vault account
+- Returns VaultAlreadyExists error if vault exists
+
+### UI Status Flow
+
+```
+User clicks "ENCRYPT & STORE"
+    │
+    ▼
+Status: "ENCRYPTING WITH LIT PROTOCOL..."
+Button: "ENCRYPTING..."
+    │
+    ▼
+Status: "WAITING FOR WALLET SIGNATURE..."
+Button: "SIGN IN WALLET"
+    │ (User approves in wallet)
+    ▼
+Status: "CONFIRMING TRANSACTION..."
+Button: "CONFIRMING..."
+    │
+    ▼
+Status: "SUCCESS! KEY STORED ON-CHAIN"
+Button: "DONE!"
+Shows: Solscan link to transaction
+    │
+    ▼
+Modal auto-closes after 2 seconds
+Vault list refreshes with new item
+```
+
+### Error Handling
+
+Common errors and user-friendly messages:
+
+| Error | User Message |
+|-------|-------------|
+| User rejected signature | "Transaction was cancelled by user" |
+| Insufficient balance | "Insufficient SOL balance. Please request an airdrop on devnet." |
+| Vault already exists | "A vault already exists for this wallet" |
+| Network error | "Network error. Please check your connection and try again." |
+| Lit Protocol error | "Encryption failed. Please try again." |
+
+### Security Considerations
+
+1. **Plaintext never leaves browser**: API key encrypted before any network call
+2. **Threshold encryption**: Lit Protocol uses BLS threshold signatures
+3. **Wallet-based access**: Only wallet owner can decrypt
+4. **On-chain verification**: Hash stored on-chain provides audit trail
+5. **No server-side storage**: Fully client-side + blockchain architecture
+
+### Performance Metrics
+
+- **Encryption time**: 1-3 seconds (Lit Protocol network call)
+- **Transaction confirmation**: 1-5 seconds (Solana confirmation)
+- **Total flow time**: 3-10 seconds (user-dependent for signature)
+- **On-chain storage**: 32 bytes (hash only)
+- **Off-chain storage**: 1-5 KB (full ciphertext)
+- **Cost**: ~0.001 SOL for transaction + rent (~0.002 SOL for vault account)
+
 ## 🔄 Data Flow
 
 ### Store Key Data Flow

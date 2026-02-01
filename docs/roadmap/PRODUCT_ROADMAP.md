@@ -13,6 +13,10 @@ Audience: Team, stakeholders, investors.
 - [x] Lit Protocol v4 encryption (hash on-chain, ciphertext off-chain)
 - [x] Hybrid on-chain + local metadata vault list
 - [x] Testing framework (Mollusk unit, Surfpool integration)
+- [x] **Frontend store flow with wallet signing (Feb 2026)**
+- [x] **Complete encryption-to-chain pipeline (Feb 2026)**
+- [x] **IndexedDB ciphertext storage (Feb 2026)**
+- [x] **Transaction builder with proper instruction format (Feb 2026)**
 
 ---
 
