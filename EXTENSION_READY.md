@@ -159,7 +159,7 @@ Input Fields:
 After making changes:
 
 ```bash
-cd "frontend "
+cd frontend
 
 # All browsers (recommended):
 npm run build:all
@@ -214,7 +214,7 @@ Then reload extension in browser:
 # Firefox: about:debugging → Inspect → Console
 
 # Rebuild if needed:
-cd "frontend "
+cd frontend
 npm run build:all
 ```
 

@@ -209,13 +209,13 @@ make build
 
 ### Rebuild Frontend Only
 ```bash
-cd "frontend "
+cd frontend
 npm run build:app
 ```
 
 ### Rebuild All Browser Extensions
 ```bash
-cd "frontend "
+cd frontend
 npm run build:all
 ```
 
@@ -223,7 +223,7 @@ npm run build:all
 ```bash
 # From root directory
 cargo build-sbf                    # Solana program
-cd "frontend " && npm run build:all   # Frontend + Extensions
+cd frontend && npm run build:all   # Frontend + Extensions
 ```
 
 ---
@@ -233,7 +233,7 @@ cd "frontend " && npm run build:all   # Frontend + Extensions
 ### Issue: Extension Won't Load
 ```bash
 # Check for build errors
-cd "frontend "
+cd frontend
 npm run build:all
 
 # Check browser console for errors

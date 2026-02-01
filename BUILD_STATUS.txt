@@ -106,7 +106,7 @@ open "https://solscan.io/account/CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8?cl
 
 # Rebuild if needed
 cargo build-sbf                      # Solana program
-cd "frontend " && npm run build:all  # Frontend + Extensions
+cd frontend && npm run build:all  # Frontend + Extensions
 
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ DOCUMENTATION                                                            │
@@ -124,7 +124,7 @@ cd "frontend " && npm run build:all  # Frontend + Extensions
 
 🔧 Extension won't load?
    → Check chrome://extensions for errors
-   → Rebuild: cd "frontend " && npm run build:all
+   → Rebuild: cd frontend && npm run build:all
 
 🔧 Detection not working?
    → Enable dev mode in extension popup

@@ -187,7 +187,7 @@ https://solscan.io/account/59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW?cluster=
 ### 4. Test the Frontend
 
 ```bash
-cd "frontend "
+cd frontend
 npm install
 npm run dev
 ```

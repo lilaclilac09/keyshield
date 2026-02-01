@@ -26,7 +26,7 @@ In **frontend** (Vite app), set env and run:
 
 2. **Run the app:**
    ```bash
-   cd "frontend "
+   cd frontend
    npm install   # if needed
    npm run dev
    ```
@@ -123,7 +123,7 @@ If devnet RPC is slow, see [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) for:
 
 1. **Test the transaction** → See it on Solscan
 2. **Run unit tests** → `cargo test -p keyshield`
-3. **Start frontend** → `cd "frontend " && npm run dev`
+3. **Start frontend** → `cd frontend && npm run dev`
 4. **Build extension** → `cd disabled_extension && npm run build`
 
 **Remember:** Always include `?cluster=devnet` when viewing on explorers!

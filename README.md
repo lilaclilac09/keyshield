@@ -228,7 +228,7 @@ GitHub Actions (`.github/workflows/test.yml`) runs unit tests (Mollusk) then int
 ### Frontend tests
 
 ```bash
-cd "frontend "
+cd frontend
 npm test
 ```
 

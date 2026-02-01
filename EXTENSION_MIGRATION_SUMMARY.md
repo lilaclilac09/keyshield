@@ -104,7 +104,7 @@ These features exist **only** in the disabled extension and would need porting i
 
 ### Frontend (Active)
 ```bash
-cd "frontend "
+cd frontend
 npm install
 npm run dev     # Web app at localhost:3000
 npm run build   # Extension build to frontend/dist/

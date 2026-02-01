@@ -261,7 +261,7 @@ solana transaction-history 59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW --url de
 
 1. **Update frontend config** with your program ID:
    ```bash
-   cd "frontend "
+   cd frontend
    echo "VITE_PROGRAM_ID=59nTnjeLvV97189JSLh4q6oyRdSUfatQeDLR178cjXKW" >> .env.local
    ```
 
