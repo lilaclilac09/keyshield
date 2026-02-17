@@ -158,6 +158,7 @@ flowchart TD
 
 ## 7. Related Documentation
 
+- [TECHNICAL_ARCHITECTURE_HUMANIZED.md](TECHNICAL_ARCHITECTURE_HUMANIZED.md) — Same content in plain English, easier to read.
 - [API_DETECTION_GUIDE.md](API_DETECTION_GUIDE.md) — Detection vs password managers, patterns, code.
 - [LIT_INTEGRATION_GUIDE.md](LIT_INTEGRATION_GUIDE.md) — Lit Protocol setup and conditional decrypt.
 - [MPC_COORDINATION_GUIDE.md](MPC_COORDINATION_GUIDE.md) — Arcium MPC flows.

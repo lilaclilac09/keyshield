@@ -81,7 +81,8 @@ frontend/src/
 │   ├── solana.ts           # Solana connection utilities
 │   ├── constants.ts        # Program constants
 │   ├── keyshield-client.ts # Client SDK for program interaction
-│   ├── lit-protocol.ts     # Lit Protocol integration
+│   ├── lit-protocol.ts     # Lit Protocol (encryption) integration
+│   ├── light-compression.ts # Light Protocol (ZK compression) for on-chain storage
 │   ├── bonsol.ts           # Bonsol ZK proof integration
 │   └── arcium.ts           # Arcium MPC integration
 │
@@ -113,7 +114,7 @@ programs/keyshield/src/
 
 ### Overview
 
-KeyShield implements a complete end-to-end flow for securely storing API keys with threshold encryption and on-chain verification. The flow combines Lit Protocol for encryption, IndexedDB for off-chain ciphertext storage, and Solana for on-chain hash storage.
+KeyShield implements a complete end-to-end flow for securely storing API keys with threshold encryption and on-chain verification. The flow combines **Lit Protocol** for encryption, **IndexedDB** for off-chain ciphertext storage, and **Solana** for on-chain hash storage — via either **Light Protocol** (ZK compression, ~95% cheaper) or the **KeyShield program** (vault PDA, ~80% cheaper).
 
 ### Data Flow Diagram
 
@@ -268,11 +269,16 @@ KeyShield implements a complete end-to-end flow for securely storing API keys wi
 
 ### Implementation Files
 
-**Lit Protocol Client** (`frontend /lib/lit-protocol.ts`):
+**Lit Protocol Client** (`frontend/lib/lit-protocol.ts`):
 - `initLitClient()` - Connect to Lit Network
 - `encryptWithLit(apiKey, walletPubkey)` - Encrypt with wallet condition
 - `decryptWithLit(hashBytes, wallet)` - Decrypt with session signatures
 - `normalizeHashTo32Bytes(hash)` - Ensure hash is exactly 32 bytes
+
+**Light Protocol Client** (`frontend/lib/light-compression.ts`):
+- `initLightProtocol()` - Initialize Light RPC (requires Helius)
+- `createCompressedVault()` - Store hash in compressed account (~95% cheaper)
+- `shouldUseCompression()` - Check if Light path is available
 
 **IndexedDB Storage** (`frontend /lib/ciphertext-storage.ts`):
 - `storeCiphertext(hash, ciphertext)` - Store in IndexedDB
@@ -602,7 +608,7 @@ Transaction Error
 ### On-Chain Components
 
 **What is stored on-chain:**
-- **Lit Protocol `dataToEncryptHash`** (32 bytes) - Reference to encrypted data
+- **Hash reference** (32 bytes) - Lit Protocol `dataToEncryptHash`; stored via **Light Protocol** (compressed, ~95% cheaper) or **KeyShield Program** (vault PDA, ~80% cheaper)
 - **Access control metadata** - Owner, permissions, key type
 - **ZK commitments** (32 bytes) - For proof verification
 - **MPC hashes** (32 bytes) - For secure sharing
@@ -761,6 +767,40 @@ UI: list + search (no extra RPC for search)
 - Helius: https://dashboard.helius.dev/
 - Google Gemini: https://makersuite.google.com/app/apikey
 
+## 🔐 Lit Protocol vs Light Protocol
+
+KeyShield uses **two distinct protocols** for different roles:
+
+| Protocol | Role | What it does |
+|----------|------|--------------|
+| **Lit Protocol** | **Encryption** | Threshold crypto; encrypt API keys with wallet-based access; decrypt only when wallet signs. Ciphertext 1–5 KB. |
+| **Light Protocol** | **ZK compression** | ZK compression for Solana; store hash reference in compressed accounts; ~95% cheaper than standard PDAs. Requires Helius RPC. |
+
+### Lit Protocol (Encryption)
+
+- **Purpose**: Encrypt API keys so that decryption requires wallet signature (proof of ownership).
+- **Why not local AES**: Local encryption cannot enforce "decrypt only when wallet X signs." Lit provides this via a decentralized threshold network.
+- **Flow**: `encryptWithLit(apiKey, walletPubkey)` → `{ ciphertext, dataToEncryptHash }`; ciphertext → IndexedDB, hash → on-chain.
+- **Network**: Datil-dev (dev); Lit mainnet for production.
+
+### Light Protocol (ZK Compression)
+
+- **Purpose**: Store the 32-byte hash on-chain at a fraction of the cost using zero-knowledge compression.
+- **Requirement**: Helius RPC with ZK Compression support (`VITE_HELIUS_API_KEY`).
+- **Cost**: ~15K lamports per key (~95% cheaper than standard PDAs).
+- **Fallback**: If Light unavailable, KeyShield program vault (8 keys per wallet, ~80% savings vs old model).
+- **Badge**: Items show ⚡ COMPRESSED (Light) or 📦 ON-CHAIN (program).
+
+### On-Chain Storage Dual Path
+
+```
+API Key → Lit encrypt → ciphertext (IndexedDB) + hash
+                              ↓
+         On-chain: Light (compressed, 95% cheaper) OR KeyShield Program (vault PDA, 80% cheaper)
+```
+
+---
+
 ## 🔐 Lit Protocol Ciphertext Storage Pattern
 
 ### Problem
@@ -772,10 +812,11 @@ Lit Protocol `encryptString()` returns ciphertexts that are typically 1-5 KB (ba
 
 ### Solution
 
-**On-Chain Storage** (32 bytes):
+**On-Chain Storage** (hash reference only, 32 bytes):
 - Store `dataToEncryptHash` from Lit Protocol
-- This is a unique identifier/reference to the encrypted data
-- Used to retrieve full ciphertext from off-chain storage
+- **Light Protocol path** (primary): Compressed account via ZK compression — ~95% cheaper, requires Helius RPC
+- **KeyShield Program path** (fallback): Vault PDA with 8 key entries — ~80% cheaper than one-vault-per-key
+- Hash uniquely identifies ciphertext; used to retrieve from off-chain storage
 
 **Off-Chain Storage** (1-5 KB):
 - Store full `ciphertext` in IndexedDB
@@ -886,18 +927,20 @@ Lit Protocol `encryptString()` returns ciphertexts that are typically 1-5 KB (ba
 
 - **Build Scripts**: `build-chrome.sh`, `build-firefox.sh`, `build-safari.sh` for multi-browser support
 
-#### 3. **Lit Protocol Ciphertext Storage Optimization** ✅
+#### 3. **Lit Protocol Ciphertext + Light Protocol ZK Compression** ✅
 **Problem**: Lit Protocol ciphertexts are 1-5 KB, too expensive to store fully on-chain.
 
 **Solution**:
-- **On-Chain** (32 bytes): Store only `dataToEncryptHash` from Lit Protocol
+- **Lit Protocol** (encryption): Encrypt with threshold crypto; ciphertext → IndexedDB
+- **On-Chain** (32 bytes): Store only `dataToEncryptHash`; **Light Protocol** (ZK compression, ~95% cheaper) primary path; **KeyShield Program** (vault PDA) fallback
 - **Off-Chain** (1-5 KB): Store full ciphertext in IndexedDB
-- **Retrieval**: Read hash from vault account → query IndexedDB → decrypt with Lit
+- **Retrieval**: Read hash from vault → query IndexedDB → decrypt with Lit
 
 **Key Changes**:
 - Vault state: Changed from `encrypted_key: [u8; 128]` to `encrypted_key_hash: [u8; 32]`
-- Added `frontend/src/lib/ciphertext-storage.ts` for IndexedDB operations
-- Total vault size remains 288 bytes (adjusted reserved space)
+- Added `frontend/lib/ciphertext-storage.ts` for IndexedDB operations
+- Added `frontend/lib/light-compression.ts` for Light Protocol ZK compression path
+- Total vault size remains 472 bytes (KeyShield program path)
 
 ### In-Progress Plans
 

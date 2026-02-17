@@ -9,6 +9,7 @@ Executive pitch deck and assets for investors, hackathon judges, and stakeholder
 | File | Description |
 |------|-------------|
 | [PITCH_DECK.md](PITCH_DECK.md) | Executive slides (8–10 slides) in Markdown |
+| [PRESENTATION_SCRIPT.md](PRESENTATION_SCRIPT.md) | 2-minute demo script (technical points + flow) |
 | [assets/DIAGRAMS.md](assets/DIAGRAMS.md) | All Mermaid diagrams (flows, architecture, MPC, routing) |
 | [assets/](assets/) | Rendered diagram images (optional; see Export below) |
 
