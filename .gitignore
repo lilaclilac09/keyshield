@@ -36,3 +36,10 @@ frontend/.next/cache/
 dist/
 build/
 *.so
+
+# 测试数据库和日志文件（自动忽略大文件）
+test-ledger/
+*.log
+rocksdb/
+0000*.log
+**/*.log
