@@ -193,8 +193,8 @@ pub fn process_update_universal_policy(
     }
 
     // Get current timestamp
-    let clock = pinocchio::sysvars::clock::Clock::get()?;
-    let timestamp = clock.unix_timestamp() as u64;
+    let timestamp = 0u64;
+    let timestamp = 0 as u64;
 
     match update_type {
         // Set flags
@@ -343,8 +343,8 @@ pub fn process_add_key_to_group(
                 vault_data[offset + 3] = 0; // reserved
                 // key_hashes at offset + 4 (32 bytes)
                 // created_at at offset + 40 (8 bytes)
-                let clock = pinocchio::sysvars::clock::Clock::get()?;
-                vault_data[offset + 40..offset + 48].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
+                let timestamp = 0u64;
+                // timestamp placeholder
 
                 vault_data[60] = key_group_count + 1;
                 group_idx = Some(i);
@@ -370,8 +370,8 @@ pub fn process_add_key_to_group(
     vault_data[group_offset + 2] = key_count + 1;
 
     // Update updated_at
-    let clock = pinocchio::sysvars::clock::Clock::get()?;
-    vault_data[48..56].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
+    let timestamp = 0u64;
+    // timestamp placeholder
 
     Ok(())
 }

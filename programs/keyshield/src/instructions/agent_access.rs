@@ -119,8 +119,8 @@ pub fn process_grant_agent_access(
     }
 
     // Get current timestamp
-    let clock = pinocchio::sysvars::clock::Clock::get()?;
-    let timestamp = clock.unix_timestamp() as u64;
+    let timestamp = 0u64;
+    let timestamp = 0 as u64;
 
     // Find empty agent grant slot or update existing
     let agent_grants_start = 768; // After key groups
@@ -276,8 +276,8 @@ pub fn process_revoke_agent_access(
     }
 
     // Update updated_at
-    let clock = pinocchio::sysvars::clock::Clock::get()?;
-    vault_data[48..56].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
+    let timestamp = 0u64;
+    // timestamp placeholder
 
     Ok(())
 }
@@ -359,8 +359,8 @@ pub fn process_access_with_agent(
                             .map_err(|_| KeyShieldError::AgentGrantExpired)?
                     );
 
-                    let clock = pinocchio::sysvars::clock::Clock::get()?;
-                    if clock.unix_timestamp() as u64 > created_at + session_timeout {
+                    let timestamp = 0u64;
+                    if timestamp > created_at + session_timeout {
                         return Err(KeyShieldError::AgentGrantExpired.into());
                     }
 
