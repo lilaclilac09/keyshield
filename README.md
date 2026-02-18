@@ -380,3 +380,198 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [OpenClaw](https://openclaw.xyz)
 - [GOAT SDK](https://goat-sdk.xyz)
 - [CrossMint](https://crossmint.com)
+
+---
+
+## Development Notes
+
+### Next.js 15 App Router SSR Configuration
+
+This project uses Next.js 15.5.12 with App Router. When using client-side libraries (Solana wallet adapters, Clerk auth, Lit Protocol), special handling is required to avoid "window is not defined" errors during server-side rendering.
+
+#### Root Cause
+- In the App Router (`app/` directory), **layout.tsx** is a **Server Component** by default
+- Server Components run on the server during SSR - there is no browser environment (`window`, `document`, `localStorage` don't exist)
+- Third-party libraries like Solana wallet adapters, Clerk, and Lit Protocol often access `window` during module initialization
+
+#### Solution: Split Layout Architecture
+
+The layout is split into two files:
+
+**1. Server Component** - `frontend/src/app/layout.tsx`:
+```tsx
+import type { Metadata } from 'next';
+import { ClientLayout } from './ClientLayout';
+
+export const metadata: Metadata = {
+  title: 'KeyShield API Vault',
+  description: 'Enterprise-grade AI Agent API Key Vault + Zero-Trust Proxy Gateway',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <ClientLayout>{children}</ClientLayout>;
+}
+```
+
+**2. Client Component** - `frontend/src/app/ClientLayout.tsx`:
+```tsx
+'use client';
+
+import { ClerkProvider } from '@clerk/clerk-react';
+import { SolanaProvider } from '@/components/SolanaProvider';
+import { useState, useEffect } from 'react';
+
+const CLERK_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder';
+
+export function ClientLayout({ children }: { children: React.ReactNode }) {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  return (
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} ...>
+      <SolanaProvider>
+        {isMounted ? children : <Loading />}
+      </SolanaProvider>
+    </ClerkProvider>
+  );
+}
+```
+
+#### SolanaProvider Browser Guard
+
+The SolanaProvider component must check for browser environment:
+
+```tsx
+// frontend/components/SolanaProvider.tsx
+'use client';
+
+import React, { useMemo, useEffect, useState } from 'react';
+import { UnsafeBurnerWalletAdapter } from '@solana/wallet-adapter-wallets';
+
+export const SolanaProvider: React.FC<Props> = ({ children }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const wallets = useMemo(() => {
+    if (typeof window === 'undefined') return [];  // Guard for SSR
+    return [new UnsafeBurnerWalletAdapter()];
+  }, [mounted]);
+
+  if (!mounted) return <>{children}</>;
+  
+  return (
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        {children}
+      </WalletProvider>
+    </ConnectionProvider>
+  );
+};
+```
+
+#### Environment Variables
+
+All frontend environment variables must use the `NEXT_PUBLIC_` prefix:
+
+```bash
+# frontend/.env.local
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
+NEXT_PUBLIC_HELIUS_API_KEY=...
+NEXT_PUBLIC_PROGRAM_ID=...
+```
+
+#### Dependency Fix: ethers
+
+Lit Protocol requires `ethers` for SIWE authentication. Install it:
+
+```bash
+cd frontend
+npm install ethers@6
+```
+
+#### Running the Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+The app will be available at http://localhost:3000
+
+#### Clearing Cache (If Issues Persist)
+
+If you encounter ChunkLoadError or stale cache issues:
+
+```bash
+rm -rf frontend/.next
+npm run dev
+```
+
+Open the app in incognito mode to avoid browser cache conflicts.
+
+---
+
+## Development Notes
+
+### Next.js 15 App Router SSR Configuration
+
+This project uses Next.js 15.5.12 with App Router. When using client-side libraries (Solana wallet adapters, Clerk auth), special handling is required to avoid "window is not defined" errors during server-side rendering.
+
+#### Key Fix: Split Layout Architecture
+
+The layout is split into two files:
+
+1. **`frontend/src/app/layout.tsx`** - Server Component that exports metadata
+2. **`frontend/src/app/ClientLayout.tsx`** - Client Component that wraps providers
+
+```tsx
+// layout.tsx - Server Component
+export const metadata: Metadata = { ... };
+export default function RootLayout({ children }) {
+  return <ClientLayout>{children}</ClientLayout>;
+}
+```
+
+```tsx
+// ClientLayout.tsx - Client Component with 'use client'
+'use client';
+export function ClientLayout({ children }) {
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => setIsMounted(true), []);
+  
+  return (
+    <ClerkProvider ...>
+      <SolanaProvider>
+        {isMounted ? children : <Loading />}
+      </SolanaProvider>
+    </ClerkProvider>
+  );
+}
+```
+
+#### Environment Variables
+
+All frontend environment variables must use the `NEXT_PUBLIC_` prefix:
+
+```bash
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=...
+NEXT_PUBLIC_SOLANA_RPC_URL=...
+NEXT_PUBLIC_HELIUS_API_KEY=...
+```
+
+#### Running the Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+The app will be available at http://localhost:3000
