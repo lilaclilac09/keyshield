@@ -1,318 +1,382 @@
-# KeyShield - Private API Vault on Solana
+# KeyShield Agentic 🛡️
 
-A decentralized API key management vault built on Solana with advanced privacy features:
-- **✅ Lit Protocol** - Threshold encryption with wallet-based access control (IMPLEMENTED)
-- **✅ Light Protocol** - ZK compression for 95% cheaper on-chain storage (IMPLEMENTED)
-- **✅ Multi-Wallet Architecture** - One Clerk user → Multiple isolated wallets (IMPLEMENTED)
-- **🔮 ZK Proofs (Bonsol)** - Access verification without revealing secrets (PLANNED)
-- **🔮 MPC (Arcium)** - Secure agent-to-agent communication (PLANNED)
+**The ultimate decentralized, Solana-native universal API-key + payment vault that serves BOTH humans and autonomous AI agents.**
 
-## 📐 Architecture Overview
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Solana](https://img.shields.io/badge/Solana-2026+-14f195.svg)](https://solana.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178c6.svg)](https://typescriptlang.org)
 
-KeyShield is built on a multi-layered architecture that combines client-side encryption, on-chain storage, and privacy-preserving verification:
+## Overview
+
+KeyShield Agentic is a next-generation API key management system built on Solana that combines:
+
+- 🔐 **Zero-trust security** via Lit Protocol threshold encryption
+- 🧊 **ZK proofs** via Bonsol for privacy-preserving authorization
+- 🔗 **MPC** via Arcium for secure agent-to-agent communication
+- 💳 **x402 payments** for per-request and streaming micropayments
+- 🤖 **OpenClaw compatibility** for AI agent integration
+- 💰 **GOAT Wallet** plugin for 250+ onchain actions
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CLIENT LAYER                          │
-│  Next.js Frontend + Wallet Adapter + Privacy SDKs        │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                 PRIVACY SERVICES                         │
-│  Lit Protocol │ Bonsol ZK │ Arcium MPC                  │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              SOLANA BLOCKCHAIN                           │
-│  KeyShield Program (Pinocchio) - On-chain Vault Storage  │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           KeyShield Agentic                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐  │
+│  │   Human Wallet   │    │   AI Agent       │    │   x402 Service   │  │
+│  │   (Owner)       │    │   (Operator)     │    │   (Provider)     │  │
+│  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘  │
+│           │                       │                       │             │
+│           │  ┌───────────────────┼───────────────────────┘             │
+│           │  │                   │                                     │
+│           ▼  ▼                   ▼                                     │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                    Solana Program (Rust/Pinocchio)                │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │  │
+│  │  │ UniversalVault │  │ AgentGrant   │  │ PaymentStream         │ │  │
+│  │  │ PDA            │  │ PDA          │  │ PDA                   │ │  │
+│  │  └──────────────┘  └──────────────┘  └───────────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│           │                       │                                     │
+│           │  ┌───────────────────┼───────────────────────┐            │
+│           │  │                   │                       │            │
+│           ▼  ▼                   ▼                       ▼            │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │                     Encryption Layer                               │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │  │
+│  │  │ Lit Protocol │  │ Bonsol ZK   │  │ Arcium MPC              │ │  │
+│  │  │ (Threshold)  │  │ (Proofs)    │  │ (Multi-party)           │ │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Components:**
-- **Frontend**: Next.js app with React components for key management
-- **Privacy Layer**: Lit Protocol (encryption), Bonsol (ZK proofs), Arcium (MPC)
-- **On-Chain**: Solana program storing encrypted keys in vault accounts
-- **Security**: Multi-layer encryption with threshold cryptography and zero-knowledge verification
+## Features
 
-**📖 Documentation:**
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - Complete system architecture (572 lines)
-- [VAULT_ARCHITECTURE.md](./VAULT_ARCHITECTURE.md) - **NEW** ⭐ Vault storage model explained (ONE wallet → ONE vault → MULTIPLE keys)
+### 1. Universal Key Vault
+- One wallet → One vault → Unlimited key groups
+- Groups: `openai`, `anthropic`, `stripe`, `payment-usdc`, `universal`
+- Policy-based access control with time locks and rate limits
 
-## 🏗️ Architecture
+### 2. Browser Extension
+- Auto-detect 100+ API key patterns
+- Auto-save with Lit-encrypted storage
+- One-click autofill
+- x402 payment handling
 
-### Backend (Rust/Pinocchio)
-- **Program**: `programs/keyshield/` - Solana program using Pinocchio (no Anchor). Pinocchio is wired in [`programs/keyshield/src/lib.rs`](programs/keyshield/src/lib.rs) (`program_entrypoint!`, `default_allocator!`, `nostd_panic_handler!`) and in [`programs/keyshield/Cargo.toml`](programs/keyshield/Cargo.toml) (`pinocchio`, `pinocchio-token`, `pinocchio-system`).
-- **Instructions**:
-  - `StoreKey` - Store encrypted API keys on-chain
-  - `AccessKey` - Access keys with ZK proof verification
-  - `ShareKey` - Share keys with MPC and time-lock support
+### 3. Agentic Features
+- Bonsol ZK proofs for authorization
+- Arcium MPC for secure sharing
+- Ephemeral signers (Vault-0 style)
+- Live monitoring dashboard
 
-### Frontend (Next.js/TypeScript)
-- **Framework**: Next.js 14 with React 18
-- **Wallet**: Solana Wallet Adapter
-- **Privacy SDKs**: Lit Protocol, Bonsol, Arcium
-- **UI**: Tailwind CSS with shadcn-ui components
+### 4. x402 Payments
+- Per-request micropayments
+- Streaming/batched usage-based payments
+- Automatic settlement intervals
 
-## 🚀 Quick Start
+### 5. OpenClaw Integration
+- Install via `clawhub install @keyshield/openclaw-skill`
+- Full skill interface implementation
+- Policy YAML engine
 
-### Prerequisites
+### 6. GOAT Wallet Plugin
+- 250+ onchain actions
+- CrossMint hybrid support
+- Ephemeral key injection
 
-- **Rust** (latest stable)
-- **Node.js** 18+
-- **Solana CLI** (latest)
+## Quickstarts
 
-### 1. Build the Program
+### Quickstart 1: Human Autofill (Browser Extension)
 
 ```bash
-cd keyshield
-cargo build-sbf
-```
-
-### 2. Deploy the Program
-
-From the repo root (Pinocchio flow; no Anchor):
-
-```bash
-# Build and deploy using the program keypair
-./scripts/deploy.sh devnet
-```
-
-Or manually:
-
-```bash
-cargo build-sbf
-solana program deploy target/deploy/keyshield.so \
-  --program-id target/deploy/keyshield-keypair.json \
-  --url devnet
-```
-
-### 3. Set Up Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
+# Install the extension
+cd extension
 npm install
+npm run build
 
-# Copy environment variables
-cp .env.local.example .env.local
-
-# Edit .env.local and set:
-# - NEXT_PUBLIC_PROGRAM_ID=your_deployed_program_id
-# - NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
-# - NEXT_PUBLIC_LIT_NETWORK=datil
-# - NEXT_PUBLIC_ARCIUM_CLUSTER=testnet
-
-# Start development server
-npm run dev
+# Load unpacked extension in Chrome
+# 1. Go to chrome://extensions
+# 2. Enable Developer mode
+# 3. Click "Load unpacked"
+# 4. Select the dist folder
 ```
-
-Visit `http://localhost:3000` to see the app.
-
-## 📁 Project Structure
-
-```
-keyshield/
-├── programs/
-│   └── keyshield/
-│       ├── src/
-│       │   ├── lib.rs           # Program entrypoint
-│       │   ├── error.rs         # Error types
-│       │   ├── state.rs         # Vault state structure
-│       │   ├── pda.rs           # PDA derivation
-│       │   └── instructions/    # Instruction handlers
-│       │       ├── store_key.rs
-│       │       ├── access_key.rs
-│       │       └── share_key.rs
-│       └── Cargo.toml
-├── frontend/
-│   ├── src/
-│   │   ├── app/                 # Next.js app directory
-│   │   ├── components/         # React components
-│   │   ├── lib/                 # Utilities & SDKs
-│   │   │   ├── keyshield-client.ts
-│   │   │   ├── lit-protocol.ts
-│   │   │   ├── bonsol.ts
-│   │   │   └── arcium.ts
-│   │   ├── hooks/               # React hooks
-│   │   └── types/               # TypeScript types
-│   └── package.json
-└── Cargo.toml                   # Workspace config
-```
-
-## 🔐 Privacy Features
-
-### Lit Protocol Integration
-
-Encrypts API keys with threshold cryptography. Access is controlled by:
-- Wallet address conditions
-- Time-locked access
-- NFT/token ownership (future)
 
 ```typescript
-import { encryptWithLit, createWalletAccessConditions } from '@/lib/lit-protocol';
-
-const conditions = createWalletAccessConditions(walletAddress);
-const { ciphertext, dataToEncryptHash } = await encryptWithLit(apiKey, conditions);
+// The extension automatically:
+// 1. Detects API key fields on any page
+// 2. Shows "Save to KeyShield" prompt
+// 3. Encrypts with Lit Protocol
+// 4. Stores in IndexedDB + on-chain
 ```
 
-### Bonsol ZK Proofs
-
-Verifies access without revealing the API key or access credentials.
-
-**Note**: Bonsol integration requires:
-1. Writing a ZK program (Rust + RISC Zero)
-2. Building and registering on Bonsol network
-3. Generating proofs off-chain
-4. Verifying on-chain
-
-See `frontend/src/lib/bonsol.ts` for integration stubs.
-
-### Arcium MPC
-
-Enables secure multi-party computation for agent-to-agent key sharing.
-
-**Note**: Arcium is currently in testnet. Mainnet Alpha expected Q4 2025.
-
-See `frontend/src/lib/arcium.ts` for integration stubs.
-
-## Testing
-
-### Unit tests (Mollusk)
-
-Unit tests use [Mollusk](https://solana.com/docs/programs/testing/mollusk) to run the compiled program in a minified SVM. Build the program first, then run tests:
+### Quickstart 2: Agent with OpenClaw
 
 ```bash
-cargo build-sbf
-cargo test -p keyshield
+# Install the skill
+clawhub install github:lilaclilac09/keyshield-openclaw-skill
 ```
 
-Tests live in `programs/keyshield/tests/` (`store_key.rs`, `access_key.rs`, `share_key.rs`) and use shared fixtures in `tests/common/mod.rs`. SBF program path is resolved from `CARGO_MANIFEST_DIR` so tests work from any working directory.
+```typescript
+import { KeyShieldSkill } from "@keyshield/openclaw-skill";
 
-### Integration (Surfpool)
+// Initialize skill
+const skill = new KeyShieldSkill({
+  rpcUrl: "https://api.mainnet-beta.solana.com",
+  programId: "KEYSHIELD_PROGRAM_ID",
+  ownerPublicKey: "OWNER_WALLET_ADDRESS",
+  agentPublicKey: "AGENT_WALLET_ADDRESS",
+});
 
-For a local Surfnet (Surfpool) run:
+await skill.registerAgent();
 
-1. Install Surfpool: `cargo install surfpool` (or `curl -sL https://run.surfpool.run | bash`)
-2. From repo root, run the integration script (starts Surfnet if needed, deploys program, verifies):
+// Get API key
+const openaiKey = await skill.getApiKey("openai");
 
-```bash
-./scripts/integration-surfpool.sh
+// Use with OpenAI
+const response = await openai.completions.create({
+  model: "gpt-4",
+  prompt: "Hello",
+  api_key: openaiKey, // Injected securely
+});
 ```
 
-Optional Node script (connects to `http://localhost:8899`, derives vault PDA, checks account):
+### Quickstart 3: Streaming x402 Demo
 
-```bash
-npm install @solana/web3.js   # from repo root if needed
-node scripts/integration-surfpool.mjs
+```typescript
+import { KeyShieldAgent } from "@keyshield/agent-sdk";
+
+const agent = await createKeyShieldAgent({
+  rpcUrl: "https://api.mainnet-beta.solana.com",
+  programId: "KEYSHIELD_PROGRAM_ID",
+  ownerPublicKey: "OWNER_WALLET",
+  agentPublicKey: "AGENT_WALLET",
+});
+
+// Start streaming payment for Claude API
+const stream = await agent.startStreamingPayment("https://api.anthropic.com/v1", {
+  maxRateUsdPerMin: 1.00,
+  unit: "per_token",
+});
+
+// In your agent loop
+const response = await anthropic.messages.create({
+  model: "claude-3-opus",
+  messages: [{ role: "user", content: "Hello" }],
+});
+
+// Record token usage
+await stream.recordUsage(response.usage.input_tokens + response.usage.output_tokens);
+
+// Auto-settles every 60 seconds
+// Or manually:
+await stream.settle();
+
+// Close when done
+await stream.close();
 ```
 
-### Devnet smoke
+### Quickstart 4: GOAT Wallet Example
 
-Deploy to devnet and verify the vault account:
+```typescript
+import { createGOATPlugin } from "@keyshield/goat-wallet";
 
-```bash
-./scripts/deploy.sh devnet
+const plugin = createGOATPlugin({
+  rpcUrl: "https://api.mainnet-beta.solana.com",
+  programId: "KEYSHIELD_PROGRAM_ID",
+  keyShieldProgramId: "KEYSHIELD_PROGRAM_ID",
+  ownerPublicKey: "OWNER_WALLET",
+  agentPublicKey: "AGENT_WALLET",
+});
+
+await plugin.initialize();
+
+// Create ephemeral signer for swap
+await plugin.createSigner({
+  allowedActions: ["swap", "send"],
+  expirySeconds: 300, // 5 minutes
+});
+
+// Sign transaction
+const tx = new Transaction().add(/* instructions */);
+const signature = await plugin.sendTransaction(tx);
+
+console.log("Transaction sent:", signature);
 ```
 
-After performing one StoreKey (e.g. from the extension or app), verify on-chain:
+## Security Model Comparison
+
+| Feature | KeyShield | Coinbase Agentic | OpenClaw Vault-0 | Custodial |
+|---------|-----------|------------------|-------------------|-----------|
+| **Raw keys to agent** | ❌ Never | ❌ Never | ❌ Never | ✅ Yes |
+| **ZK proofs** | ✅ Bonsol | ✅ Native | ✅ Custom | ❌ |
+| **MPC** | ✅ Arcium | ❌ | ✅ Custom | ❌ |
+| **Threshold encryption** | ✅ Lit | ❌ | ❌ | ❌ |
+| **Human override** | ✅ Revocable | ✅ Revocable | ✅ Revocable | ❌ |
+| **Rate limiting** | ✅ On-chain | ✅ On-chain | ✅ Policy | ❌ |
+| **Spend caps** | ✅ Per-session | ✅ Per-session | ✅ Policy | ❌ |
+| **OpenClaw skill** | ✅ Native | ❌ | ✅ Native | ❌ |
+| **GOAT compatible** | ✅ Plugin | ❌ | ❌ | ❌ |
+| **x402 payments** | ✅ Streaming | ❌ | ❌ | ✅ |
+| **Decentralized** | ✅ 100% | ⚠️ Hybrid | ✅ 100% | ❌ |
+
+### Key Security Guarantees
+
+1. **Zero Knowledge**: Agents prove authorization without revealing keys
+2. **Threshold Decryption**: No single party can decrypt alone
+3. **Ephemeral Keys**: Signers expire and are zeroed
+4. **Policy Enforcement**: On-chain policy checks
+5. **Revocable**: Human can revoke at any time
+
+## Deployment
+
+### Local Solana Validator
 
 ```bash
-./scripts/verify-vault.sh <wallet-pubkey>
+# Start local validator
+solana-test-validator
+
+# Build Rust program
+cd programs/keyshield
+cargo build-bpf
+
+# Deploy
+solana program deploy target/deploy/keyshield.so --url localhost
 ```
 
-Or manually: `solana account <vault-pda> --url https://api.devnet.solana.com`
-
-### CI
-
-GitHub Actions (`.github/workflows/test.yml`) runs unit tests (Mollusk) then integration (Surfpool): build-sbf, `cargo test -p keyshield`, then install Surfpool, start Surfnet, and run `scripts/integration-surfpool.sh`.
-
-### Frontend tests
+### OpenClaw Test Agent
 
 ```bash
-cd frontend
+# Install OpenClaw
+npm install -g @openclaw/cli
+
+# Setup test agent
+clawhub init test-agent
+
+# Add KeyShield skill
+cd test-agent
+clawhub install @keyshield/openclaw-skill
+
+# Run agent with KeyShield
+clawhub run --skill keyshield --test-mode
+```
+
+### Run Tests
+
+```bash
+# Run Rust tests
+cd programs/keyshield
+cargo test
+
+# Run TypeScript tests
 npm test
+
+# Run e2e demo
+npm run demo
 ```
 
-## 🔧 Configuration
+## Packages
+
+| Package | Description | Version |
+|---------|-------------|---------|
+| `@keyshield/agent-sdk` | Main TypeScript SDK for agents | 2.0.0 |
+| `@keyshield/openclaw-skill` | OpenClaw skill package | 2.0.0 |
+| `@keyshield/goat-wallet` | GOAT Wallet plugin | 2.0.0 |
+| `@keyshield/extension` | Browser extension | 2.0.0 |
+
+## Configuration
 
 ### Environment Variables
 
-**Frontend** (`.env.local`):
-- `NEXT_PUBLIC_PROGRAM_ID` - Your deployed program ID
-- `NEXT_PUBLIC_RPC_URL` - Solana RPC endpoint
-- `NEXT_PUBLIC_LIT_NETWORK` - Lit network (datil/mainnet)
-- `NEXT_PUBLIC_ARCIUM_CLUSTER` - Arcium cluster (testnet/mainnet)
+```bash
+# Solana
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+SOLANA_WS_URL=wss://api.mainnet-beta.solana.com
 
-### Program Configuration
+# KeyShield Program
+KEYSHIELD_PROGRAM_ID=...
 
-Edit `frontend/src/lib/constants.ts` to set:
-- Program ID
-- Instruction discriminators
-- Account sizes
+# Lit Protocol
+LIT_NETWORK=datil-dev
+LIT_CHAIN=solana
 
-## 📚 SDK Integration Status
+# Bonsol
+BONSOL_API_URL=https://api.bonsol.xyz
+BONSOL_NETWORK=mainnet
 
-| SDK | Status | Notes |
-|-----|--------|-------|
-| **Pinocchio** | ✅ Complete | Core program framework, 8/8 tests passing |
-| **Lit Protocol** | ✅ Complete | Encryption/decryption, wallet-based access control |
-| **Light Protocol** | ✅ Integrated | ZK compression ready (95% cost savings) |
-| **IndexedDB (idb)** | ✅ Complete | Ciphertext storage, multi-wallet support |
-| **Wallet Mapping** | ✅ Complete | Clerk → Multiple wallets architecture |
-| **Clerk Auth** | ✅ Complete | OKX + Solana wallet only auth |
-| **Bonsol** | ⚠️ Planned | ZK proof verification (future) |
-| **Arcium** | ⚠️ Planned | MPC computation (future) |
-| **Wallet Adapter** | ✅ Complete | Phantom, Solflare, OKX supported |
-| **Solana Web3.js** | ✅ Complete | On-chain interactions |
+# Arcium
+ARCIUM_CLUSTER=mainnet
+```
 
-## 🚧 TODO / Known Issues
+### Policy YAML Format
 
-1. **Bonsol Integration**: Requires writing and deploying ZK program
-2. **Arcium Integration**: Needs MPC circuit definition
-3. **Lit Protocol Rust SDK**: Currently using JS SDK (may need FFI for Rust)
-4. **Error Handling**: Add comprehensive error tracking (Sentry)
-5. **Testing**: Add integration tests for privacy SDKs
-6. **AI Agents**: Integrate awesome-solana-ai agents (AgenC)
+```yaml
+# Example policy
+name: my-agent
+version: 1
 
-## 🔒 Security Considerations
+rateLimit:
+  callsPerHour: 1000
+  tokensPerMin: 10000
 
-- **Key Storage**: Keys are encrypted with Lit Protocol before on-chain storage
-- **Access Control**: ZK proofs verify access without revealing credentials
-- **MPC Sharing**: Uses Arcium for secure multi-party computation
-- **Time Locks**: Supports time-delayed access via Lit conditions
-- **Audit**: Consider security audit before mainnet deployment
+maxSpend: 1000000  # $1.00 in micro-USDC
 
-## 📖 Documentation
+allowedDomains:
+  - api.openai.com
+  - api.anthropic.com
 
-- [KeyShield SDK Analysis](./KEYSHIELD_SDK_ANALYSIS.md) - Complete SDK review
-- [Pinocchio Docs](https://docs.pinocchio.dev) - Program framework
-- [Lit Protocol Docs](https://developer.litprotocol.com) - Threshold crypto
-- [Bonsol Docs](https://docs.bonsol.org) - ZK proofs
-- [Arcium Docs](https://docs.arcium.com) - MPC computation
+blockedDomains:
+  - malicious.io
 
-## 🤝 Contributing
+allowedTools:
+  - getApiKey
+  - startStreamingPayment
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+session:
+  timeoutSeconds: 3600
+  requireReauth: false
 
-## 📄 License
+payments:
+  streamingEnabled: true
+  settlementIntervalSeconds: 60
+```
 
-MIT License - see LICENSE file for details
+## API Reference
 
-## 🙏 Acknowledgments
+### Agent SDK
 
-- **Pinocchio** - Lightweight Solana program framework
-- **Lit Protocol** - Threshold cryptography
-- **Bonsol** - ZK proof infrastructure
-- **Arcium** - MPC computation network
-- **Solana** - High-performance blockchain
+- [`KeyShieldAgent`](packages/agent-sdk/src/index.ts) - Main agent class
+- [`StreamingPaymentSession`](packages/agent-sdk/src/index.ts) - Streaming payments
+- [`EphemeralSignerSession`](packages/agent-sdk/src/index.ts) - Temporary signers
 
----
+### OpenClaw Skill
 
-**Built with ❤️ for the Solana ecosystem**
+- [`KeyShieldSkill`](packages/openclaw-skill/src/index.ts) - OpenClaw skill implementation
+- [`createSkill()`](packages/openclaw-skill/src/index.ts) - Factory function
+
+### GOAT Plugin
+
+- [`KeyShieldGOATPlugin`](packages/goat-wallet/src/index.ts) - GOAT interface
+- [`createGOATPlugin()`](packages/goat-wallet/src/index.ts) - Factory function
+- [`CrossMintKeyShieldWallet`](packages/goat-wallet/src/index.ts) - CrossMint hybrid
+
+## Contributing
+
+Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) first.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [Solana Foundation](https://solana.org)
+- [Lit Protocol](https://litprotocol.com)
+- [Bonsol](https://bonsol.xyz)
+- [Arcium](https://arcium.com)
+- [OpenClaw](https://openclaw.xyz)
+- [GOAT SDK](https://goat-sdk.xyz)
+- [CrossMint](https://crossmint.com)
