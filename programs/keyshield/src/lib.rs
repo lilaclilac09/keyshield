@@ -1,9 +1,14 @@
-//! KeyShield - Private API Vault on Solana
+//! KeyShield Agentic - Universal API-Key + Payment Vault on Solana
 //!
-//! A decentralized API key vault that stores encrypted keys on-chain with:
-//! - ZK proofs (Bonsol) for access verification without revealing secrets
-//! - MPC (Arcium) for secure agent-to-agent communication
-//! - Threshold crypto (Lit Protocol) for time-locked/wallet-based sharing
+//! A decentralized API key vault that serves BOTH humans and autonomous AI agents:
+//! - Humans: Auto-detect/save/autofill browser extension
+//! - Agents: Bonsol ZK proofs + Arcium MPC + x402 streaming payments
+//!
+//! Security principles:
+//! - Agents NEVER see raw API keys or private keys
+//! - All decryption happens via Lit + Bonsol ZK proof or Arcium MPC share
+//! - Human wallet always remains the ultimate owner with revocable policies
+//! - Full OpenClaw skill ecosystem compatibility
 
 #![no_std]
 
@@ -16,6 +21,23 @@ use instructions::{
     store_key::process_store_key,
     access_key::process_access_key,
     share_key::process_share_key,
+    universal_vault::{
+        process_create_universal_vault,
+        process_update_universal_policy,
+        process_add_key_to_group,
+    },
+    agent_access::{
+        process_grant_agent_access,
+        process_revoke_agent_access,
+        process_access_with_agent,
+        process_create_ephemeral_signer,
+    },
+    payment_stream::{
+        process_grant_agent_payment_access,
+        process_settle_payment,
+        process_pay_for_service,
+        process_close_payment_stream,
+    },
     Instruction,
 };
 use pinocchio::{
@@ -33,6 +55,12 @@ default_allocator!();
 nostd_panic_handler!();
 
 /// Program entrypoint
+/// 
+/// Routes all instruction calls to their respective handlers based on discriminator:
+/// - 0-2: Legacy KeyShield (StoreKey, AccessKey, ShareKey)
+/// - 10-12: Universal Vault (Create, UpdatePolicy, AddKeyToGroup)
+/// - 20-23: Agent Access (Grant, Revoke, AccessWithAgent, CreateEphemeralSigner)
+/// - 30-33: Payment Stream (GrantPayment, Settle, PayForService, CloseStream)
 fn process_instruction(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -51,9 +79,27 @@ fn process_instruction(
     let data = &instruction_data[1..];
 
     match instruction {
+        // Legacy instructions
         Instruction::StoreKey => process_store_key(program_id, accounts, data),
         Instruction::AccessKey => process_access_key(program_id, accounts, data),
         Instruction::ShareKey => process_share_key(program_id, accounts, data),
+        
+        // Universal Vault instructions
+        Instruction::CreateUniversalVault => process_create_universal_vault(program_id, accounts, data),
+        Instruction::UpdateUniversalPolicy => process_update_universal_policy(program_id, accounts, data),
+        Instruction::AddKeyToGroup => process_add_key_to_group(program_id, accounts, data),
+        
+        // Agent Access instructions
+        Instruction::GrantAgentAccess => process_grant_agent_access(program_id, accounts, data),
+        Instruction::RevokeAgentAccess => process_revoke_agent_access(program_id, accounts, data),
+        Instruction::AccessWithAgent => process_access_with_agent(program_id, accounts, data),
+        Instruction::CreateEphemeralSigner => process_create_ephemeral_signer(program_id, accounts, data),
+        
+        // Payment Stream instructions
+        Instruction::GrantAgentPaymentAccess => process_grant_agent_payment_access(program_id, accounts, data),
+        Instruction::SettlePayment => process_settle_payment(program_id, accounts, data),
+        Instruction::PayForService => process_pay_for_service(program_id, accounts, data),
+        Instruction::ClosePaymentStream => process_close_payment_stream(program_id, accounts, data),
     }
 }
 
@@ -63,9 +109,31 @@ mod tests {
 
     #[test]
     fn test_instruction_discriminators() {
+        // Legacy
         assert_eq!(Instruction::try_from_u8(0), Some(Instruction::StoreKey));
         assert_eq!(Instruction::try_from_u8(1), Some(Instruction::AccessKey));
         assert_eq!(Instruction::try_from_u8(2), Some(Instruction::ShareKey));
+        
+        // Universal Vault
+        assert_eq!(Instruction::try_from_u8(10), Some(Instruction::CreateUniversalVault));
+        assert_eq!(Instruction::try_from_u8(11), Some(Instruction::UpdateUniversalPolicy));
+        assert_eq!(Instruction::try_from_u8(12), Some(Instruction::AddKeyToGroup));
+        
+        // Agent Access
+        assert_eq!(Instruction::try_from_u8(20), Some(Instruction::GrantAgentAccess));
+        assert_eq!(Instruction::try_from_u8(21), Some(Instruction::RevokeAgentAccess));
+        assert_eq!(Instruction::try_from_u8(22), Some(Instruction::AccessWithAgent));
+        assert_eq!(Instruction::try_from_u8(23), Some(Instruction::CreateEphemeralSigner));
+        
+        // Payment Stream
+        assert_eq!(Instruction::try_from_u8(30), Some(Instruction::GrantAgentPaymentAccess));
+        assert_eq!(Instruction::try_from_u8(31), Some(Instruction::SettlePayment));
+        assert_eq!(Instruction::try_from_u8(32), Some(Instruction::PayForService));
+        assert_eq!(Instruction::try_from_u8(33), Some(Instruction::ClosePaymentStream));
+        
+        // Invalid
         assert_eq!(Instruction::try_from_u8(3), None);
+        assert_eq!(Instruction::try_from_u8(9), None);
+        assert_eq!(Instruction::try_from_u8(99), None);
     }
 }
