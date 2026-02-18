@@ -10,6 +10,7 @@ use pinocchio::{
     account_info::AccountInfo,
     program_error::ProgramError,
     pubkey::Pubkey,
+    sysvars::{clock::Clock, Sysvar},
     ProgramResult,
 };
 
@@ -115,7 +116,7 @@ pub fn process_grant_agent_payment_access(
     }
 
     // Get current timestamp
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
+    let clock = pinocchio::sysvars::clock::Clock::get()?;
     let timestamp = clock.unix_timestamp() as u64;
 
     // Compute service URL hash (simplified - use first 32 bytes of hash)
@@ -290,7 +291,7 @@ pub fn process_settle_payment(
     }
 
     // Update payment stream - reset pending amount, update last settlement
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
+    let clock = pinocchio::sysvars::clock::Clock::get()?;
     let timestamp = clock.unix_timestamp() as u64;
     vault_data[offset + 78..offset + 86].copy_from_slice(&timestamp.to_le_bytes());
     vault_data[offset + 86..offset + 94].copy_from_slice(&0u64.to_le_bytes());
@@ -497,7 +498,7 @@ pub fn process_close_payment_stream(
     }
 
     // Update updated_at
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
+    let clock = pinocchio::sysvars::clock::Clock::get()?;
     vault_data[48..56].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
 
     Ok(())

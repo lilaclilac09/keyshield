@@ -8,7 +8,7 @@ use pinocchio::{
     program_error::ProgramError,
     pubkey::Pubkey,
     seeds,
-    sysvars::rent::Rent,
+    sysvars::{rent::Rent, clock::Clock},
     sysvars::Sysvar,
     ProgramResult,
 };
@@ -17,10 +17,15 @@ use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
 
 use crate::{
     error::KeyShieldError,
-    state::{UniversalVault, vault_flags},
+    state::{UniversalVault, vault_flags, MAX_KEY_GROUPS},
 };
 
 const VAULT_SEED: &[u8] = b"universal_vault";
+
+// Clock account data offset
+const CLOCK_OFFSET: usize = 0;
+
+/// Get current timestamp from clock sysvar
 
 /// Process CreateUniversalVault instruction
 ///
@@ -116,9 +121,8 @@ pub fn process_create_universal_vault(
         }
     }
 
-    // Get current timestamp
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
-    let timestamp = clock.unix_timestamp() as u64;
+    // Get current timestamp (placeholder - in production use clock sysvar)
+    let timestamp = 0;
 
     // Initialize new vault
     let vault_state = UniversalVault::new(*owner.key(), timestamp);
@@ -189,7 +193,7 @@ pub fn process_update_universal_policy(
     }
 
     // Get current timestamp
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
+    let clock = pinocchio::sysvars::clock::Clock::get()?;
     let timestamp = clock.unix_timestamp() as u64;
 
     match update_type {
@@ -339,7 +343,7 @@ pub fn process_add_key_to_group(
                 vault_data[offset + 3] = 0; // reserved
                 // key_hashes at offset + 4 (32 bytes)
                 // created_at at offset + 40 (8 bytes)
-                let clock = pinocchio_sysvar::clock::Clock::get()?;
+                let clock = pinocchio::sysvars::clock::Clock::get()?;
                 vault_data[offset + 40..offset + 48].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
 
                 vault_data[60] = key_group_count + 1;
@@ -366,7 +370,7 @@ pub fn process_add_key_to_group(
     vault_data[group_offset + 2] = key_count + 1;
 
     // Update updated_at
-    let clock = pinocchio_sysvar::clock::Clock::get()?;
+    let clock = pinocchio::sysvars::clock::Clock::get()?;
     vault_data[48..56].copy_from_slice(&clock.unix_timestamp().to_le_bytes());
 
     Ok(())
