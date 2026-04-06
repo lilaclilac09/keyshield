@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "apiKey": "***REDACTED IN PRODUCTION***",
+  "publicKey": "9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs",
+  "keyId": "467af138e4a858fe68368e123ff56733",
+  "storageLocation": "/Users/aileen/Downloads/privacy_hack/keyshield/scripts/.keyshield-demo/vault-467af138e4a858fe68368e123ff56733.json",
+  "ownershipVerified": true,
+  "encryptionMethod": "lit-protocol",
+  "chainNetwork": "solana",
+  "timestamp": "2026-04-06T08:23:45.574Z"
+}

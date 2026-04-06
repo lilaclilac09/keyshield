@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-04-06T12:34:49.583Z",
+  "network": "localhost",
+  "rpcUrl": "http://localhost:8899",
+  "programId": "8wReT75ACg6uhKAUy7DuEDyFE6bzawhQvRziWhSUDc1H",
+  "vaultId": "467af138e4a858fe68368e123ff56733",
+  "owner": "9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs",
+  "vaultData": {
+    "version": 1,
+    "discriminator": "keyshield_vault_v1",
+    "owner": "9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs",
+    "createdAt": 1775463825,
+    "updatedAt": 1775463825,
+    "keyMetadata": {
+      "id": "467af138e4a858fe68368e123ff56733",
+      "name": "Demo API Key",
+      "provider": "custom-provider",
+      "type": "api_key",
+      "encrypted": true,
+      "encryptionMethod": "lit-protocol"
+    },
+    "encryptedData": {
+      "ciphertext": "86e93bf9418969ab65886b8f36f3a8730b25cce27326af4cf547a62c120dd59b",
+      "nonce": "4c87a1472dfb59735e91979d",
+      "tag": "7c144fba20e91c01c968c2a992551da9"
+    },
+    "accessControl": {
+      "isPublic": false,
+      "allowedPrincipals": [
+        "9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs"
+      ],
+      "maxAccessCount": -1,
+      "lastAccessTime": null
+    },
+    "agentAccess": {
+      "enabled": false,
+      "grantedAgents": [],
+      "expiresAt": null
+    },
+    "auditLog": [
+      {
+        "timestamp": 1775463825,
+        "action": "KEY_STORED",
+        "actor": "9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs",
+        "details": "Initial API key storage"
+      }
+    ]
+  },
+  "status": "stored_on_chain"
+}

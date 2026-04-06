@@ -1,0 +1,21 @@
+{
+  "program": {
+    "name": "KeyShield",
+    "version": "0.1.0",
+    "buildStatus": "✅ 成功",
+    "compiledSize": "73 KB",
+    "path": "target/sbpf-solana-solana/release/keyshield.so",
+    "targetNetwork": "devnet",
+    "timestamp": "2026-04-06T08:49:29.920Z"
+  },
+  "deployment": {
+    "status": "⏳ 进行中或待部署",
+    "network": "devnet",
+    "rpcUrl": "https://api.devnet.solana.com",
+    "expectedFeeInLamports": 1000000,
+    "expectedFeeInSol": 0.001,
+    "currentWallet": "74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY",
+    "walletBalance": "3.789944317 SOL",
+    "canAffordDeployment": true
+  }
+}
