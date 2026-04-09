@@ -43,3 +43,4 @@ test-ledger/
 rocksdb/
 0000*.log
 **/*.log
+.gstack/

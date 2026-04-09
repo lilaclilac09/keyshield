@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-04-06T13:07:41.362Z",
+  "wallet": {
+    "address": "GZHgjZ2qmSCCgxkkPXjSRSU7HK8wtfAKAwgMZPtHyAU9",
+    "balance": 99.999995,
+    "rent_exempt_minimum": 0.00089088
+  },
+  "network": {
+    "rpc": "http://localhost:8899",
+    "programId": "8wReT75ACg6uhKAUy7DuEDyFE6bzawhQvRziWhSUDc1H",
+    "version": "3.0.13"
+  },
+  "vault": {
+    "timestamp": "2026-04-06T13:07:41.361Z",
+    "walletAddress": "GZHgjZ2qmSCCgxkkPXjSRSU7HK8wtfAKAwgMZPtHyAU9",
+    "network": "localhost",
+    "encryption": {
+      "algorithm": "AES-256-GCM",
+      "encryptedData": "86e93bf9418969ab65886b8f36f3a8730b25cce27326af4cf547a62c120dd59b",
+      "nonce": "4c87a1472dfb59735e91979d",
+      "authTag": "7c144fba20e91c01c968c2a992551da9",
+      "keyDerivation": "Lit Protocol v1"
+    },
+    "metadata": {
+      "name": "Production API Keys",
+      "provider": "OpenAI",
+      "created": "2026-04-06T13:07:41.362Z",
+      "accessControl": {
+        "owner": "GZHgjZ2qmSCCgxkkPXjSRSU7HK8wtfAKAwgMZPtHyAU9",
+        "allowedUsers": [
+          "GZHgjZ2qmSCCgxkkPXjSRSU7HK8wtfAKAwgMZPtHyAU9"
+        ],
+        "threshold": 1
+      }
+    },
+    "auditLog": [
+      {
+        "action": "CREATED",
+        "timestamp": "2026-04-06T13:07:41.362Z",
+        "actor": "GZHgjZ2qmSCCgxkkPXjSRSU7HK8wtfAKAwgMZPtHyAU9",
+        "txHash": "8MWMdFV9yNT5HgDMhbFNbnHmj6Pxf5xZzMjB7nRYz6nj"
+      },
+      {
+        "action": "ENCRYPTED",
+        "timestamp": "2026-04-06T13:07:41.362Z",
+        "actor": "KeyShield Program",
+        "txHash": "8wReT75ACg6uhKAUy7DuEDyFE6bzawhQvRziWhSUDc1H"
+      }
+    ]
+  },
+  "capabilities": [
+    "✓ 创建本地钱包",
+    "✓ 签名交易",
+    "✓ 发送和确认交易",
+    "✓ 查询余额和历史",
+    "✓ 与 Solana 程序交互",
+    "✓ 加密数据存储",
+    "✓ 访问控制管理",
+    "✓ 审计日志跟踪"
+  ]
+}
