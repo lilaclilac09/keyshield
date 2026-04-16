@@ -36,7 +36,8 @@ interface API_PATTERN {
 // Comprehensive API patterns (100+)
 const API_PATTERNS: API_PATTERN[] = [
   // ===== AI/LLM PROVIDERS =====
-  { name: 'OpenAI', regex: /sk-(?:live|test|proj)_[A-Za-z0-9]{48,}/i, priority: 10, category: 'AI/LLM', examples: ['sk-live-...'] },
+  // Matches new format (sk-proj_..., sk-live_..., sk-test_...) and legacy format (sk-[48+ chars])
+  { name: 'OpenAI', regex: /sk-(?:(?:live|test|proj)_)?[A-Za-z0-9]{48,}/i, priority: 10, category: 'AI/LLM', examples: ['sk-proj_...', 'sk-...'] },
   { name: 'Anthropic', regex: /sk-ant-api03-[A-Za-z0-9_-]{48,}/i, priority: 10, category: 'AI/LLM', examples: ['sk-ant-api03-...'] },
   { name: 'Google Gemini', regex: /AIza[0-9A-Za-z_-]{35}/i, priority: 9, category: 'AI/LLM', examples: ['AIzaSy...'] },
   { name: 'Groq', regex: /gsk_[A-Za-z0-9_-]{48,}/i, priority: 9, category: 'AI/LLM', examples: ['gsk_...'] },
@@ -597,6 +598,92 @@ export class KeyDetector {
   static isValidKey(key: string): boolean {
     if (!key || key.length < 10) return false;
     return API_PATTERNS.some(pattern => pattern.regex.test(key.trim()));
+  }
+
+  /**
+   * Monitor form inputs for API keys typed in real-time.
+   * Calls callback whenever a key pattern is detected in a field value.
+   * Safe to call once on page load — attaches to existing + future inputs.
+   */
+  static setupFormMonitoring(callback: (keys: DetectedKey[]) => void): void {
+    const domain = window.location.hostname;
+    const isTrustedDomain = TRUSTED_DOMAINS.some((d) => domain.includes(d));
+
+    const attachToInput = (input: HTMLInputElement | HTMLTextAreaElement) => {
+      if (input.dataset.ksMonitored) return;
+      input.dataset.ksMonitored = '1';
+
+      const check = () => {
+        const keys = KeyDetector.detectFromInput(input, domain, isTrustedDomain);
+        if (keys.length > 0) callback(keys);
+      };
+      input.addEventListener('input', check);
+      input.addEventListener('change', check);
+    };
+
+    // Attach to existing inputs
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      'input[type="text"], input[type="password"], input:not([type]), textarea'
+    ).forEach(attachToInput);
+
+    // Watch for new inputs added by SPAs
+    new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement) {
+            node.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+              'input[type="text"], input[type="password"], input:not([type]), textarea'
+            ).forEach(attachToInput);
+          }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  /**
+   * Detect from a single input element (used by setupFormMonitoring).
+   */
+  private static detectFromInput(
+    input: HTMLInputElement | HTMLTextAreaElement,
+    domain: string,
+    isTrustedDomain: boolean,
+  ): DetectedKey[] {
+    const value = input.value.trim();
+    if (!value || value.length < 10) return [];
+
+    const fieldName = (input as HTMLInputElement).name || input.id || input.className || '';
+    const isKeyField = KEY_FIELD_PATTERNS.some((p) => p.test(fieldName));
+
+    for (const pattern of API_PATTERNS) {
+      const match = value.match(pattern.regex);
+      if (match) {
+        return [{
+          key: match[1] || match[0],
+          source: 'form',
+          fieldName,
+          fieldType: (input as HTMLInputElement).type || 'text',
+          domain,
+          timestamp: Date.now(),
+          provider: pattern.name,
+          confidence: KeyDetector.calculateConfidence(pattern, isKeyField, isTrustedDomain),
+        }];
+      }
+    }
+
+    // Fallback: field name looks like a key field but no pattern matched
+    if (isKeyField && value.length >= 16) {
+      return [{
+        key: value,
+        source: 'form',
+        fieldName,
+        fieldType: (input as HTMLInputElement).type || 'text',
+        domain,
+        timestamp: Date.now(),
+        confidence: 30,
+      }];
+    }
+
+    return [];
   }
 
   /**

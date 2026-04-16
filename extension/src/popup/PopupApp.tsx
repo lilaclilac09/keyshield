@@ -470,7 +470,7 @@ function inlineDetect(): Array<{
   const seen = new Set<string>();
 
   const patterns: Array<[RegExp, string, number]> = [
-    [/sk-(?:live|test|proj)_[A-Za-z0-9]{48,}/g, 'OpenAI', 98],
+    [/sk-(?:(?:live|test|proj)_)?[A-Za-z0-9]{48,}/g, 'OpenAI', 98],
     [/sk-ant-api03-[A-Za-z0-9_-]{48,}/g, 'Anthropic', 98],
     [/AIza[0-9A-Za-z_-]{35}/g, 'Google Gemini', 90],
     [/gsk_[A-Za-z0-9_-]{48,}/g, 'Groq', 90],

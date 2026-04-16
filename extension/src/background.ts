@@ -90,7 +90,15 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Set defaults
   chrome.storage.local.get(['trustedDomains', 'autoPayThreshold', 'litNetwork'], (result) => {
     const defaults: Record<string, unknown> = {};
-    if (!result.trustedDomains) defaults.trustedDomains = [];
+    if (!result.trustedDomains) {
+      // Pre-seed with agentcash x402 services that work on Solana devnet
+      defaults.trustedDomains = [
+        'stableenrich.dev',  // Apollo, Exa, Firecrawl, Google Maps ($0.01–$0.05/call)
+        'stablesocial.dev',  // Instagram, TikTok, YouTube, Reddit data
+        'stablestudio.dev',  // AI image & video generation
+        'localhost:4020',    // Local x402 mock server (run: node extension/x402-mock-server.js)
+      ];
+    }
     if (result.autoPayThreshold === undefined) defaults.autoPayThreshold = 0.01;
     if (!result.litNetwork) defaults.litNetwork = 'datil-dev';
     if (Object.keys(defaults).length) chrome.storage.local.set(defaults);
