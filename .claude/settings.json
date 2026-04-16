@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /Users/aileen/Downloads/privacy_hack/keyshield/extension/dist/*.js)",
+      "Bash(awk '{print $5, $9}')"
+    ]
+  }
+}
