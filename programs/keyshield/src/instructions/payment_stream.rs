@@ -16,7 +16,11 @@ use pinocchio::{
 
 use crate::{
     error::KeyShieldError,
-    state::{PaymentStream, UniversalVault},
+    state::{
+        PaymentStream, UniversalVault,
+        AGENT_GRANTS_START, AGENT_GRANT_SIZE,
+        PAYMENT_STREAMS_START, PAYMENT_STREAM_SIZE, MAX_PAYMENT_STREAMS,
+    },
 };
 
 /// Process GrantAgentPaymentAccess instruction
@@ -64,10 +68,7 @@ pub fn process_grant_agent_payment_access(
     let settlement_interval = u32::from_le_bytes(data[49..53].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?);
 
     // Read vault data
-    let mut vault_data = vault.try_borrow_mut_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let mut vault_data = borrow_vault_mut!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -92,12 +93,10 @@ pub fn process_grant_agent_payment_access(
     }
 
     // Find agent grant to verify it exists
-    let agent_grants_start = 768;
-    let agent_grant_size = 128;
     let mut found = false;
 
     for i in 0..32 {
-        let offset = agent_grants_start + (i * agent_grant_size);
+        let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
             .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
         let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -115,9 +114,7 @@ pub fn process_grant_agent_payment_access(
         return Err(KeyShieldError::AgentGrantNotFound.into());
     }
 
-    // Get current timestamp
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    let timestamp = Clock::get()?.unix_timestamp as u64;
 
     // Compute service URL hash (simplified - use first 32 bytes of hash)
     let mut service_url_hash = [0u8; 32];
@@ -129,12 +126,10 @@ pub fn process_grant_agent_payment_access(
     service_url_hash[3] = b'2';
 
     // Find empty payment stream slot
-    let payment_streams_start = 13856; // After policy rules
-    let payment_stream_size = 108;
     let mut stream_idx = None;
 
-    for i in 0..8 {
-        let offset = payment_streams_start + (i * payment_stream_size);
+    for i in 0..MAX_PAYMENT_STREAMS {
+        let offset = PAYMENT_STREAMS_START + (i * PAYMENT_STREAM_SIZE);
         if vault_data[offset..offset + 32] == [0u8; 32] {
             stream_idx = Some(i);
             break;
@@ -146,7 +141,7 @@ pub fn process_grant_agent_payment_access(
     }
 
     let idx = stream_idx.unwrap();
-    let offset = payment_streams_start + (idx * payment_stream_size);
+    let offset = PAYMENT_STREAMS_START + (idx * PAYMENT_STREAM_SIZE);
 
     // Write payment stream
     vault_data[offset..offset + 32].copy_from_slice(&service_url_hash);
@@ -210,10 +205,7 @@ pub fn process_settle_payment(
     let units_consumed = u64::from_le_bytes(data[64..72].try_into().map_err(|_| KeyShieldError::InvalidPaymentAmount)?);
 
     // Read vault
-    let mut vault_data = vault.try_borrow_mut_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let mut vault_data = borrow_vault_mut!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -222,12 +214,10 @@ pub fn process_settle_payment(
     }
 
     // Find payment stream
-    let payment_streams_start = 13856;
-    let payment_stream_size = 108;
     let mut stream_offset = None;
 
-    for i in 0..8 {
-        let offset = payment_streams_start + (i * payment_stream_size);
+    for i in 0..MAX_PAYMENT_STREAMS {
+        let offset = PAYMENT_STREAMS_START + (i * PAYMENT_STREAM_SIZE);
         if vault_data[offset..offset + 32] == service_url_hash {
             let agent_check: [u8; 32] = vault_data[offset + 32..offset + 64].try_into()
                 .map_err(|_| KeyShieldError::PaymentStreamNotFound)?;
@@ -262,12 +252,10 @@ pub fn process_settle_payment(
     };
 
     // Check against agent's max spend
-    let agent_grants_start = 768;
-    let agent_grant_size = 128;
     let mut max_spend = 0u64;
 
     for i in 0..32 {
-        let grant_offset = agent_grants_start + (i * agent_grant_size);
+        let grant_offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[grant_offset..grant_offset + 32].try_into()
             .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
         let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -291,8 +279,7 @@ pub fn process_settle_payment(
     }
 
     // Update payment stream - reset pending amount, update last settlement
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    let timestamp = Clock::get()?.unix_timestamp as u64;
     vault_data[offset + 78..offset + 86].copy_from_slice(&timestamp.to_le_bytes());
     vault_data[offset + 86..offset + 94].copy_from_slice(&0u64.to_le_bytes());
 
@@ -355,10 +342,7 @@ pub fn process_pay_for_service(
     }
 
     // Read vault
-    let vault_data = vault.try_borrow_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let vault_data = borrow_vault!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -377,11 +361,8 @@ pub fn process_pay_for_service(
 
     if !is_owner {
         // Check if payer is authorized agent
-        let agent_grants_start = 768;
-        let agent_grant_size = 128;
-
         for i in 0..32 {
-            let offset = agent_grants_start + (i * agent_grant_size);
+            let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
             let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
                 .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
             let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -453,10 +434,7 @@ pub fn process_close_payment_stream(
         .map_err(|_| KeyShieldError::InvalidKeyData)?;
 
     // Read vault
-    let mut vault_data = vault.try_borrow_mut_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let mut vault_data = borrow_vault_mut!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -475,12 +453,10 @@ pub fn process_close_payment_stream(
     }
 
     // Find and close payment stream
-    let payment_streams_start = 13856;
-    let payment_stream_size = 108;
     let mut found = false;
 
-    for i in 0..8 {
-        let offset = payment_streams_start + (i * payment_stream_size);
+    for i in 0..MAX_PAYMENT_STREAMS {
+        let offset = PAYMENT_STREAMS_START + (i * PAYMENT_STREAM_SIZE);
         if vault_data[offset..offset + 32] == service_url_hash {
             vault_data[offset + 73] = 0; // is_active = 0
 
@@ -496,10 +472,6 @@ pub fn process_close_payment_stream(
     if !found {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
-
-    // Update updated_at
-    let timestamp = 0u64;
-    // timestamp placeholder
 
     Ok(())
 }

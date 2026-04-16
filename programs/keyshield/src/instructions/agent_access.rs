@@ -17,7 +17,11 @@ use pinocchio::{
 
 use crate::{
     error::KeyShieldError,
-    state::{AgentGrant, UniversalVault, MAX_AGENTS},
+    state::{
+        AgentGrant, UniversalVault, MAX_AGENTS,
+        AGENT_GRANTS_START, AGENT_GRANT_SIZE,
+        POLICY_RULES_START, POLICY_RULE_SIZE, MAX_POLICY_RULES_STORED,
+    },
 };
 
 /// Process GrantAgentUniversalAccess instruction
@@ -91,10 +95,7 @@ pub fn process_grant_agent_access(
     }
 
     // Read vault data
-    let mut vault_data = vault.try_borrow_mut_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let mut vault_data = borrow_vault_mut!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -118,20 +119,16 @@ pub fn process_grant_agent_access(
         return Err(KeyShieldError::PaymentNotEnabled.into());
     }
 
-    // Get current timestamp
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    let timestamp = Clock::get()?.unix_timestamp as u64;
 
     // Find empty agent grant slot or update existing
-    let agent_grants_start = 768; // After key groups
-    let agent_grant_size = 128;
     let agent_grant_count = vault_data[61];
     let mut grant_idx = None;
     let mut update_existing = false;
 
     // Search for existing grant
     for i in 0..MAX_AGENTS {
-        let offset = agent_grants_start + (i * agent_grant_size);
+        let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
             .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
         let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -151,7 +148,7 @@ pub fn process_grant_agent_access(
     let idx = grant_idx.ok_or(KeyShieldError::AgentGrantNotFound)?;
 
     // Write agent grant
-    let offset = agent_grants_start + (idx * agent_grant_size);
+    let offset = AGENT_GRANTS_START + (idx * AGENT_GRANT_SIZE);
     
     // agent_pubkey (32 bytes)
     vault_data[offset..offset + 32].copy_from_slice(agent_pubkey.as_ref());
@@ -227,10 +224,7 @@ pub fn process_revoke_agent_access(
         .map_err(|_| KeyShieldError::InvalidAgentPubkey)?;
 
     // Read vault data
-    let mut vault_data = vault.try_borrow_mut_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let mut vault_data = borrow_vault_mut!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -249,12 +243,10 @@ pub fn process_revoke_agent_access(
     }
 
     // Find and revoke agent grant
-    let agent_grants_start = 768;
-    let agent_grant_size = 128;
     let mut found = false;
 
     for i in 0..MAX_AGENTS {
-        let offset = agent_grants_start + (i * agent_grant_size);
+        let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
             .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
         let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -274,10 +266,6 @@ pub fn process_revoke_agent_access(
     if !found {
         return Err(KeyShieldError::AgentGrantNotFound.into());
     }
-
-    // Update updated_at
-    let timestamp = 0u64;
-    // timestamp placeholder
 
     Ok(())
 }
@@ -325,18 +313,13 @@ pub fn process_access_with_agent(
         0 => {
             // Direct access - just verify agent is authorized
             // Read vault to check grant
-            let vault_data = vault.try_borrow_data()?;
-            if vault_data.len() < UniversalVault::SIZE {
-                return Err(KeyShieldError::UniversalVaultNotFound.into());
-            }
+            let vault_data = borrow_vault!(vault);
 
             let agent_pubkey = *agent.key();
-            let agent_grants_start = 768;
-            let agent_grant_size = 128;
 
             let mut authorized = false;
             for i in 0..MAX_AGENTS {
-                let offset = agent_grants_start + (i * agent_grant_size);
+                let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
                 let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
                     .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
                 let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
@@ -359,7 +342,7 @@ pub fn process_access_with_agent(
                             .map_err(|_| KeyShieldError::AgentGrantExpired)?
                     );
 
-                    let timestamp = 0u64;
+                    let timestamp = Clock::get()?.unix_timestamp as u64;
                     if timestamp > created_at + session_timeout {
                         return Err(KeyShieldError::AgentGrantExpired.into());
                     }
@@ -395,10 +378,9 @@ pub fn process_access_with_agent(
     }
 
     // Check policy rules (domain allow/block)
-    let vault_data = vault.try_borrow_data()?;
-    let policy_start = 7760;
-    let policy_size = 96;
-    let policy_count = vault_data[63];
+    let vault_data = borrow_vault!(vault);
+    // NOTE: vault_data[62] = policy_rule_count, vault_data[63] = payment_stream_count
+    let policy_count = vault_data[62].min(MAX_POLICY_RULES_STORED);
 
     // Extract domain from data if provided
     let domain_start = 33;
@@ -415,7 +397,7 @@ pub fn process_access_with_agent(
 
         // Check domain policies
         for i in 0..policy_count as usize {
-            let offset = policy_start + (i * policy_size);
+            let offset = POLICY_RULES_START + (i * POLICY_RULE_SIZE);
             let rule_type = vault_data[offset];
             let enabled = vault_data[offset + 1];
 
@@ -478,10 +460,7 @@ pub fn process_create_ephemeral_signer(
     let expiry_seconds = u64::from_le_bytes(data[1..9].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?);
 
     // Read vault to verify agent has access
-    let vault_data = vault.try_borrow_data()?;
-    if vault_data.len() < UniversalVault::SIZE {
-        return Err(KeyShieldError::UniversalVaultNotFound.into());
-    }
+    let vault_data = borrow_vault!(vault);
 
     // Verify discriminator
     let discriminator = &vault_data[0..8];
@@ -501,12 +480,10 @@ pub fn process_create_ephemeral_signer(
 
     // Verify agent has active grant
     let agent_pubkey = *agent.key();
-    let agent_grants_start = 768;
-    let agent_grant_size = 128;
     let mut agent_has_access = false;
 
     for i in 0..MAX_AGENTS {
-        let offset = agent_grants_start + (i * agent_grant_size);
+        let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
             .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
         let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])

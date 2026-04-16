@@ -12,6 +12,30 @@
 
 #![no_std]
 
+/// Borrow vault account data (immutable) and assert it's large enough for UniversalVault.
+/// Returns early with UniversalVaultNotFound if the account is too small.
+macro_rules! borrow_vault {
+    ($vault:expr) => {{
+        let _d = $vault.try_borrow_data()?;
+        if _d.len() < $crate::state::UniversalVault::SIZE {
+            return Err($crate::error::KeyShieldError::UniversalVaultNotFound.into());
+        }
+        _d
+    }};
+}
+
+/// Borrow vault account data (mutable) and assert it's large enough for UniversalVault.
+/// Returns early with UniversalVaultNotFound if the account is too small.
+macro_rules! borrow_vault_mut {
+    ($vault:expr) => {{
+        let _d = $vault.try_borrow_mut_data()?;
+        if _d.len() < $crate::state::UniversalVault::SIZE {
+            return Err($crate::error::KeyShieldError::UniversalVaultNotFound.into());
+        }
+        _d
+    }};
+}
+
 pub mod error;
 pub mod instructions;
 pub mod pda;

@@ -133,8 +133,23 @@ pub const MAX_KEY_GROUPS: usize = 16;
 /// Maximum number of agents per vault
 pub const MAX_AGENTS: usize = 32;
 
+/// Maximum number of payment streams per vault
+pub const MAX_PAYMENT_STREAMS: usize = 8;
+
 /// Maximum number of policy rules per vault
 pub const MAX_POLICY_RULES: usize = 64;
+
+/// Layout byte offsets for raw UniversalVault account data.
+/// Used by on-chain instructions and proxy/src/vault.rs.
+/// Do not change without updating all consumers and running the drift test.
+pub const AGENT_GRANTS_START: usize = 768;   // 64-byte header + 16 × 44-byte KeyGroupEntry
+pub const AGENT_GRANT_SIZE: usize = 128;
+pub const POLICY_RULES_START: usize = 7760;  // AGENT_GRANTS_START + MAX_AGENTS × AGENT_GRANT_SIZE
+pub const POLICY_RULE_SIZE: usize = 96;
+pub const PAYMENT_STREAMS_START: usize = 13856; // POLICY_RULES_START + MAX_POLICY_RULES × POLICY_RULE_SIZE
+pub const PAYMENT_STREAM_SIZE: usize = 108;
+/// Hard cap for the policy loop: physical max that fits in vault account.
+pub const MAX_POLICY_RULES_STORED: u8 = 110;
 
 /// Key group types
 #[repr(u8)]
