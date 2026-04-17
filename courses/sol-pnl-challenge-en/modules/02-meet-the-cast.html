@@ -1,0 +1,246 @@
+    <section class="module" id="module-2" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">02</span>
+          <h1 class="module-title">Meet the Cast</h1>
+          <p class="module-subtitle">Four Rust files, four very different jobs. If you know who does what, you know where to poke when something breaks.</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">An orchestra with four musicians</h2>
+            <p>Think of the codebase as a small jazz quartet: a tiny group where every instrument is essential and nobody doubles up. One musician counts the tempo, one improvises the melody, one handles the phone calls to the venue, and one writes down the setlist. Remove any of them and the set falls apart.</p>
+
+            <div class="icon-rows">
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-1)">🎯</div>
+                <div>
+                  <strong>main.rs &mdash; The Conductor</strong>
+                  <p>Reads command-line arguments, starts the stopwatch, calls the algorithm, adds up the numbers, prints the final JSON. About 70 lines. Knows almost nothing about how the work gets done.</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-2)">🧭</div>
+                <div>
+                  <strong>algorithm.rs &mdash; The Strategist</strong>
+                  <p>The brain. Decides <em>how</em> to fetch transactions cheaply: which ranges to scout, which to fetch in full, which results to stream back first. This is where the 500ms magic lives.</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-3)">📡</div>
+                <div>
+                  <strong>rpc.rs &mdash; The Courier</strong>
+                  <p>The one who actually talks to Helius. Builds <span class="term" data-definition="JSON-RPC is a convention for remote procedure calls over HTTP using JSON-formatted messages. You POST a JSON envelope with a method name and params, and get a JSON envelope back with a result or an error.">JSON-RPC</span> envelopes, compresses traffic, retries on failure. Doesn't care <em>why</em> anyone is asking.</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-4)">📒</div>
+                <div>
+                  <strong>types.rs &mdash; The Ledger Keeper</strong>
+                  <p>Holds the <code>BalancePoint</code> — one tiny struct describing a single "the wallet had X lamports before this tx, Y after" observation. That's it. Twelve lines.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The entire vocabulary of the project, in one struct</h2>
+            <p>Every number this program eventually prints comes from a list of <code>BalancePoint</code>s. This is the only data shape you have to learn to understand the whole codebase.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">types.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">/// One balance observation for a wallet at a specific transaction.</span></span>
+<span class="code-line"><span class="code-keyword">pub struct</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub</span> slot: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> block_time: <span class="code-keyword">Option</span>&lt;<span class="code-keyword">i64</span>&gt;,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> pre_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> post_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> signature: <span class="code-keyword">String</span>,</span>
+<span class="code-line">}</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">impl</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub fn</span> <span class="code-function">delta_lamports</span>(&amp;<span class="code-keyword">self</span>) -&gt; <span class="code-keyword">i128</span> {</span>
+<span class="code-line">        <span class="code-keyword">self</span>.post_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span> - <span class="code-keyword">self</span>.pre_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span></span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">A <strong>BalancePoint</strong> is a snapshot: "at transaction X, the wallet went from <em>pre</em> lamports to <em>post</em> lamports."</p>
+                  <p class="tl"><code>slot</code> is Solana's version of a block number — a monotonically increasing ID for where this transaction landed in the chain's timeline.</p>
+                  <p class="tl"><code>block_time</code> is the clock time the block was produced. Optional because very old blocks sometimes don't have it.</p>
+                  <p class="tl"><code>signature</code> is the globally unique ID of the transaction — like a receipt number.</p>
+                  <p class="tl"><code>delta_lamports()</code> is the money math: post minus pre. We use a bigger signed integer (<code>i128</code>) because the difference can be negative (you spent SOL) and can get very large when summed across thousands of transactions.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">Why integers, not floats</strong>
+                <p>Money code in production almost never uses <code>f64</code>. Floats lose precision — add a billion transactions of 0.1 SOL and you won't land on exactly 100,000,000 SOL. Integers in lamports stay exact, and the conversion to <code>f64</code> happens only once at the very end for display.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">How they talk to each other</h2>
+            <p>Follow a single run: the Conductor wakes up, hands work off, and waits for answers. Click <strong>Next Message</strong> to step through the conversation.</p>
+
+            <div class="chat-window" id="chat-cast">
+              <div class="chat-messages">
+                <div class="chat-message" data-msg="0" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>Alright team, user wants PnL for wallet <code>7xKX...</code>. Starting the stopwatch now.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="1" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>Strategist &mdash; go compute the balance history. Courier &mdash; warm up the TLS connection in parallel.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="2" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>On it. Courier, fetch me the oldest 1000 signatures AND the newest 1000, in parallel. Same moment.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="3" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>Two HTTP/2 streams going out right now over the same connection. Back in ~100ms.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="4" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>Got both pages. Here are the signatures — slots, block times, transaction IDs.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="5" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>Wallet has 3,241 txs — big middle gap. Partitioning it into 8 slices. Courier, fire 8 more parallel requests, and start streaming the full-tx fetches for the ends I already know about.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="6" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>Running. Ledger — receive these full transactions. For each one, pull the wallet's pre/post balance out of the metadata.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="7" data-sender="types" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-4)">📒</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-4)">types.rs</span>
+                    <p>Writing 3,241 BalancePoints. Each one knows its delta in lamports.</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="8" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>Summing deltas... 412,500,000 lamports. Stopwatch: 487.3ms. Printing JSON. Done.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-typing" id="chat-typing" style="display:none">
+                <div class="chat-avatar">?</div>
+                <div class="chat-typing-dots">
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                </div>
+              </div>
+
+              <div class="chat-controls">
+                <button class="btn chat-next-btn">Next Message</button>
+                <button class="btn chat-all-btn">Play All</button>
+                <button class="btn chat-reset-btn">Replay</button>
+                <span class="chat-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The file tree, annotated</h2>
+
+            <div class="file-tree">
+              <div class="ft-folder open">
+                <span class="ft-name">src/</span>
+                <span class="ft-desc">All the Rust source code lives here</span>
+                <div class="ft-children">
+                  <div class="ft-file">
+                    <span class="ft-name">main.rs</span>
+                    <span class="ft-desc">Entry point &mdash; CLI, timing, JSON output</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">algorithm.rs</span>
+                    <span class="ft-desc">The three-phase scout: where speed is won</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">rpc.rs</span>
+                    <span class="ft-desc">Helius HTTP client, retries, balance extraction</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">types.rs</span>
+                    <span class="ft-desc">BalancePoint — the one data structure</span>
+                  </div>
+                </div>
+              </div>
+              <div class="ft-file">
+                <span class="ft-name">Cargo.toml</span>
+                <span class="ft-desc">Dependencies (reqwest, tokio, clap, serde) + release profile tuning</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Quick check</h2>
+
+            <div class="quiz-container" id="quiz-module2">
+              <div class="quiz-question-block"
+                   data-correct="c"
+                   data-explanation-right="Right — extracting the pre/post balance lives in rpc.rs on TxResult::extract_balance. That's where the JSON shape of Helius's response gets decoded, so that's where an index bug would hide."
+                   data-explanation-wrong="Think about which file is responsible for reading the JSON that comes back from Helius. The algorithm just uses BalancePoints; it doesn't build them. The types file only defines the struct.">
+                <h3 class="quiz-question">A user reports their PnL is always zero for a specific wallet. You suspect the code is looking at the wrong account inside the transaction. Which file do you open first?</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>main.rs</code> &mdash; it's where the final number comes from.</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>algorithm.rs</code> &mdash; that's where all the fetching happens.</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>rpc.rs</code> &mdash; it's the layer that decodes transactions and picks out the wallet's balance.</span>
+                  </button>
+                  <button class="quiz-option" data-value="d" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>types.rs</code> &mdash; it defines BalancePoint, so the bug must be there.</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">Check Answer</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">Try Again</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

@@ -1,0 +1,210 @@
+    <section class="module" id="module-3" style="background: var(--color-bg)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">03</span>
+          <h1 class="module-title">The Scout Strategy</h1>
+          <p class="module-subtitle">The actual trick behind 500ms: don't fetch everything, fetch smart. Send scouts first, then send the heavy fetchers where the scouts report activity.</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">A wildfire-response metaphor</h2>
+            <p>Imagine you're a fire-response coordinator and a wildfire has broken out somewhere in a long forested valley. You don't know exactly where it is. You have two kinds of units: <strong>spotter drones</strong> that are cheap and fly fast but can't put anything out, and <strong>tanker planes</strong> that can drop water but are slow and expensive per run.</p>
+            <p>The dumb play is to send tankers up and down the whole valley. The smart play is to launch spotter drones first — wide and parallel — and the <em>moment</em> a drone reports smoke, you dispatch a tanker to that exact coordinate, without waiting for the other drones to finish.</p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🔥</div>
+              <div class="callout-content">
+                <strong class="callout-title">This is literally the algorithm</strong>
+                <p>Helius gives you two kinds of API calls: <strong>signatures-mode</strong> (cheap, returns 1000 IDs per call — the drones) and <strong>full-mode</strong> (expensive, returns 100 fat transactions per call — the tankers). Both cost the same <span class="term" data-definition="RPC providers charge you per request by assigning each call a credit cost. A signatures call and a full call both cost the same credits, but signatures give you 10x more rows per call.">credit</span>. Scouting with signatures first is how this algorithm learns the whole shape of a wallet cheaply, then only fires the heavy fetches where it knows transactions live.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The three phases, visualized</h2>
+            <p>Step through one run of the scout algorithm. Watch how Phase 1 and Phase 2 overlap — the fetcher doesn't sit idle waiting for scouts to finish.</p>
+
+            <div class="flow-animation" data-steps='[
+              {"highlight":"flow-actor-1","label":"Phase 0 begins — algorithm fires two parallel signature requests in one round-trip."},
+              {"highlight":"flow-actor-1","label":"Oldest 1000 signatures requested (the jackpot).","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"Newest 1000 signatures requested (the tail) — same instant, same HTTP/2 connection.","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"Helius answers both in parallel. We now know both ends of the wallet&apos;s timeline."},
+              {"highlight":"flow-actor-1","label":"Phase 2 starts immediately — full-tx fetches for the known ends fire now, not later.","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"Phase 1 — the middle gap is big. Partition it into 8 slices and scout them in parallel.","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"As each scout slice returns, Helius streams signatures back one slice at a time."},
+              {"highlight":"flow-actor-1","label":"The moment a slice arrives, its chunks join the full-fetch pool. Phase 1 and Phase 2 overlap."},
+              {"highlight":"flow-actor-2","label":"Full transactions stream in. Each one yields one BalancePoint."},
+              {"highlight":"flow-actor-1","label":"All transactions collected. Dedupe by signature. Sort. Return."}
+            ]'>
+              <div class="flow-actors">
+                <div class="flow-actor" id="flow-actor-1">
+                  <div class="flow-actor-icon">🧭</div>
+                  <span>algorithm.rs</span>
+                </div>
+                <div class="flow-actor" id="flow-actor-2">
+                  <div class="flow-actor-icon">☁️</div>
+                  <span>Helius</span>
+                </div>
+              </div>
+
+              <div class="flow-packet" id="flow-packet"></div>
+
+              <div class="flow-step-label" id="flow-label">Click "Next Step" to begin the scout run.</div>
+
+              <div class="flow-controls">
+                <button class="btn flow-next-btn">Next Step</button>
+                <button class="btn flow-reset-btn">Restart</button>
+                <span class="flow-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Phase 0 in code: the one-round-trip opener</h2>
+            <p>The very first thing the algorithm does is the highest-leverage move in the whole codebase.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">// ─── Phase 0: jackpot + tail in one RTT ───</span></span>
+<span class="code-line"><span class="code-keyword">let</span> (jackpot, tail_resp) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"asc"</span>,  SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"desc"</span>, SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl"><code>tokio::try_join!</code> kicks off both requests at the same moment and waits for <em>both</em> to finish before moving on. If either errors, the whole thing aborts.</p>
+                  <p class="tl">The first call asks for signatures in <code>"asc"</code> (ascending) order — the <em>oldest</em> 1000 transactions the wallet ever made. The code calls this <span class="term" data-definition='The "jackpot" is the name this algorithm gives to the oldest batch of signatures. If a wallet has fewer than 1000 total transactions, the jackpot alone captures the whole history — "hitting the jackpot."'>the jackpot</span>.</p>
+                  <p class="tl">The second call asks for <code>"desc"</code> (descending) — the <em>newest</em> 1000 transactions (the tail).</p>
+                  <p class="tl">Crucially, both go over the <em>same</em> HTTP/2 connection at once. One <span class="term" data-definition="A round-trip is the time for a request to travel to the server plus the time for the response to travel back. Over the internet this is usually 20–100ms. Minimizing round-trips is the single biggest lever for speed.">round-trip</span>, two answers, and we've pinned both ends of the wallet's timeline. If the wallet has ≤2000 txs, we're basically done.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">A subtle rule: slots are atomic</h2>
+            <p>When the algorithm chunks signatures into ranges for bulk fetching, it has to respect a rule that's easy to miss. All transactions in the same <code>slot</code> have to stay together in the same chunk.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — chunk_by_slot</span>
+<pre><code><span class="code-line"><span class="code-comment">/// Group sigs into contiguous slot ranges of roughly `target` sigs</span></span>
+<span class="code-line"><span class="code-comment">/// each. Never splits a single slot across chunks (a slot with N txs</span></span>
+<span class="code-line"><span class="code-comment">/// must be fetched atomically — pagination tokens inside a slot are</span></span>
+<span class="code-line"><span class="code-comment">/// opaque).</span></span>
+<span class="code-line"><span class="code-keyword">fn</span> <span class="code-function">chunk_by_slot</span>(sigs: &amp;[SigResult], target: <span class="code-keyword">usize</span>) -&gt; Vec&lt;(<span class="code-keyword">u64</span>, <span class="code-keyword">u64</span>)&gt; {</span>
+<span class="code-line">    ...</span>
+<span class="code-line">    <span class="code-keyword">if</span> count &gt;= target {</span>
+<span class="code-line">        <span class="code-keyword">let</span> next_slot = sigs.<span class="code-function">get</span>(i + <span class="code-number">1</span>).<span class="code-function">map</span>(|s| s.slot);</span>
+<span class="code-line">        <span class="code-keyword">match</span> next_slot {</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) <span class="code-keyword">if</span> ns == sig.slot =&gt; <span class="code-keyword">continue</span>,</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) =&gt; { chunks.<span class="code-function">push</span>((chunk_start, sig.slot + <span class="code-number">1</span>)); ... }</span>
+<span class="code-line">            ...</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">A <span class="term" data-definition="On Solana, a slot is a 400ms window during which one validator is allowed to produce a block. Think of it as a conveyor belt ticking forward every 400ms; every transaction lands in exactly one slot.">slot</span> is Solana's basic time unit, and multiple transactions can land in the same slot.</p>
+                  <p class="tl">If we tried to fetch "the first 50 transactions in slots 100–200," but slot 150 alone had 80 transactions in it, Helius would paginate — and the <span class="term" data-definition="A pagination token is an opaque string the server gives you to ask for the &quot;next page&quot; of results. You don't inspect it — you just hand it back on your next request.">pagination token</span> it gives back is only valid within that exact request. We can't reuse it in a different parallel chunk.</p>
+                  <p class="tl">So: if the chunk would end in the middle of a slot, keep adding sigs from that slot until the next slot appears, <em>then</em> cut. That's what the <code>Some(ns) if ns == sig.slot =&gt; continue</code> line does.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-warning">
+              <div class="callout-icon">⚠️</div>
+              <div class="callout-content">
+                <strong class="callout-title">The kind of bug that's hard to catch</strong>
+                <p>If you split a slot across chunks, you don't get a loud error — you get silently <em>missing</em> transactions in your final PnL, only for whales who happen to do dozens of trades in a single 400ms slot. This is the kind of edge case that makes senior engineers suspicious of clever pagination.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Why dedup by signature?</h2>
+            <p>At the end, the algorithm calls:</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — dedup</span>
+<pre><code><span class="code-line">all.<span class="code-function">sort_by</span>(|a, b| a.slot.<span class="code-function">cmp</span>(&amp;b.slot)</span>
+<span class="code-line">    .<span class="code-function">then_with</span>(|| a.signature.<span class="code-function">cmp</span>(&amp;b.signature)));</span>
+<span class="code-line">all.<span class="code-function">dedup_by</span>(|a, b| a.signature == b.signature);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">Because Phase 0 and Phase 1 can overlap in what they cover (the tail might bleed into a scouted region), the same transaction can end up fetched twice.</p>
+                  <p class="tl">Deduping by <code>signature</code> — the transaction's globally unique ID — is the only correct way. Two different trades can happen in the same slot with the same pre/post balance (you swap tokens, SOL doesn't change), so slot-alone or balance-alone would falsely merge them.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Scenario check</h2>
+
+            <div class="quiz-container" id="quiz-module3">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">Scenario</span>
+                  <p>You're extending this tool to also track a wallet's <em>USDC</em> balance, not just SOL. You can still reuse the whole scout algorithm. Where would you make the change?</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="Correct. extract_balance is the only place that pulls a specific account's balance out of a transaction's metadata. Adapting it to track a token balance (from meta.postTokenBalances instead of meta.postBalances) leaves the entire scout pipeline untouched."
+                     data-explanation-wrong="The three-phase scout doesn't care what currency you're tracking — it just delivers full transactions. Changing the algorithm means rewriting the speed layer for no reason.">
+                  <h3 class="quiz-question">Which file would you modify?</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Rewrite <code>algorithm.rs</code> to fetch USDC-specific endpoints.</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Change only <code>rpc.rs</code> — specifically <code>extract_balance</code> — to read token balances instead of lamports.</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Modify <code>types.rs</code>'s BalancePoint to hold both SOL and USDC fields, then rewrite everything downstream.</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="quiz-question-block"
+                   data-correct="b"
+                   data-explanation-right="Exactly. A wallet that's been dormant for years and then suddenly active would have a huge middle gap with almost no transactions. The adaptive partition count (clamped 4–12) prevents us from wasting requests on empty ranges."
+                   data-explanation-wrong="The algorithm doesn't treat wallets uniformly. It estimates density from the jackpot+tail and sizes the middle-scout accordingly. Uniform splits would be bad for both sparse and dense cases.">
+                <h3 class="quiz-question">Why does the algorithm compute an estimated transaction density before partitioning the middle gap?</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>To decide whether to use full-mode or signatures-mode for the middle.</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>To choose how many parallel scout partitions to fire — more for dense ranges, fewer for sparse ones.</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>To decide whether to skip the middle entirely if activity is too low.</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">Check Answers</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">Try Again</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

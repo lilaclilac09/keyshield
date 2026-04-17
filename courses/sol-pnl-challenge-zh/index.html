@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>狂飙 Solana：sol-pnl-challenge 深度解析</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+
+  <style>
+    :root {
+      --color-accent:       #2D8B55;
+      --color-accent-hover: #226B41;
+      --color-accent-light: #E8F5EE;
+      --color-accent-muted: #5AAD7A;
+      --font-body: 'DM Sans', 'Noto Sans SC', -apple-system, sans-serif;
+      --font-display: 'Bricolage Grotesque', 'Noto Sans SC', Georgia, serif;
+    }
+  </style>
+
+  <script src="main.js" defer></script>
+</head>
+<body>
+
+  <nav class="nav" id="nav">
+    <div class="progress-bar" id="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+    <div class="nav-inner">
+      <span class="nav-title">狂飙 Solana</span>
+      <div class="nav-dots" id="nav-dots" role="tablist">
+        <button class="nav-dot" data-target="module-1" data-tooltip="500 毫秒之战" role="tab" aria-label="模块 1：500 毫秒之战"></button>
+        <button class="nav-dot" data-target="module-2" data-tooltip="四位主角" role="tab" aria-label="模块 2：四位主角"></button>
+        <button class="nav-dot" data-target="module-3" data-tooltip="侦察兵策略" role="tab" aria-label="模块 3：侦察兵策略"></button>
+        <button class="nav-dot" data-target="module-4" data-tooltip="加速工具箱" role="tab" aria-label="模块 4：加速工具箱"></button>
+      </div>
+      <a class="nav-lang" href="../sol-pnl-challenge-en/index.html" style="margin-left:auto;padding:6px 12px;border:1px solid var(--color-border);border-radius:var(--radius-full);font-family:var(--font-body);font-size:var(--text-xs);color:var(--color-text-secondary);text-decoration:none;">EN</a>
+    </div>
+  </nav>
+
+  <main id="main">
+    <section class="module" id="module-1" style="background: var(--color-bg)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">01</span>
+          <h1 class="module-title">500 毫秒之战</h1>
+          <p class="module-subtitle">一个小巧的 Rust 程序，向 Solana 问一个大问题 —— 并在你眨眼之前给出答案。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">这个工具到底是干什么的？</h2>
+            <p><strong>sol-pnl-challenge</strong> 是一个<span class="term" data-definition="CLI（命令行接口）是你在终端窗口里用文字输入来运行的程序，不是靠点按钮。可以理解成用文字和电脑对话。">CLI</span> 工具，它只做一件事，而且做得极快：给它一个 <span class="term" data-definition="在 Solana 上，钱包是一个账户，用一串长长的 base58 字符（它的公钥地址）来标识，可以持有 SOL 并触发交易。">Solana 钱包地址</span>，它会告诉你这个钱包在整条历史记录里一共赚了（或亏了）多少 <span class="term" data-definition="SOL 是 Solana 的原生代币，相当于以太坊的 ETH 或比特币的 BTC。1 SOL = 1,000,000,000 lamports（最小单位）。">SOL</span>。</p>
+            <p>它的诞生场合是 <em>Mert 的 Solana 开发周末挑战赛</em> —— 一场评分标准只有一个数字的比赛：你的程序返回答案要花多少毫秒。</p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">⏱️</div>
+              <div class="callout-content">
+                <strong class="callout-title">为什么速度在这里如此重要</strong>
+                <p>当交易类应用向用户展示<span class="term" data-definition="PnL 表示盈亏（Profit and Loss），也就是你赚或亏的累计金额。绿色 PnL 表示盈利，红色表示亏损。">PnL</span> 时，用户每多等一毫秒都像过了一个世纪。这份代码里用到的技巧 —— 并行请求、流式处理、智能分片 —— 正是资深后端工程师让生产仪表盘"一瞬即现"的那套招数。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">运行起来长什么样</h2>
+            <p>你给它一个钱包地址和一个 <span class="term" data-definition="RPC（远程过程调用）是一台电脑通过网络请求另一台电脑做事的方式。Solana 提供公共 RPC 端点供你查询链上数据。">RPC</span> URL，它就会吐出一段 JSON。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">CODE</span>
+<pre><code><span class="code-line">$ sol-pnl-challenge \</span>
+<span class="code-line">    --address 7xKX...wallet \</span>
+<span class="code-line">    --rpc-url https://mainnet.helius-rpc.com/?api-key=XXX</span>
+<span class="code-line"></span>
+<span class="code-line">{</span>
+<span class="code-line">  <span class="code-property">"address"</span>: <span class="code-string">"7xKX...wallet"</span>,</span>
+<span class="code-line">  <span class="code-property">"latencyMs"</span>: <span class="code-number">487.3</span>,</span>
+<span class="code-line">  <span class="code-property">"transactionCount"</span>: <span class="code-number">3241</span>,</span>
+<span class="code-line">  <span class="code-property">"pnlLamports"</span>: <span class="code-number">412500000</span>,</span>
+<span class="code-line">  <span class="code-property">"pnlSol"</span>: <span class="code-number">0.4125</span></span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">带两个必填参数运行工具：要分析的钱包，以及去哪里取数据。</p>
+                  <p class="tl">它去访问 Helius —— 一家性能强劲的付费 Solana RPC 服务商 —— 而不是公共免费端点（后者被限流限得龟速）。</p>
+                  <p class="tl">结果是一个整洁的 JSON：我们查了哪个钱包，花了多少毫秒，处理了多少笔交易，以及用两种单位（<span class="term" data-definition="lamport 是 SOL 的最小可分割单位，以 Solana 创始人命名。1,000,000,000 lamports = 1 SOL。代码全程用 lamports 做整数运算，避免浮点误差，最后一步才换算成 SOL。">lamports</span> 和整 SOL）表示的盈亏。</p>
+                  <p class="tl">注意 <code>latencyMs: 487.3</code> —— 整个挑战的核心，就在这一个数字上。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一次运行的三段式</h2>
+            <p>这个程序每次运行都是同样的三步，按顺序进行：</p>
+
+            <div class="step-cards">
+              <div class="step-card">
+                <div class="step-num">1</div>
+                <div class="step-body">
+                  <strong>解析命令行参数</strong>
+                  <p>从用户输入的内容里把钱包地址和 RPC URL 取出来。</p>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">2</div>
+                <div class="step-body">
+                  <strong>飞奔到 Helius 收集交易</strong>
+                  <p>这是最贵的一段 —— 几百个并行网络请求，也是整个模块 3 的重头戏。</p>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">3</div>
+                <div class="step-body">
+                  <strong>把余额变化累加起来，打印 JSON</strong>
+                  <p>每笔交易都告诉我们钱包"交易前"和"交易后"的余额。把差值加起来 → 总盈亏。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">赛道上的目标时间</h2>
+            <p>README 报告了在不同活跃度的钱包上冷启动时间：</p>
+
+            <div class="pattern-cards">
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-5)">
+                <div class="pattern-icon" style="background: var(--color-actor-5)">💤</div>
+                <h4 class="pattern-title">低活跃钱包</h4>
+                <p class="pattern-desc">500 毫秒以内 —— 只有寥寥几笔交易的钱包几乎不需要发多少网络请求。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+                <div class="pattern-icon" style="background: var(--color-actor-4)">📊</div>
+                <h4 class="pattern-title">中等活跃</h4>
+                <p class="pattern-desc">大约 400–500 毫秒 —— 几百笔交易，Helius 头几页数据就能装下。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+                <div class="pattern-icon" style="background: var(--color-actor-2)">🔥</div>
+                <h4 class="pattern-title">高活跃钱包</h4>
+                <p class="pattern-desc">600 毫秒以内 —— 连 3000 多笔交易的钱包也能在一次慢眨眼前完成。</p>
+              </div>
+            </div>
+
+            <p>这些数字是整份代码存在的<em>唯一</em>理由。你接下来会看到的所有设计决策 —— 为什么算法分三阶段、为什么 HTTP 客户端看上去"过度配置"、为什么还要有个 <code>warm()</code> 函数 —— 全都是为了从这些总时间里再抠出几毫秒。</p>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">小测验</h2>
+
+            <div class="quiz-container" id="quiz-module1">
+              <div class="quiz-question-block"
+                   data-correct="b"
+                   data-explanation-right="完全正确 —— 瓶颈永远在网络。等 Helius 回复的时间远远超过 Rust 本地要做的任何计算。所以算法的全部聪明之处都集中在"怎么向服务端要数据"，而不是"怎么处理拿到的数据"。"
+                   data-explanation-wrong="想一想：程序要跟远方的服务器通信时，什么最花时间？Rust 本地的计算在几微秒内就能做完，而网络往返每次都要几十毫秒。">
+                <h3 class="quiz-question">你想让这个工具更快。最大的提速空间最可能来自哪里？</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>把求和余额的循环改写成汇编，追求极限 CPU 速度。</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>减少访问 Helius 的次数，剩下的请求尽量并行发出去。</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>加更多工作线程来解析 JSON 响应。</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">重试</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <section class="module" id="module-2" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">02</span>
+          <h1 class="module-title">认识四位主角</h1>
+          <p class="module-subtitle">四个 Rust 文件，四种截然不同的职责。知道谁管什么，就知道出问题时该戳哪里。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一个四人爵士乐队</h2>
+            <p>把这份代码想象成一个小型爵士四重奏：人数不多，每件乐器都不可或缺，也没有谁跟谁重复。一个人打拍子，一个人即兴旋律，一个人负责跟演出场地通电话，一个人记录曲目单。少任何一个，演出都撑不起来。</p>
+
+            <div class="icon-rows">
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-1)">🎯</div>
+                <div>
+                  <strong>main.rs &mdash; 指挥家</strong>
+                  <p>读取命令行参数、启动秒表、调用算法、汇总数字、打印最终 JSON。约 70 行。几乎不关心具体怎么干活。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-2)">🧭</div>
+                <div>
+                  <strong>algorithm.rs &mdash; 策略师</strong>
+                  <p>大脑所在。决定<em>怎么</em>低成本地获取交易：哪些区间去侦察、哪些要完整拉取、哪些结果先流回来。500 毫秒的魔法就住在这里。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-3)">📡</div>
+                <div>
+                  <strong>rpc.rs &mdash; 信使</strong>
+                  <p>真正跟 Helius 通信的那一位。构造 <span class="term" data-definition="JSON-RPC 是一种用 JSON 格式消息通过 HTTP 做远程过程调用的约定。你 POST 一个包含方法名和参数的 JSON 包体，拿回一个包含结果或错误的 JSON 回包。">JSON-RPC</span> 请求、压缩流量、失败重试。不关心<em>为什么</em>要发这些请求。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-4)">📒</div>
+                <div>
+                  <strong>types.rs &mdash; 账本管理员</strong>
+                  <p>只持有 <code>BalancePoint</code> —— 一个描述单笔交易"前余额 X lamports，后余额 Y"的微型结构体。就这样。十二行。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">整个项目的词汇量，浓缩在一个结构体里</h2>
+            <p>这个程序最终打印出的每一个数字，都来自一串 <code>BalancePoint</code>。这是你理解整份代码唯一需要掌握的数据形态。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">types.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">/// One balance observation for a wallet at a specific transaction.</span></span>
+<span class="code-line"><span class="code-keyword">pub struct</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub</span> slot: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> block_time: <span class="code-keyword">Option</span>&lt;<span class="code-keyword">i64</span>&gt;,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> pre_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> post_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> signature: <span class="code-keyword">String</span>,</span>
+<span class="code-line">}</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">impl</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub fn</span> <span class="code-function">delta_lamports</span>(&amp;<span class="code-keyword">self</span>) -&gt; <span class="code-keyword">i128</span> {</span>
+<span class="code-line">        <span class="code-keyword">self</span>.post_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span> - <span class="code-keyword">self</span>.pre_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span></span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">一个 <strong>BalancePoint</strong> 就是一张快照："在第 X 笔交易处，钱包余额从 <em>pre</em> lamports 变成了 <em>post</em> lamports。"</p>
+                  <p class="tl"><code>slot</code> 是 Solana 版的"区块号" —— 单调递增的 ID，标记这笔交易落在链上时间线的哪一格。</p>
+                  <p class="tl"><code>block_time</code> 是出块的时间戳。可选，因为一些非常老的区块没有这个字段。</p>
+                  <p class="tl"><code>signature</code> 是该笔交易的全局唯一 ID —— 相当于收据号。</p>
+                  <p class="tl"><code>delta_lamports()</code> 是金额运算：post 减 pre。用更大的有符号整数（<code>i128</code>）是因为差值可能为负（你花掉了 SOL），也可能在几千笔交易累加后变得非常大。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">为什么用整数而不是浮点</strong>
+                <p>生产级的金额代码几乎从不用 <code>f64</code>。浮点数会丢精度 —— 把十亿笔 0.1 SOL 累加起来，你得不到正好 100,000,000 SOL。用 lamports 的整数保持精确，只在最后一步为了展示才转成 <code>f64</code>。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">他们是怎么沟通的</h2>
+            <p>跟踪一次真实运行：指挥家醒来，把活派下去，等结果汇总。点击<strong>下一条消息</strong>，一步步看他们的对话。</p>
+
+            <div class="chat-window" id="chat-cast">
+              <div class="chat-messages">
+                <div class="chat-message" data-msg="0" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>各位注意，用户要查钱包 <code>7xKX...</code> 的 PnL。秒表启动。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="1" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>策略师 —— 去算余额历史。信使 —— 同时把 TLS 连接预热了。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="2" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>收到。信使，帮我并行拉最早的 1000 个签名和最新的 1000 个签名。同一时刻发出去。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="3" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>同一条连接上两个 HTTP/2 流现在就发。大约 100 毫秒后回来。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="4" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>两页都到了。这是签名信息 —— slot、区块时间、交易 ID。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="5" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>钱包有 3,241 笔交易 —— 中间的缺口很大。我要分成 8 段。信使，再发 8 个并行请求，同时把我已经知道的两端开始做完整交易拉取。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="6" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>已在执行。账本管理员 —— 接收这些完整交易。对每一笔，从元数据里抽出钱包的前后余额。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="7" data-sender="types" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-4)">📒</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-4)">types.rs</span>
+                    <p>写入 3,241 个 BalancePoint。每一个都知道自己的 lamports 差值。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="8" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>累加差值…… 412,500,000 lamports。秒表：487.3 毫秒。打印 JSON。完成。</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-typing" id="chat-typing" style="display:none">
+                <div class="chat-avatar">?</div>
+                <div class="chat-typing-dots">
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                </div>
+              </div>
+
+              <div class="chat-controls">
+                <button class="btn chat-next-btn">下一条消息</button>
+                <button class="btn chat-all-btn">全部播放</button>
+                <button class="btn chat-reset-btn">重播</button>
+                <span class="chat-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">带注释的文件树</h2>
+
+            <div class="file-tree">
+              <div class="ft-folder open">
+                <span class="ft-name">src/</span>
+                <span class="ft-desc">所有 Rust 源码都住在这里</span>
+                <div class="ft-children">
+                  <div class="ft-file">
+                    <span class="ft-name">main.rs</span>
+                    <span class="ft-desc">入口 —— CLI、计时、JSON 输出</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">algorithm.rs</span>
+                    <span class="ft-desc">三阶段侦察：速度的战场</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">rpc.rs</span>
+                    <span class="ft-desc">Helius HTTP 客户端、重试、余额提取</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">types.rs</span>
+                    <span class="ft-desc">BalancePoint —— 唯一的数据结构</span>
+                  </div>
+                </div>
+              </div>
+              <div class="ft-file">
+                <span class="ft-name">Cargo.toml</span>
+                <span class="ft-desc">依赖（reqwest、tokio、clap、serde）+ release 构建调优</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">小测验</h2>
+
+            <div class="quiz-container" id="quiz-module2">
+              <div class="quiz-question-block"
+                   data-correct="c"
+                   data-explanation-right="对 —— 从交易里抽出某个账户的 pre/post 余额，就在 rpc.rs 的 TxResult::extract_balance 里。Helius 响应的 JSON 结构也在这里解码，所以索引错了一定是从这个文件出事的。"
+                   data-explanation-wrong="想一想：哪个文件负责读取 Helius 回来的 JSON？算法只是拿 BalancePoint 来用，不负责造它；类型文件只定义了结构体。">
+                <h3 class="quiz-question">有用户反馈说某个钱包的 PnL 永远显示为 0。你怀疑代码抽到了交易里错误的账户。你会先打开哪个文件？</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>main.rs</code> —— 最终数字是从这里出来的。</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>algorithm.rs</code> —— 所有的拉取都发生在这里。</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>rpc.rs</code> —— 解码交易并抽取钱包余额的就是它这一层。</span>
+                  </button>
+                  <button class="quiz-option" data-value="d" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>types.rs</code> —— 它定义了 BalancePoint，问题一定出在这里。</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">重试</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <section class="module" id="module-3" style="background: var(--color-bg)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">03</span>
+          <h1 class="module-title">侦察兵策略</h1>
+          <p class="module-subtitle">500 毫秒背后真正的门道：不是全量抓取，而是聪明地抓。先派侦察兵跑一圈，等他们汇报哪里有动静，再派重型部队精准出击。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一场森林灭火的比喻</h2>
+            <p>想象你是森林火灾应急指挥官。山谷里某处起了火，你不知道具体位置。你手上有两种兵力：<strong>侦察无人机</strong>又轻又快成本又低，但它没法灭火；<strong>消防飞机</strong>能洒水，但每架都慢又贵。</p>
+            <p>最笨的办法是让消防飞机从山谷一头排查到另一头。聪明的办法是先放无人机 —— 大面积并行出动；一旦某架无人机发现冒烟，立刻派消防飞机去那个坐标，不必等其他无人机全部回来。</p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🔥</div>
+              <div class="callout-content">
+                <strong class="callout-title">这就是算法的原样</strong>
+                <p>Helius 提供两种调用：<strong>签名模式</strong>（便宜，每次返回 1000 个 ID —— 无人机）和<strong>完整模式</strong>（贵，每次返回 100 笔厚重交易 —— 消防飞机）。两者消耗的<span class="term" data-definition="RPC 服务商按请求收费，每次调用对应一定的积分（credit）。签名模式和完整模式消耗相同的 credits，但签名每次能多拿 10 倍的数据行。">credits</span>相同，但签名一次能多拿 10 倍的行数。所以先用签名侦察就能以极低成本摸清钱包全貌，再把昂贵的完整拉取只打向真正有交易的区段。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">三阶段可视化</h2>
+            <p>跟着看一次侦察算法的完整运行。注意阶段 1 和阶段 2 是如何重叠的 —— 拉取器不会干等着侦察兵全部回来。</p>
+
+            <div class="flow-animation" data-steps='[
+              {"highlight":"flow-actor-1","label":"阶段 0 开始 —— 算法在一次往返里并行发出两个签名请求。"},
+              {"highlight":"flow-actor-1","label":"请求最早的 1000 个签名（头奖）。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"请求最新的 1000 个签名（尾部）—— 同一瞬间，同一条 HTTP/2 连接。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"Helius 并行回复两段。现在我们已经锁定钱包时间线的两端。"},
+              {"highlight":"flow-actor-1","label":"阶段 2 立刻启动 —— 对两端已知区段发起完整交易拉取，不等。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"阶段 1 —— 中间缺口很大。切成 8 段并行侦察。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"每段侦察返回时，Helius 把签名数据一段一段流式传回。"},
+              {"highlight":"flow-actor-1","label":"一段回来就立即把该段的切片送进完整拉取池。阶段 1 和阶段 2 重叠进行。"},
+              {"highlight":"flow-actor-2","label":"完整交易源源不断流回。每一笔产生一个 BalancePoint。"},
+              {"highlight":"flow-actor-1","label":"全部交易收齐。按签名去重，排序，返回。"}
+            ]'>
+              <div class="flow-actors">
+                <div class="flow-actor" id="flow-actor-1">
+                  <div class="flow-actor-icon">🧭</div>
+                  <span>algorithm.rs</span>
+                </div>
+                <div class="flow-actor" id="flow-actor-2">
+                  <div class="flow-actor-icon">☁️</div>
+                  <span>Helius</span>
+                </div>
+              </div>
+
+              <div class="flow-packet" id="flow-packet"></div>
+
+              <div class="flow-step-label" id="flow-label">点击"下一步"开始这次侦察。</div>
+
+              <div class="flow-controls">
+                <button class="btn flow-next-btn">下一步</button>
+                <button class="btn flow-reset-btn">重启</button>
+                <span class="flow-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">阶段 0 的代码：一次往返的开局</h2>
+            <p>算法做的第一件事，就是全份代码里杠杆最大的一招。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">// ─── Phase 0: jackpot + tail in one RTT ───</span></span>
+<span class="code-line"><span class="code-keyword">let</span> (jackpot, tail_resp) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"asc"</span>,  SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"desc"</span>, SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl"><code>tokio::try_join!</code> 把两个请求在同一时刻启动，等<em>两边</em>都完成才往下走。任何一个报错，整体立即中止。</p>
+                  <p class="tl">第一个请求按 <code>"asc"</code>（升序）方向取签名 —— 钱包<em>最早</em>的 1000 笔交易。代码里给它起的名字叫<span class="term" data-definition='"头奖"是算法给"最早一批签名"起的名字。如果钱包总交易数不超过 1000，单靠头奖就能覆盖整段历史 —— "中头奖"。'>头奖（jackpot）</span>。</p>
+                  <p class="tl">第二个请求用 <code>"desc"</code>（降序）—— 钱包<em>最新</em>的 1000 笔交易（尾部）。</p>
+                  <p class="tl">关键是，两者走<em>同一条</em> HTTP/2 连接同时发。一次<span class="term" data-definition="往返（round-trip）指请求到达服务器加上响应返回回来的总时间。经互联网通常是 20–100 毫秒。把往返次数压到最少，是提速最大的那根杠杆。">往返</span>，两份回答，我们就把钱包时间线的两端钉住了。如果钱包总交易数 ≤ 2000 笔，基本已经完事。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一条容易被忽略的规则：slot 是原子的</h2>
+            <p>算法把签名切片分块时，需要遵守一条一不留神就踩坑的规则：同一个 <code>slot</code> 里的所有交易必须待在同一个块里。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — chunk_by_slot</span>
+<pre><code><span class="code-line"><span class="code-comment">/// Group sigs into contiguous slot ranges of roughly `target` sigs</span></span>
+<span class="code-line"><span class="code-comment">/// each. Never splits a single slot across chunks (a slot with N txs</span></span>
+<span class="code-line"><span class="code-comment">/// must be fetched atomically — pagination tokens inside a slot are</span></span>
+<span class="code-line"><span class="code-comment">/// opaque).</span></span>
+<span class="code-line"><span class="code-keyword">fn</span> <span class="code-function">chunk_by_slot</span>(sigs: &amp;[SigResult], target: <span class="code-keyword">usize</span>) -&gt; Vec&lt;(<span class="code-keyword">u64</span>, <span class="code-keyword">u64</span>)&gt; {</span>
+<span class="code-line">    ...</span>
+<span class="code-line">    <span class="code-keyword">if</span> count &gt;= target {</span>
+<span class="code-line">        <span class="code-keyword">let</span> next_slot = sigs.<span class="code-function">get</span>(i + <span class="code-number">1</span>).<span class="code-function">map</span>(|s| s.slot);</span>
+<span class="code-line">        <span class="code-keyword">match</span> next_slot {</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) <span class="code-keyword">if</span> ns == sig.slot =&gt; <span class="code-keyword">continue</span>,</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) =&gt; { chunks.<span class="code-function">push</span>((chunk_start, sig.slot + <span class="code-number">1</span>)); ... }</span>
+<span class="code-line">            ...</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl"><span class="term" data-definition="在 Solana 上，slot 是一个 400 毫秒的时间窗口，其间由一位验证者产出一个区块。可以把它想成一条每 400 毫秒滴答一次的传送带，每笔交易都落在其中某一格上。">slot</span>是 Solana 的基本时间单位，同一个 slot 里可能有多笔交易。</p>
+                  <p class="tl">如果我们让 Helius"给我 slot 100–200 范围里最早的 50 笔交易"，而 slot 150 一个 slot 里就有 80 笔，它会分页返回 —— 它给的<span class="term" data-definition="分页令牌（pagination token）是服务器给你的一串不透明字符串，用来告诉它"给我下一页"。你不需要解析它，下次请求时原样递过去就行。">分页令牌</span>只对那次请求本身有效，换到另一个并行块里就没法复用。</p>
+                  <p class="tl">所以：如果当前块正好切在一个 slot 中间，就继续把这个 slot 剩下的签名都收进来，等遇到新的 slot 再切。<code>Some(ns) if ns == sig.slot =&gt; continue</code> 这一行做的正是这件事。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-warning">
+              <div class="callout-icon">⚠️</div>
+              <div class="callout-content">
+                <strong class="callout-title">最难察觉的那类 bug</strong>
+                <p>如果你在 slot 中间硬切，你不会收到醒目的报错 —— 只会在最终 PnL 里悄悄<em>少</em>一些交易，而且只在那种一个 400 毫秒的 slot 里就做了十几笔交易的大户钱包上出现。这类边角案例，正是资深工程师对"花式分页"保持警惕的原因。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">为什么按签名去重？</h2>
+            <p>最后一步算法做的是：</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — dedup</span>
+<pre><code><span class="code-line">all.<span class="code-function">sort_by</span>(|a, b| a.slot.<span class="code-function">cmp</span>(&amp;b.slot)</span>
+<span class="code-line">    .<span class="code-function">then_with</span>(|| a.signature.<span class="code-function">cmp</span>(&amp;b.signature)));</span>
+<span class="code-line">all.<span class="code-function">dedup_by</span>(|a, b| a.signature == b.signature);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">因为阶段 0 和阶段 1 覆盖的区段可能重叠（尾部会"渗"进侦察区段），同一笔交易可能被拉两次。</p>
+                  <p class="tl">按 <code>signature</code>（交易的全局唯一 ID）去重，是唯一正确的做法。两笔不同的交易可能在同一个 slot 内发生、pre/post 余额也相同（比如你换了代币、SOL 没变），只按 slot 或只按余额去重会把它们错误地合并成一笔。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">情境小测</h2>
+
+            <div class="quiz-container" id="quiz-module3">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>你想扩展这个工具，除了 SOL 还能跟踪钱包的 <em>USDC</em> 余额。整套侦察算法你仍然可以完全复用。你会改哪里？</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="对。extract_balance 是唯一从交易元数据里抽出某个账户余额的地方。把它改成读代币余额（从 meta.postTokenBalances 而非 meta.postBalances）就够了，侦察流水线一点都不用动。"
+                     data-explanation-wrong="三阶段侦察并不关心你在跟踪哪种币 —— 它只是把完整交易送上来。改算法等于白白重写速度层。">
+                  <h3 class="quiz-question">你会改哪个文件？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>重写 <code>algorithm.rs</code>，让它去请求 USDC 专用端点。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>只改 <code>rpc.rs</code> —— 具体是 <code>extract_balance</code> —— 让它读代币余额而不是 lamports。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>修改 <code>types.rs</code> 的 BalancePoint 让它同时存 SOL 和 USDC，然后把下游全部重写。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="quiz-question-block"
+                   data-correct="b"
+                   data-explanation-right="对。一个沉寂多年后突然活跃的钱包，中间会有一大段几乎没交易的缺口。自适应分片数（限制在 4–12）正是为了防止我们把请求浪费在空旷区段上。"
+                   data-explanation-wrong="算法不会对所有钱包一视同仁。它从头奖和尾部估算密度，再据此决定中间要侦察几段。均匀切分在稀疏和高密度场景下都会表现糟糕。">
+                <h3 class="quiz-question">为什么算法要先估算交易密度，再决定怎么切分中间的缺口？</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了决定中间用完整模式还是签名模式。</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了决定要并行发多少段侦察 —— 密度高的多切几段，稀疏的少切。</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了在活动度太低时直接跳过中间。</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">重试</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <section class="module" id="module-4" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">04</span>
+          <h1 class="module-title">加速工具箱</h1>
+          <p class="module-subtitle">一圈不起眼却关键的调优开关，把"够快"变成"500 毫秒以内"。每一个都是你可以让 AI 套到自己网络代码上的模式。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">五个旋钮，全部拧到底</h2>
+            <p>把这个场景想象成给一辆赛车调校。引擎（算法）在做它的事，但轮胎、空气动力、维修站的换胎编排同样至关重要。这份代码里拧的正是这五个旋钮。</p>
+
+            <div class="pattern-cards">
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+                <div class="pattern-icon" style="background: var(--color-actor-1)">🛣️</div>
+                <h4 class="pattern-title">HTTP/2 多路复用</h4>
+                <p class="pattern-desc">只开一条 TLS 连接，在上面跑许多并行请求。省掉反复握手的代价。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+                <div class="pattern-icon" style="background: var(--color-actor-2)">🗜️</div>
+                <h4 class="pattern-title">Gzip + Brotli</h4>
+                <p class="pattern-desc">JSON-RPC 响应能压到 5–10 分之一。直接让服务端发压缩字节。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+                <div class="pattern-icon" style="background: var(--color-actor-3)">🚦</div>
+                <h4 class="pattern-title">并发上限</h4>
+                <p class="pattern-desc">一个容量 100 的信号量，避免把 Helius 冲垮招来限流。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+                <div class="pattern-icon" style="background: var(--color-actor-4)">🔁</div>
+                <h4 class="pattern-title">指数退避</h4>
+                <p class="pattern-desc">遇到 429 / 5xx 就重试，每次等待时间翻倍。最多 5 次。典型的生产级模式。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-5)">
+                <div class="pattern-icon" style="background: var(--color-actor-5)">🔥</div>
+                <h4 class="pattern-title">连接预热</h4>
+                <p class="pattern-desc">在真正开工之前先发一个无关痛痒的小请求，把 TLS 握手的代价从主路径上挪开。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">HTTP 客户端一次性配置好</h2>
+            <p>上面五个旋钮，都活在同一段代码里。把这段 builder 当成一张决策清单来读。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — HeliusClient::new</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> client = Client::<span class="code-function">builder</span>()</span>
+<span class="code-line">    .<span class="code-function">http2_adaptive_window</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_stream_window_size</span>(<span class="code-number">2</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_connection_window_size</span>(<span class="code-number">16</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">tcp_nodelay</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_max_idle_per_host</span>(<span class="code-number">100</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_idle_timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">90</span>))</span>
+<span class="code-line">    .<span class="code-function">timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">30</span>))</span>
+<span class="code-line">    .<span class="code-function">gzip</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">brotli</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">build</span>()</span>
+<span class="code-line">    .<span class="code-function">expect</span>(<span class="code-string">"failed to build HTTP client"</span>);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">那两个大窗口值（每流 2MB、每连接 16MB）是在告诉 <span class="term" data-definition="HTTP/2 是 HTTP 的现代版本，允许一条 TCP 连接同时承载多个并行请求（多路复用）。HTTP/1 则要为每个请求开一条连接 —— 同时发几十个请求时会非常慢。">HTTP/2</span>："别用流控卡我。"默认值是为小响应优化的；我们这里是胖胖的交易数据页。</p>
+                  <p class="tl"><code>tcp_nodelay</code> 关闭 <span class="term" data-definition="Nagle 算法是个老优化，会把微小的 TCP 出站包攒一会儿再发，以节省带宽。1984 年跑 telnet 很棒，但对延迟敏感的 RPC 客户端就是灾难 —— 它会引入约 40 毫秒的延迟。RPC 场景下必须关掉。">Nagle 算法</span>，让小请求不至于在缓冲区里干等着凑一批。</p>
+                  <p class="tl">保留最多 100 条空闲连接，空闲 90 秒内不回收，这样后续请求就能跳过 TLS 握手。</p>
+                  <p class="tl"><code>gzip</code> 和 <code>brotli</code> 告诉 Helius 压缩回包。2MB 的 JSON 响应能以 200KB 的体量到达。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">预热：给引擎打火</h2>
+            <p>在真正开工之前，<code>main.rs</code> 做了一件看起来毫无意义的事。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">main.rs</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> (_, balances) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">warm</span>(),</span>
+<span class="code-line">    algorithm::<span class="code-function">compute</span>(&amp;client, &amp;args.address),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">它让 <code>warm()</code>（一个微型空调用）和真正的计算并行运行。</p>
+                  <p class="tl"><code>warm()</code> 会打开 TCP + TLS + HTTP/2 连接，并向服务端 ping 一个无关紧要的请求。这些"没劲"的工作，否则会堆在第一次真实请求之前，把几毫秒硬加到关键路径上。</p>
+                  <p class="tl">用 <code>try_join!</code> 两者同时跑，<span class="term" data-definition="握手（handshake）是计算机之间为建立加密连接来回互发的消息过程。TLS 握手通常要 1–2 次往返 —— 如果你只打算发一次请求，这代价就非常贵。">握手</span>在后台进行的时候，算法已经在做它自己的准备工作。真正的拉取落在一条已经热起来的连接上。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">优雅的重试</h2>
+            <p>网络会抖，服务器会过载。生产级客户端会重试 —— 但必须<em>聪明地</em>重试。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — the retry loop</span>
+<pre><code><span class="code-line"><span class="code-keyword">for</span> attempt <span class="code-keyword">in</span> <span class="code-number">0</span>..<span class="code-number">5u32</span> {</span>
+<span class="code-line">    <span class="code-keyword">let</span> http = self.client.<span class="code-function">post</span>(&amp;self.rpc_url)</span>
+<span class="code-line">        .<span class="code-function">json</span>(&amp;request).<span class="code-function">send</span>().<span class="code-function">await</span>?;</span>
+<span class="code-line">    <span class="code-keyword">let</span> status = http.<span class="code-function">status</span>();</span>
+<span class="code-line">    <span class="code-keyword">if</span> status == <span class="code-number">429</span> || status.<span class="code-function">is_server_error</span>() {</span>
+<span class="code-line">        <span class="code-keyword">if</span> attempt &lt; <span class="code-number">4</span> {</span>
+<span class="code-line">            <span class="code-keyword">let</span> ms = <span class="code-number">100</span> * <span class="code-number">2u64</span>.<span class="code-function">pow</span>(attempt);</span>
+<span class="code-line">            tokio::time::<span class="code-function">sleep</span>(Duration::<span class="code-function">from_millis</span>(ms)).<span class="code-function">await</span>;</span>
+<span class="code-line">            <span class="code-keyword">continue</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line">        <span class="code-function">bail!</span>(<span class="code-string">"HTTP {status} after {attempt} retries"</span>);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    ...</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">最多重试 5 次。每次比上次睡得久：100、200、400、800 毫秒。这就是<strong>指数退避</strong>。</p>
+                  <p class="tl">只对值得重试的错误重试：<span class="term" data-definition='HTTP 429 表示"请求太多" —— 你被限流了。退让一会儿再试通常就能过。'>429（限流）</span>和 5xx（服务端抽风）。不要对 4xx 重试 —— 那是你自己做错了，再试多少次也不会对。</p>
+                  <p class="tl">循环里还专门对 Solana 自定义的 RPC 错误码 <code>-32429</code> 重试，这是 Helius 在 JSON-RPC 包体里（不是在 HTTP 层）表示限流的方式。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">通用模式</strong>
+                <p>带次数上限的指数退避，是<em>任何</em>生产客户端对<em>任何</em>不稳定依赖（数据库、支付网关、其他内部服务）的标准重试配方。你要是让 AI 写网络代码，就说"用 5 次上限的指数退避，只在 429 和 5xx 时重试"。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">终极综合题</h2>
+
+            <div class="quiz-container" id="quiz-module4">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>你在新加坡的笔记本上对一个 Helius 在弗吉尼亚的端点跑 <code>sol-pnl-challenge</code>。第一次耗时 1.2 秒。几秒后用同一个钱包再跑一次，变成 450 毫秒。为什么？</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="对。第一次要为跨半个地球的服务器付完整的 TLS 握手 + TCP 慢启动代价。第二次复用连接池（pool_idle_timeout=90 秒），直接跳过握手。这就是 warm() 存在的理由 —— 把这笔代价挪出关键路径。"
+                     data-explanation-wrong="Helius 不会对重复调用者做特殊缓存。算法的工作是确定性的 —— 两次之间不会"变聪明"。差别出在网络连接的状态上。">
+                  <h3 class="quiz-question">最可能的原因是哪个？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Helius 对重复调用者做了结果缓存。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>第二次复用了已经建立的 TLS/HTTP/2 连接，跳过了握手。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>侦察算法第二次跑因为"学到了"钱包密度，变得更快。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>一位用户反馈："我在本地开着紧凑的循环跑这个工具做基准测试，偶尔返回的结果只有大约 80% 的交易数量。没有报错。就是…… 少了。"</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="a"
+                     data-explanation-right="对。单页的 429 是会重试的，但如果一个分页令牌请求连续 5 次被 429，循环就会放弃 —— 调用方只会看到一份比实际短的结果。根因是你对同一个 API key 施加了过高的并发压力。要么降并发，要么谨慎调高 MAX_CONCURRENT。"
+                     data-explanation-wrong="算法不是设计上会丢数据的。去重能隐藏重复项，但造不出"缺失"。"少交易、不报错"的症状根本上指向一条重试链条悄悄放弃了。">
+                  <h3 class="quiz-question">最可能的根因是哪个？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>限流把分页过程中的重试预算耗光了，某段侦察返回了不完整的数据，却没把失败暴露出来。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>去重过于激进，把本来合法的交易也丢掉了。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>HTTP/2 偶尔会丢包，导致响应丢失。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">重试</button>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">你通关了。</h2>
+            <p>你已经从 CLI 解析跟到 JSON 输出，认识了四个文件的职责，理解了三阶段侦察，见过了这份代码里每一个加速旋钮。下次你在指挥 AI 写要跟不稳定网络打交道的程序时，你已经知道该问它要什么：<em>并行往返、流式重叠、并发上限、指数退避、预热连接。</em></p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🏁</div>
+              <div class="callout-content">
+                <strong class="callout-title">用你自己的话复述一遍</strong>
+                <p>"它先并行发两个签名请求，用得到的密度决定中间要跑多少段侦察，任何一段侦察一回来就立刻启动对应的完整交易拉取 —— 全程跑在一条预热好的 HTTP/2 连接上，开着 gzip，遇到限流会重试。"这就是整份代码，浓缩在一句话里。</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+</body>
+</html>

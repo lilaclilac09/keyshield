@@ -1,0 +1,218 @@
+    <section class="module" id="module-4" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">04</span>
+          <h1 class="module-title">加速工具箱</h1>
+          <p class="module-subtitle">一圈不起眼却关键的调优开关，把"够快"变成"500 毫秒以内"。每一个都是你可以让 AI 套到自己网络代码上的模式。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">五个旋钮，全部拧到底</h2>
+            <p>把这个场景想象成给一辆赛车调校。引擎（算法）在做它的事，但轮胎、空气动力、维修站的换胎编排同样至关重要。这份代码里拧的正是这五个旋钮。</p>
+
+            <div class="pattern-cards">
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+                <div class="pattern-icon" style="background: var(--color-actor-1)">🛣️</div>
+                <h4 class="pattern-title">HTTP/2 多路复用</h4>
+                <p class="pattern-desc">只开一条 TLS 连接，在上面跑许多并行请求。省掉反复握手的代价。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+                <div class="pattern-icon" style="background: var(--color-actor-2)">🗜️</div>
+                <h4 class="pattern-title">Gzip + Brotli</h4>
+                <p class="pattern-desc">JSON-RPC 响应能压到 5–10 分之一。直接让服务端发压缩字节。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+                <div class="pattern-icon" style="background: var(--color-actor-3)">🚦</div>
+                <h4 class="pattern-title">并发上限</h4>
+                <p class="pattern-desc">一个容量 100 的信号量，避免把 Helius 冲垮招来限流。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+                <div class="pattern-icon" style="background: var(--color-actor-4)">🔁</div>
+                <h4 class="pattern-title">指数退避</h4>
+                <p class="pattern-desc">遇到 429 / 5xx 就重试，每次等待时间翻倍。最多 5 次。典型的生产级模式。</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-5)">
+                <div class="pattern-icon" style="background: var(--color-actor-5)">🔥</div>
+                <h4 class="pattern-title">连接预热</h4>
+                <p class="pattern-desc">在真正开工之前先发一个无关痛痒的小请求，把 TLS 握手的代价从主路径上挪开。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">HTTP 客户端一次性配置好</h2>
+            <p>上面五个旋钮，都活在同一段代码里。把这段 builder 当成一张决策清单来读。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — HeliusClient::new</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> client = Client::<span class="code-function">builder</span>()</span>
+<span class="code-line">    .<span class="code-function">http2_adaptive_window</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_stream_window_size</span>(<span class="code-number">2</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_connection_window_size</span>(<span class="code-number">16</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">tcp_nodelay</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_max_idle_per_host</span>(<span class="code-number">100</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_idle_timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">90</span>))</span>
+<span class="code-line">    .<span class="code-function">timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">30</span>))</span>
+<span class="code-line">    .<span class="code-function">gzip</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">brotli</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">build</span>()</span>
+<span class="code-line">    .<span class="code-function">expect</span>(<span class="code-string">"failed to build HTTP client"</span>);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">那两个大窗口值（每流 2MB、每连接 16MB）是在告诉 <span class="term" data-definition="HTTP/2 是 HTTP 的现代版本，允许一条 TCP 连接同时承载多个并行请求（多路复用）。HTTP/1 则要为每个请求开一条连接 —— 同时发几十个请求时会非常慢。">HTTP/2</span>："别用流控卡我。"默认值是为小响应优化的；我们这里是胖胖的交易数据页。</p>
+                  <p class="tl"><code>tcp_nodelay</code> 关闭 <span class="term" data-definition="Nagle 算法是个老优化，会把微小的 TCP 出站包攒一会儿再发，以节省带宽。1984 年跑 telnet 很棒，但对延迟敏感的 RPC 客户端就是灾难 —— 它会引入约 40 毫秒的延迟。RPC 场景下必须关掉。">Nagle 算法</span>，让小请求不至于在缓冲区里干等着凑一批。</p>
+                  <p class="tl">保留最多 100 条空闲连接，空闲 90 秒内不回收，这样后续请求就能跳过 TLS 握手。</p>
+                  <p class="tl"><code>gzip</code> 和 <code>brotli</code> 告诉 Helius 压缩回包。2MB 的 JSON 响应能以 200KB 的体量到达。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">预热：给引擎打火</h2>
+            <p>在真正开工之前，<code>main.rs</code> 做了一件看起来毫无意义的事。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">main.rs</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> (_, balances) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">warm</span>(),</span>
+<span class="code-line">    algorithm::<span class="code-function">compute</span>(&amp;client, &amp;args.address),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">它让 <code>warm()</code>（一个微型空调用）和真正的计算并行运行。</p>
+                  <p class="tl"><code>warm()</code> 会打开 TCP + TLS + HTTP/2 连接，并向服务端 ping 一个无关紧要的请求。这些"没劲"的工作，否则会堆在第一次真实请求之前，把几毫秒硬加到关键路径上。</p>
+                  <p class="tl">用 <code>try_join!</code> 两者同时跑，<span class="term" data-definition="握手（handshake）是计算机之间为建立加密连接来回互发的消息过程。TLS 握手通常要 1–2 次往返 —— 如果你只打算发一次请求，这代价就非常贵。">握手</span>在后台进行的时候，算法已经在做它自己的准备工作。真正的拉取落在一条已经热起来的连接上。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">优雅的重试</h2>
+            <p>网络会抖，服务器会过载。生产级客户端会重试 —— 但必须<em>聪明地</em>重试。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — the retry loop</span>
+<pre><code><span class="code-line"><span class="code-keyword">for</span> attempt <span class="code-keyword">in</span> <span class="code-number">0</span>..<span class="code-number">5u32</span> {</span>
+<span class="code-line">    <span class="code-keyword">let</span> http = self.client.<span class="code-function">post</span>(&amp;self.rpc_url)</span>
+<span class="code-line">        .<span class="code-function">json</span>(&amp;request).<span class="code-function">send</span>().<span class="code-function">await</span>?;</span>
+<span class="code-line">    <span class="code-keyword">let</span> status = http.<span class="code-function">status</span>();</span>
+<span class="code-line">    <span class="code-keyword">if</span> status == <span class="code-number">429</span> || status.<span class="code-function">is_server_error</span>() {</span>
+<span class="code-line">        <span class="code-keyword">if</span> attempt &lt; <span class="code-number">4</span> {</span>
+<span class="code-line">            <span class="code-keyword">let</span> ms = <span class="code-number">100</span> * <span class="code-number">2u64</span>.<span class="code-function">pow</span>(attempt);</span>
+<span class="code-line">            tokio::time::<span class="code-function">sleep</span>(Duration::<span class="code-function">from_millis</span>(ms)).<span class="code-function">await</span>;</span>
+<span class="code-line">            <span class="code-keyword">continue</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line">        <span class="code-function">bail!</span>(<span class="code-string">"HTTP {status} after {attempt} retries"</span>);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    ...</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">最多重试 5 次。每次比上次睡得久：100、200、400、800 毫秒。这就是<strong>指数退避</strong>。</p>
+                  <p class="tl">只对值得重试的错误重试：<span class="term" data-definition='HTTP 429 表示"请求太多" —— 你被限流了。退让一会儿再试通常就能过。'>429（限流）</span>和 5xx（服务端抽风）。不要对 4xx 重试 —— 那是你自己做错了，再试多少次也不会对。</p>
+                  <p class="tl">循环里还专门对 Solana 自定义的 RPC 错误码 <code>-32429</code> 重试，这是 Helius 在 JSON-RPC 包体里（不是在 HTTP 层）表示限流的方式。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">通用模式</strong>
+                <p>带次数上限的指数退避，是<em>任何</em>生产客户端对<em>任何</em>不稳定依赖（数据库、支付网关、其他内部服务）的标准重试配方。你要是让 AI 写网络代码，就说"用 5 次上限的指数退避，只在 429 和 5xx 时重试"。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">终极综合题</h2>
+
+            <div class="quiz-container" id="quiz-module4">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>你在新加坡的笔记本上对一个 Helius 在弗吉尼亚的端点跑 <code>sol-pnl-challenge</code>。第一次耗时 1.2 秒。几秒后用同一个钱包再跑一次，变成 450 毫秒。为什么？</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="对。第一次要为跨半个地球的服务器付完整的 TLS 握手 + TCP 慢启动代价。第二次复用连接池（pool_idle_timeout=90 秒），直接跳过握手。这就是 warm() 存在的理由 —— 把这笔代价挪出关键路径。"
+                     data-explanation-wrong="Helius 不会对重复调用者做特殊缓存。算法的工作是确定性的 —— 两次之间不会"变聪明"。差别出在网络连接的状态上。">
+                  <h3 class="quiz-question">最可能的原因是哪个？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Helius 对重复调用者做了结果缓存。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>第二次复用了已经建立的 TLS/HTTP/2 连接，跳过了握手。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>侦察算法第二次跑因为"学到了"钱包密度，变得更快。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>一位用户反馈："我在本地开着紧凑的循环跑这个工具做基准测试，偶尔返回的结果只有大约 80% 的交易数量。没有报错。就是…… 少了。"</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="a"
+                     data-explanation-right="对。单页的 429 是会重试的，但如果一个分页令牌请求连续 5 次被 429，循环就会放弃 —— 调用方只会看到一份比实际短的结果。根因是你对同一个 API key 施加了过高的并发压力。要么降并发，要么谨慎调高 MAX_CONCURRENT。"
+                     data-explanation-wrong="算法不是设计上会丢数据的。去重能隐藏重复项，但造不出"缺失"。"少交易、不报错"的症状根本上指向一条重试链条悄悄放弃了。">
+                  <h3 class="quiz-question">最可能的根因是哪个？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>限流把分页过程中的重试预算耗光了，某段侦察返回了不完整的数据，却没把失败暴露出来。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>去重过于激进，把本来合法的交易也丢掉了。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>HTTP/2 偶尔会丢包，导致响应丢失。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">重试</button>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">你通关了。</h2>
+            <p>你已经从 CLI 解析跟到 JSON 输出，认识了四个文件的职责，理解了三阶段侦察，见过了这份代码里每一个加速旋钮。下次你在指挥 AI 写要跟不稳定网络打交道的程序时，你已经知道该问它要什么：<em>并行往返、流式重叠、并发上限、指数退避、预热连接。</em></p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🏁</div>
+              <div class="callout-content">
+                <strong class="callout-title">用你自己的话复述一遍</strong>
+                <p>"它先并行发两个签名请求，用得到的密度决定中间要跑多少段侦察，任何一段侦察一回来就立刻启动对应的完整交易拉取 —— 全程跑在一条预热好的 HTTP/2 连接上，开着 gzip，遇到限流会重试。"这就是整份代码，浓缩在一句话里。</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

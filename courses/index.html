@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sol-pnl-challenge · Interactive Course / 互动课程</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=DM+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #FAF7F2;
+      --ink: #2C2A28;
+      --ink-muted: #6B6560;
+      --accent: #2D8B55;
+      --accent-hover: #226B41;
+      --accent-light: #E8F5EE;
+      --border: #E5DFD6;
+      --surface: #FFFFFF;
+      --font-display: 'Bricolage Grotesque', 'Noto Sans SC', Georgia, serif;
+      --font-body: 'DM Sans', 'Noto Sans SC', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      background-image: radial-gradient(ellipse at 20% 50%, rgba(45, 139, 85, 0.05) 0%, transparent 50%);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+    }
+    .wrap { max-width: 880px; width: 100%; }
+    .eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2.25rem, 5vw, 3.5rem);
+      line-height: 1.1;
+      margin: 0 0 1rem;
+    }
+    .subtitle {
+      font-size: 1.125rem;
+      color: var(--ink-muted);
+      line-height: 1.6;
+      margin: 0 0 2.5rem;
+      max-width: 600px;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+    .card {
+      display: block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms, border-color 300ms;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(44, 42, 40, 0.08);
+      border-color: var(--accent);
+    }
+    .card-lang {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    .card-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem;
+    }
+    .card-desc {
+      color: var(--ink-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin: 0 0 1rem;
+    }
+    .card-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 0.9rem;
+    }
+    .card:hover .card-cta { color: var(--accent-hover); }
+    .meta {
+      font-size: 0.875rem;
+      color: var(--ink-muted);
+      border-top: 1px solid var(--border);
+      padding-top: 1.5rem;
+      line-height: 1.6;
+    }
+    .meta a { color: var(--accent); text-decoration: none; }
+    .meta a:hover { text-decoration: underline; }
+    .modules-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .modules-list li {
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      padding: 0.25rem 0;
+    }
+    .modules-list .num {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent);
+      font-weight: 600;
+      margin-right: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">Interactive Course · 互动课程</div>
+    <h1>Racing Through Solana<br><span style="color: var(--accent);">狂飙 Solana</span></h1>
+    <p class="subtitle">A visual, interactive walkthrough of <a href="https://github.com/Oliverpt-1/sol-pnl-challenge" style="color: var(--accent); text-decoration: none; font-weight: 600;">sol-pnl-challenge</a> — Oliver's sub-500ms Rust program for computing a Solana wallet's SOL profit-and-loss. Four modules, side-by-side code translations, animated data flow, and scenario quizzes.</p>
+
+    <div class="cards">
+      <a class="card" href="sol-pnl-challenge-en/index.html">
+        <div class="card-lang">EN</div>
+        <h2 class="card-title">Racing Through Solana</h2>
+        <p class="card-desc">How sol-pnl-challenge scouts blockchain data in under 500 milliseconds. Four modules with code translations, an animated three-phase flow, and scenario quizzes.</p>
+        <span class="card-cta">Start course →</span>
+        <ul class="modules-list">
+          <li><span class="num">01</span>The Race to 500ms</li>
+          <li><span class="num">02</span>Meet the Cast</li>
+          <li><span class="num">03</span>The Scout Strategy</li>
+          <li><span class="num">04</span>The Speed Toolbox</li>
+        </ul>
+      </a>
+
+      <a class="card" href="sol-pnl-challenge-zh/index.html">
+        <div class="card-lang">中文</div>
+        <h2 class="card-title">狂飙 Solana</h2>
+        <p class="card-desc">sol-pnl-challenge 是如何在 500 毫秒内扫完链上数据的。四个模块，配代码直译、三阶段动画流和情境小测。</p>
+        <span class="card-cta">开始课程 →</span>
+        <ul class="modules-list">
+          <li><span class="num">01</span>500 毫秒之战</li>
+          <li><span class="num">02</span>认识四位主角</li>
+          <li><span class="num">03</span>侦察兵策略</li>
+          <li><span class="num">04</span>加速工具箱</li>
+        </ul>
+      </a>
+    </div>
+
+    <div class="meta">
+      Built with the <a href="https://github.com/zarazhangrui/codebase-to-course">codebase-to-course</a> skill. Source repo: <a href="https://github.com/Oliverpt-1/sol-pnl-challenge">Oliverpt-1/sol-pnl-challenge</a>.
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,246 @@
+    <section class="module" id="module-2" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">02</span>
+          <h1 class="module-title">认识四位主角</h1>
+          <p class="module-subtitle">四个 Rust 文件，四种截然不同的职责。知道谁管什么，就知道出问题时该戳哪里。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一个四人爵士乐队</h2>
+            <p>把这份代码想象成一个小型爵士四重奏：人数不多，每件乐器都不可或缺，也没有谁跟谁重复。一个人打拍子，一个人即兴旋律，一个人负责跟演出场地通电话，一个人记录曲目单。少任何一个，演出都撑不起来。</p>
+
+            <div class="icon-rows">
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-1)">🎯</div>
+                <div>
+                  <strong>main.rs &mdash; 指挥家</strong>
+                  <p>读取命令行参数、启动秒表、调用算法、汇总数字、打印最终 JSON。约 70 行。几乎不关心具体怎么干活。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-2)">🧭</div>
+                <div>
+                  <strong>algorithm.rs &mdash; 策略师</strong>
+                  <p>大脑所在。决定<em>怎么</em>低成本地获取交易：哪些区间去侦察、哪些要完整拉取、哪些结果先流回来。500 毫秒的魔法就住在这里。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-3)">📡</div>
+                <div>
+                  <strong>rpc.rs &mdash; 信使</strong>
+                  <p>真正跟 Helius 通信的那一位。构造 <span class="term" data-definition="JSON-RPC 是一种用 JSON 格式消息通过 HTTP 做远程过程调用的约定。你 POST 一个包含方法名和参数的 JSON 包体，拿回一个包含结果或错误的 JSON 回包。">JSON-RPC</span> 请求、压缩流量、失败重试。不关心<em>为什么</em>要发这些请求。</p>
+                </div>
+              </div>
+              <div class="icon-row">
+                <div class="icon-circle" style="background: var(--color-actor-4)">📒</div>
+                <div>
+                  <strong>types.rs &mdash; 账本管理员</strong>
+                  <p>只持有 <code>BalancePoint</code> —— 一个描述单笔交易"前余额 X lamports，后余额 Y"的微型结构体。就这样。十二行。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">整个项目的词汇量，浓缩在一个结构体里</h2>
+            <p>这个程序最终打印出的每一个数字，都来自一串 <code>BalancePoint</code>。这是你理解整份代码唯一需要掌握的数据形态。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">types.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">/// One balance observation for a wallet at a specific transaction.</span></span>
+<span class="code-line"><span class="code-keyword">pub struct</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub</span> slot: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> block_time: <span class="code-keyword">Option</span>&lt;<span class="code-keyword">i64</span>&gt;,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> pre_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> post_lamports: <span class="code-keyword">u64</span>,</span>
+<span class="code-line">    <span class="code-keyword">pub</span> signature: <span class="code-keyword">String</span>,</span>
+<span class="code-line">}</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">impl</span> BalancePoint {</span>
+<span class="code-line">    <span class="code-keyword">pub fn</span> <span class="code-function">delta_lamports</span>(&amp;<span class="code-keyword">self</span>) -&gt; <span class="code-keyword">i128</span> {</span>
+<span class="code-line">        <span class="code-keyword">self</span>.post_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span> - <span class="code-keyword">self</span>.pre_lamports <span class="code-keyword">as</span> <span class="code-keyword">i128</span></span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">一个 <strong>BalancePoint</strong> 就是一张快照："在第 X 笔交易处，钱包余额从 <em>pre</em> lamports 变成了 <em>post</em> lamports。"</p>
+                  <p class="tl"><code>slot</code> 是 Solana 版的"区块号" —— 单调递增的 ID，标记这笔交易落在链上时间线的哪一格。</p>
+                  <p class="tl"><code>block_time</code> 是出块的时间戳。可选，因为一些非常老的区块没有这个字段。</p>
+                  <p class="tl"><code>signature</code> 是该笔交易的全局唯一 ID —— 相当于收据号。</p>
+                  <p class="tl"><code>delta_lamports()</code> 是金额运算：post 减 pre。用更大的有符号整数（<code>i128</code>）是因为差值可能为负（你花掉了 SOL），也可能在几千笔交易累加后变得非常大。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">为什么用整数而不是浮点</strong>
+                <p>生产级的金额代码几乎从不用 <code>f64</code>。浮点数会丢精度 —— 把十亿笔 0.1 SOL 累加起来，你得不到正好 100,000,000 SOL。用 lamports 的整数保持精确，只在最后一步为了展示才转成 <code>f64</code>。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">他们是怎么沟通的</h2>
+            <p>跟踪一次真实运行：指挥家醒来，把活派下去，等结果汇总。点击<strong>下一条消息</strong>，一步步看他们的对话。</p>
+
+            <div class="chat-window" id="chat-cast">
+              <div class="chat-messages">
+                <div class="chat-message" data-msg="0" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>各位注意，用户要查钱包 <code>7xKX...</code> 的 PnL。秒表启动。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="1" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>策略师 —— 去算余额历史。信使 —— 同时把 TLS 连接预热了。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="2" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>收到。信使，帮我并行拉最早的 1000 个签名和最新的 1000 个签名。同一时刻发出去。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="3" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>同一条连接上两个 HTTP/2 流现在就发。大约 100 毫秒后回来。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="4" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>两页都到了。这是签名信息 —— slot、区块时间、交易 ID。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="5" data-sender="algo" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-2)">🧭</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-2)">algorithm.rs</span>
+                    <p>钱包有 3,241 笔交易 —— 中间的缺口很大。我要分成 8 段。信使，再发 8 个并行请求，同时把我已经知道的两端开始做完整交易拉取。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="6" data-sender="rpc" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-3)">📡</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-3)">rpc.rs</span>
+                    <p>已在执行。账本管理员 —— 接收这些完整交易。对每一笔，从元数据里抽出钱包的前后余额。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="7" data-sender="types" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-4)">📒</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-4)">types.rs</span>
+                    <p>写入 3,241 个 BalancePoint。每一个都知道自己的 lamports 差值。</p>
+                  </div>
+                </div>
+                <div class="chat-message" data-msg="8" data-sender="main" style="display:none">
+                  <div class="chat-avatar" style="background: var(--color-actor-1)">🎯</div>
+                  <div class="chat-bubble">
+                    <span class="chat-sender" style="color: var(--color-actor-1)">main.rs</span>
+                    <p>累加差值…… 412,500,000 lamports。秒表：487.3 毫秒。打印 JSON。完成。</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-typing" id="chat-typing" style="display:none">
+                <div class="chat-avatar">?</div>
+                <div class="chat-typing-dots">
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                </div>
+              </div>
+
+              <div class="chat-controls">
+                <button class="btn chat-next-btn">下一条消息</button>
+                <button class="btn chat-all-btn">全部播放</button>
+                <button class="btn chat-reset-btn">重播</button>
+                <span class="chat-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">带注释的文件树</h2>
+
+            <div class="file-tree">
+              <div class="ft-folder open">
+                <span class="ft-name">src/</span>
+                <span class="ft-desc">所有 Rust 源码都住在这里</span>
+                <div class="ft-children">
+                  <div class="ft-file">
+                    <span class="ft-name">main.rs</span>
+                    <span class="ft-desc">入口 —— CLI、计时、JSON 输出</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">algorithm.rs</span>
+                    <span class="ft-desc">三阶段侦察：速度的战场</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">rpc.rs</span>
+                    <span class="ft-desc">Helius HTTP 客户端、重试、余额提取</span>
+                  </div>
+                  <div class="ft-file">
+                    <span class="ft-name">types.rs</span>
+                    <span class="ft-desc">BalancePoint —— 唯一的数据结构</span>
+                  </div>
+                </div>
+              </div>
+              <div class="ft-file">
+                <span class="ft-name">Cargo.toml</span>
+                <span class="ft-desc">依赖（reqwest、tokio、clap、serde）+ release 构建调优</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">小测验</h2>
+
+            <div class="quiz-container" id="quiz-module2">
+              <div class="quiz-question-block"
+                   data-correct="c"
+                   data-explanation-right="对 —— 从交易里抽出某个账户的 pre/post 余额，就在 rpc.rs 的 TxResult::extract_balance 里。Helius 响应的 JSON 结构也在这里解码，所以索引错了一定是从这个文件出事的。"
+                   data-explanation-wrong="想一想：哪个文件负责读取 Helius 回来的 JSON？算法只是拿 BalancePoint 来用，不负责造它；类型文件只定义了结构体。">
+                <h3 class="quiz-question">有用户反馈说某个钱包的 PnL 永远显示为 0。你怀疑代码抽到了交易里错误的账户。你会先打开哪个文件？</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>main.rs</code> —— 最终数字是从这里出来的。</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>algorithm.rs</code> —— 所有的拉取都发生在这里。</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>rpc.rs</code> —— 解码交易并抽取钱包余额的就是它这一层。</span>
+                  </button>
+                  <button class="quiz-option" data-value="d" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span><code>types.rs</code> —— 它定义了 BalancePoint，问题一定出在这里。</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">重试</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

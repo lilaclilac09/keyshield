@@ -1,0 +1,140 @@
+    <section class="module" id="module-1" style="background: var(--color-bg)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">01</span>
+          <h1 class="module-title">The Race to 500 Milliseconds</h1>
+          <p class="module-subtitle">A tiny Rust program that asks Solana a big question — and answers it before you can blink.</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">What is this thing?</h2>
+            <p><strong>sol-pnl-challenge</strong> is a <span class="term" data-definition="A CLI — command-line interface — is a program you run by typing into a terminal window instead of clicking buttons. Think of it as talking to your computer in text.">CLI</span> tool that does one job very fast: given a <span class="term" data-definition="On Solana, a wallet is an account identified by a long base58 string of letters and numbers (its public address). It can hold SOL and trigger transactions.">Solana wallet address</span>, it returns how much <span class="term" data-definition="SOL is Solana's native currency — like ETH on Ethereum or BTC on Bitcoin. 1 SOL = 1,000,000,000 lamports (the smallest unit).">SOL</span> that wallet has gained or lost across its entire transaction history.</p>
+            <p>It was written for <em>Mert's Solana dev weekend competition</em> — a contest where the scoring metric was a single number: how many milliseconds your program took to return an answer.</p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">⏱️</div>
+              <div class="callout-content">
+                <strong class="callout-title">Why speed matters here</strong>
+                <p>When a trading app shows you your <span class="term" data-definition="PnL stands for Profit and Loss — the running total of money you've gained or lost. A green PnL means you're up; red means you're down.">PnL</span>, every millisecond a user waits feels like an eternity. The techniques in this codebase — parallel requests, streaming results, smart chunking — are the exact same moves a senior backend engineer would pull to make a production dashboard feel instant.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">What running it looks like</h2>
+            <p>You hand the program a wallet and an <span class="term" data-definition="RPC — Remote Procedure Call — is how one computer asks another computer to do something over the network. Solana has public RPC endpoints you can query for on-chain data.">RPC</span> URL. It prints back JSON.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">CODE</span>
+<pre><code><span class="code-line">$ sol-pnl-challenge \</span>
+<span class="code-line">    --address 7xKX...wallet \</span>
+<span class="code-line">    --rpc-url https://mainnet.helius-rpc.com/?api-key=XXX</span>
+<span class="code-line"></span>
+<span class="code-line">{</span>
+<span class="code-line">  <span class="code-property">"address"</span>: <span class="code-string">"7xKX...wallet"</span>,</span>
+<span class="code-line">  <span class="code-property">"latencyMs"</span>: <span class="code-number">487.3</span>,</span>
+<span class="code-line">  <span class="code-property">"transactionCount"</span>: <span class="code-number">3241</span>,</span>
+<span class="code-line">  <span class="code-property">"pnlLamports"</span>: <span class="code-number">412500000</span>,</span>
+<span class="code-line">  <span class="code-property">"pnlSol"</span>: <span class="code-number">0.4125</span></span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">Run the tool with two required inputs: the wallet to analyze and where to ask for data.</p>
+                  <p class="tl">It hits Helius — a beefy, paid Solana RPC provider — instead of the free public one (which is rate-limited to a crawl).</p>
+                  <p class="tl">The result is a tidy JSON object: which wallet we checked, how long it took in milliseconds, how many transactions we processed, and the running profit or loss in both tiny units (<span class="term" data-definition="A lamport is the smallest divisible unit of SOL, named after Solana's founder. 1,000,000,000 lamports = 1 SOL. The code does math in lamports to avoid floating-point errors, then converts to SOL at the very end.">lamports</span>) and whole SOL.</p>
+                  <p class="tl">Notice the <code>latencyMs: 487.3</code> — that's the whole point of the exercise.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The shape of one run</h2>
+            <p>Every run of the program does the same three things, in this order:</p>
+
+            <div class="step-cards">
+              <div class="step-card">
+                <div class="step-num">1</div>
+                <div class="step-body">
+                  <strong>Parse the command-line arguments</strong>
+                  <p>Pull the wallet address and RPC URL out of what the user typed.</p>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">2</div>
+                <div class="step-body">
+                  <strong>Race out to Helius and collect transactions</strong>
+                  <p>This is the expensive part — hundreds of parallel network calls, all of Module 3.</p>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">3</div>
+                <div class="step-body">
+                  <strong>Add up the balance changes and print JSON</strong>
+                  <p>Each transaction tells us the wallet's balance before and after. Sum the differences → total PnL.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The target on the scoreboard</h2>
+            <p>The README reports these cold-start times across wallets of different sizes:</p>
+
+            <div class="pattern-cards">
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-5)">
+                <div class="pattern-icon" style="background: var(--color-actor-5)">💤</div>
+                <h4 class="pattern-title">Sparse wallets</h4>
+                <p class="pattern-desc">Under 500ms — a wallet with only a handful of transactions barely needs any network calls at all.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+                <div class="pattern-icon" style="background: var(--color-actor-4)">📊</div>
+                <h4 class="pattern-title">Mid-activity</h4>
+                <p class="pattern-desc">Around 400–500ms — a few hundred transactions, fits in the first couple of pages of Helius data.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+                <div class="pattern-icon" style="background: var(--color-actor-2)">🔥</div>
+                <h4 class="pattern-title">High-activity</h4>
+                <p class="pattern-desc">Under 600ms — even wallets with 3,000+ transactions finish before a slow blink.</p>
+              </div>
+            </div>
+
+            <p>These numbers are the <em>entire</em> reason this codebase exists. Every design choice you'll see — why the algorithm has three phases, why the HTTP client looks overbuilt, why there's a <code>warm()</code> function — traces back to shaving milliseconds off those totals.</p>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Quick check</h2>
+
+            <div class="quiz-container" id="quiz-module1">
+              <div class="quiz-question-block"
+                   data-correct="b"
+                   data-explanation-right="Exactly — the bottleneck is always the network. Waiting for Helius to answer dwarfs everything Rust itself is doing. That's why the algorithm's cleverness is all about how to ASK for data, not how to process it."
+                   data-explanation-wrong="Think about what takes the longest when a program has to talk to a server far away. Local math in Rust finishes in microseconds; network round-trips take tens of milliseconds each.">
+                <h3 class="quiz-question">You want to make this tool faster. Where's the biggest win likely to come from?</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>Rewriting the balance-summing loop in assembly for raw CPU speed.</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>Reducing how many trips to Helius we make, and doing the remaining ones in parallel.</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>Adding more worker threads to parse the JSON response.</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answer</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Try Again</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

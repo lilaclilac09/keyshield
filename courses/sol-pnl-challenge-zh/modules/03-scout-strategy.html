@@ -1,0 +1,210 @@
+    <section class="module" id="module-3" style="background: var(--color-bg)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">03</span>
+          <h1 class="module-title">侦察兵策略</h1>
+          <p class="module-subtitle">500 毫秒背后真正的门道：不是全量抓取，而是聪明地抓。先派侦察兵跑一圈，等他们汇报哪里有动静，再派重型部队精准出击。</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一场森林灭火的比喻</h2>
+            <p>想象你是森林火灾应急指挥官。山谷里某处起了火，你不知道具体位置。你手上有两种兵力：<strong>侦察无人机</strong>又轻又快成本又低，但它没法灭火；<strong>消防飞机</strong>能洒水，但每架都慢又贵。</p>
+            <p>最笨的办法是让消防飞机从山谷一头排查到另一头。聪明的办法是先放无人机 —— 大面积并行出动；一旦某架无人机发现冒烟，立刻派消防飞机去那个坐标，不必等其他无人机全部回来。</p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🔥</div>
+              <div class="callout-content">
+                <strong class="callout-title">这就是算法的原样</strong>
+                <p>Helius 提供两种调用：<strong>签名模式</strong>（便宜，每次返回 1000 个 ID —— 无人机）和<strong>完整模式</strong>（贵，每次返回 100 笔厚重交易 —— 消防飞机）。两者消耗的<span class="term" data-definition="RPC 服务商按请求收费，每次调用对应一定的积分（credit）。签名模式和完整模式消耗相同的 credits，但签名每次能多拿 10 倍的数据行。">credits</span>相同，但签名一次能多拿 10 倍的行数。所以先用签名侦察就能以极低成本摸清钱包全貌，再把昂贵的完整拉取只打向真正有交易的区段。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">三阶段可视化</h2>
+            <p>跟着看一次侦察算法的完整运行。注意阶段 1 和阶段 2 是如何重叠的 —— 拉取器不会干等着侦察兵全部回来。</p>
+
+            <div class="flow-animation" data-steps='[
+              {"highlight":"flow-actor-1","label":"阶段 0 开始 —— 算法在一次往返里并行发出两个签名请求。"},
+              {"highlight":"flow-actor-1","label":"请求最早的 1000 个签名（头奖）。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"请求最新的 1000 个签名（尾部）—— 同一瞬间，同一条 HTTP/2 连接。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"Helius 并行回复两段。现在我们已经锁定钱包时间线的两端。"},
+              {"highlight":"flow-actor-1","label":"阶段 2 立刻启动 —— 对两端已知区段发起完整交易拉取，不等。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-1","label":"阶段 1 —— 中间缺口很大。切成 8 段并行侦察。","packet":true,"from":"actor-1","to":"actor-2"},
+              {"highlight":"flow-actor-2","label":"每段侦察返回时，Helius 把签名数据一段一段流式传回。"},
+              {"highlight":"flow-actor-1","label":"一段回来就立即把该段的切片送进完整拉取池。阶段 1 和阶段 2 重叠进行。"},
+              {"highlight":"flow-actor-2","label":"完整交易源源不断流回。每一笔产生一个 BalancePoint。"},
+              {"highlight":"flow-actor-1","label":"全部交易收齐。按签名去重，排序，返回。"}
+            ]'>
+              <div class="flow-actors">
+                <div class="flow-actor" id="flow-actor-1">
+                  <div class="flow-actor-icon">🧭</div>
+                  <span>algorithm.rs</span>
+                </div>
+                <div class="flow-actor" id="flow-actor-2">
+                  <div class="flow-actor-icon">☁️</div>
+                  <span>Helius</span>
+                </div>
+              </div>
+
+              <div class="flow-packet" id="flow-packet"></div>
+
+              <div class="flow-step-label" id="flow-label">点击"下一步"开始这次侦察。</div>
+
+              <div class="flow-controls">
+                <button class="btn flow-next-btn">下一步</button>
+                <button class="btn flow-reset-btn">重启</button>
+                <span class="flow-progress"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">阶段 0 的代码：一次往返的开局</h2>
+            <p>算法做的第一件事，就是全份代码里杠杆最大的一招。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs</span>
+<pre><code><span class="code-line"><span class="code-comment">// ─── Phase 0: jackpot + tail in one RTT ───</span></span>
+<span class="code-line"><span class="code-keyword">let</span> (jackpot, tail_resp) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"asc"</span>,  SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">    client.<span class="code-function">fetch_signatures</span>(address, <span class="code-string">"desc"</span>, SIG_LIMIT, <span class="code-keyword">None</span>, <span class="code-keyword">None</span>),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl"><code>tokio::try_join!</code> 把两个请求在同一时刻启动，等<em>两边</em>都完成才往下走。任何一个报错，整体立即中止。</p>
+                  <p class="tl">第一个请求按 <code>"asc"</code>（升序）方向取签名 —— 钱包<em>最早</em>的 1000 笔交易。代码里给它起的名字叫<span class="term" data-definition='"头奖"是算法给"最早一批签名"起的名字。如果钱包总交易数不超过 1000，单靠头奖就能覆盖整段历史 —— "中头奖"。'>头奖（jackpot）</span>。</p>
+                  <p class="tl">第二个请求用 <code>"desc"</code>（降序）—— 钱包<em>最新</em>的 1000 笔交易（尾部）。</p>
+                  <p class="tl">关键是，两者走<em>同一条</em> HTTP/2 连接同时发。一次<span class="term" data-definition="往返（round-trip）指请求到达服务器加上响应返回回来的总时间。经互联网通常是 20–100 毫秒。把往返次数压到最少，是提速最大的那根杠杆。">往返</span>，两份回答，我们就把钱包时间线的两端钉住了。如果钱包总交易数 ≤ 2000 笔，基本已经完事。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">一条容易被忽略的规则：slot 是原子的</h2>
+            <p>算法把签名切片分块时，需要遵守一条一不留神就踩坑的规则：同一个 <code>slot</code> 里的所有交易必须待在同一个块里。</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — chunk_by_slot</span>
+<pre><code><span class="code-line"><span class="code-comment">/// Group sigs into contiguous slot ranges of roughly `target` sigs</span></span>
+<span class="code-line"><span class="code-comment">/// each. Never splits a single slot across chunks (a slot with N txs</span></span>
+<span class="code-line"><span class="code-comment">/// must be fetched atomically — pagination tokens inside a slot are</span></span>
+<span class="code-line"><span class="code-comment">/// opaque).</span></span>
+<span class="code-line"><span class="code-keyword">fn</span> <span class="code-function">chunk_by_slot</span>(sigs: &amp;[SigResult], target: <span class="code-keyword">usize</span>) -&gt; Vec&lt;(<span class="code-keyword">u64</span>, <span class="code-keyword">u64</span>)&gt; {</span>
+<span class="code-line">    ...</span>
+<span class="code-line">    <span class="code-keyword">if</span> count &gt;= target {</span>
+<span class="code-line">        <span class="code-keyword">let</span> next_slot = sigs.<span class="code-function">get</span>(i + <span class="code-number">1</span>).<span class="code-function">map</span>(|s| s.slot);</span>
+<span class="code-line">        <span class="code-keyword">match</span> next_slot {</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) <span class="code-keyword">if</span> ns == sig.slot =&gt; <span class="code-keyword">continue</span>,</span>
+<span class="code-line">            <span class="code-function">Some</span>(ns) =&gt; { chunks.<span class="code-function">push</span>((chunk_start, sig.slot + <span class="code-number">1</span>)); ... }</span>
+<span class="code-line">            ...</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl"><span class="term" data-definition="在 Solana 上，slot 是一个 400 毫秒的时间窗口，其间由一位验证者产出一个区块。可以把它想成一条每 400 毫秒滴答一次的传送带，每笔交易都落在其中某一格上。">slot</span>是 Solana 的基本时间单位，同一个 slot 里可能有多笔交易。</p>
+                  <p class="tl">如果我们让 Helius"给我 slot 100–200 范围里最早的 50 笔交易"，而 slot 150 一个 slot 里就有 80 笔，它会分页返回 —— 它给的<span class="term" data-definition="分页令牌（pagination token）是服务器给你的一串不透明字符串，用来告诉它"给我下一页"。你不需要解析它，下次请求时原样递过去就行。">分页令牌</span>只对那次请求本身有效，换到另一个并行块里就没法复用。</p>
+                  <p class="tl">所以：如果当前块正好切在一个 slot 中间，就继续把这个 slot 剩下的签名都收进来，等遇到新的 slot 再切。<code>Some(ns) if ns == sig.slot =&gt; continue</code> 这一行做的正是这件事。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-warning">
+              <div class="callout-icon">⚠️</div>
+              <div class="callout-content">
+                <strong class="callout-title">最难察觉的那类 bug</strong>
+                <p>如果你在 slot 中间硬切，你不会收到醒目的报错 —— 只会在最终 PnL 里悄悄<em>少</em>一些交易，而且只在那种一个 400 毫秒的 slot 里就做了十几笔交易的大户钱包上出现。这类边角案例，正是资深工程师对"花式分页"保持警惕的原因。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">为什么按签名去重？</h2>
+            <p>最后一步算法做的是：</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">algorithm.rs — dedup</span>
+<pre><code><span class="code-line">all.<span class="code-function">sort_by</span>(|a, b| a.slot.<span class="code-function">cmp</span>(&amp;b.slot)</span>
+<span class="code-line">    .<span class="code-function">then_with</span>(|| a.signature.<span class="code-function">cmp</span>(&amp;b.signature)));</span>
+<span class="code-line">all.<span class="code-function">dedup_by</span>(|a, b| a.signature == b.signature);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">大白话</span>
+                <div class="translation-lines">
+                  <p class="tl">因为阶段 0 和阶段 1 覆盖的区段可能重叠（尾部会"渗"进侦察区段），同一笔交易可能被拉两次。</p>
+                  <p class="tl">按 <code>signature</code>（交易的全局唯一 ID）去重，是唯一正确的做法。两笔不同的交易可能在同一个 slot 内发生、pre/post 余额也相同（比如你换了代币、SOL 没变），只按 slot 或只按余额去重会把它们错误地合并成一笔。</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">情境小测</h2>
+
+            <div class="quiz-container" id="quiz-module3">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">情境</span>
+                  <p>你想扩展这个工具，除了 SOL 还能跟踪钱包的 <em>USDC</em> 余额。整套侦察算法你仍然可以完全复用。你会改哪里？</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="对。extract_balance 是唯一从交易元数据里抽出某个账户余额的地方。把它改成读代币余额（从 meta.postTokenBalances 而非 meta.postBalances）就够了，侦察流水线一点都不用动。"
+                     data-explanation-wrong="三阶段侦察并不关心你在跟踪哪种币 —— 它只是把完整交易送上来。改算法等于白白重写速度层。">
+                  <h3 class="quiz-question">你会改哪个文件？</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>重写 <code>algorithm.rs</code>，让它去请求 USDC 专用端点。</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>只改 <code>rpc.rs</code> —— 具体是 <code>extract_balance</code> —— 让它读代币余额而不是 lamports。</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>修改 <code>types.rs</code> 的 BalancePoint 让它同时存 SOL 和 USDC，然后把下游全部重写。</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="quiz-question-block"
+                   data-correct="b"
+                   data-explanation-right="对。一个沉寂多年后突然活跃的钱包，中间会有一大段几乎没交易的缺口。自适应分片数（限制在 4–12）正是为了防止我们把请求浪费在空旷区段上。"
+                   data-explanation-wrong="算法不会对所有钱包一视同仁。它从头奖和尾部估算密度，再据此决定中间要侦察几段。均匀切分在稀疏和高密度场景下都会表现糟糕。">
+                <h3 class="quiz-question">为什么算法要先估算交易密度，再决定怎么切分中间的缺口？</h3>
+                <div class="quiz-options">
+                  <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了决定中间用完整模式还是签名模式。</span>
+                  </button>
+                  <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了决定要并行发多少段侦察 —— 密度高的多切几段，稀疏的少切。</span>
+                  </button>
+                  <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                    <div class="quiz-option-radio"></div>
+                    <span>为了在活动度太低时直接跳过中间。</span>
+                  </button>
+                </div>
+                <div class="quiz-feedback"></div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">检查答案</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">重试</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>

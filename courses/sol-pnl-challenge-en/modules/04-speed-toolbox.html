@@ -1,0 +1,218 @@
+    <section class="module" id="module-4" style="background: var(--color-bg-warm)">
+      <div class="module-content">
+        <header class="module-header animate-in">
+          <span class="module-number">04</span>
+          <h1 class="module-title">The Speed Toolbox</h1>
+          <p class="module-subtitle">A guided tour of the small-but-important tuning knobs that turn "fast enough" into "sub-500ms." Each one is a pattern you can ask AI to apply to your own network code.</p>
+        </header>
+
+        <div class="module-body">
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Five dials, all turned up</h2>
+            <p>Imagine tuning a race car. The engine (the algorithm) is doing its thing, but the tires, the aerodynamics, and the pit-stop choreography matter just as much. These are the five dials this codebase turns to shave milliseconds.</p>
+
+            <div class="pattern-cards">
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-1)">
+                <div class="pattern-icon" style="background: var(--color-actor-1)">🛣️</div>
+                <h4 class="pattern-title">HTTP/2 multiplexing</h4>
+                <p class="pattern-desc">Open one TLS connection and run many parallel requests over it. No repeated handshake cost.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-2)">
+                <div class="pattern-icon" style="background: var(--color-actor-2)">🗜️</div>
+                <h4 class="pattern-title">Gzip + Brotli</h4>
+                <p class="pattern-desc">JSON-RPC responses compress 5–10x. Ask the server to send compressed bytes.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-3)">
+                <div class="pattern-icon" style="background: var(--color-actor-3)">🚦</div>
+                <h4 class="pattern-title">Concurrency cap</h4>
+                <p class="pattern-desc">A 100-slot semaphore stops the program from flooding Helius and getting rate-limited.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-4)">
+                <div class="pattern-icon" style="background: var(--color-actor-4)">🔁</div>
+                <h4 class="pattern-title">Exponential backoff</h4>
+                <p class="pattern-desc">Retry on 429 / 5xx, doubling the wait each time. Five tries max. Typical production pattern.</p>
+              </div>
+              <div class="pattern-card" style="border-top: 3px solid var(--color-actor-5)">
+                <div class="pattern-icon" style="background: var(--color-actor-5)">🔥</div>
+                <h4 class="pattern-title">Connection warm-up</h4>
+                <p class="pattern-desc">Fire a tiny throwaway call before the real work so the TLS handshake isn't on the hot path.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The HTTP client, configured once</h2>
+            <p>Every one of those five dials lives in a single block of code. Read the builder like a checklist of decisions.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — HeliusClient::new</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> client = Client::<span class="code-function">builder</span>()</span>
+<span class="code-line">    .<span class="code-function">http2_adaptive_window</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_stream_window_size</span>(<span class="code-number">2</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">http2_initial_connection_window_size</span>(<span class="code-number">16</span> * <span class="code-number">1024</span> * <span class="code-number">1024</span>)</span>
+<span class="code-line">    .<span class="code-function">tcp_nodelay</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_max_idle_per_host</span>(<span class="code-number">100</span>)</span>
+<span class="code-line">    .<span class="code-function">pool_idle_timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">90</span>))</span>
+<span class="code-line">    .<span class="code-function">timeout</span>(Duration::<span class="code-function">from_secs</span>(<span class="code-number">30</span>))</span>
+<span class="code-line">    .<span class="code-function">gzip</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">brotli</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    .<span class="code-function">build</span>()</span>
+<span class="code-line">    .<span class="code-function">expect</span>(<span class="code-string">"failed to build HTTP client"</span>);</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">The big window sizes (2MB per stream, 16MB per connection) tell <span class="term" data-definition="HTTP/2 is the modern version of HTTP that lets one TCP connection carry many parallel requests at once (multiplexing). HTTP/1 would need one connection per request — slow when you're firing dozens at once.">HTTP/2</span> "don't choke me with flow control." Defaults assume tiny responses; ours are fat transaction pages.</p>
+                  <p class="tl"><code>tcp_nodelay</code> disables <span class="term" data-definition="Nagle's algorithm is an old optimization that buffers tiny outgoing TCP packets to save bandwidth. Great for telnet in 1984, terrible for a latency-critical RPC client — it introduces a ~40ms delay. You always disable it for RPC workloads.">Nagle's algorithm</span> so small requests don't sit in a buffer waiting for more bytes to batch.</p>
+                  <p class="tl">Keep up to 100 idle connections alive for 90 seconds so subsequent requests skip the TLS handshake entirely.</p>
+                  <p class="tl"><code>gzip</code> and <code>brotli</code> ask Helius to compress its replies. A 2MB JSON response can arrive as 200KB of bytes.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">The warm-up: priming the engine</h2>
+            <p>Before the real work starts, <code>main.rs</code> does something that looks pointless.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">main.rs</span>
+<pre><code><span class="code-line"><span class="code-keyword">let</span> (_, balances) = tokio::<span class="code-function">try_join!</span>(</span>
+<span class="code-line">    client.<span class="code-function">warm</span>(),</span>
+<span class="code-line">    algorithm::<span class="code-function">compute</span>(&amp;client, &amp;args.address),</span>
+<span class="code-line">)?;</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">It runs <code>warm()</code> — a tiny dummy call — in parallel with the real computation.</p>
+                  <p class="tl"><code>warm()</code> opens the TCP+TLS+HTTP/2 connection and pings the server with a trivial request. That "boring" work would otherwise happen on the first real request and tack extra milliseconds onto the critical path.</p>
+                  <p class="tl">By running both together with <code>try_join!</code>, the <span class="term" data-definition="A handshake is the back-and-forth of messages computers do to establish an encrypted connection. For TLS this is typically 1–2 round-trips — very expensive if you&apos;re only about to make one request.">handshake</span> completes in the background while the algorithm is doing its own setup. The real fetches land on an already-hot connection.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Retries done right</h2>
+            <p>Networks fail. Servers get overloaded. A production-grade client retries — but <em>smartly</em>.</p>
+
+            <div class="translation-block">
+              <div class="translation-code">
+                <span class="translation-label">rpc.rs — the retry loop</span>
+<pre><code><span class="code-line"><span class="code-keyword">for</span> attempt <span class="code-keyword">in</span> <span class="code-number">0</span>..<span class="code-number">5u32</span> {</span>
+<span class="code-line">    <span class="code-keyword">let</span> http = self.client.<span class="code-function">post</span>(&amp;self.rpc_url)</span>
+<span class="code-line">        .<span class="code-function">json</span>(&amp;request).<span class="code-function">send</span>().<span class="code-function">await</span>?;</span>
+<span class="code-line">    <span class="code-keyword">let</span> status = http.<span class="code-function">status</span>();</span>
+<span class="code-line">    <span class="code-keyword">if</span> status == <span class="code-number">429</span> || status.<span class="code-function">is_server_error</span>() {</span>
+<span class="code-line">        <span class="code-keyword">if</span> attempt &lt; <span class="code-number">4</span> {</span>
+<span class="code-line">            <span class="code-keyword">let</span> ms = <span class="code-number">100</span> * <span class="code-number">2u64</span>.<span class="code-function">pow</span>(attempt);</span>
+<span class="code-line">            tokio::time::<span class="code-function">sleep</span>(Duration::<span class="code-function">from_millis</span>(ms)).<span class="code-function">await</span>;</span>
+<span class="code-line">            <span class="code-keyword">continue</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line">        <span class="code-function">bail!</span>(<span class="code-string">"HTTP {status} after {attempt} retries"</span>);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    ...</span>
+<span class="code-line">}</span></code></pre>
+              </div>
+              <div class="translation-english">
+                <span class="translation-label">PLAIN ENGLISH</span>
+                <div class="translation-lines">
+                  <p class="tl">Try up to 5 times total. On each retry, sleep longer than the last: 100ms, then 200, 400, 800. This is <strong>exponential backoff</strong>.</p>
+                  <p class="tl">Only retry on the errors that are worth retrying: <span class="term" data-definition="HTTP 429 is the server saying &quot;too many requests&quot; — you&apos;ve hit a rate limit. Backing off and trying again in a moment usually works.">429 (rate-limited)</span> and 5xx (server having a bad day). Don't retry on 4xx — those mean you did something wrong and retrying won't fix it.</p>
+                  <p class="tl">The loop also specifically retries on Solana's custom RPC error code <code>-32429</code>, which is how Helius signals rate-limiting inside the JSON-RPC envelope (not at the HTTP layer).</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="callout callout-info">
+              <div class="callout-icon">💡</div>
+              <div class="callout-content">
+                <strong class="callout-title">Universal pattern</strong>
+                <p>Exponential backoff with a cap on attempts is the standard retry recipe for <em>any</em> production client talking to <em>any</em> flaky dependency — databases, payment processors, other internal services. If you're ever asking an AI to write network code, say "use exponential backoff with 5 max attempts, only retry on 429 and 5xx."</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">Final synthesis quiz</h2>
+
+            <div class="quiz-container" id="quiz-module4">
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">Scenario</span>
+                  <p>You run <code>sol-pnl-challenge</code> from a laptop in Singapore against a Helius endpoint in Virginia. The first run takes 1.2 seconds. The second run (same wallet, moments later) takes 450ms. Why?</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="b"
+                     data-explanation-right="Exactly. The first run pays the full TLS handshake + TCP slow-start cost to a server on the other side of the planet. The second run reuses the connection pool (pool_idle_timeout=90s) and skips the handshake. This is why warm() exists — to push that cost off the critical path."
+                     data-explanation-wrong="Helius doesn't special-case repeat callers. The algorithm's work is deterministic — it doesn't get smarter between runs. The difference is in the network connection state.">
+                  <h3 class="quiz-question">What's the most likely explanation?</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Helius caches results for repeat callers.</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>The second run reuses an already-established TLS/HTTP/2 connection, skipping the handshake.</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>The scout algorithm is smarter the second time because it learned the wallet's density.</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <div class="scenario-block">
+                <div class="scenario-context">
+                  <span class="scenario-label">Scenario</span>
+                  <p>A user reports: "I've been running my own copy of this tool in a tight loop for benchmarking, and it sometimes returns with only about 80% of the transactions. No error. Just... fewer."</p>
+                </div>
+                <div class="quiz-question-block"
+                     data-correct="a"
+                     data-explanation-right="Correct. 429s on individual pages are retried, but if a pagination token request gets 429'd 5 times in a row, the loop bails — and the caller just sees a short result set. The root cause is running too many concurrent benchmarks against one API key. Slow down, or raise the MAX_CONCURRENT limit thoughtfully."
+                     data-explanation-wrong="The algorithm isn't lossy by design. Dedup could hide duplicates but can't create missing ones. The fundamental symptom — fewer transactions, no error — points to a retry chain that eventually gave up silently.">
+                  <h3 class="quiz-question">What's the most likely cause?</h3>
+                  <div class="quiz-options">
+                    <button class="quiz-option" data-value="a" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>Rate-limiting is exhausting the retry budget mid-pagination, so a scout partition returns partial data without surfacing the failure.</span>
+                    </button>
+                    <button class="quiz-option" data-value="b" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>The dedup step is over-aggressive and dropping legitimate transactions.</span>
+                    </button>
+                    <button class="quiz-option" data-value="c" onclick="selectOption(this)">
+                      <div class="quiz-option-radio"></div>
+                      <span>HTTP/2 occasionally loses packets, dropping responses.</span>
+                    </button>
+                  </div>
+                  <div class="quiz-feedback"></div>
+                </div>
+              </div>
+
+              <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+              <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+            </div>
+          </section>
+
+          <section class="screen animate-in">
+            <h2 class="screen-heading">You made it.</h2>
+            <p>You've traced a full run from CLI parsing to JSON output, met all four files, understood the three-phase scout, and seen every speed knob this codebase turns. Next time you're steering an AI to build something that talks to a flaky network, you already know what to ask for: <em>parallel round-trips, streaming overlap, capped concurrency, exponential backoff, and a warm connection.</em></p>
+
+            <div class="callout callout-accent">
+              <div class="callout-icon">🏁</div>
+              <div class="callout-content">
+                <strong class="callout-title">Say it back in your own words</strong>
+                <p>"It fires two parallel signature requests first, uses the density to decide how many scout partitions to run in the middle, and streams the full-transaction fetches as soon as any scout returns — all over one warmed-up HTTP/2 connection with gzip on and retries on rate limits." That's the whole codebase in one sentence.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
