@@ -13,6 +13,8 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, X-Payment-Proof, X-Payment-Required, X-Payment-Amount',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  // Without this, browser JS can't read custom response headers (CORS blocks them)
+  'Access-Control-Expose-Headers': 'X-Payment-Required, X-Payment-Amount, X-Payment-Memo, X-Payment-Network, X-Payment-Recipient',
 };
 
 const server = http.createServer((req, res) => {

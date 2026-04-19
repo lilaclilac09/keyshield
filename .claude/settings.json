@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(ls -la /Users/aileen/Downloads/privacy_hack/keyshield/extension/dist/*.js)",
-      "Bash(awk '{print $5, $9}')"
+      "Bash(awk '{print $5, $9}')",
+      "Bash(~/.claude/skills/gstack/bin/gstack-config get *)",
+      "Skill(gstack-upgrade)",
+      "Skill(gstack-upgrade:*)",
+      "WebSearch"
     ]
   }
 }
