@@ -28,6 +28,8 @@ import httpx
 from pydantic import BaseModel
 
 from . import vault, session
+from . import api_router
+from .skills import helius_skill
 
 MAX_BODY = 1_000_000  # 1 MB
 
@@ -225,18 +227,44 @@ async def proxy(upstream: str, path: str, request: Request, sess: dict = Depends
 
     api_key = _resolve_key(sess, upstream)
 
-    fwd_headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in ("host", "authorization", "content-length")
-    }
+    # ── Helius JSON-RPC → optimized router ───────────────────────────────────
+    if upstream == "helius" and request.method == "POST":
+        try:
+            rpc = json.loads(body)
+        except Exception:
+            rpc = None
+        if isinstance(rpc, dict) and "method" in rpc:
+            result, cache_status = await api_router.call_helius(
+                rpc["method"], rpc.get("params", []), api_key, rpc.get("id", 1)
+            )
+            return Response(
+                content=json.dumps(result).encode(), status_code=200,
+                headers={"content-type": "application/json", "x-ks-cache": cache_status},
+            )
+
+    # ── OpenAI / Anthropic / others → REST router ─────────────────────────────
+    provider_map = {"openai": "openai", "anthropic": "anthropic",
+                    "cohere": "cohere", "groq": "groq", "mistral": "mistral"}
+    if upstream in provider_map:
+        extra = {k: v for k, v in request.headers.items()
+                 if k.lower() not in ("host", "authorization", "content-length", "content-type")}
+        content, status, cache_status = await api_router.call_rest(
+            provider_map[upstream], request.method,
+            f"/{path}" + (f"?{request.url.query}" if request.url.query else ""),
+            body, api_key, extra,
+        )
+        return Response(content=content, status_code=status,
+                        headers={"content-type": "application/json", "x-ks-cache": cache_status})
+
+    # ── Fallback: generic forward ─────────────────────────────────────────────
+    fwd_headers = {k: v for k, v in request.headers.items()
+                   if k.lower() not in ("host", "authorization", "content-length")}
     fwd_headers["authorization"] = f"Bearer {api_key}"
-
     url_path = path + (f"?{request.url.query}" if request.url.query else "")
-
     status, resp_headers, content, cache_status = await _forward(
         upstream, url_path, request.method, fwd_headers, body
     )
-    resp_headers.pop("content-encoding", None)  # httpx 已解压，移除避免客户端误判
+    resp_headers.pop("content-encoding", None)
     resp_headers["x-ks-cache"] = cache_status
     return Response(content=content, status_code=status, headers=resp_headers)
 
@@ -275,29 +303,43 @@ async def batch(payload: BatchBody, sess: dict = Depends(_session)):
     async def run_one(item: BatchItem) -> dict:
         if item.upstream not in UPSTREAMS:
             return {"error": "unknown upstream"}
+        try:
+            api_key = _resolve_key(sess, item.upstream)
+        except HTTPException as e:
+            return {"error": e.detail}
 
         raw = json.dumps(item.body).encode() if item.body is not None else b""
         if len(raw) > MAX_BODY:
             return {"error": "payload too large"}
 
         try:
-            api_key = _resolve_key(sess, item.upstream)
-        except HTTPException as e:
-            return {"error": e.detail}
+            # Helius JSON-RPC
+            if item.upstream == "helius" and isinstance(item.body, dict) and "method" in item.body:
+                result, cache_status = await api_router.call_helius(
+                    item.body["method"], item.body.get("params", []),
+                    api_key, item.body.get("id", 1)
+                )
+                return {"status": 200, "cache": cache_status, "data": result}
 
-        headers = {
-            "authorization": f"Bearer {api_key}",
-            "content-type": "application/json",
-        }
-        try:
+            # REST providers
+            provider_map = {"openai": "openai", "anthropic": "anthropic",
+                            "cohere": "cohere", "groq": "groq", "mistral": "mistral"}
+            if item.upstream in provider_map:
+                content, status, cache_status = await api_router.call_rest(
+                    provider_map[item.upstream], item.method,
+                    f"/{item.path}" if item.path else "/",
+                    raw, api_key,
+                )
+                return {"status": status, "cache": cache_status,
+                        "data": json.loads(content) if content else None}
+
+            # Fallback
             status, _, content, cache_status = await _forward(
-                item.upstream, item.path, item.method, headers, raw
+                item.upstream, item.path, item.method,
+                {"authorization": f"Bearer {api_key}", "content-type": "application/json"}, raw
             )
-            return {
-                "status": status,
-                "cache": cache_status,
-                "data": json.loads(content) if content else None,
-            }
+            return {"status": status, "cache": cache_status,
+                    "data": json.loads(content) if content else None}
         except Exception as e:
             return {"error": str(e)}
 
@@ -305,11 +347,47 @@ async def batch(payload: BatchBody, sess: dict = Depends(_session)):
     return {"results": list(results)}
 
 
+# ─── Helius skill ────────────────────────────────────────────────────────────
+
+class SkillRunBody(BaseModel):
+    tool: str
+    inputs: dict[str, Any] = {}
+
+
+@app.post("/skill/helius/run")
+async def skill_helius_run(body: SkillRunBody, sess: dict = Depends(_session)):
+    """
+    Run a single Helius skill tool by name.
+    The caller's stored Helius API key (or platform key) is injected automatically.
+
+    Example:
+      POST /skill/helius/run
+      {"tool": "portfolio", "inputs": {"wallet": "9WzDX..."}}
+    """
+    api_key = _resolve_key(sess, "helius")
+    try:
+        result = await helius_skill.run_tool(body.tool, body.inputs, api_key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"tool": body.tool, "result": result}
+
+
+@app.get("/skill/helius/tools")
+async def skill_helius_tools():
+    """Return the list of available Helius skill tool schemas."""
+    return {"tools": helius_skill.TOOL_SCHEMAS}
+
+
 # ─── health ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "2.0", "cache_entries": len(_CACHE)}
+    return {
+        "status": "ok",
+        "version": "2.0",
+        "generic_cache": len(_CACHE),
+        "router": api_router.cache_stats(),
+    }
 
 
 

@@ -192,16 +192,15 @@ def _login_token(user_id: str, password: str = "pw") -> str:
 
 def test_cache_header_present_on_proxy(monkeypatch):
     """
-    mock _forward 验证缓存头存在，不需要真实 Helius key。
+    mock helius_router.route — Helius requests now go through the optimized router.
     """
     import src.server as srv
+    import src.api_router as router
 
-    async def fake_forward(upstream, path, method, headers, body):
-        return 200, {"content-type": "application/json"}, b'{"result":42}', "MISS"
+    async def fake_helius(method, params, api_key, rpc_id=1):
+        return {"jsonrpc": "2.0", "id": rpc_id, "result": 42}, "MISS"
 
-    monkeypatch.setattr(srv, "_forward", fake_forward)
-
-    # User B path: 需要平台 key；设个假的
+    monkeypatch.setattr(router, "call_helius", fake_helius)
     monkeypatch.setitem(srv.PLATFORM_KEYS, "helius", "fake-platform-key")
 
     token = _login_token("cache-test-user")
@@ -211,4 +210,4 @@ def test_cache_header_present_on_proxy(monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 200
-    assert r.headers.get("x-ks-cache") in ("HIT", "MISS")
+    assert r.headers.get("x-ks-cache") in ("HIT", "MISS", "STALE", "DEDUP")
