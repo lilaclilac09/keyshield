@@ -22,6 +22,25 @@ import { ArciumMPC } from './arcium';
 import { X402Client } from './x402';
 import { KeyShieldClient } from './client';
 
+// Re-export session management (per-device 2-hour grant lifecycle).
+export {
+  SessionManager,
+  parseActiveSessions,
+  encodeGrantAgentAccessData,
+  encodeRevokeAgentAccessData,
+  encodeRevokeAllAgentsData,
+  deriveUniversalVaultPda,
+  isSessionExpired,
+  VAULT_LAYOUT,
+  IX,
+  DEFAULT_SESSION_DURATION_SECS,
+} from './session';
+export type {
+  SessionInfo,
+  GrantSessionParams,
+  SessionManagerConfig,
+} from './session';
+
 // Re-export types
 export type {
   AgentGrant,
@@ -188,16 +207,20 @@ export class KeyShieldAgent {
       proof,
     });
     
-    // Decrypt each key
-    const decryptedKeys: Record<string, string> = {};
-    for (const [name, keyData] of Object.entries(keys)) {
-      decryptedKeys[name] = await this.lit.decrypt({
-        encryptedData: keyData.encryptedData,
-        encryptedSymmetricKey: keyData.encryptedSymmetricKey,
-      });
-    }
-    
-    return decryptedKeys;
+    // Decrypt each key in parallel — Lit decrypt is a network call, so
+    // serializing N of them with `await` inside a for loop was an easy
+    // 500ms-2s win to remove. See docs/roadmap/VAULT_FACEID_BACKLOG.md P1-8.
+    const entries = Object.entries(keys);
+    const decrypted = await Promise.all(
+      entries.map(async ([name, keyData]) => {
+        const plaintext = await this.lit.decrypt({
+          encryptedData: keyData.encryptedData,
+          encryptedSymmetricKey: keyData.encryptedSymmetricKey,
+        });
+        return [name, plaintext] as const;
+      }),
+    );
+    return Object.fromEntries(decrypted);
   }
   
   /**
