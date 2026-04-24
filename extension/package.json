@@ -7,7 +7,10 @@
     "build": "plasmoid build",
     "build:chrome": "plasmoid build --target chrome",
     "build:firefox": "plasmoid build --target firefox",
-    "package": "plasmoid package"
+    "package": "plasmoid package",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -17,10 +20,6 @@
     "@lit-protocol/lit-node-client": "^7.4.0",
     "@lit-protocol/constants": "^9.0.1",
     "@lit-protocol/auth-helpers": "^8.2.1",
-    "@x402/core": "^2.0.0",
-    "@x402/svm": "^2.0.0",
-    "@plasmoid/api": "^0.2.0",
-    "@plasmoid/utils": "^0.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "idb": "^8.0.3",
@@ -34,10 +33,11 @@
     "@types/node": "^22.14.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@keyshield/agent-sdk": "*",
     "typescript": "~5.4.5",
-    "plasmoid": "^0.2.0",
     "tailwindcss": "^3.4.3",
     "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38"
+    "postcss": "^8.4.38",
+    "vitest": "^2.1.9"
   }
 }

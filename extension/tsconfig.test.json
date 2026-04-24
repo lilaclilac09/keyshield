@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "chrome", "node"],
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/lib/auth.ts",
+    "src/lib/vault.ts",
+    "src/lib/session.ts",
+    "src/lib/**/*.test.ts"
+  ]
+}

@@ -2,7 +2,8 @@
   "name": "keyshield",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "extension"
   ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",
