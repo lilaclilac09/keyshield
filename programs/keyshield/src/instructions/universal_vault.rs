@@ -192,9 +192,8 @@ pub fn process_update_universal_policy(
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    // Get current timestamp
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    // Current timestamp from Clock sysvar (replaces earlier hardcoded 0).
+    let timestamp = Clock::get()?.unix_timestamp as u64;
 
     match update_type {
         // Set flags
@@ -343,8 +342,8 @@ pub fn process_add_key_to_group(
                 vault_data[offset + 3] = 0; // reserved
                 // key_hashes at offset + 4 (32 bytes)
                 // created_at at offset + 40 (8 bytes)
-                let timestamp = 0u64;
-                // timestamp placeholder
+                let timestamp = Clock::get()?.unix_timestamp as u64;
+                vault_data[offset + 40..offset + 48].copy_from_slice(&timestamp.to_le_bytes());
 
                 vault_data[60] = key_group_count + 1;
                 group_idx = Some(i);
@@ -369,9 +368,9 @@ pub fn process_add_key_to_group(
 
     vault_data[group_offset + 2] = key_count + 1;
 
-    // Update updated_at
-    let timestamp = 0u64;
-    // timestamp placeholder
+    // Update updated_at at the vault-level offset.
+    let timestamp = Clock::get()?.unix_timestamp as u64;
+    vault_data[48..56].copy_from_slice(&timestamp.to_le_bytes());
 
     Ok(())
 }
