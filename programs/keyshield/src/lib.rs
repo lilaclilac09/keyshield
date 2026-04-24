@@ -29,6 +29,7 @@ use instructions::{
     agent_access::{
         process_grant_agent_access,
         process_revoke_agent_access,
+        process_revoke_all_agents,
         process_access_with_agent,
         process_create_ephemeral_signer,
     },
@@ -94,6 +95,7 @@ fn process_instruction(
         Instruction::RevokeAgentAccess => process_revoke_agent_access(program_id, accounts, data),
         Instruction::AccessWithAgent => process_access_with_agent(program_id, accounts, data),
         Instruction::CreateEphemeralSigner => process_create_ephemeral_signer(program_id, accounts, data),
+        Instruction::RevokeAllAgents => process_revoke_all_agents(program_id, accounts, data),
         
         // Payment Stream instructions
         Instruction::GrantAgentPaymentAccess => process_grant_agent_payment_access(program_id, accounts, data),
@@ -124,7 +126,8 @@ mod tests {
         assert_eq!(Instruction::try_from_u8(21), Some(Instruction::RevokeAgentAccess));
         assert_eq!(Instruction::try_from_u8(22), Some(Instruction::AccessWithAgent));
         assert_eq!(Instruction::try_from_u8(23), Some(Instruction::CreateEphemeralSigner));
-        
+        assert_eq!(Instruction::try_from_u8(24), Some(Instruction::RevokeAllAgents));
+
         // Payment Stream
         assert_eq!(Instruction::try_from_u8(30), Some(Instruction::GrantAgentPaymentAccess));
         assert_eq!(Instruction::try_from_u8(31), Some(Instruction::SettlePayment));

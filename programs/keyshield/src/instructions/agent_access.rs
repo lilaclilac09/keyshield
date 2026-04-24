@@ -118,9 +118,10 @@ pub fn process_grant_agent_access(
         return Err(KeyShieldError::PaymentNotEnabled.into());
     }
 
-    // Get current timestamp
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    // Get current timestamp from Clock sysvar.
+    // (Was previously hardcoded to 0, which silently disabled session expiry.
+    // See docs/technical/LOCAL_VAULT_ARCHITECTURE.md section 六.)
+    let timestamp = Clock::get()?.unix_timestamp as u64;
 
     // Find empty agent grant slot or update existing
     let agent_grants_start = 768; // After key groups
@@ -188,6 +189,71 @@ pub fn process_grant_agent_access(
     }
 
     // Update updated_at
+    vault_data[48..56].copy_from_slice(&timestamp.to_le_bytes());
+
+    Ok(())
+}
+
+/// Process RevokeAllAgents instruction ("sign out everywhere").
+///
+/// Deactivates every agent grant in the vault at once by setting is_active = 0
+/// on every occupied slot and zeroing agent_grant_count. Useful when the user
+/// wants to revoke all sessions across all devices in one action.
+///
+/// Accounts:
+/// 0. [signer] Owner - The vault owner
+/// 1. [writable] UniversalVault - PDA account
+///
+/// Instruction data: none.
+pub fn process_revoke_all_agents(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    _data: &[u8],
+) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let owner = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+    if !owner.is_signer() {
+        return Err(KeyShieldError::InvalidVaultOwner.into());
+    }
+
+    let mut vault_data = vault.try_borrow_mut_data()?;
+    if vault_data.len() < UniversalVault::SIZE {
+        return Err(KeyShieldError::UniversalVaultNotFound.into());
+    }
+
+    let discriminator = &vault_data[0..8];
+    if discriminator != UniversalVault::DISCRIMINATOR {
+        return Err(KeyShieldError::UniversalVaultNotFound.into());
+    }
+
+    let owner_bytes: [u8; 32] = vault_data[8..40].try_into()
+        .map_err(|_| KeyShieldError::UniversalVaultNotFound)?;
+    let vault_owner = Pubkey::try_from(&owner_bytes[..])
+        .map_err(|_| KeyShieldError::UniversalVaultNotFound)?;
+
+    if owner.key() != &vault_owner {
+        return Err(KeyShieldError::InvalidVaultOwner.into());
+    }
+
+    // Deactivate every slot that currently holds a grant. A slot is considered
+    // occupied if its agent_pubkey isn't all-zero.
+    let agent_grants_start = 768usize;
+    let agent_grant_size = 128usize;
+    for i in 0..MAX_AGENTS {
+        let offset = agent_grants_start + (i * agent_grant_size);
+        let slot_occupied = vault_data[offset..offset + 32].iter().any(|&b| b != 0);
+        if slot_occupied {
+            vault_data[offset + 58] = 0; // is_active = 0
+        }
+    }
+
+    // Reset the counter — all grants are now inactive.
+    vault_data[61] = 0;
+
+    // Update vault's updated_at from Clock sysvar.
+    let timestamp = Clock::get()?.unix_timestamp as u64;
     vault_data[48..56].copy_from_slice(&timestamp.to_le_bytes());
 
     Ok(())
@@ -275,9 +341,9 @@ pub fn process_revoke_agent_access(
         return Err(KeyShieldError::AgentGrantNotFound.into());
     }
 
-    // Update updated_at
-    let timestamp = 0u64;
-    // timestamp placeholder
+    // Update updated_at from Clock sysvar.
+    let timestamp = Clock::get()?.unix_timestamp as u64;
+    vault_data[48..56].copy_from_slice(&timestamp.to_le_bytes());
 
     Ok(())
 }
@@ -359,8 +425,10 @@ pub fn process_access_with_agent(
                             .map_err(|_| KeyShieldError::AgentGrantExpired)?
                     );
 
-                    let timestamp = 0u64;
-                    if timestamp > created_at + session_timeout {
+                    let timestamp = Clock::get()?.unix_timestamp as u64;
+                    // session_timeout == 0 means the grant has no expiry
+                    // (useful for testing and for legacy unlimited grants).
+                    if session_timeout > 0 && timestamp > created_at.saturating_add(session_timeout) {
                         return Err(KeyShieldError::AgentGrantExpired.into());
                     }
 

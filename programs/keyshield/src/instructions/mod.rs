@@ -32,6 +32,7 @@ pub enum Instruction {
     RevokeAgentAccess = 21,
     AccessWithAgent = 22,
     CreateEphemeralSigner = 23,
+    RevokeAllAgents = 24,
 
     // Payment Stream instructions (30-39)
     GrantAgentPaymentAccess = 30,
@@ -58,6 +59,7 @@ impl Instruction {
             21 => Some(Instruction::RevokeAgentAccess),
             22 => Some(Instruction::AccessWithAgent),
             23 => Some(Instruction::CreateEphemeralSigner),
+            24 => Some(Instruction::RevokeAllAgents),
             
             // Payment Stream
             30 => Some(Instruction::GrantAgentPaymentAccess),

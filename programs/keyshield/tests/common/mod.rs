@@ -32,3 +32,12 @@ pub fn share_pda(vault: &Pubkey, recipient: &Pubkey) -> (Pubkey, u8) {
         &program_id(),
     )
 }
+
+/// Derive UniversalVault PDA (seeds: b"universal_vault", owner).
+#[allow(dead_code)]
+pub fn universal_vault_pda(owner: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[b"universal_vault", owner.as_ref()],
+        &program_id(),
+    )
+}

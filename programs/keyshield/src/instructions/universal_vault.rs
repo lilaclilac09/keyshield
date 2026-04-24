@@ -121,8 +121,8 @@ pub fn process_create_universal_vault(
         }
     }
 
-    // Get current timestamp (placeholder - in production use clock sysvar)
-    let timestamp = 0;
+    // Current timestamp from Clock sysvar (seconds since unix epoch).
+    let timestamp = Clock::get()?.unix_timestamp as u64;
 
     // Initialize new vault
     let vault_state = UniversalVault::new(*owner.key(), timestamp);
