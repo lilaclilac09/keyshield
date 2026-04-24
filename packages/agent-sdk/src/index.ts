@@ -69,26 +69,43 @@ export class KeyShieldAgent {
   private agentPubkey: PublicKey | null = null;
   private ownerPubkey: PublicKey | null = null;
   
+  readonly connection: Connection;
+
   constructor(config: {
-    rpcUrl: string;
+    /** Either supply a URL (a new Connection is created) ... */
+    rpcUrl?: string;
+    /** ... or pass an existing Connection to reuse across the app.
+     *  Reusing one Connection avoids rebuilding the HTTP agent / idle
+     *  pool / WebSocket on every SDK instance. See P2-4. */
+    connection?: Connection;
     programId: string;
     lit?: {
       network: 'datil-dev' | 'datil';
       chain: 'solana';
     };
   }) {
-    const connection = new Connection(config.rpcUrl);
-    
+    if (config.connection) {
+      this.connection = config.connection;
+    } else if (config.rpcUrl) {
+      this.connection = new Connection(config.rpcUrl);
+    } else {
+      throw new Error(
+        'KeyShieldAgent requires either `connection` or `rpcUrl`. ' +
+          'For production, pass in a Connection pointing at a paid RPC ' +
+          '(Helius / Triton / QuickNode) — public mainnet-beta is rate-limited.',
+      );
+    }
+
     this.client = new KeyShieldClient({
-      connection,
+      connection: this.connection,
       programId: new PublicKey(config.programId),
     });
-    
+
     this.lit = new LitProtocol(config.lit || {
       network: 'datil-dev',
       chain: 'solana',
     });
-    
+
     this.bonsol = new BonsolVerifier();
     this.arcium = new ArciumMPC();
     this.x402 = new X402Client();
@@ -210,7 +227,7 @@ export class KeyShieldAgent {
     // Decrypt each key in parallel — Lit decrypt is a network call, so
     // serializing N of them with `await` inside a for loop was an easy
     // 500ms-2s win to remove. See docs/roadmap/VAULT_FACEID_BACKLOG.md P1-8.
-    const entries = Object.entries(keys);
+    const entries = Object.entries(keys as Record<string, any>);
     const decrypted = await Promise.all(
       entries.map(async ([name, keyData]) => {
         const plaintext = await this.lit.decrypt({
@@ -491,7 +508,7 @@ export class EphemeralSignerSession {
   public readonly expiry: number;
   public readonly allowedActions: string[];
   private privateKey: Uint8Array;
-  
+
   constructor(
     publicKey: PublicKey,
     privateKey: Uint8Array,
@@ -499,7 +516,10 @@ export class EphemeralSignerSession {
     allowedActions: string[]
   ) {
     this.publicKey = publicKey;
-    privateKey = privateKey;
+    // Bug fix: previous code wrote `privateKey = privateKey;` which
+    // reassigned the parameter back to itself and left `this.privateKey`
+    // uninitialized. tsc caught this once strict mode was turned on.
+    this.privateKey = privateKey;
     this.expiry = expiry;
     this.allowedActions = allowedActions;
   }

@@ -16,33 +16,19 @@ export interface EphemeralSignerResult {
   allowedActions: string[];
 }
 
-export interface CreateEphemeralSignerParams {
-  allowedActions: string[];
-  expirySeconds: number;
-  proof?: Uint8Array;
-}
-
-export interface ShareKeyParams {
-  fromAgent: string;
-  toAgent: string;
-  keyName?: string;
-  [key: string]: unknown;
-}
-
 export class ArciumMPC {
-  async createEphemeralSigner(
-    params: CreateEphemeralSignerParams,
-  ): Promise<EphemeralSignerResult> {
+  async createEphemeralSigner(params: any): Promise<EphemeralSignerResult> {
     const kp = Keypair.generate();
+    const expirySecs = params?.expirySeconds ?? 7200;
     return {
       publicKey: kp.publicKey,
       privateKey: kp.secretKey,
-      expiry: Date.now() + params.expirySeconds * 1000,
-      allowedActions: params.allowedActions,
+      expiry: Date.now() + expirySecs * 1000,
+      allowedActions: params?.allowedActions ?? [],
     };
   }
 
-  async shareKey(_params: ShareKeyParams): Promise<void> {
+  async shareKey(_params: any): Promise<void> {
     throw new Error('ArciumMPC.shareKey is a stub.');
   }
 }

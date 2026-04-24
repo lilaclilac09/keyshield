@@ -289,12 +289,48 @@ npm run demo
 
 ## Configuration
 
+### RPC Provider Requirement
+
+> **KeyShield will not perform well on the public `mainnet-beta` endpoint.**
+
+The public Solana RPC (`https://api.mainnet-beta.solana.com`) is heavily rate-limited and is explicitly not supported for production use. Under even modest load you will see HTTP 429s mid-pagination and `grant` / `revoke` transactions that sit unlanded for minutes.
+
+Use one of:
+
+| Provider | URL shape | Notes |
+|---|---|---|
+| [Helius](https://www.helius.dev/) | `https://mainnet.helius-rpc.com/?api-key=YOUR_KEY` | Recommended. Has a WebSocket endpoint for `accountSubscribe`. |
+| [Triton](https://triton.one/) | `https://<your-endpoint>.rpcpool.com/...` | Dedicated nodes, low latency. |
+| [QuickNode](https://www.quicknode.com/chains/sol) | `https://<your-endpoint>.solana-mainnet.quiknode.pro/...` | Easy to provision. |
+| Self-hosted validator | `http://your-validator:8899` | For teams with infra. |
+
+The SDK supports **`Connection` reuse** — instead of constructing a new `Connection` per component, build one and share it:
+
+```typescript
+import { Connection } from '@solana/web3.js';
+import { KeyShieldAgent } from '@keyshield/agent-sdk';
+import { KeyShieldGOATPlugin } from '@keyshield/goat-wallet';
+
+const connection = new Connection(process.env.SOLANA_RPC_URL!);
+
+const agent  = new KeyShieldAgent({ connection, programId: '...' });
+const plugin = new KeyShieldGOATPlugin({
+  connection,  // reuse the same instance
+  programId: '...',
+  keyShieldProgramId: '...',
+  ownerPublicKey: '...',
+  agentPublicKey: '...',
+});
+```
+
+Reusing the Connection keeps the underlying HTTP keep-alive pool warm, avoids double-handshake on WebSocket subscriptions, and is friendlier to your RPC quota.
+
 ### Environment Variables
 
 ```bash
-# Solana
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_WS_URL=wss://api.mainnet-beta.solana.com
+# Solana — replace with a fast private RPC in production; see above.
+SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
+SOLANA_WS_URL=wss://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
 
 # KeyShield Program
 KEYSHIELD_PROGRAM_ID=...

@@ -78,12 +78,13 @@ async function main() {
 
   // Step 3: Initialize KeyShield Agent
   console.log('🔐 Step 3: Initializing KeyShield Agent...');
-  
+  // Share the Connection built in Step 1 — no need for the SDK to spin up
+  // a second one with its own HTTP agent and idle pool (P2-4).
   const agent = new KeyShieldAgent({
-    rpcUrl: CONFIG.rpcUrl,
+    connection,
     programId: CONFIG.programId,
   });
-  
+
   await agent.initialize(ownerWallet.publicKey);
   console.log('   ✅ Agent initialized');
   console.log();

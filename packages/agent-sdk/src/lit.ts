@@ -1,9 +1,8 @@
 /**
  * Lit Protocol stub.
  *
- * This is a placeholder so the import graph resolves. The real integration
- * with Lit Protocol's threshold decryption lives elsewhere (to be wired in
- * V1.1+). Tests should mock this class rather than hit a real Lit node.
+ * Placeholder so the import graph resolves. The real Lit threshold
+ * decryption lives elsewhere (to be wired in V1.1+). Tests mock this.
  */
 
 export interface LitConfig {
@@ -11,22 +10,12 @@ export interface LitConfig {
   chain: 'solana';
 }
 
-export interface LitDecryptParams {
-  encryptedData: string;
-  encryptedSymmetricKey?: string;
-  [key: string]: unknown;
-}
-
 export class LitProtocol {
-  constructor(private readonly config: LitConfig) {}
-
-  async init(): Promise<void> {
-    // no-op stub
-  }
-
-  async decrypt(_params: LitDecryptParams): Promise<string> {
+  constructor(private readonly _config: LitConfig) {}
+  async init(): Promise<void> {}
+  async decrypt(_params: any): Promise<string> {
     throw new Error(
-      'LitProtocol.decrypt is a stub. Wire up the real Lit integration or mock in tests.',
+      'LitProtocol.decrypt is a stub. Mock this in tests or wire up the real Lit SDK.',
     );
   }
 }

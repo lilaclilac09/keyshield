@@ -46,7 +46,10 @@ export async function estimatePriorityFeeMicroLamports(
 // ==================== TYPES ====================
 
 export interface GOATWalletConfig {
-  rpcUrl: string;
+  /** Either supply rpcUrl (a Connection is created) ... */
+  rpcUrl?: string;
+  /** ... or pass an existing Connection to reuse (P2-4). */
+  connection?: Connection;
   programId: string;
   keyShieldProgramId: string;
   ownerPublicKey: string;
@@ -99,7 +102,17 @@ export class KeyShieldGOATPlugin implements GOATPlugin {
   
   constructor(config: GOATWalletConfig) {
     this.config = config;
-    this.connection = new Connection(config.rpcUrl);
+    if (config.connection) {
+      this.connection = config.connection;
+    } else if (config.rpcUrl) {
+      this.connection = new Connection(config.rpcUrl);
+    } else {
+      throw new Error(
+        'KeyShieldGOATPlugin requires either `connection` or `rpcUrl`. ' +
+          'Pass a Connection pointing at a paid RPC (Helius / Triton / ' +
+          'QuickNode) — public mainnet-beta is rate-limited.',
+      );
+    }
     this.ownerPubkey = new PublicKey(config.ownerPublicKey);
     this.agentPubkey = new PublicKey(config.agentPublicKey);
   }
@@ -155,15 +168,16 @@ export class KeyShieldGOATPlugin implements GOATPlugin {
     if (!this.currentSigner || this.currentSigner.isExpired()) {
       await this.createSigner();
     }
-    
+    const signer = this.currentSigner!; // createSigner() guarantees this is set
+
     // Check if action is allowed
     // For now, assume all transactions are allowed
-    if (!this.currentSigner.isActionAllowed('sign')) {
+    if (!signer.isActionAllowed('sign')) {
       throw new Error('Signing not allowed with current signer');
     }
-    
+
     // Get the private key and sign
-    const privateKey = this.currentSigner.getPrivateKey();
+    const privateKey = signer.getPrivateKey();
     
     // Sign transaction
     tx.sign(privateKey as any);
