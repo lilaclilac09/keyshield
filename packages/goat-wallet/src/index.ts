@@ -25,7 +25,7 @@ import { KeyShieldAgent, EphemeralSignerSession } from '@keyshield/agent-sdk';
  * Mainnet without a priority fee can sit unlanded for minutes during
  * congestion — this is a P0 fix, not a nice-to-have.
  */
-async function estimatePriorityFeeMicroLamports(
+export async function estimatePriorityFeeMicroLamports(
   connection: Connection,
   fallback = 10_000,
 ): Promise<number> {
@@ -383,50 +383,33 @@ export class CrossMintKeyShieldWallet {
 }
 
 // ==================== USAGE EXAMPLES ====================
-
-/**
- * Example: Using with GOAT SDK
- * 
- * ```typescript
- * import { createGOATPlugin } from '@keyshield/goat-wallet';
- * import { GOATSDK } from '@goat-sdk/core';
- * 
- * const plugin = createGOATPlugin({
- *   rpcUrl: 'https://api.mainnet-beta.solana.com',
- *   programId: '...',
- *   keyShieldProgramId: '...',
- *   ownerPublicKey: 'OwnerWalletAddress...',
- *   agentPublicKey: 'AgentWalletAddress...',
- * });
- * 
- * await plugin.initialize();
- * 
- * // Create ephemeral signer for swap
- * await plugin.createSigner({
- *   allowedActions: ['swap', 'send'],
- *   expirySeconds: 300,
- * });
- * 
- * // Sign and send transaction
- * const tx = new Transaction().add(/* instructions *\/);
- * const signature = await plugin.sendTransaction(tx);
- * ```
- * 
- * Example: With CrossMint
- * 
- * ```typescript
- * import { createGOATPlugin, CrossMintKeyShieldWallet } from '@keyshield/goat-wallet';
- * 
- * const plugin = createGOATPlugin({
- *   // ... config
- * });
- * 
- * const wallet = new CrossMintKeyShieldWallet(plugin, {
- *   clientId: 'your-client-id',
- *   environment: 'production',
- * });
- * 
- * await wallet.initializeCrossMint();
-```
+//
+// Example: Using with GOAT SDK
+//
+//   import { createGOATPlugin } from '@keyshield/goat-wallet';
+//   import { GOATSDK } from '@goat-sdk/core';
+//
+//   const plugin = createGOATPlugin({
+//     rpcUrl: 'https://api.mainnet-beta.solana.com',
+//     programId: '...',
+//     keyShieldProgramId: '...',
+//     ownerPublicKey: 'OwnerWalletAddress...',
+//     agentPublicKey: 'AgentWalletAddress...',
+//   });
+//
+//   await plugin.initialize();
+//   await plugin.createSigner({ allowedActions: ['swap', 'send'], expirySeconds: 300 });
+//
+//   const tx = new Transaction().add(/* your instructions here */);
+//   const signature = await plugin.sendTransaction(tx);
+//
+// Example: With CrossMint
+//
+//   const plugin = createGOATPlugin({ /* config */ });
+//   const wallet = new CrossMintKeyShieldWallet(plugin, {
+//     clientId: 'your-client-id',
+//     environment: 'production',
+//   });
+//   await wallet.initializeCrossMint();
 
 export default KeyShieldGOATPlugin;

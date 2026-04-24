@@ -1,12 +1,19 @@
 {
   "name": "keyshield",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",
     "demo": "bash demo.sh",
-    "docs:pitch-pdf": "marp docs/pitch/PITCH_DECK.md --allow-local-files -o docs/pitch/PITCH_DECK.pdf"
+    "docs:pitch-pdf": "marp docs/pitch/PITCH_DECK.md --allow-local-files -o docs/pitch/PITCH_DECK.pdf",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
-    "@solana/web3.js": "^1.98.4"
+    "@solana/web3.js": "^1.98.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }
