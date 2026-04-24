@@ -8,14 +8,16 @@
 
 ## Overview
 
-KeyShield Agentic is a next-generation API key management system built on Solana that combines:
+KeyShield Agentic is a Solana-native API key vault that serves **both humans and autonomous AI agents**:
 
-- 🔐 **Zero-trust security** via Lit Protocol threshold encryption
-- 🧊 **ZK proofs** via Bonsol for privacy-preserving authorization
-- 🔗 **MPC** via Arcium for secure agent-to-agent communication
-- 💳 **x402 payments** for per-request and streaming micropayments
-- 🤖 **OpenClaw compatibility** for AI agent integration
-- 💰 **GOAT Wallet** plugin for 250+ onchain actions
+- 🔑 **Local-first vault** — API keys AES-256-GCM encrypted on device, **unlocked by Face ID / Touch ID / Windows Hello** (passkey / WebAuthn). Nothing sensitive ever touches the chain.
+- 🕐 **2-hour session keys** — one grant per device, up to 32 concurrent, revoke one or all from the popup. Enforced on-chain by the `agent_grants` table.
+- 🤖 **Agent-friendly** — SDK + GOAT Wallet plugin build the on-chain grant/revoke instructions; the agent signs with an ephemeral key that can't drain you
+- 💳 **x402 streaming payments** (scaffolded) — per-request micropayments for API calls
+- 🔐 **Threshold encryption + ZK + MPC** (Lit / Bonsol / Arcium) — stubs in place, real integrations deferred to V1.1
+
+> ### Project status
+> This repo is under active development. Production-ready today: Solana program (Rust/Pinocchio), `agent-sdk` session lifecycle, `goat-wallet` priority-fee-aware send, `extension/` local vault + passkey + popup UI scaffold. Stub today: Lit / Bonsol / Arcium integrations; the OKX-wallet-based auth UI lives in the `frontend` submodule. See **[docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)** for the full design and **[docs/roadmap/VAULT_FACEID_BACKLOG.md](./docs/roadmap/VAULT_FACEID_BACKLOG.md)** for the P0/P1/P2 punch list.
 
 ## Architecture
 
@@ -54,66 +56,107 @@ KeyShield Agentic is a next-generation API key management system built on Solana
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## Features (✅ built · 🧪 scaffolded · 💤 stub)
 
-### 1. Universal Key Vault
-- One wallet → One vault → Unlimited key groups
-- Groups: `openai`, `anthropic`, `stripe`, `payment-usdc`, `universal`
-- Policy-based access control with time locks and rate limits
+### ✅ Local-first vault
+- AES-256-GCM encryption in `chrome.storage.local`, master key gated by Face ID / passkey
+- Vault contents never leave the device; moving to a new device means re-importing keys
+- Passkey itself syncs via iCloud Keychain / Google Password Manager (so you only register Face ID once)
+- Lives in `extension/src/lib/vault.ts` + `auth.ts`, 23 unit tests
 
-### 2. Browser Extension
-- Auto-detect 100+ API key patterns
-- Auto-save with Lit-encrypted storage
-- One-click autofill
-- x402 payment handling
+### ✅ Per-device session model
+- One `agent_grant` per device, up to 32 concurrent on-chain
+- Default 2-hour session with a "5 minutes until expiry" in-popup prompt
+- `revoke_all_agents` instruction for "sign out everywhere"
+- `SessionManager` in `packages/agent-sdk/src/session.ts` + 18 unit tests
 
-### 3. Agentic Features
-- Bonsol ZK proofs for authorization
-- Arcium MPC for secure sharing
-- Ephemeral signers (Vault-0 style)
-- Live monitoring dashboard
+### ✅ Production-hardened transactions
+- `goat-wallet` auto-prepends `ComputeBudgetProgram.setComputeUnitPrice` using median recent priority fees — grant/revoke no longer sits unlanded on congested mainnet
+- Explicit `commitment: 'confirmed'` shaves ~1-2 s off the default finality wait
+- `Connection` is reusable across SDK + plugin instead of double-building the HTTP pool
 
-### 4. x402 Payments
-- Per-request micropayments
-- Streaming/batched usage-based payments
-- Automatic settlement intervals
+### 🧪 Solana program (Rust / Pinocchio)
+- `grant_agent_access`, `revoke_agent_access`, `revoke_all_agents`, `access_with_agent`, payment-stream ix all implemented
+- Mollusk integration tests for `revoke_all_agents` (success / empty / wrong-owner)
+- P0 timestamp-is-hardcoded-0 bug is fixed: session expiry now actually fires on-chain
+- TODO: Bonsol / Arcium verifiers are stubs; `allowed_endpoints` / `allowed_models` scope not yet wired into `grant` ix
 
-### 5. OpenClaw Integration
-- Install via `clawhub install @keyshield/openclaw-skill`
-- Full skill interface implementation
-- Policy YAML engine
+### 🧪 Popup UI scaffold
+- `extension/src/popup/` — React 18 + Tailwind, state machine covers `checking → firstRun → locked → unlocked`
+- Unlock screen (register-or-authenticate), vault CRUD list, live session countdown bar with renew / revoke-all
+- Needs a Vite build step and an owner-wallet adapter (Phantom / Backpack / OKX) to actually run — the `plasmoid` build tooling referenced previously was never published to npm
 
-### 6. GOAT Wallet Plugin
-- 250+ onchain actions
-- CrossMint hybrid support
-- Ephemeral key injection
+### 💤 Deferred integrations
+- Lit Protocol threshold decryption
+- Bonsol ZK proofs
+- Arcium MPC ephemeral signer creation
+- x402 streaming payment *real* settlement
+  (each has a stub class that satisfies the SDK import graph; real wiring is V1.1+)
+
+### OKX / Phantom / Solflare wallet support
+Owner-wallet connection (Solana wallet-adapter) lives in the `frontend` submodule — the same place as the Clerk Web3 auth flow that prefers OKX. SDK-side, any standard Solana wallet adapter can sign the `grant` / `revoke` transactions the SessionManager builds.
 
 ## Quickstarts
 
-### Quickstart 1: Human Autofill (Browser Extension)
+### Quickstart 0: Run what's already green (no Solana toolchain required)
 
 ```bash
-# Install the extension
-cd extension
+# Clone + install the TS workspace
+git clone https://github.com/lilaclilac09/keyshield.git
+cd keyshield
 npm install
-npm run build
 
-# Load unpacked extension in Chrome
-# 1. Go to chrome://extensions
-# 2. Enable Developer mode
-# 3. Click "Load unpacked"
-# 4. Select the dist folder
+# Run the TS test suite (68 vitest tests across agent-sdk / goat-wallet / extension)
+npm test
+
+# Strict-mode tsc on all three packages
+npm run typecheck
+
+# Rust program build + lib tests
+cargo check -p keyshield --tests
+cargo test -p keyshield --lib
 ```
 
+To run the Mollusk integration tests you need the Solana CLI installed
+(`sh -c "$(curl -sSfL https://release.solana.com/stable/install)"`), then:
+
+```bash
+cargo build-sbf
+SBF_OUT_DIR=target/deploy cargo test -p keyshield
+```
+
+### Quickstart 1: Grant + revoke a session from a script
+
 ```typescript
-// The extension automatically:
-// 1. Detects API key fields on any page
-// 2. Shows "Save to KeyShield" prompt
-// 3. Encrypts with Lit Protocol
-// 4. Stores in IndexedDB + on-chain
+import { Connection, Keypair, PublicKey, sendAndConfirmTransaction } from '@solana/web3.js';
+import { SessionManager } from '@keyshield/agent-sdk';
+
+const connection = new Connection(process.env.SOLANA_RPC_URL!);  // Helius etc.
+const owner = Keypair.generate();                                 // or load from file / wallet
+const manager = new SessionManager({
+  connection,
+  programId: new PublicKey(process.env.KEYSHIELD_PROGRAM_ID!),
+  ownerPubkey: owner.publicKey,
+});
+
+// One device = one ephemeral agent keypair:
+const device = Keypair.generate();
+
+// Grant a 2-hour session on-chain:
+const grantTx = manager.buildGrantSessionTx({ agentPubkey: device.publicKey });
+await sendAndConfirmTransaction(connection, grantTx, [owner]);
+
+// List everything that's active right now:
+console.log(await manager.listActiveSessions());
+
+// Nuclear option — revoke every device:
+const revokeAllTx = manager.buildRevokeAllSessionsTx();
+await sendAndConfirmTransaction(connection, revokeAllTx, [owner]);
 ```
 
 ### Quickstart 2: Agent with OpenClaw
+
+> **Status:** Illustrative — `@keyshield/openclaw-skill` exists as stubs; `getApiKey` currently routes into the Lit decryption stub which throws until V1.1 lands the real integration.
 
 ```bash
 # Install the skill
@@ -145,6 +188,8 @@ const response = await openai.completions.create({
 ```
 
 ### Quickstart 3: Streaming x402 Demo
+
+> **Status:** Illustrative — `startStreamingPayment` currently hits the `KeyShieldClient` stub. The on-chain payment-stream instructions exist in the Rust program, so wiring is a V1.1 task.
 
 ```typescript
 import { KeyShieldAgent } from "@keyshield/agent-sdk";
@@ -179,32 +224,31 @@ await stream.settle();
 await stream.close();
 ```
 
-### Quickstart 4: GOAT Wallet Example
+### Quickstart 4: GOAT Wallet Plugin
+
+> **Status:** `sendTransaction` is real and includes the dynamic priority-fee path described in the Features section. `createSigner` still goes through the Arcium MPC stub — in tests it returns a locally-generated keypair so the flow is end-to-end runnable.
 
 ```typescript
-import { createGOATPlugin } from "@keyshield/goat-wallet";
+import { Connection, Transaction } from '@solana/web3.js';
+import { KeyShieldGOATPlugin } from '@keyshield/goat-wallet';
 
-const plugin = createGOATPlugin({
-  rpcUrl: "https://api.mainnet-beta.solana.com",
-  programId: "KEYSHIELD_PROGRAM_ID",
-  keyShieldProgramId: "KEYSHIELD_PROGRAM_ID",
-  ownerPublicKey: "OWNER_WALLET",
-  agentPublicKey: "AGENT_WALLET",
+const connection = new Connection(process.env.SOLANA_RPC_URL!);
+const plugin = new KeyShieldGOATPlugin({
+  connection,                // reuse the Connection across the app
+  programId: 'KEYSHIELD_PROGRAM_ID',
+  keyShieldProgramId: 'KEYSHIELD_PROGRAM_ID',
+  ownerPublicKey: 'OWNER_WALLET',
+  agentPublicKey: 'AGENT_WALLET',
 });
 
 await plugin.initialize();
+await plugin.createSigner({ allowedActions: ['swap', 'send'], expirySeconds: 300 });
 
-// Create ephemeral signer for swap
-await plugin.createSigner({
-  allowedActions: ["swap", "send"],
-  expirySeconds: 300, // 5 minutes
-});
-
-// Sign transaction
-const tx = new Transaction().add(/* instructions */);
+const tx = new Transaction().add(/* your instructions */);
 const signature = await plugin.sendTransaction(tx);
-
-console.log("Transaction sent:", signature);
+// ^ auto-prepends setComputeUnitPrice using median recent fees,
+//   confirms at 'confirmed' commitment
+console.log('Transaction sent:', signature);
 ```
 
 ## Security Model Comparison
@@ -266,16 +310,21 @@ clawhub run --skill keyshield --test-mode
 
 ### Run Tests
 
-```bash
-# Run Rust tests
-cd programs/keyshield
-cargo test
+| Suite | Command | Status |
+|---|---|---|
+| TypeScript unit (3 workspaces) | `npm test` | **68 / 68 passing** |
+| TypeScript strict typecheck | `npm run typecheck` | clean |
+| Rust program check | `cargo check -p keyshield --tests` | clean |
+| Rust program lib tests | `cargo test -p keyshield --lib` | 1 / 1 passing |
+| Rust Mollusk integration | `cargo build-sbf && cargo test -p keyshield` | **needs Solana CLI** |
+| End-to-end demo | `npm run demo` | **needs deployed program + funded wallet** |
 
-# Run TypeScript tests
-npm test
+TypeScript breakdown:
 
-# Run e2e demo
-npm run demo
+```
+@keyshield/agent-sdk      24 tests  (session lifecycle, client construction, smoke)
+@keyshield/goat-wallet     6 tests  (dynamic priority fee math + edge cases)
+@keyshield/extension      38 tests  (auth / vault / session libs)
 ```
 
 ## Packages
