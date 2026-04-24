@@ -8,9 +8,9 @@
     "skipLibCheck": true
   },
   "include": [
-    "src/lib/auth.ts",
-    "src/lib/vault.ts",
-    "src/lib/session.ts",
-    "src/lib/**/*.test.ts"
+    "src/lib/**/*.ts",
+    "src/lib/**/*.test.ts",
+    "src/popup/**/*.ts",
+    "src/popup/**/*.tsx"
   ]
 }
