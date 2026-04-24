@@ -13,48 +13,44 @@ KeyShield Agentic is a Solana-native API key vault that serves **both humans and
 - 🔑 **Local-first vault** — API keys AES-256-GCM encrypted on device, **unlocked by Face ID / Touch ID / Windows Hello** (passkey / WebAuthn). Nothing sensitive ever touches the chain.
 - 🕐 **2-hour session keys** — one grant per device, up to 32 concurrent, revoke one or all from the popup. Enforced on-chain by the `agent_grants` table.
 - 🤖 **Agent-friendly** — SDK + GOAT Wallet plugin build the on-chain grant/revoke instructions; the agent signs with an ephemeral key that can't drain you
-- 💳 **x402 streaming payments** (scaffolded) — per-request micropayments for API calls
-- 🔐 **Threshold encryption + ZK + MPC** (Lit / Bonsol / Arcium) — stubs in place, real integrations deferred to V1.1
+- ⚡ **Production-hardened Solana writes** — dynamic priority fees, `confirmed` commitment, shared Connection pool
 
 > ### Project status
-> This repo is under active development. Production-ready today: Solana program (Rust/Pinocchio), `agent-sdk` session lifecycle, `goat-wallet` priority-fee-aware send, `extension/` local vault + passkey + popup UI scaffold. Stub today: Lit / Bonsol / Arcium integrations; the OKX-wallet-based auth UI lives in the `frontend` submodule. See **[docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)** for the full design and **[docs/roadmap/VAULT_FACEID_BACKLOG.md](./docs/roadmap/VAULT_FACEID_BACKLOG.md)** for the P0/P1/P2 punch list.
+> This repo is under active development. **In scope and built today:** Solana program (Rust/Pinocchio) with session expiry + `revoke_all_agents`, `agent-sdk` SessionManager, `goat-wallet` priority-fee-aware send, `extension/` local vault + passkey + popup UI scaffold. **In scope, next:** recovery-phrase backup, session-management UI, owner-wallet adapter wiring, iOS app skeleton — see **[docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)** (V1 / V1.1 / V2) and **[docs/roadmap/VAULT_FACEID_BACKLOG.md](./docs/roadmap/VAULT_FACEID_BACKLOG.md)** (P0 / P1 / P2).
+>
+> **Not on the current roadmap:** Lit Protocol threshold encryption, Bonsol ZK proofs, Arcium MPC, x402 streaming payments. These were in an earlier iteration of the pitch but were displaced by the simpler local-first-vault + passkey direction. The SDK has stub classes for them so the old import graph still resolves; they're not being built out. The **OKX-wallet-based auth UI** lives in the `frontend` submodule.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           KeyShield Agentic                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐  │
-│  │   Human Wallet   │    │   AI Agent       │    │   x402 Service   │  │
-│  │   (Owner)       │    │   (Operator)     │    │   (Provider)     │  │
-│  └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘  │
-│           │                       │                       │             │
-│           │  ┌───────────────────┼───────────────────────┘             │
-│           │  │                   │                                     │
-│           ▼  ▼                   ▼                                     │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                    Solana Program (Rust/Pinocchio)                │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │  │
-│  │  │ UniversalVault │  │ AgentGrant   │  │ PaymentStream         │ │  │
-│  │  │ PDA            │  │ PDA          │  │ PDA                   │ │  │
-│  │  └──────────────┘  └──────────────┘  └───────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│           │                       │                                     │
-│           │  ┌───────────────────┼───────────────────────┐            │
-│           │  │                   │                       │            │
-│           ▼  ▼                   ▼                       ▼            │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     Encryption Layer                               │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │  │
-│  │  │ Lit Protocol │  │ Bonsol ZK   │  │ Arcium MPC              │ │  │
-│  │  │ (Threshold)  │  │ (Proofs)    │  │ (Multi-party)           │ │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                     Browser extension (device)                        │
+│  ┌────────────────────┐  ┌────────────────────┐  ┌───────────────┐  │
+│  │  Popup (React)     │  │  LocalVault        │  │  AuthService  │  │
+│  │  unlock → CRUD     │──│  AES-256-GCM       │──│  Face ID /    │  │
+│  │  session bar       │  │  chrome.storage    │  │  passkey      │  │
+│  └────────┬───────────┘  └────────────────────┘  └───────────────┘  │
+│           │                                                           │
+│           ▼  buildGrantSessionTx / buildRevokeSessionTx / listActive  │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │        packages/agent-sdk — SessionManager                      │  │
+│  │        packages/goat-wallet — priority-fee send                 │  │
+│  └────────────────────────────┬───────────────────────────────────┘  │
+│                               │                                       │
+└───────────────────────────────┼───────────────────────────────────────┘
+                                │  JSON-RPC (Helius / Triton / …)
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                 Solana program (Rust / Pinocchio)                     │
+│   UniversalVault PDA                                                  │
+│   ├── agent_grants[32]    ← one slot per device, is_active + expiry   │
+│   └── policy_rules[64]    ← domain allow/block, rate limits           │
+│                                                                        │
+│   ix 20 GrantAgentAccess · 21 Revoke · 22 Access · 24 RevokeAll       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+The Rust program also still contains a `payment_streams[8]` table and `grant_agent_payment_access` / `settle_payment` / `close_payment_stream` instructions — leftovers from the earlier pitch. They compile and got the Clock-sysvar fix, but **no active client code calls them**.
 
 ## Features (✅ built · 🧪 scaffolded · 💤 stub)
 
@@ -86,12 +82,10 @@ KeyShield Agentic is a Solana-native API key vault that serves **both humans and
 - Unlock screen (register-or-authenticate), vault CRUD list, live session countdown bar with renew / revoke-all
 - Needs a Vite build step and an owner-wallet adapter (Phantom / Backpack / OKX) to actually run — the `plasmoid` build tooling referenced previously was never published to npm
 
-### 💤 Deferred integrations
-- Lit Protocol threshold decryption
-- Bonsol ZK proofs
-- Arcium MPC ephemeral signer creation
-- x402 streaming payment *real* settlement
-  (each has a stub class that satisfies the SDK import graph; real wiring is V1.1+)
+### 💤 Stubbed, not on the roadmap
+Earlier iterations of the pitch included Lit Protocol threshold decryption, Bonsol ZK proofs, Arcium MPC ephemeral signer creation, and real x402 streaming-payment settlement. The V1 local-first-vault + passkey direction replaces them for the foreseeable future.
+
+The SDK still carries stub classes for `LitProtocol`, `BonsolVerifier`, `ArciumMPC`, `X402Client`, and `KeyShieldClient` so the old import graph resolves, but calling into them throws. The on-chain payment-stream instructions are left in place but unexercised — removing or wiring them is a separate deliberate decision, not a "later" one.
 
 ### OKX / Phantom / Solflare wallet support
 Owner-wallet connection (Solana wallet-adapter) lives in the `frontend` submodule — the same place as the Clerk Web3 auth flow that prefers OKX. SDK-side, any standard Solana wallet adapter can sign the `grant` / `revoke` transactions the SessionManager builds.
@@ -156,7 +150,7 @@ await sendAndConfirmTransaction(connection, revokeAllTx, [owner]);
 
 ### Quickstart 2: Agent with OpenClaw
 
-> **Status:** Illustrative — `@keyshield/openclaw-skill` exists as stubs; `getApiKey` currently routes into the Lit decryption stub which throws until V1.1 lands the real integration.
+> **Status:** Illustrative — `@keyshield/openclaw-skill` is a stub. `getApiKey` routes into the Lit-decryption stub which throws. Lit integration is **not on the roadmap**; this example is kept as a reference of what the API would look like if the older design is ever revived.
 
 ```bash
 # Install the skill
@@ -189,7 +183,7 @@ const response = await openai.completions.create({
 
 ### Quickstart 3: Streaming x402 Demo
 
-> **Status:** Illustrative — `startStreamingPayment` currently hits the `KeyShieldClient` stub. The on-chain payment-stream instructions exist in the Rust program, so wiring is a V1.1 task.
+> **Status:** Illustrative — `startStreamingPayment` hits the `KeyShieldClient` stub and throws. The on-chain payment-stream instructions are present but unexercised; **wiring x402 is not on the current roadmap**. Kept for reference only.
 
 ```typescript
 import { KeyShieldAgent } from "@keyshield/agent-sdk";
