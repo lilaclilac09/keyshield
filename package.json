@@ -4,7 +4,8 @@
   "workspaces": [
     "packages/*",
     "extension",
-    "extension-sync"
+    "extension-sync",
+    "infra/sync-worker"
   ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",
