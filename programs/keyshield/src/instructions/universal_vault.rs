@@ -124,10 +124,36 @@ pub fn process_create_universal_vault(
     // Current timestamp from Clock sysvar (seconds since unix epoch).
     let timestamp = Clock::get()?.unix_timestamp as u64;
 
-    // Initialize new vault
-    let vault_state = UniversalVault::new(*owner.key(), timestamp);
-    serialize_universal_vault(&vault_state, vault)?;
+    // Initialize the vault by writing only the fields that need non-zero
+    // values directly into the account buffer.
+    //
+    // Why not call `UniversalVault::new(...)` first?  The struct is 18,400
+    // bytes — well over the 4 kB BPF stack limit. Building it on the stack
+    // and then memcpy-ing into the account is what tripped the
+    // "Stack offset of 13384 exceeded max offset of 4096" warnings during
+    // `cargo build-sbf`. The account is already zero-initialised by the
+    // runtime, so all the array / count fields are correct as-is.
+    init_universal_vault_in_place(vault, owner.key(), timestamp)?;
 
+    Ok(())
+}
+
+/// Write the 56 bytes of header that distinguish a fresh UniversalVault
+/// from a zero-initialised account. Everything else (counts, arrays,
+/// _reserved) stays zero — which is the correct empty state.
+fn init_universal_vault_in_place(
+    vault_account: &AccountInfo,
+    owner: &Pubkey,
+    timestamp: u64,
+) -> ProgramResult {
+    let mut data = vault_account.try_borrow_mut_data()?;
+    if data.len() < UniversalVault::SIZE {
+        return Err(ProgramError::AccountDataTooSmall);
+    }
+    data[0..8].copy_from_slice(&UniversalVault::DISCRIMINATOR);
+    data[8..40].copy_from_slice(owner.as_ref());
+    data[40..48].copy_from_slice(&timestamp.to_le_bytes());
+    data[48..56].copy_from_slice(&timestamp.to_le_bytes());
     Ok(())
 }
 

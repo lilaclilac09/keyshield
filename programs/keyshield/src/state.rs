@@ -366,6 +366,14 @@ impl UniversalVault {
     pub const DISCRIMINATOR: [u8; 8] = *b"univault";
     pub const SIZE: usize = 18400;
 
+    /// Build a fully-initialised UniversalVault on the stack.
+    ///
+    /// Compiled only off-chain. The struct is 18 kB which is way past the
+    /// 4 kB SBF stack limit, so on-chain code initialises the account
+    /// in-place via `init_universal_vault_in_place` in the
+    /// universal_vault instruction handler. This constructor stays
+    /// available for tests / off-chain tooling that wants the typed shape.
+    #[cfg(not(target_os = "solana"))]
     pub fn new(owner: Pubkey, created_at: u64) -> Self {
         Self {
             discriminator: Self::DISCRIMINATOR,
