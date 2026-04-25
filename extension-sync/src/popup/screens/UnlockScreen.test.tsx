@@ -27,6 +27,8 @@ function makeServices(authOverrides: Partial<any> = {}): Services {
     } as any,
     vault: {} as any,
     sync: {} as any,
+    syncAuth: null,
+    bearer: {} as any,
     session: {} as any,
   };
 }

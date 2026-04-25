@@ -7,6 +7,7 @@ import { useVaultFlow } from './hooks/useVaultFlow';
 import { useSessionCountdown } from './hooks/useSessionCountdown';
 import { useOwnerWallet } from './hooks/useOwnerWallet';
 import { UnlockScreen } from './screens/UnlockScreen';
+import { UpgradeScreen } from './screens/UpgradeScreen';
 import { VaultList } from './screens/VaultList';
 import { SessionBar } from './components/SessionBar';
 
@@ -101,6 +102,9 @@ export function App() {
           Loading…
         </div>
       );
+      break;
+    case 'unsupportedPlatform':
+      body = <UpgradeScreen onRetry={flow.retryPlatformCheck} />;
       break;
     case 'firstRun':
     case 'locked':

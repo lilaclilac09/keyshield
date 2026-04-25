@@ -30,9 +30,11 @@ import type { VaultPlain, VaultCipher } from '../../lib/vault';
 import { LocalVault } from '../../lib/vault';
 import type { AuthResult } from '../../lib/auth';
 import { fetchLatestCipher } from '../../lib/sync';
+import { detectPrfSupport } from '../../lib/platform';
 
 export type VaultFlowState =
   | { kind: 'checking' }
+  | { kind: 'unsupportedPlatform' }
   | { kind: 'firstRun' }
   | { kind: 'locked' }
   | {
@@ -45,21 +47,35 @@ export type VaultFlowState =
 
 export function useVaultFlow(services: Services) {
   const [state, setState] = useState<VaultFlowState>({ kind: 'checking' });
+  // Bumped by retryPlatformCheck() to force a re-detect.
+  const [probeNonce, setProbeNonce] = useState(0);
 
-  // Initial state: do we already have a cached ciphertext locally?
-  // (Local cache means we've unlocked here before; otherwise this
-  // device is "fresh" — could be brand new OR could be a different
-  // device joining the user's vault.)
+  // Initial state: probe platform support first, then look at local
+  // cache. 'unknown' falls through to the normal flow — the user will
+  // get a more specific error at the actual authenticate call if PRF
+  // really isn't there.
   useEffect(() => {
     (async () => {
       try {
+        const support = await detectPrfSupport();
+        if (support === 'unsupported') {
+          setState({ kind: 'unsupportedPlatform' });
+          return;
+        }
         const cached = await services.vault.getCachedCipher();
         setState({ kind: cached ? 'locked' : 'firstRun' });
       } catch (e: any) {
         setState({ kind: 'error', message: e?.message ?? 'Load failed' });
       }
     })();
-  }, [services]);
+  }, [services, probeNonce]);
+
+  /** UpgradeScreen calls this — re-run the platform probe in case the
+   *  user upgraded their browser since the popup opened. */
+  const retryPlatformCheck = useCallback(() => {
+    setState({ kind: 'checking' });
+    setProbeNonce((n) => n + 1);
+  }, []);
 
   /**
    * Shared post-authenticate handler. Given an AuthResult that
@@ -257,5 +273,5 @@ export function useVaultFlow(services: Services) {
     setState({ kind: 'locked' });
   }, []);
 
-  return { state, completeFirstRun, unlock, upsertKey, removeKey, lock };
+  return { state, completeFirstRun, unlock, upsertKey, removeKey, lock, retryPlatformCheck };
 }
