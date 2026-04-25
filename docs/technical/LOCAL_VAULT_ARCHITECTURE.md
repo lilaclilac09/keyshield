@@ -221,6 +221,17 @@ let timestamp = Clock::get()?.unix_timestamp as u64;
 - **触发条件:** 用户反馈不敢跑第三方 MCP / agent marketplace 上线 / 安全审计要求
 - **实现形态:** 浏览器内 agent → fetch 拦截;本机 agent → native messaging host → localhost proxy
 
+### 不在路线图上(明确)
+
+旧 pitch 里的 **Lit Protocol 阈值加密 / Bonsol ZK 证明 / Arcium MPC ephemeral signer / x402 streaming payments** 都**不在 V1、V1.1、V2 任何一个里面**。
+
+这些方向的代码留有占位:
+- `packages/agent-sdk/src/{lit,bonsol,arcium}.ts` 是抛错的 stub,只为不让老 import 链断
+- Rust 程序里 `payment_streams[8]` 表和 `process_settle_payment` / `process_pay_for_service` / `process_close_payment_stream` 还在,但**没有任何活跃客户端代码调用它们**
+- `process_grant_agent_access` 里 `zk_proof_length > 0` 的分支只检查非空,Bonsol verifier 接口还是 TODO
+
+如果将来要重启这条路线,得**专门起一个新阶段**(可能叫 V3),不是从 V1.1 / V2 余量里挤。理由:本地金库 + passkey 模式已经覆盖了 99% 的 vibe coder 用户场景,加 Lit / Bonsol / Arcium 是给"不可信 agent 也能拿到 key"这个截然不同的威胁模型用的,该跟 V2 代理模式合并设计,不是平行加层。
+
 ---
 
 ## 相关文档

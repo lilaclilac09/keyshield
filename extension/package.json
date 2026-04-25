@@ -3,11 +3,9 @@
   "version": "2.0.0",
   "description": "KeyShield Agentic - Universal API Key Vault Browser Extension",
   "scripts": {
-    "dev": "plasmoid dev",
-    "build": "plasmoid build",
-    "build:chrome": "plasmoid build --target chrome",
-    "build:firefox": "plasmoid build --target firefox",
-    "package": "plasmoid package",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
@@ -29,15 +27,21 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
     "@types/chrome": "^0.0.251",
     "@types/node": "^22.14.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@keyshield/agent-sdk": "*",
-    "typescript": "~5.4.5",
-    "tailwindcss": "^3.4.3",
+    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.19",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "~5.4.5",
+    "vite": "^5.4.20",
     "vitest": "^2.1.9"
   }
 }

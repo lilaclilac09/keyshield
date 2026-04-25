@@ -5,6 +5,8 @@ export interface SessionBarProps {
   countdown: SessionCountdown;
   onRenew: () => void;
   onRevokeAll: () => void;
+  /** When true, both buttons are dimmed and unclickable (e.g. mid-tx). */
+  disabled?: boolean;
 }
 
 function formatRemaining(secs: number | null): string {
@@ -53,7 +55,8 @@ export function SessionBar(props: SessionBarProps) {
           {active && nearExpiry && (
             <button
               onClick={props.onRenew}
-              className="text-[11px] font-medium text-amber-700 hover:text-amber-900"
+              disabled={props.disabled}
+              className="text-[11px] font-medium text-amber-700 hover:text-amber-900 disabled:opacity-50"
             >
               Renew
             </button>
@@ -61,7 +64,8 @@ export function SessionBar(props: SessionBarProps) {
           {active && (
             <button
               onClick={props.onRevokeAll}
-              className="text-[11px] text-red-600 hover:text-red-800"
+              disabled={props.disabled}
+              className="text-[11px] text-red-600 hover:text-red-800 disabled:opacity-50"
             >
               Revoke all
             </button>
