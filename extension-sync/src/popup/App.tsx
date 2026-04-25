@@ -10,6 +10,7 @@ import { UnlockScreen } from './screens/UnlockScreen';
 import { UpgradeScreen } from './screens/UpgradeScreen';
 import { VaultList } from './screens/VaultList';
 import { SessionBar } from './components/SessionBar';
+import { ConflictDialog } from './components/ConflictDialog';
 
 // Read at module load so the popup doesn't have to query chrome.storage
 // on every render. These can be replaced by per-user settings later.
@@ -149,6 +150,13 @@ export function App() {
             disabled={busy || !sessionManager}
           />
         </>
+      )}
+      {flow.pendingConflict && (
+        <ConflictDialog
+          conflicts={flow.pendingConflict.report.conflicts}
+          onResolve={flow.pendingConflict.resolve}
+          onCancel={flow.pendingConflict.cancel}
+        />
       )}
     </div>
   );

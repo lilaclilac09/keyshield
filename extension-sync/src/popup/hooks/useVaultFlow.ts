@@ -31,6 +31,12 @@ import { LocalVault } from '../../lib/vault';
 import type { AuthResult } from '../../lib/auth';
 import { fetchLatestCipher } from '../../lib/sync';
 import { detectPrfSupport } from '../../lib/platform';
+import {
+  applyResolutions,
+  findConflicts,
+  type ConflictChoice,
+  type ConflictReport,
+} from '../../lib/conflict';
 
 export type VaultFlowState =
   | { kind: 'checking' }
@@ -45,8 +51,20 @@ export type VaultFlowState =
     }
   | { kind: 'error'; message: string };
 
+/**
+ * When `persist` hits a 409 with non-trivial conflicts, the popup
+ * surfaces this to the user. The hook stores the report and a
+ * resolver fn that the ConflictDialog will call.
+ */
+export interface PendingConflict {
+  report: ConflictReport;
+  resolve: (resolutions: Record<string, ConflictChoice>) => void;
+  cancel: () => void;
+}
+
 export function useVaultFlow(services: Services) {
   const [state, setState] = useState<VaultFlowState>({ kind: 'checking' });
+  const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
   // Bumped by retryPlatformCheck() to force a re-detect.
   const [probeNonce, setProbeNonce] = useState(0);
 
@@ -201,40 +219,78 @@ export function useVaultFlow(services: Services) {
 
   /**
    * Save a new vault state both locally and to the sync backend.
-   * If sync rejects with a stale-write 409, we pull the latest, merge
-   * naïvely (latest-wins per key — newer createdAt overrides), and
-   * retry once. A real merge UI is V1.1 work.
+   *
+   * Happy path: encrypt + push. Done.
+   *
+   * Stale-write path (409): we pull the latest, find per-key
+   * conflicts, and:
+   *   - if there are NO real conflicts (e.g. another device added
+   *     a different key), silently merge and re-push.
+   *   - if there ARE conflicts, raise a PendingConflict the popup
+   *     resolves via a ConflictDialog. The promise returned from
+   *     persist resolves once the user picks (or cancels — in
+   *     which case we keep the user's intended state in memory
+   *     but skip the re-push so the remote stays untouched).
    */
   const persist = useCallback(
-    async (next: VaultPlain, masterKey: CryptoKey, vaultId: string) => {
+    async (next: VaultPlain, masterKey: CryptoKey, vaultId: string): Promise<VaultPlain> => {
       const cipher = await services.vault.encryptVault(next, masterKey);
       await services.vault.putCachedCipher(cipher);
+      let ok = false;
       try {
-        const ok = await services.sync.push(vaultId, cipher);
-        if (!ok) {
-          // Stale — refresh from backend, naïve last-write-wins merge,
-          // re-encrypt, retry.
-          const fresh = await services.sync.pull(vaultId);
-          if (fresh) {
-            const remote = await services.vault.decryptVault(fresh, masterKey);
-            const merged: VaultPlain = {
-              ...next,
-              apiKeys: { ...remote.apiKeys, ...next.apiKeys },
-            };
-            const retryCipher = await services.vault.encryptVault(
-              merged,
-              masterKey,
-            );
-            await services.vault.putCachedCipher(retryCipher);
-            await services.sync.push(vaultId, retryCipher);
-            return merged;
-          }
-        }
+        ok = await services.sync.push(vaultId, cipher);
       } catch {
-        // Offline — local cache is still updated, sync will catch up
-        // on the next successful edit.
+        // Offline — local cache is still updated, sync catches up later.
+        return next;
       }
-      return next;
+      if (ok) return next;
+
+      // Stale-write — pull, diff, decide.
+      const fresh = await services.sync.pull(vaultId);
+      if (!fresh) {
+        // 409 with no remote? Backend bug or race; treat as resolved.
+        return next;
+      }
+      const remote = await services.vault.decryptVault(fresh, masterKey);
+      const report = findConflicts(next, remote);
+
+      if (report.conflicts.length === 0) {
+        // Pure additive merge — no user input needed.
+        const merged = report.baseline;
+        const retryCipher = await services.vault.encryptVault(merged, masterKey);
+        await services.vault.putCachedCipher(retryCipher);
+        await services.sync.push(vaultId, retryCipher);
+        return merged;
+      }
+
+      // Real conflict — wait on the ConflictDialog.
+      return new Promise<VaultPlain>((resolve) => {
+        setPendingConflict({
+          report,
+          resolve: async (resolutions) => {
+            const merged = applyResolutions(report, resolutions);
+            try {
+              const retryCipher = await services.vault.encryptVault(
+                merged,
+                masterKey,
+              );
+              await services.vault.putCachedCipher(retryCipher);
+              await services.sync.push(vaultId, retryCipher);
+            } catch {
+              /* offline; cache is good, server retries later */
+            }
+            setPendingConflict(null);
+            resolve(merged);
+          },
+          cancel: () => {
+            // User backed out — keep their in-memory edit but don't
+            // overwrite the remote. The next successful edit will
+            // sync as usual.
+            setPendingConflict(null);
+            resolve(next);
+          },
+        });
+      });
     },
     [services],
   );
@@ -273,5 +329,14 @@ export function useVaultFlow(services: Services) {
     setState({ kind: 'locked' });
   }, []);
 
-  return { state, completeFirstRun, unlock, upsertKey, removeKey, lock, retryPlatformCheck };
+  return {
+    state,
+    pendingConflict,
+    completeFirstRun,
+    unlock,
+    upsertKey,
+    removeKey,
+    lock,
+    retryPlatformCheck,
+  };
 }
