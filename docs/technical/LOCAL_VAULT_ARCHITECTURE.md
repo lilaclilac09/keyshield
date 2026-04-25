@@ -1,6 +1,9 @@
 # KeyShield 本地金库 + 生物识别解锁 —— 架构设计(v1.0 定稿)
 
-> 适用范围:V1 Face ID / passkey 解锁 + 每设备独立 session 的工程落地。
+> 适用范围:**V1 / `extension/`** —— Face ID / passkey 解锁 + 每设备独立 session,**vault 不跨设备同步**。
+>
+> 想看跨设备同步(iCloud-Keychain 风格)的实现?那是 **Path A / `extension-sync/`**,见 [`SYNC_VAULT_ARCHITECTURE.md`](./SYNC_VAULT_ARCHITECTURE.md)。两份实现并存,不互相取代。
+>
 > 状态:所有开放问题已定论,可以据此实施。
 
 ## 一、核心理念

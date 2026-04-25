@@ -90,6 +90,37 @@ The SDK still carries stub classes for `LitProtocol`, `BonsolVerifier`, `ArciumM
 ### OKX / Phantom / Solflare wallet support
 Owner-wallet connection (Solana wallet-adapter) lives in the `frontend` submodule — the same place as the Clerk Web3 auth flow that prefers OKX. SDK-side, any standard Solana wallet adapter can sign the `grant` / `revoke` transactions the SessionManager builds.
 
+## Two extension implementations: V1 vs Path A
+
+The repo ships **two parallel browser-extension workspaces**. They share the V1 lib code path and on-chain SessionManager but diverge on how the API-key vault itself is stored. Pick the one whose UX matches your product target.
+
+| | **V1 — `extension/`** | **Path A — `extension-sync/`** |
+|---|---|---|
+| Master key | Generated locally, stored in `chrome.storage.local`, gated by Face ID | **HKDF-derived from WebAuthn PRF**, never persisted |
+| Vault ciphertext | `chrome.storage.local` only | **Cloudflare R2** (via `infra/sync-worker`) + local cache |
+| Cross-device | Passkey login syncs, vault doesn't — re-import on every device | **Vault auto-follows** any device with the synced passkey |
+| Browser floor | Any WebAuthn-capable browser | **Safari 17+ / Chrome 116+ / Firefox 119+** (PRF required) |
+| Server dependency | None | One Cloudflare Worker + 2 R2 buckets |
+| Conflict resolution | Last-write-wins, no UX | **`ConflictDialog`** with per-key merge |
+| Lines of code (lib + popup) | ~750 | ~1,400 |
+| When to ship | You can't / won't run any backend | You want iCloud-Keychain UX |
+
+Architecture docs:
+- V1 → [docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)
+- Path A → [docs/technical/SYNC_VAULT_ARCHITECTURE.md](./docs/technical/SYNC_VAULT_ARCHITECTURE.md)
+
+To run Path A locally:
+
+```bash
+# Terminal 1: sync worker (Cloudflare R2 in Miniflare)
+cd infra/sync-worker
+npx wrangler dev                        # http://localhost:8787
+
+# Terminal 2: popup (Vite SPA)
+cd extension-sync
+VITE_KEYSHIELD_SYNC_URL=http://localhost:8787 npx vite dev
+```
+
 ## Quickstarts
 
 ### Quickstart 0: Run what's already green (no Solana toolchain required)
@@ -306,20 +337,26 @@ clawhub run --skill keyshield --test-mode
 
 | Suite | Command | Status |
 |---|---|---|
-| TypeScript unit (3 workspaces) | `npm test` | **68 / 68 passing** |
+| TypeScript unit (5 workspaces) | `npm test` | **246 / 246 passing** |
 | TypeScript strict typecheck | `npm run typecheck` | clean |
 | Rust program check | `cargo check -p keyshield --tests` | clean |
 | Rust program lib tests | `cargo test -p keyshield --lib` | 1 / 1 passing |
-| Rust Mollusk integration | `cargo build-sbf && cargo test -p keyshield` | **needs Solana CLI** |
-| End-to-end demo | `npm run demo` | **needs deployed program + funded wallet** |
+| Rust Mollusk integration | `cargo build-sbf && cargo test -p keyshield` | 13 / 13 (needs Solana CLI) |
+| End-to-end demo | `npm run demo` | needs deployed program + funded wallet |
 
 TypeScript breakdown:
 
 ```
-@keyshield/agent-sdk      24 tests  (session lifecycle, client construction, smoke)
-@keyshield/goat-wallet     6 tests  (dynamic priority fee math + edge cases)
-@keyshield/extension      38 tests  (auth / vault / session libs)
+@keyshield/agent-sdk         24 tests  (session lifecycle, client construction, smoke)
+@keyshield/goat-wallet        6 tests  (dynamic priority fee math + edge cases)
+@keyshield/extension         57 tests  (V1 — auth / vault / session libs + popup UI)
+@keyshield/extension-sync   119 tests  (Path A — PRF + sync + conflict + UpgradeScreen)
+@keyshield/sync-worker       40 tests  (Cloudflare Worker routes against real workerd)
 ```
+
+The sync-worker tests run inside a real Cloudflare workerd via
+`@cloudflare/vitest-pool-workers`, so the R2 binding behaves exactly
+like production.
 
 ## Packages
 
@@ -328,7 +365,9 @@ TypeScript breakdown:
 | `@keyshield/agent-sdk` | Main TypeScript SDK for agents | 2.0.0 |
 | `@keyshield/openclaw-skill` | OpenClaw skill package | 2.0.0 |
 | `@keyshield/goat-wallet` | GOAT Wallet plugin | 2.0.0 |
-| `@keyshield/extension` | Browser extension | 2.0.0 |
+| `@keyshield/extension` | Browser extension — V1 (local vault) | 2.0.0 |
+| `@keyshield/extension-sync` | Browser extension — Path A (PRF + sync) | 0.1.0 |
+| `@keyshield/sync-worker` | Cloudflare Worker for Path A vault sync | 0.1.0 |
 
 ## Configuration
 
