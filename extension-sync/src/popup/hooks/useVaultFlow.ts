@@ -83,6 +83,26 @@ export function useVaultFlow(services: Services) {
       const vaultId = await services.vault.deriveVaultId(authResult.prfSecret);
       // PRF secret is no longer needed past this point.
 
+      // Mint a fresh sync-worker JWT from the assertion we just
+      // performed (if a syncAuth client is configured). This is also
+      // the path the HttpSyncBackend's 401-retry will use.
+      if (services.syncAuth && authResult.authenticationResponseJSON) {
+        try {
+          const exchanged = await services.syncAuth.exchange(
+            vaultId,
+            authResult.authenticationResponseJSON,
+          );
+          services.bearer.set(exchanged.token, exchanged.expiresAt);
+        } catch (e) {
+          // Token exchange failed — likely because we haven't called
+          // /auth/register yet (first-run). We let the flow continue
+          // with a null bearer; subsequent /vault calls will surface
+          // 401 and the caller can recover.
+          // eslint-disable-next-line no-console
+          console.warn('[KeyShield] /auth/exchange failed:', e);
+        }
+      }
+
       // Pull authoritative cipher from sync backend, falling back to
       // local cache if offline.
       const { cipher: remote, source } = await fetchLatestCipher(
@@ -118,7 +138,8 @@ export function useVaultFlow(services: Services) {
     [services],
   );
 
-  /** Called from UnlockScreen after first-time passkey registration. */
+  /** Called from UnlockScreen after first-time passkey registration.
+   *  Registers the vault on the sync backend, then unlocks. */
   const completeFirstRun = useCallback(
     async (registrationResult: AuthResult): Promise<void> => {
       // Some platforms only return PRF on a subsequent get() call —
@@ -128,6 +149,27 @@ export function useVaultFlow(services: Services) {
       const authResult = haveSecret
         ? registrationResult
         : await services.auth.authenticateWithWebAuthn();
+
+      // Push the attestation to the sync worker so future devices can
+      // /auth/exchange against it. If a syncAuth client isn't
+      // configured (in-memory sync), we skip this entirely.
+      if (services.syncAuth && registrationResult.prfSecret) {
+        const vaultId = await services.vault.deriveVaultId(
+          registrationResult.prfSecret,
+        );
+        try {
+          await services.syncAuth.registerVault(vaultId, registrationResult);
+        } catch (e: any) {
+          // 409 → vault already registered on the backend (likely the
+          // user re-installed). That's recoverable: just skip and fall
+          // through to authenticate + exchange below.
+          if (e?.name !== 'SyncAuthAlreadyRegistered') {
+            // eslint-disable-next-line no-console
+            console.warn('[KeyShield] /auth/register failed:', e);
+          }
+        }
+      }
+
       await finalizeUnlock(authResult);
     },
     [services, finalizeUnlock],

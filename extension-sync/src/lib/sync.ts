@@ -70,11 +70,22 @@ export interface HttpSyncBackendConfig {
   /** Base URL e.g. https://sync.keyshield.dev */
   baseUrl: string;
   /**
-   * Optional auth token sent as `Authorization: Bearer <token>`. The
-   * backend should require this for any non-trivial deployment —
-   * passing the vault ID alone in the URL is not authentication.
+   * Static bearer (legacy / tests). Mutually exclusive with
+   * `getToken` — if both are supplied, `getToken` wins.
    */
   authToken?: string;
+  /**
+   * Async getter for the current Bearer JWT. Returning `null` means
+   * "no token available yet" and the request will go out without
+   * Authorization (which the worker will reject with 401).
+   */
+  getToken?: () => string | Promise<string | null> | null;
+  /**
+   * Called when the backend returns 401 to give the consumer a chance
+   * to mint a fresh token. Should resolve to the new token (or null
+   * to give up). The request is retried at most once per call.
+   */
+  refreshToken?: () => Promise<string | null>;
   /**
    * Override fetch for tests / non-browser runtimes.
    */
@@ -86,20 +97,52 @@ export interface HttpSyncBackendConfig {
 export class HttpSyncBackend implements SyncBackend {
   private readonly baseUrl: string;
   private readonly authToken?: string;
+  private readonly getToken?: HttpSyncBackendConfig['getToken'];
+  private readonly refreshToken?: HttpSyncBackendConfig['refreshToken'];
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
   constructor(cfg: HttpSyncBackendConfig) {
     this.baseUrl = cfg.baseUrl.replace(/\/$/, '');
     this.authToken = cfg.authToken;
+    this.getToken = cfg.getToken;
+    this.refreshToken = cfg.refreshToken;
     this.fetchImpl = cfg.fetchImpl ?? fetch.bind(globalThis);
     this.timeoutMs = cfg.timeoutMs ?? 8000;
+  }
+
+  private async resolveToken(): Promise<string | null> {
+    if (this.getToken) {
+      const v = await this.getToken();
+      return v ?? null;
+    }
+    return this.authToken ?? null;
   }
 
   private async request(
     method: 'GET' | 'PUT' | 'DELETE',
     vaultId: string,
     body?: unknown,
+  ): Promise<Response> {
+    let token = await this.resolveToken();
+    let res = await this.send(method, vaultId, body, token);
+    // Auto-refresh on 401 if a refresher is wired up. We retry exactly
+    // once — if refresh + retry still 401s, surface the failure.
+    if (res.status === 401 && this.refreshToken) {
+      const fresh = await this.refreshToken();
+      if (fresh) {
+        token = fresh;
+        res = await this.send(method, vaultId, body, token);
+      }
+    }
+    return res;
+  }
+
+  private async send(
+    method: 'GET' | 'PUT' | 'DELETE',
+    vaultId: string,
+    body: unknown,
+    token: string | null,
   ): Promise<Response> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.timeoutMs);
@@ -108,7 +151,7 @@ export class HttpSyncBackend implements SyncBackend {
         method,
         headers: {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
-          ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,

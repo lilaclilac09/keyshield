@@ -19,6 +19,39 @@
  * UX goal).
  */
 
+/**
+ * RegistrationResponseJSON / AuthenticationResponseJSON shapes that
+ * mirror @simplewebauthn/server's expected input. Kept here as a thin
+ * structural type so we don't pull the simplewebauthn package into
+ * the extension bundle just for a type alias.
+ */
+export interface RegistrationResponseJSON {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  response: {
+    clientDataJSON: string;
+    attestationObject: string;
+    transports?: string[];
+  };
+  clientExtensionResults: any;
+  authenticatorAttachment?: string;
+}
+
+export interface AuthenticationResponseJSON {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle?: string;
+  };
+  clientExtensionResults: any;
+  authenticatorAttachment?: string;
+}
+
 export interface AuthResult {
   success: boolean;
   credentialId?: string;
@@ -28,7 +61,69 @@ export interface AuthResult {
    * inside the unlock handler and let it go out of scope.
    */
   prfSecret?: Uint8Array;
+  /**
+   * Base64url of the WebAuthn challenge we sent. The sync-worker uses
+   * it as `expectedChallenge` when verifying the registration. Only
+   * populated by `registerPasskey`.
+   */
+  expectedChallenge?: string;
+  /** Serialised attestation, set by registerPasskey for sync-auth use. */
+  registrationResponseJSON?: RegistrationResponseJSON;
+  /** Serialised assertion, set by authenticateWithWebAuthn. */
+  authenticationResponseJSON?: AuthenticationResponseJSON;
   error?: string;
+}
+
+// ==================== Base64url helpers ====================
+
+function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let str = '';
+  for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function credentialToRegistrationJSON(
+  cred: Credential & { rawId?: ArrayBuffer; response?: any; getClientExtensionResults?: () => any; type?: string; authenticatorAttachment?: string | null },
+): RegistrationResponseJSON {
+  const response = cred.response as AuthenticatorAttestationResponse;
+  return {
+    id: cred.id,
+    rawId: bufferToBase64Url(cred.rawId!),
+    type: 'public-key',
+    response: {
+      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+      attestationObject: bufferToBase64Url(response.attestationObject),
+      transports:
+        typeof (response as any).getTransports === 'function'
+          ? (response as any).getTransports()
+          : undefined,
+    },
+    clientExtensionResults: cred.getClientExtensionResults?.() ?? {},
+    ...(cred.authenticatorAttachment
+      ? { authenticatorAttachment: cred.authenticatorAttachment }
+      : {}),
+  };
+}
+
+function credentialToAuthenticationJSON(
+  cred: Credential & { rawId?: ArrayBuffer; response?: any; getClientExtensionResults?: () => any; type?: string },
+): AuthenticationResponseJSON {
+  const response = cred.response as AuthenticatorAssertionResponse;
+  return {
+    id: cred.id,
+    rawId: bufferToBase64Url(cred.rawId!),
+    type: 'public-key',
+    response: {
+      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+      authenticatorData: bufferToBase64Url(response.authenticatorData),
+      signature: bufferToBase64Url(response.signature),
+      userHandle: response.userHandle
+        ? bufferToBase64Url(response.userHandle)
+        : undefined,
+    },
+    clientExtensionResults: cred.getClientExtensionResults?.() ?? {},
+  };
 }
 
 export interface CredentialsProvider {
@@ -133,9 +228,15 @@ export class AuthService {
       }
 
       const prfSecret = extractPrfSecret(credential);
+      const expectedChallenge = bufferToBase64Url(challenge);
+      const registrationResponseJSON = credentialToRegistrationJSON(
+        credential as any,
+      );
       return {
         success: true,
         credentialId: credential.id,
+        expectedChallenge,
+        registrationResponseJSON,
         ...(prfSecret ? { prfSecret } : {}),
       };
     } catch (e: any) {
@@ -186,7 +287,15 @@ export class AuthService {
             'with a passkey-capable authenticator.',
         };
       }
-      return { success: true, credentialId: credential.id, prfSecret };
+      const authenticationResponseJSON = credentialToAuthenticationJSON(
+        credential as any,
+      );
+      return {
+        success: true,
+        credentialId: credential.id,
+        prfSecret,
+        authenticationResponseJSON,
+      };
     } catch (e: any) {
       return {
         success: false,

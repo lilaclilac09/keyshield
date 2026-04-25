@@ -10,9 +10,40 @@ function mockCredentials(opts: {
   getImpl?: (o: any) => Promise<Credential | null>;
   hasPublicKeyCredential?: boolean;
 } = {}): CredentialsProvider {
-  const buildCredential = (id: string) =>
+  // The conversion helpers expect a real-shape credential — rawId,
+  // response.clientDataJSON, response.attestationObject (for create)
+  // / authenticatorData + signature (for get). Stub them with empty
+  // ArrayBuffers; the tests don't check the b64 content, only that
+  // the right calls happened.
+  const empty = new ArrayBuffer(0);
+  const buildRegisterCredential = (id: string) =>
     ({
       id,
+      rawId: empty,
+      type: 'public-key' as const,
+      authenticatorAttachment: 'platform',
+      response: {
+        clientDataJSON: empty,
+        attestationObject: empty,
+        getTransports: () => [],
+      },
+      getClientExtensionResults: () =>
+        opts.prfBytes
+          ? { prf: { results: { first: opts.prfBytes.buffer } } }
+          : {},
+    } as unknown as Credential);
+
+  const buildAuthCredential = (id: string) =>
+    ({
+      id,
+      rawId: empty,
+      type: 'public-key' as const,
+      response: {
+        clientDataJSON: empty,
+        authenticatorData: empty,
+        signature: empty,
+        userHandle: null,
+      },
       getClientExtensionResults: () =>
         opts.prfBytes
           ? { prf: { results: { first: opts.prfBytes.buffer } } }
@@ -20,9 +51,8 @@ function mockCredentials(opts: {
     } as unknown as Credential);
 
   return {
-    create:
-      opts.createImpl ?? (async () => buildCredential('new-cred-id')),
-    get: opts.getImpl ?? (async () => buildCredential('cred-id')),
+    create: opts.createImpl ?? (async () => buildRegisterCredential('new-cred-id')),
+    get: opts.getImpl ?? (async () => buildAuthCredential('cred-id')),
     hasPublicKeyCredential: opts.hasPublicKeyCredential ?? true,
   };
 }

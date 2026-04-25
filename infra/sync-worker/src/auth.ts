@@ -1,14 +1,17 @@
 /**
- * Bearer-token auth — Step 2 fills in the real WebAuthn challenge /
- * exchange flow. For Step 1 we only need the JWT *verification* path
- * because the routes need to gate on something. JWTs will be issued
- * by /auth/exchange in Step 2.
+ * Bearer-token verification + issuance (Step 2 wired the issuance
+ * routes — see src/index.ts /auth/*).
  *
- * The JWT payload looks like:
+ * The JWT payload:
  *   { sub: vaultId, iat, exp }
  *
  * The `sub` claim must equal the URL's :id segment — i.e. a token
  * issued for vault A cannot mutate vault B even if leaked.
+ *
+ * `issueJwt` is no longer test-only — /auth/exchange calls it after a
+ * successful WebAuthn assertion verification. The function is kept
+ * generic so unit tests can mint tokens directly when they don't want
+ * to go through the full WebAuthn dance.
  */
 
 import { jwtVerify, SignJWT } from 'jose';
@@ -44,14 +47,11 @@ export async function verifyJwt(
 }
 
 /**
- * Test-only helper: issue a JWT bound to a given vaultId. Step 2 will
- * provide the real issuer that signs after a WebAuthn challenge.
- *
- * Production code calls /auth/exchange — this is exposed only so the
- * route tests can construct valid tokens without going through the
- * full WebAuthn flow.
+ * Issue a short-lived JWT bound to a vaultId. Called by /auth/exchange
+ * after a successful WebAuthn assertion verification, and by tests
+ * when they want a token without the full dance.
  */
-export async function issueJwtForTest(
+export async function issueJwt(
   vaultId: string,
   secret: string,
   issuer: string,
@@ -67,6 +67,9 @@ export async function issueJwtForTest(
     .setExpirationTime(now + ttlSecs)
     .sign(key);
 }
+
+/** @deprecated alias kept while old tests transition. Use `issueJwt`. */
+export const issueJwtForTest = issueJwt;
 
 /**
  * Extract a "Bearer xxx" token from an incoming request. Returns null

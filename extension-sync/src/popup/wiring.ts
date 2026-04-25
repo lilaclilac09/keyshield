@@ -33,13 +33,26 @@ import {
   InMemorySyncBackend,
   type SyncBackend,
 } from '../lib/sync';
+import { BearerHolder, SyncAuthClient } from '../lib/sync-auth';
 
 const SYNC_URL =
   (import.meta as any)?.env?.VITE_KEYSHIELD_SYNC_URL ?? '';
 
+const bearer = new BearerHolder();
+const syncAuthClient = SYNC_URL
+  ? new SyncAuthClient({ baseUrl: SYNC_URL })
+  : null;
+
 function buildSyncBackend(): SyncBackend {
   if (SYNC_URL && typeof SYNC_URL === 'string') {
-    return new HttpSyncBackend({ baseUrl: SYNC_URL });
+    return new HttpSyncBackend({
+      baseUrl: SYNC_URL,
+      // useVaultFlow.ts owns the actual refresh by re-running the
+      // WebAuthn assertion. Wiring is set up in App.tsx after a
+      // successful unlock — we expose the BearerHolder here so both
+      // sides agree on where the token lives.
+      getToken: () => bearer.getValidToken(),
+    });
   }
   // eslint-disable-next-line no-console
   console.info(
@@ -60,6 +73,8 @@ export const services = {
     crypto: globalCryptoBackend(),
   }),
   sync: buildSyncBackend(),
+  syncAuth: syncAuthClient,
+  bearer,
   session: new ExtensionSession({
     storage: chromeSessionStorageBackend(),
   }),
