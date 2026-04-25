@@ -342,9 +342,10 @@ Use one of:
 
 | Provider | URL shape | Notes |
 |---|---|---|
-| [Helius](https://www.helius.dev/) | `https://mainnet.helius-rpc.com/?api-key=YOUR_KEY` | Recommended. Has a WebSocket endpoint for `accountSubscribe`. |
+| [Helius](https://www.helius.dev/) | `https://mainnet.helius-rpc.com/?api-key=YOUR_KEY` | Recommended for production. Has a WebSocket endpoint for `accountSubscribe`, stake-weighted QoS, and a priority-fee API. |
 | [Triton](https://triton.one/) | `https://<your-endpoint>.rpcpool.com/...` | Dedicated nodes, low latency. |
 | [QuickNode](https://www.quicknode.com/chains/sol) | `https://<your-endpoint>.solana-mainnet.quiknode.pro/...` | Easy to provision. |
+| [FluxRPC](https://fluxrpc.com/docs/rpc) | `https://solana-mainnet.fluxrpc.com/...` | Budget-friendly. Benchmark p99 latency on `getAccountInfo` and `sendTransaction` (incl. priority fees) against your own workload before promoting it past staging. |
 | Self-hosted validator | `http://your-validator:8899` | For teams with infra. |
 
 The SDK supports **`Connection` reuse** — instead of constructing a new `Connection` per component, build one and share it:
