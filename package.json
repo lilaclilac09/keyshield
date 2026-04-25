@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "extension"
+    "extension",
+    "extension-sync"
   ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",

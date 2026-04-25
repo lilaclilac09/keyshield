@@ -1,0 +1,47 @@
+{
+  "name": "@keyshield/extension-sync",
+  "version": "0.1.0",
+  "description": "KeyShield extension — iCloud-Keychain-style cross-device sync (Path A: WebAuthn PRF + remote ciphertext store)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
+    "@lit-protocol/lit-node-client": "^7.4.0",
+    "@lit-protocol/constants": "^9.0.1",
+    "@lit-protocol/auth-helpers": "^8.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "idb": "^8.0.3",
+    "lucide-react": "^0.462.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/chrome": "^0.0.251",
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@keyshield/agent-sdk": "*",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.19",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "~5.4.5",
+    "vite": "^5.4.20",
+    "vitest": "^2.1.9"
+  }
+}

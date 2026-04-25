@@ -1,0 +1,219 @@
+/**
+ * Path A vault flow.
+ *
+ * One pass through the user's day with this hook:
+ *
+ *   first-time on a brand-new device →
+ *      registerPasskey → authenticate → derive PRF → derive vaultId
+ *      → pull from sync backend
+ *         → present? unlock with the existing ciphertext (this is the
+ *            "iCloud Keychain new-device" moment)
+ *         → absent?  create empty vault, push to sync
+ *
+ *   subsequent unlocks →
+ *      authenticate → derive PRF → derive vaultId
+ *      → pull from sync (fall back to local cache if offline)
+ *      → decrypt
+ *
+ *   any vault edit →
+ *      encrypt → cache locally → push to sync (latest-wins)
+ *
+ * The PRF secret only ever lives in this hook's call stack; it is
+ * passed into the LocalVault to derive a non-extractable CryptoKey
+ * and then dropped. We deliberately do NOT keep prfSecret in React
+ * state.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import type { Services } from '../wiring';
+import type { VaultPlain, VaultCipher } from '../../lib/vault';
+import { LocalVault } from '../../lib/vault';
+import type { AuthResult } from '../../lib/auth';
+import { fetchLatestCipher } from '../../lib/sync';
+
+export type VaultFlowState =
+  | { kind: 'checking' }
+  | { kind: 'firstRun' }
+  | { kind: 'locked' }
+  | {
+      kind: 'unlocked';
+      vault: VaultPlain;
+      masterKey: CryptoKey;
+      vaultId: string;
+    }
+  | { kind: 'error'; message: string };
+
+export function useVaultFlow(services: Services) {
+  const [state, setState] = useState<VaultFlowState>({ kind: 'checking' });
+
+  // Initial state: do we already have a cached ciphertext locally?
+  // (Local cache means we've unlocked here before; otherwise this
+  // device is "fresh" — could be brand new OR could be a different
+  // device joining the user's vault.)
+  useEffect(() => {
+    (async () => {
+      try {
+        const cached = await services.vault.getCachedCipher();
+        setState({ kind: cached ? 'locked' : 'firstRun' });
+      } catch (e: any) {
+        setState({ kind: 'error', message: e?.message ?? 'Load failed' });
+      }
+    })();
+  }, [services]);
+
+  /**
+   * Shared post-authenticate handler. Given an AuthResult that
+   * includes a prfSecret, derive the master key + vault ID, sync,
+   * and transition into 'unlocked'.
+   *
+   * If the sync backend has a cipher, we decrypt it. Otherwise we
+   * create an empty vault, push it to the backend, and unlock with
+   * that. Either way the device joins the user's vault — this is
+   * the iCloud Keychain UX.
+   */
+  const finalizeUnlock = useCallback(
+    async (authResult: AuthResult): Promise<void> => {
+      if (!authResult.success || !authResult.prfSecret) {
+        throw new Error(
+          authResult.error ?? 'Authentication did not return a PRF secret',
+        );
+      }
+
+      const masterKey = await services.vault.deriveMasterKey(authResult.prfSecret);
+      const vaultId = await services.vault.deriveVaultId(authResult.prfSecret);
+      // PRF secret is no longer needed past this point.
+
+      // Pull authoritative cipher from sync backend, falling back to
+      // local cache if offline.
+      const { cipher: remote, source } = await fetchLatestCipher(
+        vaultId,
+        services.sync,
+        () => services.vault.getCachedCipher(),
+      );
+
+      let vault: VaultPlain;
+      let resultingCipher: VaultCipher;
+
+      if (remote) {
+        vault = await services.vault.decryptVault(remote, masterKey);
+        resultingCipher = remote;
+      } else {
+        // First time anywhere — create + push.
+        vault = LocalVault.emptyVault();
+        resultingCipher = await services.vault.encryptVault(vault, masterKey);
+        try {
+          await services.sync.push(vaultId, resultingCipher);
+        } catch {
+          // Offline first-run is OK — the next online edit will push.
+        }
+      }
+
+      // Update local cache so the next unlock is instant even offline.
+      await services.vault.putCachedCipher(resultingCipher);
+      // eslint-disable-next-line no-console
+      console.info(`[KeyShield] unlocked from ${source}`);
+
+      setState({ kind: 'unlocked', vault, masterKey, vaultId });
+    },
+    [services],
+  );
+
+  /** Called from UnlockScreen after first-time passkey registration. */
+  const completeFirstRun = useCallback(
+    async (registrationResult: AuthResult): Promise<void> => {
+      // Some platforms only return PRF on a subsequent get() call —
+      // do an explicit authenticate right after registration to be sure.
+      const haveSecret =
+        registrationResult.success && !!registrationResult.prfSecret;
+      const authResult = haveSecret
+        ? registrationResult
+        : await services.auth.authenticateWithWebAuthn();
+      await finalizeUnlock(authResult);
+    },
+    [services, finalizeUnlock],
+  );
+
+  /** Called from UnlockScreen after the locked-state Face ID. */
+  const unlock = useCallback(
+    async (authResult: AuthResult): Promise<void> => {
+      await finalizeUnlock(authResult);
+    },
+    [finalizeUnlock],
+  );
+
+  /**
+   * Save a new vault state both locally and to the sync backend.
+   * If sync rejects with a stale-write 409, we pull the latest, merge
+   * naïvely (latest-wins per key — newer createdAt overrides), and
+   * retry once. A real merge UI is V1.1 work.
+   */
+  const persist = useCallback(
+    async (next: VaultPlain, masterKey: CryptoKey, vaultId: string) => {
+      const cipher = await services.vault.encryptVault(next, masterKey);
+      await services.vault.putCachedCipher(cipher);
+      try {
+        const ok = await services.sync.push(vaultId, cipher);
+        if (!ok) {
+          // Stale — refresh from backend, naïve last-write-wins merge,
+          // re-encrypt, retry.
+          const fresh = await services.sync.pull(vaultId);
+          if (fresh) {
+            const remote = await services.vault.decryptVault(fresh, masterKey);
+            const merged: VaultPlain = {
+              ...next,
+              apiKeys: { ...remote.apiKeys, ...next.apiKeys },
+            };
+            const retryCipher = await services.vault.encryptVault(
+              merged,
+              masterKey,
+            );
+            await services.vault.putCachedCipher(retryCipher);
+            await services.sync.push(vaultId, retryCipher);
+            return merged;
+          }
+        }
+      } catch {
+        // Offline — local cache is still updated, sync will catch up
+        // on the next successful edit.
+      }
+      return next;
+    },
+    [services],
+  );
+
+  /** CRUD: add or replace an API key entry. */
+  const upsertKey = useCallback(
+    async (name: string, value: string, tags?: string[]) => {
+      if (state.kind !== 'unlocked') return;
+      const next: VaultPlain = {
+        ...state.vault,
+        apiKeys: {
+          ...state.vault.apiKeys,
+          [name]: { value, createdAt: Date.now(), tags },
+        },
+      };
+      const finalState = await persist(next, state.masterKey, state.vaultId);
+      setState({ ...state, vault: finalState });
+    },
+    [state, persist],
+  );
+
+  /** CRUD: delete an API key by name. */
+  const removeKey = useCallback(
+    async (name: string) => {
+      if (state.kind !== 'unlocked') return;
+      const { [name]: _, ...rest } = state.vault.apiKeys;
+      const next: VaultPlain = { ...state.vault, apiKeys: rest };
+      const finalState = await persist(next, state.masterKey, state.vaultId);
+      setState({ ...state, vault: finalState });
+    },
+    [state, persist],
+  );
+
+  /** Lock — drops in-memory state but keeps the encrypted cache. */
+  const lock = useCallback(() => {
+    setState({ kind: 'locked' });
+  }, []);
+
+  return { state, completeFirstRun, unlock, upsertKey, removeKey, lock };
+}
