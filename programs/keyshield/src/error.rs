@@ -52,11 +52,10 @@ pub enum KeyShieldError {
     ToolNotAllowed = 6082,
     OutputRedactionRequired = 6083,
 
-    // Bonsol/Arcium errors (6090-6099)
-    BonsolVerificationFailed = 6090,
-    ArciumMPCFailed = 6091,
-    InvalidBonsolProof = 6092,
-    MPCSignatureInvalid = 6093,
+    // Codes 6090-6093 (BonsolVerificationFailed, ArciumMPCFailed,
+    // InvalidBonsolProof, MPCSignatureInvalid) were removed when the
+    // Bonsol/Arcium stub branches were deleted from agent_access.rs.
+    // Do not reuse these numbers — old clients may still match on them.
 }
 
 impl From<KeyShieldError> for ProgramError {

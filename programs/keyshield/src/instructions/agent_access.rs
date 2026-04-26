@@ -1,11 +1,14 @@
 //! Agent Access instruction handlers
 //!
 //! Instructions for managing agent access grants with:
-//! - Bonsol ZK proof verification
-//! - Arcium MPC support
 //! - Rate limiting
 //! - Session timeouts
 //! - Policy enforcement
+//!
+//! Earlier iterations of this file contained Bonsol-ZK-proof and Arcium-MPC
+//! verification branches; those were stub-only and have been removed. The
+//! `zk_proof_length` field is still parsed off the wire (and required to be
+//! zero) so the on-chain layout stays compatible with deployed clients.
 
 use pinocchio::{
     account_info::AccountInfo,
@@ -22,23 +25,22 @@ use crate::{
 
 /// Process GrantAgentUniversalAccess instruction
 ///
-/// Grants an AI agent access to keys in the Universal Vault.
-/// Supports both direct agent pubkey and Bonsol ZK proof authentication.
+/// Grants an AI agent access to keys in the Universal Vault using a direct
+/// agent pubkey.
 ///
 /// Accounts:
 /// 0. [signer] Owner - The vault owner granting access
 /// 1. [writable] UniversalVault - PDA account
 ///
 /// Instruction data:
-/// - agent_pubkey (32 bytes) - Agent's public key (or zeros if using ZK proof)
+/// - agent_pubkey (32 bytes) - Agent's public key (must be non-zero)
 /// - key_group (1 byte) - Key group to grant access to (255 = universal)
 /// - rate_limit_calls (4 bytes) - Max calls per hour
 /// - rate_limit_tokens (4 bytes) - Max tokens per minute
 /// - session_timeout (8 bytes) - Session duration in seconds
 /// - max_spend_micro_usdc (8 bytes) - Max spend in micro-USDC
 /// - payment_stream_enabled (1 byte) - Enable streaming payments
-/// - zk_proof_length (2 bytes) - Length of ZK proof (0 if using direct pubkey)
-/// - zk_proof (variable) - Bonsol ZK proof (if zk_proof_length > 0)
+/// - zk_proof_length (2 bytes) - Reserved; must be 0
 /// - allowed_endpoints_count (1 byte)
 /// - allowed_endpoints (variable) - Null-terminated strings
 /// - allowed_models_count (1 byte)
@@ -77,16 +79,13 @@ pub fn process_grant_agent_access(
     let payment_stream_enabled = data[57] != 0;
     let zk_proof_len = u16::from_le_bytes(data[58..60].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?) as usize;
 
-    // Verify ZK proof if provided
-    if zk_proof_len > 0 {
-        let zk_proof = &data[60..60 + zk_proof_len];
-        // TODO: Integrate Bonsol verifier here
-        // In production: verify_bonsol_proof(zk_proof, &agent_pubkey)?;
-        if zk_proof.is_empty() {
-            return Err(KeyShieldError::InvalidBonsolProof.into());
-        }
-    } else if agent_pubkey == Pubkey::default() {
-        // Must provide either ZK proof or agent pubkey
+    // The Bonsol ZK-proof path was never wired up beyond a stub. We keep the
+    // 2-byte zk_proof_length field on the wire for layout compatibility, but
+    // require it to be zero. The agent pubkey itself must be non-zero.
+    if zk_proof_len != 0 {
+        return Err(KeyShieldError::InvalidKeyData.into());
+    }
+    if agent_pubkey == Pubkey::default() {
         return Err(KeyShieldError::InvalidAgentPubkey.into());
     }
 
@@ -350,18 +349,17 @@ pub fn process_revoke_agent_access(
 
 /// Process AccessWithAgent instruction
 ///
-/// Verifies agent access using ZK proof or MPC signature.
-/// Returns success if agent is authorized based on policies.
+/// Verifies agent access using a direct grant lookup. Returns success if the
+/// agent is authorized and policies allow.
 ///
 /// Accounts:
-/// 0. [signer] Agent - The agent requesting access (or ZK proof verifier)
+/// 0. [signer] Agent - The agent requesting access
 /// 1. [] UniversalVault - PDA account
-/// 2. [] (optional) System Program for CPI verification
 ///
 /// Instruction data:
-/// - access_type (1 byte) - 0 = direct, 1 = zk_proof, 2 = mpc_signature
+/// - access_type (1 byte) - Must be 0 (direct). The 1=zk_proof and
+///   2=mpc_signature branches were stubs and have been removed.
 /// - key_id_or_group (32 bytes) - Key hash or key group
-/// - proof_data (variable) - ZK proof or MPC signature
 /// - domain (variable, null-terminated) - Requesting domain for policy check
 pub fn process_access_with_agent(
     program_id: &Pubkey,
@@ -377,89 +375,68 @@ pub fn process_access_with_agent(
     let agent = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
-    // Agent must be signer (or ZK proof verifier)
     if !agent.is_signer() {
         return Err(KeyShieldError::AccessDenied.into());
     }
 
     let access_type = data[0];
-    let key_id: [u8; 32] = data[1..33].try_into()
+    let _key_id: [u8; 32] = data[1..33].try_into()
         .map_err(|_| KeyShieldError::InvalidKeyData)?;
 
-    // Verify proof based on access type
-    match access_type {
-        0 => {
-            // Direct access - just verify agent is authorized
-            // Read vault to check grant
-            let vault_data = vault.try_borrow_data()?;
-            if vault_data.len() < UniversalVault::SIZE {
-                return Err(KeyShieldError::UniversalVaultNotFound.into());
-            }
+    // Only the direct-grant lookup is supported. The 1=zk_proof and
+    // 2=mpc_signature branches were stub-only and have been removed.
+    if access_type != 0 {
+        return Err(KeyShieldError::InvalidKeyData.into());
+    }
 
-            let agent_pubkey = *agent.key();
-            let agent_grants_start = 768;
-            let agent_grant_size = 128;
+    {
+        let vault_data = vault.try_borrow_data()?;
+        if vault_data.len() < UniversalVault::SIZE {
+            return Err(KeyShieldError::UniversalVaultNotFound.into());
+        }
 
-            let mut authorized = false;
-            for i in 0..MAX_AGENTS {
-                let offset = agent_grants_start + (i * agent_grant_size);
-                let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
-                    .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
-                let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
-                    .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
+        let agent_pubkey = *agent.key();
+        let agent_grants_start = 768;
+        let agent_grant_size = 128;
 
-                if existing_pubkey == agent_pubkey {
-                    // Check if active
-                    let is_active = vault_data[offset + 58];
-                    if is_active == 0 {
-                        return Err(KeyShieldError::AgentGrantRevoked.into());
-                    }
+        let mut authorized = false;
+        for i in 0..MAX_AGENTS {
+            let offset = agent_grants_start + (i * agent_grant_size);
+            let existing_pubkey_bytes: [u8; 32] = vault_data[offset..offset + 32].try_into()
+                .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
+            let existing_pubkey = Pubkey::try_from(&existing_pubkey_bytes[..])
+                .map_err(|_| KeyShieldError::AgentNotAuthorized)?;
 
-                    // Check expiration
-                    let created_at = u64::from_le_bytes(
-                        vault_data[offset + 78..offset + 86].try_into()
-                            .map_err(|_| KeyShieldError::AgentGrantExpired)?
-                    );
-                    let session_timeout = u64::from_le_bytes(
-                        vault_data[offset + 41..offset + 49].try_into()
-                            .map_err(|_| KeyShieldError::AgentGrantExpired)?
-                    );
-
-                    let timestamp = Clock::get()?.unix_timestamp as u64;
-                    // session_timeout == 0 means the grant has no expiry
-                    // (useful for testing and for legacy unlimited grants).
-                    if session_timeout > 0 && timestamp > created_at.saturating_add(session_timeout) {
-                        return Err(KeyShieldError::AgentGrantExpired.into());
-                    }
-
-                    authorized = true;
-                    break;
+            if existing_pubkey == agent_pubkey {
+                let is_active = vault_data[offset + 58];
+                if is_active == 0 {
+                    return Err(KeyShieldError::AgentGrantRevoked.into());
                 }
-            }
 
-            if !authorized {
-                return Err(KeyShieldError::AgentNotAuthorized.into());
+                let created_at = u64::from_le_bytes(
+                    vault_data[offset + 78..offset + 86].try_into()
+                        .map_err(|_| KeyShieldError::AgentGrantExpired)?
+                );
+                let session_timeout = u64::from_le_bytes(
+                    vault_data[offset + 41..offset + 49].try_into()
+                        .map_err(|_| KeyShieldError::AgentGrantExpired)?
+                );
+
+                let timestamp = Clock::get()?.unix_timestamp as u64;
+                // session_timeout == 0 means the grant has no expiry
+                // (useful for testing and for legacy unlimited grants).
+                if session_timeout > 0 && timestamp > created_at.saturating_add(session_timeout) {
+                    return Err(KeyShieldError::AgentGrantExpired.into());
+                }
+
+                authorized = true;
+                break;
             }
         }
-        1 => {
-            // ZK proof - verify Bonsol proof
-            // TODO: Integrate Bonsol verifier
-            let proof_data = &data[33..];
-            if proof_data.is_empty() {
-                return Err(KeyShieldError::InvalidBonsolProof.into());
-            }
-            // In production: verify_bonsol_proof(proof_data, &key_id)?;
+
+        if !authorized {
+            return Err(KeyShieldError::AgentNotAuthorized.into());
         }
-        2 => {
-            // MPC signature - verify Arcium MPC
-            // TODO: Integrate Arcium verifier
-            let mpc_data = &data[33..];
-            if mpc_data.is_empty() {
-                return Err(KeyShieldError::MPCSignatureInvalid.into());
-            }
-            // In production: verify_arcium_signature(mpc_data, &key_id)?;
-        }
-        _ => return Err(KeyShieldError::InvalidKeyData.into()),
     }
 
     // Check policy rules (domain allow/block)
