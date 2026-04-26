@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Services } from '../wiring';
 import type { VaultPlain, VaultCipher } from '../../lib/vault';
-import { LocalVault } from '../../lib/vault';
+import { LocalVault, VAULT_VERSION } from '../../lib/vault';
 import type { AuthResult } from '../../lib/auth';
 import { fetchLatestCipher } from '../../lib/sync';
 import { detectPrfSupport } from '../../lib/platform';
@@ -37,12 +37,27 @@ import {
   type ConflictChoice,
   type ConflictReport,
 } from '../../lib/conflict';
+import { generateMnemonic, mnemonicToSeed, seedToMnemonic } from '../../lib/mnemonic';
+import { generateSeed, unwrapSeed, wrapSeed } from '../../lib/seed-envelope';
 
 export type VaultFlowState =
   | { kind: 'checking' }
   | { kind: 'unsupportedPlatform' }
   | { kind: 'firstRun' }
+  | { kind: 'restore' }
   | { kind: 'locked' }
+  | {
+      /**
+       * Right after a brand-new vault is created. The popup shows
+       * the 24-word recovery phrase and asks the user to confirm
+       * they've saved it before transitioning to 'unlocked'.
+       */
+      kind: 'showMnemonic';
+      mnemonic: string;
+      vault: VaultPlain;
+      masterKey: CryptoKey;
+      vaultId: string;
+    }
   | {
       kind: 'unlocked';
       vault: VaultPlain;
@@ -96,78 +111,122 @@ export function useVaultFlow(services: Services) {
   }, []);
 
   /**
-   * Shared post-authenticate handler. Given an AuthResult that
-   * includes a prfSecret, derive the master key + vault ID, sync,
-   * and transition into 'unlocked'.
+   * Shared post-authenticate handler.
    *
-   * If the sync backend has a cipher, we decrypt it. Otherwise we
-   * create an empty vault, push it to the backend, and unlock with
-   * that. Either way the device joins the user's vault — this is
-   * the iCloud Keychain UX.
+   * V2 happy path:
+   *   1. Pull the cipher from sync.
+   *   2. If it has a seedEnvelope, unwrap it with the PRF output
+   *      → seed → derive K, V → decrypt vault.
+   *   3. If absent (legacy V1 cipher OR brand-new vault), fall back
+   *      to deriving K, V directly from PRF.
+   *   4. If the cipher does not yet exist anywhere (truly first
+   *      device ever), generate a fresh seed, wrap it under PRF,
+   *      encrypt an empty vault, push, and surface the recovery
+   *      phrase via the 'showMnemonic' state. Subsequent devices
+   *      with the same passkey skip the mnemonic display entirely
+   *      because they pull the existing cipher.
+   *
+   * The PRF secret only ever lives in this call stack.
    */
   const finalizeUnlock = useCallback(
-    async (authResult: AuthResult): Promise<void> => {
+    async (authResult: AuthResult, opts: { showMnemonicOnNew: boolean }): Promise<void> => {
       if (!authResult.success || !authResult.prfSecret) {
         throw new Error(
           authResult.error ?? 'Authentication did not return a PRF secret',
         );
       }
 
-      const masterKey = await services.vault.deriveMasterKey(authResult.prfSecret);
-      const vaultId = await services.vault.deriveVaultId(authResult.prfSecret);
-      // PRF secret is no longer needed past this point.
+      // Try the V2 path: derive a *temporary* PRF-only ID for token
+      // exchange + cipher pull. If a v2 cipher exists, we'll re-derive
+      // ID and key from the seed inside it. If only a v1 cipher
+      // exists, the PRF-derived ID matches.
+      const prfDerivedVaultId = await services.vault.deriveVaultId(authResult.prfSecret);
 
-      // Mint a fresh sync-worker JWT from the assertion we just
-      // performed (if a syncAuth client is configured). This is also
-      // the path the HttpSyncBackend's 401-retry will use.
+      // Mint a fresh sync-worker JWT.
       if (services.syncAuth && authResult.authenticationResponseJSON) {
         try {
           const exchanged = await services.syncAuth.exchange(
-            vaultId,
+            prfDerivedVaultId,
             authResult.authenticationResponseJSON,
           );
           services.bearer.set(exchanged.token, exchanged.expiresAt);
         } catch (e) {
-          // Token exchange failed — likely because we haven't called
-          // /auth/register yet (first-run). We let the flow continue
-          // with a null bearer; subsequent /vault calls will surface
-          // 401 and the caller can recover.
           // eslint-disable-next-line no-console
           console.warn('[KeyShield] /auth/exchange failed:', e);
         }
       }
 
-      // Pull authoritative cipher from sync backend, falling back to
-      // local cache if offline.
       const { cipher: remote, source } = await fetchLatestCipher(
-        vaultId,
+        prfDerivedVaultId,
         services.sync,
         () => services.vault.getCachedCipher(),
       );
 
       let vault: VaultPlain;
+      let masterKey: CryptoKey;
+      let vaultId: string;
       let resultingCipher: VaultCipher;
+      let mnemonicToShow: string | null = null;
 
-      if (remote) {
+      if (remote && remote.seedEnvelope) {
+        // V2 path: unwrap seed, derive from seed.
+        const seed = await unwrapSeed(
+          remote.seedEnvelope,
+          authResult.prfSecret,
+          services.vault['cfg'].crypto,
+        );
+        masterKey = await services.vault.deriveMasterKey(seed);
+        vaultId = await services.vault.deriveVaultId(seed);
+        vault = await services.vault.decryptVault(remote, masterKey);
+        resultingCipher = remote;
+      } else if (remote) {
+        // Legacy V1 cipher (no envelope). Derive from PRF directly.
+        masterKey = await services.vault.deriveMasterKey(authResult.prfSecret);
+        vaultId = prfDerivedVaultId;
         vault = await services.vault.decryptVault(remote, masterKey);
         resultingCipher = remote;
       } else {
-        // First time anywhere — create + push.
+        // First time anywhere — create the v2 vault.
+        const seed = generateSeed(services.vault['cfg'].crypto);
+        masterKey = await services.vault.deriveMasterKey(seed);
+        vaultId = await services.vault.deriveVaultId(seed);
         vault = LocalVault.emptyVault();
-        resultingCipher = await services.vault.encryptVault(vault, masterKey);
+        const baseCipher = await services.vault.encryptVault(vault, masterKey);
+        const envelope = await wrapSeed(
+          seed,
+          authResult.prfSecret,
+          services.vault['cfg'].crypto,
+        );
+        resultingCipher = {
+          ...baseCipher,
+          version: VAULT_VERSION,
+          seedEnvelope: envelope,
+        };
+        // Surface the mnemonic to the user before pushing — they
+        // need to write it down to recover.
+        mnemonicToShow = seedToMnemonic(seed);
         try {
           await services.sync.push(vaultId, resultingCipher);
         } catch {
-          // Offline first-run is OK — the next online edit will push.
+          // Offline first-run: cache wins for now, push catches up.
         }
       }
 
-      // Update local cache so the next unlock is instant even offline.
       await services.vault.putCachedCipher(resultingCipher);
       // eslint-disable-next-line no-console
       console.info(`[KeyShield] unlocked from ${source}`);
 
-      setState({ kind: 'unlocked', vault, masterKey, vaultId });
+      if (mnemonicToShow && opts.showMnemonicOnNew) {
+        setState({
+          kind: 'showMnemonic',
+          mnemonic: mnemonicToShow,
+          vault,
+          masterKey,
+          vaultId,
+        });
+      } else {
+        setState({ kind: 'unlocked', vault, masterKey, vaultId });
+      }
     },
     [services],
   );
@@ -204,7 +263,7 @@ export function useVaultFlow(services: Services) {
         }
       }
 
-      await finalizeUnlock(authResult);
+      await finalizeUnlock(authResult, { showMnemonicOnNew: true });
     },
     [services, finalizeUnlock],
   );
@@ -212,9 +271,64 @@ export function useVaultFlow(services: Services) {
   /** Called from UnlockScreen after the locked-state Face ID. */
   const unlock = useCallback(
     async (authResult: AuthResult): Promise<void> => {
-      await finalizeUnlock(authResult);
+      await finalizeUnlock(authResult, { showMnemonicOnNew: false });
     },
     [finalizeUnlock],
+  );
+
+  /** From the RestoreScreen — switch into the restore-from-mnemonic
+   *  flow. Doesn't need a passkey at all. */
+  const startRestore = useCallback(() => {
+    setState({ kind: 'restore' });
+  }, []);
+
+  /** Cancel restore, go back to firstRun. */
+  const cancelRestore = useCallback(() => {
+    setState({ kind: 'firstRun' });
+  }, []);
+
+  /**
+   * Recover the vault from a 24-word phrase. No passkey is required
+   * — the mnemonic IS the root of trust. After a successful restore
+   * the user should register a passkey so subsequent unlocks don't
+   * require typing the phrase; that's handled by a follow-up
+   * registerPasskey call which will write a fresh seedEnvelope.
+   */
+  const restoreFromMnemonic = useCallback(
+    async (phrase: string): Promise<void> => {
+      const seed = mnemonicToSeed(phrase); // throws InvalidMnemonicError
+      const masterKey = await services.vault.deriveMasterKey(seed);
+      const vaultId = await services.vault.deriveVaultId(seed);
+
+      // We don't have a JWT yet (no PRF assertion) so HttpSyncBackend
+      // calls will 401. For Path A V1.1 we accept that recovery
+      // requires the user to also re-register a passkey afterwards;
+      // until they do, the popup runs in "in-memory only" mode using
+      // the local cache.
+      let cipher = await services.vault.getCachedCipher();
+      try {
+        const { cipher: remote } = await fetchLatestCipher(
+          vaultId,
+          services.sync,
+          () => services.vault.getCachedCipher(),
+        );
+        if (remote) cipher = remote;
+      } catch {
+        /* offline — keep cache */
+      }
+
+      if (!cipher) {
+        throw new Error(
+          'No vault found for this recovery phrase. Either the phrase ' +
+            'is from a different vault, or the vault has not synced yet.',
+        );
+      }
+
+      const vault = await services.vault.decryptVault(cipher, masterKey);
+      await services.vault.putCachedCipher(cipher);
+      setState({ kind: 'unlocked', vault, masterKey, vaultId });
+    },
+    [services],
   );
 
   /**
@@ -329,11 +443,26 @@ export function useVaultFlow(services: Services) {
     setState({ kind: 'locked' });
   }, []);
 
+  /** RecoveryPhraseScreen "I've saved my recovery phrase" handler. */
+  const acknowledgeMnemonic = useCallback(() => {
+    if (state.kind !== 'showMnemonic') return;
+    setState({
+      kind: 'unlocked',
+      vault: state.vault,
+      masterKey: state.masterKey,
+      vaultId: state.vaultId,
+    });
+  }, [state]);
+
   return {
     state,
     pendingConflict,
     completeFirstRun,
     unlock,
+    startRestore,
+    cancelRestore,
+    restoreFromMnemonic,
+    acknowledgeMnemonic,
     upsertKey,
     removeKey,
     lock,

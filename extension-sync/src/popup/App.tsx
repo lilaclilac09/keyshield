@@ -6,6 +6,8 @@ import { services } from './wiring';
 import { useVaultFlow } from './hooks/useVaultFlow';
 import { useSessionCountdown } from './hooks/useSessionCountdown';
 import { useOwnerWallet } from './hooks/useOwnerWallet';
+import { RecoveryPhraseScreen } from './screens/RecoveryPhraseScreen';
+import { RestoreScreen } from './screens/RestoreScreen';
 import { UnlockScreen } from './screens/UnlockScreen';
 import { UpgradeScreen } from './screens/UpgradeScreen';
 import { VaultList } from './screens/VaultList';
@@ -115,6 +117,25 @@ export function App() {
           services={services}
           onFirstRunComplete={flow.completeFirstRun}
           onUnlock={flow.unlock}
+          onStartRestore={
+            flow.state.kind === 'firstRun' ? flow.startRestore : undefined
+          }
+        />
+      );
+      break;
+    case 'restore':
+      body = (
+        <RestoreScreen
+          onRestore={flow.restoreFromMnemonic}
+          onCancel={flow.cancelRestore}
+        />
+      );
+      break;
+    case 'showMnemonic':
+      body = (
+        <RecoveryPhraseScreen
+          mnemonic={flow.state.mnemonic}
+          onAcknowledge={flow.acknowledgeMnemonic}
         />
       );
       break;

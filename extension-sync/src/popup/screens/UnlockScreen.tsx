@@ -12,6 +12,9 @@ export interface UnlockScreenProps {
   /** Called after a successful unlock authenticate. AuthResult carries
    *  the prfSecret used to derive the vault key. */
   onUnlock: (result: AuthResult) => Promise<void>;
+  /** Switch to the restore-from-recovery-phrase flow. Only shown in
+   *  firstRun mode (locked-mode users have a passkey already). */
+  onStartRestore?: () => void;
 }
 
 export function UnlockScreen(props: UnlockScreenProps) {
@@ -83,6 +86,15 @@ export function UnlockScreen(props: UnlockScreenProps) {
       >
         {busy ? 'Working…' : primaryLabel}
       </button>
+
+      {props.mode === 'firstRun' && props.onStartRestore && (
+        <button
+          onClick={props.onStartRestore}
+          className="text-xs text-stone-500 underline-offset-4 hover:text-stone-900 hover:underline"
+        >
+          I have a recovery phrase
+        </button>
+      )}
 
       {error && (
         <div className="mt-4 w-full max-w-xs rounded-md bg-red-50 p-3 text-xs text-red-700">
