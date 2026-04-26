@@ -1,4 +1,4 @@
-# KeyShield Path A — iCloud-Keychain-style Sync Vault (v0.1)
+# KeyShield Path A — iCloud-Keychain-style Sync Vault (v1.1)
 
 > Adjunct to [`LOCAL_VAULT_ARCHITECTURE.md`](./LOCAL_VAULT_ARCHITECTURE.md).
 > This document describes the **`extension-sync/`** workspace and
@@ -6,9 +6,11 @@
 > follow the user across every device that has their passkey synced
 > via iCloud Keychain / Google Password Manager.
 >
-> **V1 (`extension/`) is unchanged** — Path A is an additive parallel
-> implementation. We pick which one to ship by which directory the
-> manifest points at.
+> **What changed since v0.1:** added a 24-word BIP-39 recovery
+> phrase as a true offline root-of-trust, dual-writes to a
+> seed-derived ID for passkey-less recovery, tombstones for
+> delete-vs-edit conflict resolution, and a one-tap "Add a passkey
+> to this device" promotion after recovery. See §11 below.
 
 ## 1. Why a second implementation
 
@@ -202,16 +204,137 @@ domain).
 
 ## 10. Out of scope (future work)
 
-- **Recovery without a passkey** — losing every device that has the
-  synced passkey is currently unrecoverable. V1.1 will add an optional
-  24-word recovery phrase that AES-wraps the master key.
-- **Deletion-vs-edit conflicts** — `findConflicts` only flags
-  value/createdAt/tag mismatches; a remote add will silently survive
-  a local delete. V1.1 will track tombstones.
-- **iOS native client** — the same `vault.ts` / `sync.ts` modules can
-  be lifted into a React Native app once we pick a wallet adapter.
+- **iOS native client** — the same `vault.ts` / `sync.ts` modules
+  can be lifted into a React Native app once we pick a wallet
+  adapter. See `mobile/` for the in-progress skeleton.
 - **Quota / abuse** — Cloudflare's edge rate limits cover most cases;
-  per-vault rate limiting on `/auth/*` is V1.1.
+  per-vault rate limiting on `/auth/*` is V1.2.
 - **Verifying attestation** — the worker accepts self-signed
   attestations (`attestationFormat: 'none'` in WebAuthn terms). For an
   enterprise tier we'd add an attestation policy and a CRL check.
+- **Old PRF slot garbage collection** — when a recovery promotes a
+  device to a new PRF (see §11.4), the old PRF-derived slot at the
+  sync backend is orphaned. R2 lifecycle policies can sweep stale
+  objects, or we can add an explicit DELETE on promotion. V1.2.
+
+---
+
+## 11. V1.1 additions (recovery + cross-device safety)
+
+Five Phase commits (b13f2be → b8fbda9 → bb1942d → 15c7962 → c725274)
+turned Path A from "iCloud Keychain UX as long as you don't lose
+every device" into "iCloud Keychain UX with an offline recovery
+root." This section documents the cumulative shape.
+
+### 11.1 Two-stage key derivation
+
+The PRF output is no longer the master secret. Instead:
+
+```
+                       PRF (per-device, deterministic across
+                            devices via passkey sync)
+                                  │
+                                  │ HKDF info='seed-wrap-key'
+                                  ▼
+                          wrap key W (32 bytes)
+                                  │
+                  ┌───────────────┴────────────────┐
+                  │                                │
+            unwrap a stored                    wrap a fresh
+            seed envelope                      seed envelope
+                  │                                │
+                  ▼                                ▼
+                                 SEED (32 bytes)
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+       HKDF info=                HKDF info=        BIP-39 entropy
+       'encryption-key'          'vault-id'        (256 bits)
+              │                   │                   │
+              ▼                   ▼                   ▼
+       AES-GCM master key   16-byte vault ID    24-word phrase
+       (non-extractable)    (URL-safe base64)   (recovery root)
+```
+
+Domain separation between the three HKDF outputs comes from
+distinct `info` strings: leaking the wrap key cannot reveal the
+encryption key, the public vault ID cannot reveal either, etc.
+
+The 24-word phrase IS the seed — there's no extra PBKDF2 step.
+Lose every device + every PRF, type the phrase on a fresh device,
+and the seed (and therefore the master key + vault ID) come back
+exactly. The phrase is shown ONCE on first run and never persisted
+anywhere.
+
+### 11.2 Dual-write storage
+
+A single cipher is stored at TWO IDs in R2:
+
+- `/vault/<prf-derived-id>` — found by daily PRF unlock
+- `/vault/<seed-derived-id>` — found by mnemonic-only recovery
+
+Both contain the same ciphertext (encrypted with the seed-derived
+master key) and the same `seedEnvelope` (PRF-wrapped seed). The
+seed-derived ID is reachable from the mnemonic alone; the PRF-
+derived ID is reachable only from a registered device.
+
+Push semantics:
+- The DAILY slot's CAS (`updatedAt`) gates conflict detection. A
+  409 there triggers the merge dialog.
+- The RECOVERY slot is best-effort: a transient failure to write
+  it doesn't surface to the user; the next push catches it up.
+
+Storage cost: 2× per vault. For a typical KeyShield vault (≤ 4 KB),
+this is trivially cheap.
+
+### 11.3 Tombstones for delete-vs-edit
+
+`VaultPlain.deletedKeys?: Record<string, number>` maps key name →
+unix-ms deletion timestamp. The merge in `findConflicts`:
+
+1. Tombstones from both sides merge by `max(deletedAt)`.
+2. For each candidate active record, compare the merged tombstone
+   against `max(mine.createdAt, theirs.createdAt)`.
+3. Tombstone wins iff strictly newer → key stays deleted, no UI
+   prompt.
+4. Active record wins → tombstone is dropped from the merged
+   `deletedKeys` (it's stale).
+5. A value-mismatch conflict is suppressed if the tombstone wins
+   anyway.
+
+`upsertKey` clears the tombstone for that name (re-adding revives
+a deleted key). Empty `deletedKeys` is omitted from the cipher to
+keep payloads small.
+
+### 11.4 Post-recovery passkey promotion
+
+After a mnemonic restore the user is `unlocked` but with NO PRF
+on this device. The popup shows an `AddPasskeyBanner` over the
+session bar; one tap runs `services.auth.registerPasskey` and
+flow's `registerPasskeyAfterRestore`:
+
+1. Re-wrap the in-memory seed (held only in `state.seed` for this
+   transient mode) under the new PRF → fresh `seedEnvelope`.
+2. Re-encrypt the current vault with the unchanged master key +
+   attach the new envelope.
+3. Dual-push the cipher to a NEW PRF-derived ID and the existing
+   recovery ID.
+4. POST `/auth/register` at the new ID (409 = idempotent OK).
+5. POST `/auth/exchange` to mint a fresh JWT, store in `bearer`.
+6. Promote state: `vaultId` → new PRF id, `seedEnvelope` → fresh
+   wrap, drop `state.seed`.
+
+The OLD PRF-derived slot from the lost device is orphaned at the
+sync backend. Cleanup is a V1.2 housekeeping job (see §10).
+
+### 11.5 The five end-to-end paths
+
+Each is exercised by `extension-sync/src/popup/hooks/useVaultFlow.test.tsx`:
+
+| Path | Triggers | What's stored after |
+|---|---|---|
+| First run on any device | UnlockScreen "Create vault" | Cipher at PRF-id and SEED-id with seedEnvelope wrapping the new seed; `showMnemonic` shows the 24 words |
+| Cross-device unlock (passkey synced) | UnlockScreen "Unlock" on a fresh device | No new write; cipher pulled from PRF-id, envelope unwrapped, vault decrypted |
+| Mutual edit conflict | Two devices modify the same key while offline | `ConflictDialog` shows the per-key picks; resolution dual-writes the merged cipher |
+| Mnemonic-only recovery (no passkey) | UnlockScreen "I have a recovery phrase" → RestoreScreen | Cipher pulled from SEED-id only; popup enters `unlocked` with `state.seed` set |
+| Post-recovery passkey enrollment | `AddPasskeyBanner` "Add passkey" after a recovery | Fresh cipher dual-written under NEW PRF-id and the existing SEED-id; subsequent unlocks go through the normal PRF path |
