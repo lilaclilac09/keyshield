@@ -1,0 +1,74 @@
+# Auto-deploy infra/sync-worker to Cloudflare Workers on merge to main.
+#
+# Required repository secrets:
+#   CLOUDFLARE_API_TOKEN — token with "Workers Scripts: Edit" + R2 read/write
+#   CLOUDFLARE_ACCOUNT_ID — your Cloudflare account ID
+#
+# Production-only env vars (set ONCE via `wrangler secret put` against the
+# deployed worker, not here):
+#   JWT_SECRET — long random string used to sign session bearer JWTs
+#
+# This workflow:
+#   1. Runs the sync-worker test suite under @cloudflare/vitest-pool-workers.
+#   2. Typechecks the worker.
+#   3. Deploys via `wrangler deploy` only on merge to main.
+#
+# Pull requests run steps 1+2 only; deployment is gated on `main`.
+
+name: sync-worker
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'infra/sync-worker/**'
+      - '.github/workflows/sync-worker-deploy.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'infra/sync-worker/**'
+      - '.github/workflows/sync-worker-deploy.yml'
+
+jobs:
+  test:
+    name: Test + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install (workspace root)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=@keyshield/sync-worker
+
+      - name: Test (workerd pool)
+        run: npm test --workspace=@keyshield/sync-worker
+
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install (workspace root)
+        run: npm ci
+
+      - name: Deploy
+        run: npx wrangler deploy
+        working-directory: infra/sync-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
