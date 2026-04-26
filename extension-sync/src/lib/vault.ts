@@ -41,6 +41,16 @@ export interface VaultPlain {
   settings: VaultSettings;
 }
 
+/**
+ * Wrapped recovery seed (V2+). Devices with the synced passkey
+ * unwrap with their PRF output; recovery via 24-word phrase bypasses
+ * this entirely. Written by `seed-envelope.ts`.
+ */
+export interface SeedEnvelope {
+  iv: string; // base64
+  ciphertext: string; // base64
+}
+
 export interface VaultCipher {
   version: number;
   iv: string; // base64
@@ -48,6 +58,9 @@ export interface VaultCipher {
   /** Wall-clock timestamp set on every encryption — used for sync
    *  conflict resolution: latest-write-wins. */
   updatedAt: number;
+  /** V2-and-up: PRF-wrapped vault seed enabling 24-word recovery.
+   *  Absent on legacy V1 ciphers (no recovery path). */
+  seedEnvelope?: SeedEnvelope;
 }
 
 export interface StorageBackend {
