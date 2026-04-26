@@ -14,24 +14,32 @@ Then `make deploy CLUSTER=devnet` will auto-use Helius.
 
 ---
 
-## 🖥️ Launch the Frontend
+## 🖥️ Launch the popup (extension-sync)
 
-In **frontend** (Vite app), set env and run:
+The current end-user surface is the `extension-sync/` workspace
+(Path A — passkey + cross-device sync). Run it with Vite + a
+local sync worker:
 
-1. **Create `frontend/.env.local`** with (use your Helius key in the RPC URL):
-   ```
-   VITE_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8
-   VITE_RPC_URL=https://devnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY
-   ```
+```bash
+# Terminal 1: sync worker
+cd infra/sync-worker
+npx wrangler dev   # http://localhost:8787
 
-2. **Run the app:**
-   ```bash
-   cd frontend
-   npm install   # if needed
-   npm run dev
-   ```
+# Terminal 2: popup (Vite SPA — works in any browser, doesn't need
+# to be loaded as an extension yet)
+cd extension-sync
+VITE_KEYSHIELD_SYNC_URL=http://localhost:8787 \
+VITE_KEYSHIELD_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8 \
+npx vite dev
+```
 
-3. Open **http://localhost:3000** — connect wallet, create vault, store keys, test everything.
+Click "Create vault with Face ID", save the 24-word phrase, add a
+key. Then in a private window, "I have a recovery phrase" and
+paste the words — the vault should decrypt.
+
+The legacy `frontend/` Vite app that previous quick-starts pointed
+at was dropped (broken submodule, no maintainer). See
+`docs/technical/FRONTEND_SUBMODULE.md` for the history.
 
 ---
 
@@ -123,7 +131,7 @@ If devnet RPC is slow, see [DEPLOY_GUIDE.md](./DEPLOY_GUIDE.md) for:
 
 1. **Test the transaction** → See it on Solscan
 2. **Run unit tests** → `cargo test -p keyshield`
-3. **Start frontend** → `cd frontend && npm run dev`
-4. **Build extension** → `cd disabled_extension && npm run build`
+3. **Start the popup** → see the "Launch the popup" section above
+4. **Run the cross-workspace test suite** → `npm test` (354 tests)
 
 **Remember:** Always include `?cluster=devnet` when viewing on explorers!
