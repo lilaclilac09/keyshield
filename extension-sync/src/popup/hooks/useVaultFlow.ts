@@ -73,6 +73,17 @@ export type VaultFlowState =
       vaultId: string;
       recoveryVaultId: string;
       seedEnvelope?: import('../../lib/vault').SeedEnvelope;
+      /**
+       * Set ONLY by `restoreFromMnemonic` (post-recovery, before the
+       * user has added a passkey on this device). Lets
+       * `registerPasskeyAfterRestore` re-wrap the seed under the new
+       * PRF without round-tripping through the user typing their
+       * mnemonic again. Cleared as soon as a passkey is wired up.
+       *
+       * Lives in memory only — same lifetime as `masterKey` (which
+       * is also a secret) and the decrypted `vault.apiKeys` values.
+       */
+      seed?: Uint8Array;
     }
   | { kind: 'error'; message: string };
 
@@ -363,16 +374,135 @@ export function useVaultFlow(services: Services) {
       // After mnemonic-only restore, vaultId == recoveryVaultId (we
       // don't have a fresh PRF, so there's no separate daily ID to
       // write to). Subsequent persists go to the seed-derived slot
-      // only, until the user adds a passkey.
+      // only, until the user adds a passkey via
+      // `registerPasskeyAfterRestore`.
       setState({
         kind: 'unlocked',
         vault,
         masterKey,
         vaultId: recoveryVaultId,
         recoveryVaultId,
+        seed,
       });
     },
     [services],
+  );
+
+  /**
+   * Post-recovery passkey enrollment.
+   *
+   * After a mnemonic restore the user is in 'unlocked' state with no
+   * PRF — daily unlock would require re-typing the phrase. This
+   * method takes a fresh registration AuthResult, re-wraps the
+   * already-loaded seed under the new PRF, and dual-writes to a
+   * fresh PRF-derived slot (so the next popup open will find the
+   * cipher under the new PRF lookup) plus the existing seed-derived
+   * slot. It also calls /auth/register so the sync-worker accepts
+   * future /auth/exchange under the new passkey.
+   *
+   * Idempotent in the sense that a 409 from /auth/register (the new
+   * PRF id collides with an existing registration) just falls
+   * through — the cipher push is what matters for unlock to work.
+   */
+  const registerPasskeyAfterRestore = useCallback(
+    async (registrationResult: AuthResult): Promise<void> => {
+      if (state.kind !== 'unlocked' || !state.seed) {
+        throw new Error(
+          'registerPasskeyAfterRestore can only be called after a ' +
+            'mnemonic restore, while the seed is still in memory.',
+        );
+      }
+      if (!registrationResult.success || !registrationResult.prfSecret) {
+        throw new Error(
+          registrationResult.error ?? 'registration did not return a PRF secret',
+        );
+      }
+
+      const newPrfVaultId = await services.vault.deriveVaultId(
+        registrationResult.prfSecret,
+      );
+      const newEnvelope = await wrapSeed(
+        state.seed,
+        registrationResult.prfSecret,
+        services.vault['cfg'].crypto,
+      );
+
+      // Re-encrypt the current vault content with the existing master
+      // key (derived from the same seed — unchanged) and attach the
+      // new envelope.
+      const baseCipher = await services.vault.encryptVault(
+        state.vault,
+        state.masterKey,
+      );
+      const cipher: VaultCipher = {
+        ...baseCipher,
+        version: VAULT_VERSION,
+        seedEnvelope: newEnvelope,
+      };
+      await services.vault.putCachedCipher(cipher);
+      try {
+        await Promise.all([
+          services.sync.push(newPrfVaultId, cipher),
+          services.sync.push(state.recoveryVaultId, cipher),
+        ]);
+      } catch {
+        // Offline — cache is updated; the user can retry later.
+      }
+
+      // Register the passkey on the sync worker so future
+      // /auth/exchange against newPrfVaultId works. 409 means the
+      // slot was already claimed (rare race or re-install) — that's
+      // OK since the cipher push is the part that unblocks unlock.
+      if (services.syncAuth) {
+        try {
+          await services.syncAuth.registerVault(
+            newPrfVaultId,
+            registrationResult,
+          );
+        } catch (e: any) {
+          if (e?.name !== 'SyncAuthAlreadyRegistered') {
+            // eslint-disable-next-line no-console
+            console.warn('[KeyShield] post-restore /auth/register failed:', e);
+          }
+        }
+        // Mint a fresh JWT bound to the new vaultId. Some platforms
+        // only return PRF on a separate get(); fall back to that.
+        const haveAssertion =
+          !!registrationResult.authenticationResponseJSON &&
+          !!registrationResult.prfSecret;
+        const authResult = haveAssertion
+          ? registrationResult
+          : await services.auth.authenticateWithWebAuthn();
+        if (authResult.success && authResult.authenticationResponseJSON) {
+          try {
+            const exchanged = await services.syncAuth.exchange(
+              newPrfVaultId,
+              authResult.authenticationResponseJSON,
+            );
+            services.bearer.set(exchanged.token, exchanged.expiresAt);
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              '[KeyShield] post-restore /auth/exchange failed:',
+              e,
+            );
+          }
+        }
+      }
+
+      // Promote: vaultId now points at the new PRF-derived slot, the
+      // envelope is the new one, and we can drop the in-memory seed
+      // since we no longer need it for re-wrapping.
+      setState({
+        kind: 'unlocked',
+        vault: state.vault,
+        masterKey: state.masterKey,
+        vaultId: newPrfVaultId,
+        recoveryVaultId: state.recoveryVaultId,
+        seedEnvelope: newEnvelope,
+      });
+    },
+    [state, services],
   );
 
   /**
@@ -572,6 +702,7 @@ export function useVaultFlow(services: Services) {
     startRestore,
     cancelRestore,
     restoreFromMnemonic,
+    registerPasskeyAfterRestore,
     acknowledgeMnemonic,
     upsertKey,
     removeKey,

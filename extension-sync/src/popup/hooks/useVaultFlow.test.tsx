@@ -341,3 +341,91 @@ describe('useVaultFlow — post-restore CRUD', () => {
     // popup keeps the local cache and lets the next sync catch up.)
   });
 });
+
+describe('useVaultFlow — registerPasskeyAfterRestore', () => {
+  it('after a mnemonic restore, adding a passkey re-wraps the seed and a fresh popup unlocks via PRF', async () => {
+    const sharedSync = new InMemorySyncBackend();
+
+    // A creates the vault.
+    const dA = makeDevice({ sharedSync });
+    const a = renderHook(() => useVaultFlow(dA.services));
+    await waitFor(() => expect(a.result.current.state.kind).toBe('firstRun'));
+    await act(async () => {
+      await a.result.current.completeFirstRun(freshRegisterResult());
+    });
+    const mnemonic = flow(a.result, 'showMnemonic').mnemonic;
+    act(() => a.result.current.acknowledgeMnemonic());
+    await act(async () => {
+      await a.result.current.upsertKey('original', 'sk-original');
+    });
+
+    // C restores from mnemonic — no passkey yet.
+    const dC = makeDevice({ sharedSync });
+    const c = renderHook(() => useVaultFlow(dC.services));
+    await waitFor(() => expect(c.result.current.state.kind).toBe('firstRun'));
+    act(() => c.result.current.startRestore());
+    await act(async () => {
+      await c.result.current.restoreFromMnemonic(mnemonic);
+    });
+    // Sanity: state.seed exists; vaultId === recoveryVaultId; vault has 'original'.
+    {
+      const s = flow(c.result, 'unlocked');
+      expect(s.seed).toBeDefined();
+      expect(s.vaultId).toBe(s.recoveryVaultId);
+      expect(s.vault.apiKeys.original.value).toBe('sk-original');
+    }
+
+    // C adds a NEW passkey. Use a different PRF than A's to prove
+    // we're not just re-using A's PRF wrap.
+    const C_PRF = new Uint8Array(32).fill(0xcc);
+    const cRegistration = freshRegisterResult(C_PRF);
+    await act(async () => {
+      await c.result.current.registerPasskeyAfterRestore(cRegistration);
+    });
+
+    // Promotion happened: vaultId changed (now C's PRF-derived ID),
+    // seed was dropped from state, seedEnvelope is set.
+    const cAfter = flow(c.result, 'unlocked');
+    expect(cAfter.seed).toBeUndefined();
+    expect(cAfter.seedEnvelope).toBeDefined();
+    expect(cAfter.vaultId).not.toBe(cAfter.recoveryVaultId);
+
+    // Add another key after promotion — proves the new vaultId is
+    // what gets written to from now on.
+    await act(async () => {
+      await c.result.current.upsertKey('post-passkey', 'sk-after');
+    });
+
+    // Simulate a "next launch" on the same device: same services
+    // (and therefore same chrome.storage local cache), fresh
+    // useVaultFlow. With the cached cipher present, initial state
+    // is 'locked'. Unlocking with C's PRF should pull the cipher
+    // under C's new PRF-derived ID, unwrap, decrypt, and see both
+    // 'original' (from A) and 'post-passkey' (from C-after-restore).
+    c.unmount();
+    const c2 = renderHook(() => useVaultFlow(dC.services));
+    await waitFor(() => expect(c2.result.current.state.kind).toBe('locked'));
+    await act(async () => {
+      await c2.result.current.unlock(freshRegisterResult(C_PRF));
+    });
+
+    const reopened = flow(c2.result, 'unlocked');
+    expect(reopened.vault.apiKeys.original.value).toBe('sk-original');
+    expect(reopened.vault.apiKeys['post-passkey'].value).toBe('sk-after');
+  });
+
+  it('throws when called outside of a post-restore unlocked state', async () => {
+    const sharedSync = new InMemorySyncBackend();
+    const dA = makeDevice({ sharedSync });
+    const a = renderHook(() => useVaultFlow(dA.services));
+    await waitFor(() => expect(a.result.current.state.kind).toBe('firstRun'));
+    await act(async () => {
+      await a.result.current.completeFirstRun(freshRegisterResult());
+    });
+    act(() => a.result.current.acknowledgeMnemonic());
+    // A is unlocked but state.seed was never set (PRF unlock path).
+    await expect(
+      a.result.current.registerPasskeyAfterRestore(freshRegisterResult()),
+    ).rejects.toThrow(/seed is still in memory/);
+  });
+});

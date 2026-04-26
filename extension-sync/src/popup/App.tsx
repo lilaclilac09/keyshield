@@ -13,6 +13,7 @@ import { UpgradeScreen } from './screens/UpgradeScreen';
 import { VaultList } from './screens/VaultList';
 import { SessionBar } from './components/SessionBar';
 import { ConflictDialog } from './components/ConflictDialog';
+import { AddPasskeyBanner } from './components/AddPasskeyBanner';
 
 // Read at module load so the popup doesn't have to query chrome.storage
 // on every render. These can be replaced by per-user settings later.
@@ -163,6 +164,12 @@ export function App() {
       <div className="flex-1 overflow-hidden">{body}</div>
       {flow.state.kind === 'unlocked' && (
         <>
+          {flow.state.seed && (
+            <AddPasskeyBanner
+              services={services}
+              onRegistered={flow.registerPasskeyAfterRestore}
+            />
+          )}
           <WalletConnectStrip wallet={wallet} />
           <SessionBar
             countdown={countdown}
