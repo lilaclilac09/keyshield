@@ -38,6 +38,15 @@ export interface VaultSettings {
 
 export interface VaultPlain {
   apiKeys: Record<string, ApiKeyRecord>;
+  /**
+   * V1.1+: tombstones for delete-vs-edit conflict resolution.
+   * Maps key name → unix-ms timestamp the deletion happened.
+   * - When merging across devices, a tombstone with `deletedAt` >
+   *   the active record's `createdAt` suppresses the record.
+   * - Once a key is re-added (upsertKey), its tombstone is cleared.
+   * Optional so legacy V1 vaults round-trip unchanged.
+   */
+  deletedKeys?: Record<string, number>;
   settings: VaultSettings;
 }
 

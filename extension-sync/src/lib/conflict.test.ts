@@ -14,6 +14,16 @@ function withKeys(...keys: Array<[string, string, number?, string[]?]>): VaultPl
   return base;
 }
 
+function withTombstones(
+  base: VaultPlain,
+  ...tombstones: Array<[string, number]>
+): VaultPlain {
+  const out: VaultPlain = { ...base };
+  out.deletedKeys = {};
+  for (const [name, ts] of tombstones) out.deletedKeys[name] = ts;
+  return out;
+}
+
 describe('findConflicts', () => {
   it('returns no conflicts when both sides are identical', () => {
     const mine = withKeys(['openai', 'sk-1', 100]);
@@ -78,6 +88,81 @@ describe('findConflicts', () => {
       'openai',
       'stripe',
     ]);
+  });
+});
+
+describe('tombstones (delete-vs-edit)', () => {
+  it('mine deletes X, theirs has older X → X stays deleted', () => {
+    const mine = withTombstones(withKeys(), ['openai', 200]);
+    const theirs = withKeys(['openai', 'sk-old', 100]);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.openai).toBeUndefined();
+    expect(r.baseline.deletedKeys?.openai).toBe(200);
+  });
+
+  it('mine deletes X, theirs has newer X → X is resurrected, tombstone dropped', () => {
+    const mine = withTombstones(withKeys(), ['openai', 100]);
+    const theirs = withKeys(['openai', 'sk-new', 200]);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.openai?.value).toBe('sk-new');
+    expect(r.baseline.deletedKeys?.openai).toBeUndefined();
+  });
+
+  it('mine adds X, theirs has older tombstone for X → X stays', () => {
+    const mine = withKeys(['openai', 'sk-mine', 200]);
+    const theirs = withTombstones(withKeys(), ['openai', 100]);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.openai?.value).toBe('sk-mine');
+    expect(r.baseline.deletedKeys?.openai).toBeUndefined();
+  });
+
+  it('mine adds X, theirs has newer tombstone for X → tombstone wins', () => {
+    const mine = withKeys(['openai', 'sk-mine', 100]);
+    const theirs = withTombstones(withKeys(), ['openai', 200]);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.openai).toBeUndefined();
+    expect(r.baseline.deletedKeys?.openai).toBe(200);
+  });
+
+  it('both sides have tombstones → keep the latest deletedAt', () => {
+    const mine = withTombstones(withKeys(), ['openai', 100]);
+    const theirs = withTombstones(withKeys(), ['openai', 200]);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.openai).toBeUndefined();
+    expect(r.baseline.deletedKeys?.openai).toBe(200);
+  });
+
+  it('tombstones for keys that nobody has are preserved', () => {
+    const mine = withTombstones(withKeys(), ['ghost', 50]);
+    const theirs = withKeys();
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.apiKeys.ghost).toBeUndefined();
+    expect(r.baseline.deletedKeys?.ghost).toBe(50);
+  });
+
+  it('does not surface a value-conflict when one side has tombstoned the disputed key', () => {
+    // Same key, different values, but mine deleted it after theirs created it.
+    const mine = withTombstones(
+      withKeys(['shared', 'sk-mine', 50]),
+      ['shared', 200],
+    );
+    const theirs = withKeys(['shared', 'sk-theirs', 100]);
+    const r = findConflicts(mine, theirs);
+    // Without the tombstone this would be a conflict (different values
+    // on each side). With the tombstone, the active record is ours
+    // (mine had value 'sk-mine' at 50), the tombstone (200) is newer
+    // than mine.createdAt (50) AND newer than theirs.createdAt (100),
+    // so the deletion wins everywhere — no conflict needed.
+    expect(r.conflicts).toEqual([]);
+    expect(r.baseline.apiKeys.shared).toBeUndefined();
+    expect(r.baseline.deletedKeys?.shared).toBe(200);
+  });
+
+  it('drops empty deletedKeys field from baseline (keeps ciphertext small)', () => {
+    const mine = withKeys(['k', 'v']);
+    const theirs = withKeys(['k', 'v']);
+    const r = findConflicts(mine, theirs);
+    expect(r.baseline.deletedKeys).toBeUndefined();
   });
 });
 

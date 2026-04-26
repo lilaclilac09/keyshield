@@ -409,10 +409,15 @@ export function useVaultFlow(services: Services) {
     [services],
   );
 
-  /** CRUD: add or replace an API key entry. */
+  /** CRUD: add or replace an API key entry. Clears any tombstone
+   *  the key may have had — re-adding revives a deleted key. */
   const upsertKey = useCallback(
     async (name: string, value: string, tags?: string[]) => {
       if (state.kind !== 'unlocked') return;
+      const remainingTombstones: Record<string, number> = {
+        ...(state.vault.deletedKeys ?? {}),
+      };
+      delete remainingTombstones[name];
       const next: VaultPlain = {
         ...state.vault,
         apiKeys: {
@@ -420,18 +425,32 @@ export function useVaultFlow(services: Services) {
           [name]: { value, createdAt: Date.now(), tags },
         },
       };
+      if (Object.keys(remainingTombstones).length > 0) {
+        next.deletedKeys = remainingTombstones;
+      } else {
+        delete next.deletedKeys;
+      }
       const finalState = await persist(next, state.masterKey, state.vaultId);
       setState({ ...state, vault: finalState });
     },
     [state, persist],
   );
 
-  /** CRUD: delete an API key by name. */
+  /** CRUD: delete a key. Drops it from `apiKeys` and writes a
+   *  tombstone into `deletedKeys` so the deletion survives a merge
+   *  even if another device still has the old value. */
   const removeKey = useCallback(
     async (name: string) => {
       if (state.kind !== 'unlocked') return;
       const { [name]: _, ...rest } = state.vault.apiKeys;
-      const next: VaultPlain = { ...state.vault, apiKeys: rest };
+      const next: VaultPlain = {
+        ...state.vault,
+        apiKeys: rest,
+        deletedKeys: {
+          ...(state.vault.deletedKeys ?? {}),
+          [name]: Date.now(),
+        },
+      };
       const finalState = await persist(next, state.masterKey, state.vaultId);
       setState({ ...state, vault: finalState });
     },
