@@ -29,6 +29,13 @@ export interface ApiKeyRecord {
   value: string;
   createdAt: number;
   tags?: string[];
+  /**
+   * V1.1+ optional usage timestamp, updated by the popup whenever
+   * the user reveals or copies a key. Survives merges without
+   * triggering ConflictDialog: `recordsDiffer` ignores it; the
+   * merge picks `max(lastUsedAt)` between sides.
+   */
+  lastUsedAt?: number;
 }
 
 export interface VaultSettings {

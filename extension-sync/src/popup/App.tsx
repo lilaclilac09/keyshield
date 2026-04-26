@@ -154,6 +154,7 @@ export function App() {
           vault={flow.state.vault}
           onUpsertKey={flow.upsertKey}
           onRemoveKey={flow.removeKey}
+          onTouchKey={flow.touchKey}
           onLock={flow.lock}
         />
       );

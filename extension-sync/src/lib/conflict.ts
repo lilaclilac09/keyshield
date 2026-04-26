@@ -45,7 +45,18 @@ function recordsDiffer(a: ApiKeyRecord, b: ApiKeyRecord): boolean {
   for (let i = 0; i < aTags.length; i++) {
     if (aTags[i] !== bTags[i]) return true;
   }
+  // NOTE: lastUsedAt is intentionally excluded — touching a key on
+  // one device shouldn't trigger ConflictDialog. The merge picks
+  // max(lastUsedAt) so the freshest usage timestamp survives.
   return false;
+}
+
+/** Pick whichever side has the more recent lastUsedAt. Used when
+ *  the records are otherwise identical (no value/createdAt/tag
+ *  mismatch) but their usage timestamps may differ. */
+function pickByLastUsed(a: ApiKeyRecord, b: ApiKeyRecord): ApiKeyRecord {
+  if ((a.lastUsedAt ?? 0) >= (b.lastUsedAt ?? 0)) return a;
+  return b;
 }
 
 /** Merge the two sides' tombstone maps by max(deletedAt). */
@@ -85,7 +96,10 @@ export function findConflicts(mine: VaultPlain, theirs: VaultPlain): ConflictRep
         bothDiffer = true;
         active = t; // safe default — applyResolutions can override
       } else {
-        active = m;
+        // Records match on value/createdAt/tags. Pick the one with
+        // the more recent lastUsedAt so usage tracking survives
+        // round-trips through different devices.
+        active = pickByLastUsed(m, t);
       }
     } else if (m) {
       active = m;

@@ -673,6 +673,36 @@ export function useVaultFlow(services: Services) {
     [state, persist],
   );
 
+  /**
+   * Bump a key's `lastUsedAt` timestamp. Called when the user
+   * reveals or copies a value. The change persists like any other
+   * edit but does NOT surface as a ConflictDialog because
+   * `recordsDiffer` ignores the field.
+   */
+  const touchKey = useCallback(
+    async (name: string) => {
+      if (state.kind !== 'unlocked') return;
+      const existing = state.vault.apiKeys[name];
+      if (!existing) return;
+      const next: VaultPlain = {
+        ...state.vault,
+        apiKeys: {
+          ...state.vault.apiKeys,
+          [name]: { ...existing, lastUsedAt: Date.now() },
+        },
+      };
+      const finalState = await persist(
+        next,
+        state.masterKey,
+        state.vaultId,
+        state.recoveryVaultId,
+        state.seedEnvelope,
+      );
+      setState({ ...state, vault: finalState });
+    },
+    [state, persist],
+  );
+
   /** Lock — drops in-memory state but keeps the encrypted cache. */
   const lock = useCallback(() => {
     setState({ kind: 'locked' });
@@ -706,6 +736,7 @@ export function useVaultFlow(services: Services) {
     acknowledgeMnemonic,
     upsertKey,
     removeKey,
+    touchKey,
     lock,
     retryPlatformCheck,
   };
