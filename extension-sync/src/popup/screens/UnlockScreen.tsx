@@ -15,6 +15,9 @@ export interface UnlockScreenProps {
   /** Switch to the restore-from-recovery-phrase flow. Only shown in
    *  firstRun mode (locked-mode users have a passkey already). */
   onStartRestore?: () => void;
+  /** Open the LostDeviceDialog. Same audience as onStartRestore but
+   *  shows a guided explainer first. */
+  onLostDevice?: () => void;
 }
 
 export function UnlockScreen(props: UnlockScreenProps) {
@@ -93,6 +96,15 @@ export function UnlockScreen(props: UnlockScreenProps) {
           className="text-xs text-stone-500 underline-offset-4 hover:text-stone-900 hover:underline"
         >
           I have a recovery phrase
+        </button>
+      )}
+
+      {props.mode === 'firstRun' && props.onLostDevice && (
+        <button
+          onClick={props.onLostDevice}
+          className="mt-1 text-[11px] text-stone-400 underline-offset-4 hover:text-stone-700 hover:underline"
+        >
+          Lost a device?
         </button>
       )}
 

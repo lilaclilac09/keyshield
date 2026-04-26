@@ -33,6 +33,53 @@ function makeServices(authOverrides: Partial<any> = {}): Services {
   };
 }
 
+describe('UnlockScreen — lost-device link', () => {
+  it('does NOT render the "Lost a device?" link when onLostDevice is omitted', () => {
+    const services = makeServices();
+    render(
+      <UnlockScreen
+        mode="firstRun"
+        services={services}
+        onFirstRunComplete={async () => {}}
+        onUnlock={async () => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /lost a device/i })).toBeNull();
+  });
+
+  it('renders + fires onLostDevice when provided in firstRun mode', async () => {
+    const services = makeServices();
+    const onLostDevice = vi.fn();
+    render(
+      <UnlockScreen
+        mode="firstRun"
+        services={services}
+        onFirstRunComplete={async () => {}}
+        onUnlock={async () => {}}
+        onLostDevice={onLostDevice}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /lost a device/i }),
+    );
+    expect(onLostDevice).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT render the link in locked mode (locked-mode users have a passkey already)', () => {
+    const services = makeServices();
+    render(
+      <UnlockScreen
+        mode="locked"
+        services={services}
+        onFirstRunComplete={async () => {}}
+        onUnlock={async () => {}}
+        onLostDevice={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /lost a device/i })).toBeNull();
+  });
+});
+
 describe('UnlockScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();

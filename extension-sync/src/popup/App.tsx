@@ -14,6 +14,8 @@ import { VaultList } from './screens/VaultList';
 import { SessionBar } from './components/SessionBar';
 import { ConflictDialog } from './components/ConflictDialog';
 import { AddPasskeyBanner } from './components/AddPasskeyBanner';
+import { LostDeviceDialog } from './components/LostDeviceDialog';
+import { SessionExpiryToast } from './components/SessionExpiryToast';
 
 // Read at module load so the popup doesn't have to query chrome.storage
 // on every render. These can be replaced by per-user settings later.
@@ -43,6 +45,7 @@ export function App() {
   }, [connection, wallet.state.publicKey]);
 
   const [busy, setBusy] = useState(false);
+  const [lostDeviceOpen, setLostDeviceOpen] = useState(false);
 
   /**
    * Renew this device's session. We need an ephemeral pubkey to renew —
@@ -121,6 +124,11 @@ export function App() {
           onStartRestore={
             flow.state.kind === 'firstRun' ? flow.startRestore : undefined
           }
+          onLostDevice={
+            flow.state.kind === 'firstRun'
+              ? () => setLostDeviceOpen(true)
+              : undefined
+          }
         />
       );
       break;
@@ -185,6 +193,18 @@ export function App() {
           onResolve={flow.pendingConflict.resolve}
           onCancel={flow.pendingConflict.cancel}
         />
+      )}
+      {lostDeviceOpen && (
+        <LostDeviceDialog
+          onStartRestore={() => {
+            setLostDeviceOpen(false);
+            flow.startRestore();
+          }}
+          onClose={() => setLostDeviceOpen(false)}
+        />
+      )}
+      {flow.state.kind === 'unlocked' && (
+        <SessionExpiryToast countdown={countdown} onRenew={onRenew} />
       )}
     </div>
   );
