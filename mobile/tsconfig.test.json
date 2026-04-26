@@ -11,6 +11,7 @@
   },
   "include": [
     "src/lib/**/*.ts",
+    "src/lib/**/*.test.ts",
     "src/storage/**/*.ts",
     "src/storage/**/*.test.ts"
   ]

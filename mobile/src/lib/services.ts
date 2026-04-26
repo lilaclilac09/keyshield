@@ -7,9 +7,7 @@
  * browser wiring:
  *   - `chrome.storage.local` → AsyncStorage via asyncStorageBackend
  *   - `globalThis.crypto`    → react-native-quick-crypto via cryptoBackend
- *   - `navigator.credentials` → react-native-passkey adapter (TODO,
- *      tracked in src/lib/passkeyAdapter.ts — not implemented in
- *      this skeleton; build it before the first user-facing release)
+ *   - `navigator.credentials` → react-native-passkey via passkeyAdapter
  *
  * Sync backend + JWT exchange + BearerHolder come straight from
  * `@keyshield/extension-sync` — no fork.
