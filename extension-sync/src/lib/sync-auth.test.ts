@@ -96,6 +96,31 @@ describe('SyncAuthClient.registerVault', () => {
   });
 });
 
+describe('SyncAuthClient.revokeVault', () => {
+  it('POSTs the vaultId with a Bearer header', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    const client = new SyncAuthClient({
+      baseUrl: 'https://sync.example/',
+      fetchImpl: fetchImpl as any,
+    });
+    await client.revokeVault('vid-12345678', 'eyJabc.def.ghi');
+    const [url, init] = fetchImpl.mock.calls[0] as any;
+    expect(url).toBe('https://sync.example/auth/revoke');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer eyJabc.def.ghi');
+    expect(JSON.parse(init.body)).toEqual({ vaultId: 'vid-12345678' });
+  });
+
+  it('throws on non-2xx', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({}, 401));
+    const client = new SyncAuthClient({
+      baseUrl: 'https://x',
+      fetchImpl: fetchImpl as any,
+    });
+    await expect(client.revokeVault('vid', 'tok')).rejects.toThrow(/401/);
+  });
+});
+
 describe('SyncAuthClient.fetchChallenge / exchange', () => {
   it('parses the /auth/challenge JSON', async () => {
     const fetchImpl = vi.fn(async () =>

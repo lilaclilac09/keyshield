@@ -99,17 +99,42 @@ export class SyncAuthClient {
     return (await res.json()) as ExchangeResponse;
   }
 
+  /**
+   * Revoke the registration for `vaultId`. Requires a Bearer token
+   * minted by `/auth/exchange`. After this returns, calls to
+   * `/auth/exchange` for the same vaultId will 404 — the device
+   * effectively becomes read-only against the sync backend.
+   */
+  async revokeVault(
+    vaultId: string,
+    bearer: string,
+  ): Promise<void> {
+    const res = await this.request(
+      '/auth/revoke',
+      'POST',
+      { vaultId },
+      bearer,
+    );
+    if (!res.ok) {
+      throw new Error(`revokeVault(${vaultId}) -> ${res.status}`);
+    }
+  }
+
   private async request(
     path: string,
     method: 'GET' | 'POST',
     body?: unknown,
+    bearer?: string,
   ): Promise<Response> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.timeoutMs);
     try {
+      const headers: Record<string, string> = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (bearer) headers.Authorization = `Bearer ${bearer}`;
       return await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,
       });

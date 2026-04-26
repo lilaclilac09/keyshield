@@ -225,6 +225,45 @@ app.post('/auth/exchange', async (c) => {
   });
 });
 
+// --------------------------------------------------------------------
+// /auth/revoke — Bearer-gated; deletes THIS vault's passkey
+// --------------------------------------------------------------------
+//
+// Scope: revokes a passkey the user *currently has access to* (i.e.,
+// they can authenticate now, hold a JWT, and want to deauthorize this
+// device going forward). Useful for "I'm done with this computer".
+//
+// NOT a "I lost my phone" button: that case requires a seed-bound
+// asymmetric authentication path which is V1.2 work. The HTTP 401 a
+// lost device gets after this call is what gives the keep-device a
+// quiet way to confirm the lost device was cycled — but until V1.2
+// the practical lockout is still recovery + add-passkey + iCloud
+// sign-out as documented in `LostDeviceDialog`.
+const RevokeRequestSchema = z.object({ vaultId: z.string().min(8) });
+
+app.post('/auth/revoke', async (c) => {
+  const token = extractBearer(c.req.raw);
+  if (!token) return c.json({ error: 'missing bearer token' }, 401);
+  let claims;
+  try {
+    claims = await verifyJwt(token, c.env.JWT_SECRET, c.env.JWT_ISSUER);
+  } catch {
+    return c.json({ error: 'invalid token' }, 401);
+  }
+  const body = await c.req.json().catch(() => null);
+  const parsed = RevokeRequestSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'bad payload' }, 400);
+  if (parsed.data.vaultId !== claims.sub) {
+    return c.json({ error: 'token does not match vault id' }, 403);
+  }
+  // Delete the registration + any pending challenge. The vault
+  // ciphertext is intentionally left alone — revoking the passkey
+  // is not the same as deleting the user's data.
+  await c.env.REGISTRY.delete(parsed.data.vaultId);
+  await c.env.REGISTRY.delete(`${parsed.data.vaultId}-challenge`);
+  return c.json({ ok: true });
+});
+
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 export default app;
