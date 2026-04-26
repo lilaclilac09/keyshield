@@ -1,10 +1,11 @@
 import { defineConfig } from 'vitest/config';
 
-// Plain Node — the storage adapter and platform shims we test here
-// don't touch the React Native runtime. UI components live in
-// src/screens/ and are rendered by Metro on a real device; their
-// tests will need react-native-testing-library + a Jest jsdom-like
-// preset, which is V1.2 work.
+// Plain Node — we test the storage adapter, the platform shims, and
+// pure helpers extracted from the screens (vaultListHelpers,
+// sessionFormat). The screen components themselves render RN
+// primitives, which Metro renders on-device; UI rendering tests
+// would need react-native-testing-library + a Jest preset and are
+// out of scope for this workspace's vitest runner.
 export default defineConfig({
   test: {
     globals: true,
@@ -12,6 +13,8 @@ export default defineConfig({
     include: [
       'src/lib/**/*.test.ts',
       'src/storage/**/*.test.ts',
+      'src/screens/**/*.test.ts',
+      'src/components/**/*.test.ts',
     ],
   },
 });
