@@ -57,12 +57,22 @@ export type VaultFlowState =
       vault: VaultPlain;
       masterKey: CryptoKey;
       vaultId: string;
+      /** Mnemonic-recovery alias; equal to `vaultId` for legacy V1
+       *  ciphers and for the post-restore flow that doesn't have a
+       *  fresh PRF yet. */
+      recoveryVaultId: string;
+      /** PRF-wrapped seed copied through to every subsequent push so
+       *  cross-device pulls can still unwrap. Undefined for legacy
+       *  V1 vaults / post-mnemonic restores without a passkey. */
+      seedEnvelope?: import('../../lib/vault').SeedEnvelope;
     }
   | {
       kind: 'unlocked';
       vault: VaultPlain;
       masterKey: CryptoKey;
       vaultId: string;
+      recoveryVaultId: string;
+      seedEnvelope?: import('../../lib/vault').SeedEnvelope;
     }
   | { kind: 'error'; message: string };
 
@@ -164,8 +174,10 @@ export function useVaultFlow(services: Services) {
 
       let vault: VaultPlain;
       let masterKey: CryptoKey;
-      let vaultId: string;
+      let vaultId: string;          // PRF-derived — for daily push/pull
+      let recoveryVaultId: string;  // SEED-derived — for mnemonic recovery
       let resultingCipher: VaultCipher;
+      let seedEnvelope: import('../../lib/vault').SeedEnvelope | undefined;
       let mnemonicToShow: string | null = null;
 
       if (remote && remote.seedEnvelope) {
@@ -176,20 +188,25 @@ export function useVaultFlow(services: Services) {
           services.vault['cfg'].crypto,
         );
         masterKey = await services.vault.deriveMasterKey(seed);
-        vaultId = await services.vault.deriveVaultId(seed);
+        vaultId = prfDerivedVaultId;
+        recoveryVaultId = await services.vault.deriveVaultId(seed);
         vault = await services.vault.decryptVault(remote, masterKey);
         resultingCipher = remote;
+        seedEnvelope = remote.seedEnvelope;
       } else if (remote) {
-        // Legacy V1 cipher (no envelope). Derive from PRF directly.
+        // Legacy V1 cipher (no envelope, no recovery path).
         masterKey = await services.vault.deriveMasterKey(authResult.prfSecret);
         vaultId = prfDerivedVaultId;
+        recoveryVaultId = prfDerivedVaultId;
         vault = await services.vault.decryptVault(remote, masterKey);
         resultingCipher = remote;
+        seedEnvelope = undefined;
       } else {
-        // First time anywhere — create the v2 vault.
+        // First time anywhere — create the V2 vault.
         const seed = generateSeed(services.vault['cfg'].crypto);
         masterKey = await services.vault.deriveMasterKey(seed);
-        vaultId = await services.vault.deriveVaultId(seed);
+        vaultId = prfDerivedVaultId;
+        recoveryVaultId = await services.vault.deriveVaultId(seed);
         vault = LocalVault.emptyVault();
         const baseCipher = await services.vault.encryptVault(vault, masterKey);
         const envelope = await wrapSeed(
@@ -202,11 +219,15 @@ export function useVaultFlow(services: Services) {
           version: VAULT_VERSION,
           seedEnvelope: envelope,
         };
-        // Surface the mnemonic to the user before pushing — they
-        // need to write it down to recover.
+        seedEnvelope = envelope;
         mnemonicToShow = seedToMnemonic(seed);
+        // Dual-write: PRF-derived ID for daily lookup, SEED-derived
+        // ID for mnemonic-only recovery. Same ciphertext at both.
         try {
-          await services.sync.push(vaultId, resultingCipher);
+          await Promise.all([
+            services.sync.push(vaultId, resultingCipher),
+            services.sync.push(recoveryVaultId, resultingCipher),
+          ]);
         } catch {
           // Offline first-run: cache wins for now, push catches up.
         }
@@ -223,9 +244,18 @@ export function useVaultFlow(services: Services) {
           vault,
           masterKey,
           vaultId,
+          recoveryVaultId,
+          ...(seedEnvelope ? { seedEnvelope } : {}),
         });
       } else {
-        setState({ kind: 'unlocked', vault, masterKey, vaultId });
+        setState({
+          kind: 'unlocked',
+          vault,
+          masterKey,
+          vaultId,
+          recoveryVaultId,
+          ...(seedEnvelope ? { seedEnvelope } : {}),
+        });
       }
     },
     [services],
@@ -298,17 +328,21 @@ export function useVaultFlow(services: Services) {
     async (phrase: string): Promise<void> => {
       const seed = mnemonicToSeed(phrase); // throws InvalidMnemonicError
       const masterKey = await services.vault.deriveMasterKey(seed);
-      const vaultId = await services.vault.deriveVaultId(seed);
+      // Mnemonic-only recovery looks up the cipher under the
+      // SEED-derived ID — that's the dual-write target we wrote on
+      // first run specifically so a passkey-less recovery can find
+      // the vault.
+      const recoveryVaultId = await services.vault.deriveVaultId(seed);
 
-      // We don't have a JWT yet (no PRF assertion) so HttpSyncBackend
-      // calls will 401. For Path A V1.1 we accept that recovery
-      // requires the user to also re-register a passkey afterwards;
-      // until they do, the popup runs in "in-memory only" mode using
-      // the local cache.
+      // No JWT here (no PRF assertion happened). Daily-PRF-bound
+      // pushes will 401 until the user adds a fresh passkey. Until
+      // then, persist still updates the local cache and the
+      // SEED-derived backend slot so future devices that recover
+      // see the latest state.
       let cipher = await services.vault.getCachedCipher();
       try {
         const { cipher: remote } = await fetchLatestCipher(
-          vaultId,
+          recoveryVaultId,
           services.sync,
           () => services.vault.getCachedCipher(),
         );
@@ -326,7 +360,17 @@ export function useVaultFlow(services: Services) {
 
       const vault = await services.vault.decryptVault(cipher, masterKey);
       await services.vault.putCachedCipher(cipher);
-      setState({ kind: 'unlocked', vault, masterKey, vaultId });
+      // After mnemonic-only restore, vaultId == recoveryVaultId (we
+      // don't have a fresh PRF, so there's no separate daily ID to
+      // write to). Subsequent persists go to the seed-derived slot
+      // only, until the user adds a passkey.
+      setState({
+        kind: 'unlocked',
+        vault,
+        masterKey,
+        vaultId: recoveryVaultId,
+        recoveryVaultId,
+      });
     },
     [services],
   );
@@ -346,67 +390,97 @@ export function useVaultFlow(services: Services) {
    *     which case we keep the user's intended state in memory
    *     but skip the re-push so the remote stays untouched).
    */
-  const persist = useCallback(
-    async (next: VaultPlain, masterKey: CryptoKey, vaultId: string): Promise<VaultPlain> => {
-      const cipher = await services.vault.encryptVault(next, masterKey);
-      await services.vault.putCachedCipher(cipher);
-      let ok = false;
-      try {
-        ok = await services.sync.push(vaultId, cipher);
-      } catch {
-        // Offline — local cache is still updated, sync catches up later.
-        return next;
+  /** Push a cipher to both the daily and recovery slots. The two
+   *  pushes can race — we await both so the caller knows when the
+   *  cycle is complete. If `vaultId === recoveryVaultId` (legacy V1
+   *  vaults, post-mnemonic-restore state) we just push once. */
+  const dualPush = useCallback(
+    async (
+      vaultId: string,
+      recoveryVaultId: string,
+      cipher: VaultCipher,
+    ): Promise<{ daily: boolean; recovery: boolean }> => {
+      if (vaultId === recoveryVaultId) {
+        const ok = await services.sync.push(vaultId, cipher);
+        return { daily: ok, recovery: ok };
       }
-      if (ok) return next;
+      const [daily, recovery] = await Promise.all([
+        services.sync.push(vaultId, cipher),
+        services.sync.push(recoveryVaultId, cipher),
+      ]);
+      return { daily, recovery };
+    },
+    [services],
+  );
 
-      // Stale-write — pull, diff, decide.
-      const fresh = await services.sync.pull(vaultId);
-      if (!fresh) {
-        // 409 with no remote? Backend bug or race; treat as resolved.
+  const persist = useCallback(
+    async (
+      next: VaultPlain,
+      masterKey: CryptoKey,
+      vaultId: string,
+      recoveryVaultId: string,
+      seedEnvelope: import('../../lib/vault').SeedEnvelope | undefined,
+    ): Promise<VaultPlain> => {
+      const baseCipher = await services.vault.encryptVault(next, masterKey);
+      const cipher = seedEnvelope
+        ? { ...baseCipher, seedEnvelope }
+        : baseCipher;
+      await services.vault.putCachedCipher(cipher);
+      let pushOk: { daily: boolean; recovery: boolean };
+      try {
+        pushOk = await dualPush(vaultId, recoveryVaultId, cipher);
+      } catch {
         return next;
       }
+      // We only treat a failure on the DAILY slot as a 409 needing
+      // merge — the recovery slot is best-effort (it'll catch up on
+      // the next push, and recovery only matters when the user has
+      // lost everything).
+      if (pushOk.daily) return next;
+
+      const fresh = await services.sync.pull(vaultId);
+      if (!fresh) return next;
       const remote = await services.vault.decryptVault(fresh, masterKey);
       const report = findConflicts(next, remote);
 
       if (report.conflicts.length === 0) {
-        // Pure additive merge — no user input needed.
         const merged = report.baseline;
-        const retryCipher = await services.vault.encryptVault(merged, masterKey);
+        const retryBase = await services.vault.encryptVault(merged, masterKey);
+        const retryCipher = seedEnvelope ? { ...retryBase, seedEnvelope } : retryBase;
         await services.vault.putCachedCipher(retryCipher);
-        await services.sync.push(vaultId, retryCipher);
+        await dualPush(vaultId, recoveryVaultId, retryCipher);
         return merged;
       }
 
-      // Real conflict — wait on the ConflictDialog.
       return new Promise<VaultPlain>((resolve) => {
         setPendingConflict({
           report,
           resolve: async (resolutions) => {
             const merged = applyResolutions(report, resolutions);
             try {
-              const retryCipher = await services.vault.encryptVault(
+              const retryBase = await services.vault.encryptVault(
                 merged,
                 masterKey,
               );
+              const retryCipher = seedEnvelope
+                ? { ...retryBase, seedEnvelope }
+                : retryBase;
               await services.vault.putCachedCipher(retryCipher);
-              await services.sync.push(vaultId, retryCipher);
+              await dualPush(vaultId, recoveryVaultId, retryCipher);
             } catch {
-              /* offline; cache is good, server retries later */
+              /* offline; cache is good */
             }
             setPendingConflict(null);
             resolve(merged);
           },
           cancel: () => {
-            // User backed out — keep their in-memory edit but don't
-            // overwrite the remote. The next successful edit will
-            // sync as usual.
             setPendingConflict(null);
             resolve(next);
           },
         });
       });
     },
-    [services],
+    [services, dualPush],
   );
 
   /** CRUD: add or replace an API key entry. Clears any tombstone
@@ -430,7 +504,13 @@ export function useVaultFlow(services: Services) {
       } else {
         delete next.deletedKeys;
       }
-      const finalState = await persist(next, state.masterKey, state.vaultId);
+      const finalState = await persist(
+        next,
+        state.masterKey,
+        state.vaultId,
+        state.recoveryVaultId,
+        state.seedEnvelope,
+      );
       setState({ ...state, vault: finalState });
     },
     [state, persist],
@@ -451,7 +531,13 @@ export function useVaultFlow(services: Services) {
           [name]: Date.now(),
         },
       };
-      const finalState = await persist(next, state.masterKey, state.vaultId);
+      const finalState = await persist(
+        next,
+        state.masterKey,
+        state.vaultId,
+        state.recoveryVaultId,
+        state.seedEnvelope,
+      );
       setState({ ...state, vault: finalState });
     },
     [state, persist],
@@ -470,6 +556,11 @@ export function useVaultFlow(services: Services) {
       vault: state.vault,
       masterKey: state.masterKey,
       vaultId: state.vaultId,
+      recoveryVaultId: state.recoveryVaultId,
+      // Carry the envelope through — without it, subsequent persists
+      // would write a cipher with no seedEnvelope, breaking
+      // cross-device unlock.
+      ...(state.seedEnvelope ? { seedEnvelope: state.seedEnvelope } : {}),
     });
   }, [state]);
 
