@@ -5,7 +5,8 @@
     "packages/*",
     "extension",
     "extension-sync",
-    "infra/sync-worker"
+    "infra/sync-worker",
+    "mobile"
   ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",

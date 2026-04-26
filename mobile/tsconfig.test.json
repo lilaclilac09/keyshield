@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "node", "chrome"],
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "module": "ESNext"
+  },
+  "include": [
+    "src/lib/**/*.ts",
+    "src/storage/**/*.ts",
+    "src/storage/**/*.test.ts"
+  ]
+}
