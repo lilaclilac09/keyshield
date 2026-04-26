@@ -1,31 +1,51 @@
 /**
  * KeyShield sync worker — public surface.
  *
- *   GET    /vault/:id          → 200 + JSON cipher | 404
- *   PUT    /vault/:id          → 200 ok | 409 stale | 401/403 auth | 413 too large
- *   DELETE /vault/:id          → 204 | 401/403 auth
- *   POST   /auth/register      → 200 ok | 409 already registered | 400 bad payload
- *   POST   /auth/challenge     → 200 { challenge, expiresAt } | 404 not registered
- *   POST   /auth/exchange      → 200 { token, expiresAt } | 401 verify failed
- *   GET    /health             → 200
+ *   GET    /vault/:id              → 200 + JSON cipher | 404
+ *   PUT    /vault/:id              → 200 ok | 409 stale | 401/403 auth | 413 too large
+ *   DELETE /vault/:id              → 204 | 401/403 auth
+ *   POST   /auth/register          → 200 ok | 409 already registered | 400 bad payload
+ *   POST   /auth/challenge         → 200 { challenge, expiresAt } | 404 not registered
+ *   POST   /auth/exchange          → 200 { token, expiresAt } | 401 verify failed
+ *   POST   /auth/revoke            → 200 ok | 401 (passkey-bound; this device opts out)
+ *   POST   /auth/revoke-challenge  → 200 { challenge, expiresAt } | 404 not registered
+ *   POST   /auth/force-revoke      → 200 ok | 401 sig fails | 404 no challenge / no seed pubkey
+ *   GET    /health                 → 200
  *
  * Vault routes require `Authorization: Bearer <jwt>` whose `sub` claim
- * equals `:id`. The /auth/* routes are public — they are the path by
- * which a client gets that JWT in the first place.
+ * equals `:id`. /auth/revoke and /vault/* both consume that JWT.
+ *
+ * /auth/force-revoke is the seed-bound path: the client signs a fresh
+ * server-issued nonce with the Ed25519 key it derived from the
+ * 24-word recovery phrase. No passkey or JWT is required, so it works
+ * even when the original passkey lives on a lost device.
  */
 
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { ed25519 } from '@noble/curves/ed25519';
 import { extractBearer, issueJwt, verifyJwt } from './auth';
 import { readVault, writeVault, deleteVault, VaultCipherSchema } from './cas';
 import {
   bumpCounter,
   consumeChallenge,
+  consumeRevokeChallenge,
   issueChallenge,
+  issueRevokeChallenge,
   readRegistration,
   writeRegistrationOnce,
 } from './registry';
 import { verifyAuthentication, verifyRegistration, bytesToBase64 } from './webauthn';
+
+function base64UrlToBytes(b64url: string): Uint8Array {
+  const padded =
+    b64url.replace(/-/g, '+').replace(/_/g, '/') +
+    '='.repeat((4 - (b64url.length % 4)) % 4);
+  const s = atob(padded);
+  const u8 = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+  return u8;
+}
 
 export interface Env {
   VAULTS: R2Bucket;
@@ -109,6 +129,10 @@ const RegisterRequestSchema = z.object({
     authenticatorAttachment: z.string().optional(),
   }).passthrough(),
   expectedChallenge: z.string().min(1),
+  /** Optional Ed25519 public key (base64url, 32 bytes once decoded)
+   * derived from the seed via HKDF — see extension-sync's
+   * `seed-revoke.ts`. Required to enable /auth/force-revoke later. */
+  seedPublicKey: z.string().min(1).optional(),
 });
 
 app.post('/auth/register', async (c) => {
@@ -132,12 +156,27 @@ app.post('/auth/register', async (c) => {
     return c.json({ error: 'registration not verified' }, 401);
   }
 
+  // Validate the seed pubkey early — base64url + 32-byte length.
+  let seedPublicKey: string | undefined;
+  if (parsed.data.seedPublicKey) {
+    try {
+      const bytes = base64UrlToBytes(parsed.data.seedPublicKey);
+      if (bytes.length !== 32) {
+        return c.json({ error: 'seedPublicKey must decode to 32 bytes' }, 400);
+      }
+      seedPublicKey = parsed.data.seedPublicKey;
+    } catch {
+      return c.json({ error: 'seedPublicKey is not valid base64url' }, 400);
+    }
+  }
+
   const cred = verification.registrationInfo.credential;
   const ok = await writeRegistrationOnce(c.env.REGISTRY, vaultId, {
     credentialId: cred.id,
     publicKey: bytesToBase64(cred.publicKey),
     counter: cred.counter,
     registeredAt: Date.now(),
+    ...(seedPublicKey ? { seedPublicKey } : {}),
   });
   if (!ok) return c.json({ error: 'vault already registered' }, 409);
   return c.json({ ok: true });
@@ -261,6 +300,118 @@ app.post('/auth/revoke', async (c) => {
   // is not the same as deleting the user's data.
   await c.env.REGISTRY.delete(parsed.data.vaultId);
   await c.env.REGISTRY.delete(`${parsed.data.vaultId}-challenge`);
+  return c.json({ ok: true });
+});
+
+// --------------------------------------------------------------------
+// /auth/revoke-challenge + /auth/force-revoke — seed-bound revocation
+// --------------------------------------------------------------------
+//
+// The seed-bound path lets a user with the 24-word recovery phrase
+// revoke every passkey registration on a vault, even from a brand-new
+// device that never held the original passkey. This is the V1.1
+// answer to "I lost my phone": the keep-device restores from phrase,
+// hits /auth/force-revoke, and the lost device is locked out of the
+// sync backend on its next exchange attempt.
+//
+// Wire flow:
+//   1. POST /auth/revoke-challenge { vaultId } → { challenge, expiresAt }
+//   2. Client signs UTF-8(challenge) with the seed-derived Ed25519 key.
+//   3. POST /auth/force-revoke { vaultId, challenge, signature } → 200.
+//
+// `signature` is base64url over the 64 raw signature bytes. The
+// server verifies against the `seedPublicKey` stored on the vault's
+// registration record. If no seed pubkey was registered (legacy
+// records), the call returns 404 with a clear error so clients can
+// fall back to the JWT-bound /auth/revoke.
+
+const RevokeChallengeRequestSchema = z.object({
+  vaultId: z.string().min(8),
+});
+
+app.post('/auth/revoke-challenge', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = RevokeChallengeRequestSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'bad payload' }, 400);
+  const reg = await readRegistration(c.env.REGISTRY, parsed.data.vaultId);
+  if (!reg) return c.json({ error: 'vault not registered' }, 404);
+  if (!reg.seedPublicKey) {
+    return c.json(
+      { error: 'this vault has no seed-bound revoke key' },
+      404,
+    );
+  }
+  const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));
+  const record = await issueRevokeChallenge(
+    c.env.REGISTRY,
+    parsed.data.vaultId,
+    random,
+  );
+  return c.json(record);
+});
+
+const ForceRevokeRequestSchema = z.object({
+  vaultId: z.string().min(8),
+  challenge: z.string().min(1),
+  signature: z.string().min(1), // base64url over 64 bytes
+});
+
+app.post('/auth/force-revoke', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = ForceRevokeRequestSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'bad payload' }, 400);
+  const { vaultId, challenge, signature } = parsed.data;
+
+  const reg = await readRegistration(c.env.REGISTRY, vaultId);
+  if (!reg) return c.json({ error: 'vault not registered' }, 404);
+  if (!reg.seedPublicKey) {
+    return c.json(
+      { error: 'this vault has no seed-bound revoke key' },
+      404,
+    );
+  }
+
+  const consumed = await consumeRevokeChallenge(c.env.REGISTRY, vaultId);
+  if (!consumed) {
+    return c.json(
+      { error: 'no active revoke challenge — call /auth/revoke-challenge' },
+      401,
+    );
+  }
+  if (consumed.challenge !== challenge) {
+    return c.json({ error: 'challenge mismatch' }, 401);
+  }
+
+  let sigBytes: Uint8Array;
+  let pubKeyBytes: Uint8Array;
+  try {
+    sigBytes = base64UrlToBytes(signature);
+    pubKeyBytes = base64UrlToBytes(reg.seedPublicKey);
+  } catch {
+    return c.json({ error: 'invalid base64url' }, 400);
+  }
+  if (sigBytes.length !== 64) {
+    return c.json({ error: 'signature must be 64 bytes' }, 400);
+  }
+  if (pubKeyBytes.length !== 32) {
+    return c.json({ error: 'stored seed pubkey is malformed' }, 500);
+  }
+
+  const message = new TextEncoder().encode(challenge);
+  let verified = false;
+  try {
+    verified = ed25519.verify(sigBytes, message, pubKeyBytes);
+  } catch {
+    verified = false;
+  }
+  if (!verified) {
+    return c.json({ error: 'signature did not verify' }, 401);
+  }
+
+  // Same effect as /auth/revoke — drop the registration and any
+  // outstanding WebAuthn challenge. Vault ciphertext is left alone.
+  await c.env.REGISTRY.delete(vaultId);
+  await c.env.REGISTRY.delete(`${vaultId}-challenge`);
   return c.json({ ok: true });
 });
 

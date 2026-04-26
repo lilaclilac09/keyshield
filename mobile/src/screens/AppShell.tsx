@@ -141,6 +141,7 @@ export function AppShell({ services }: AppShellProps) {
             <AddPasskeyBanner
               services={services as any}
               onRegistered={flow.registerPasskeyAfterRestore}
+              onForceRevoke={flow.forceRevokeOtherDevices}
             />
           )}
           <SessionBar

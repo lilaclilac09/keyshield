@@ -22,10 +22,10 @@ describe('LostDeviceDialog', () => {
     expect(screen.getByText(/cut off the lost device/i)).toBeInTheDocument();
   });
 
-  it('shows the honest caveat about V1.2 server-side revocation', () => {
+  it('explains the seed-bound force-revoke flow available after restore', () => {
     setup();
-    expect(screen.getByText(/honest caveat/i)).toBeInTheDocument();
-    expect(screen.getByText(/V1\.2 roadmap/i)).toBeInTheDocument();
+    expect(screen.getByText(/server-side lockout/i)).toBeInTheDocument();
+    expect(screen.getByText(/force-revoke other devices/i)).toBeInTheDocument();
   });
 
   it('clicking "Restore from phrase" fires onStartRestore but NOT onClose directly', async () => {

@@ -17,12 +17,22 @@ import type {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
 } from './auth';
+import {
+  bytesToBase64Url,
+  deriveRevokeKeypair,
+  signRevokeChallenge,
+} from './seed-revoke';
 
 export interface SyncAuthClientConfig {
   baseUrl: string;
   /** Override fetch for tests / non-browser runtimes. */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+}
+
+export interface RevokeChallengeResponse {
+  challenge: string;
+  expiresAt: number;
 }
 
 export interface ChallengeResponse {
@@ -54,7 +64,15 @@ export class SyncAuthClient {
    * (e.g. an attacker raced us, or this is actually our own vault
    * and we should switch to /auth/exchange instead).
    */
-  async registerVault(vaultId: string, authResult: AuthResult): Promise<void> {
+  async registerVault(
+    vaultId: string,
+    authResult: AuthResult,
+    /** 32-byte vault seed. When provided, the seed-derived Ed25519
+     *  public key is registered alongside the passkey, enabling later
+     *  /auth/force-revoke calls. Always pass this on first-run and on
+     *  post-restore re-registration. */
+    seed?: Uint8Array,
+  ): Promise<void> {
     if (
       !authResult.registrationResponseJSON ||
       !authResult.expectedChallenge
@@ -64,10 +82,14 @@ export class SyncAuthClient {
           'pass the result of registerPasskey, not authenticateWithWebAuthn',
       );
     }
+    const seedPublicKey = seed
+      ? bytesToBase64Url(deriveRevokeKeypair(seed).publicKey)
+      : undefined;
     const res = await this.request('/auth/register', 'POST', {
       vaultId,
       attestation: authResult.registrationResponseJSON,
       expectedChallenge: authResult.expectedChallenge,
+      ...(seedPublicKey ? { seedPublicKey } : {}),
     });
     if (res.status === 409) {
       throw new SyncAuthAlreadyRegistered(vaultId);
@@ -117,6 +139,52 @@ export class SyncAuthClient {
     );
     if (!res.ok) {
       throw new Error(`revokeVault(${vaultId}) -> ${res.status}`);
+    }
+  }
+
+  async fetchRevokeChallenge(
+    vaultId: string,
+  ): Promise<RevokeChallengeResponse> {
+    const res = await this.request('/auth/revoke-challenge', 'POST', {
+      vaultId,
+    });
+    if (!res.ok) {
+      throw new Error(`fetchRevokeChallenge(${vaultId}) -> ${res.status}`);
+    }
+    return (await res.json()) as RevokeChallengeResponse;
+  }
+
+  /**
+   * Seed-bound force-revoke. Wipes the vault's passkey registration
+   * server-side using only the 24-word recovery phrase as authority.
+   * After this, any device still holding only the old passkey will
+   * get HTTP 404 from /auth/exchange and lose sync access.
+   *
+   *   1. Fetch a fresh challenge nonce.
+   *   2. Sign it with the seed-derived Ed25519 key.
+   *   3. POST to /auth/force-revoke.
+   *
+   * The vault ciphertext is intentionally left intact — this drops
+   * AUTH only. The caller is expected to immediately re-register a
+   * fresh passkey on the keep-device, otherwise nothing can sync.
+   */
+  async forceRevokeOthers(
+    vaultId: string,
+    seed: Uint8Array,
+  ): Promise<void> {
+    if (seed.length !== 32) {
+      throw new Error(`seed must be 32 bytes, got ${seed.length}`);
+    }
+    const { challenge } = await this.fetchRevokeChallenge(vaultId);
+    const { privateKey } = deriveRevokeKeypair(seed);
+    const sig = signRevokeChallenge(challenge, privateKey);
+    const res = await this.request('/auth/force-revoke', 'POST', {
+      vaultId,
+      challenge,
+      signature: bytesToBase64Url(sig),
+    });
+    if (!res.ok) {
+      throw new Error(`forceRevokeOthers(${vaultId}) -> ${res.status}`);
     }
   }
 

@@ -177,6 +177,7 @@ export function App() {
             <AddPasskeyBanner
               services={services}
               onRegistered={flow.registerPasskeyAfterRestore}
+              onForceRevoke={flow.forceRevokeOtherDevices}
             />
           )}
           <WalletConnectStrip wallet={wallet} />

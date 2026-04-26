@@ -9,9 +9,13 @@ export interface LostDeviceDialogProps {
 
 /**
  * Walks a user through what to do when they've lost a device that
- * had KeyShield on it. Honest about what this popup can and can't
- * do: server-side passkey revocation is V1.2; today, recovering on
- * a new device + cycling iCloud Keychain is the practical path.
+ * had KeyShield on it. The 3-step recovery here works without any
+ * server intervention; immediately afterwards the user should also
+ * use the seed-bound force-revoke flow (a button inside the
+ * AddPasskeyBanner once the vault is restored) to drop the
+ * registration server-side, so the lost device can't even pull
+ * fresh ciphertext. That step needs to run while the seed is still
+ * in memory (between restore and adding a new passkey here).
  */
 export function LostDeviceDialog(props: LostDeviceDialogProps) {
   return (
@@ -56,13 +60,14 @@ export function LostDeviceDialog(props: LostDeviceDialogProps) {
             </li>
           </ol>
 
-          <div className="mt-4 rounded-md bg-amber-50 p-3 text-[11px] text-amber-900">
-            <strong className="font-semibold">Honest caveat:</strong> KeyShield
-            cannot today force-revoke a passkey that&apos;s registered on our
-            sync server — server-side revocation is on the V1.2 roadmap. Until
-            then, the steps above are the practical lockout: the lost device
-            can only see a snapshot from before your recovery, and the gap
-            grows every time you edit your vault here.
+          <div className="mt-4 rounded-md bg-emerald-50 p-3 text-[11px] text-emerald-900">
+            <strong className="font-semibold">Server-side lockout:</strong>{' '}
+            after you restore here, a "Force-revoke other devices" button
+            appears alongside the "Add passkey" prompt. Click it (still on
+            the keep-device, while the seed is in memory) and KeyShield asks
+            the sync server to wipe every existing passkey registration for
+            this vault. The lost device's next sync attempt 404s — it can no
+            longer pull fresh ciphertext or push edits.
           </div>
         </div>
 

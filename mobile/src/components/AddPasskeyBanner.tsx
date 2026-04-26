@@ -7,13 +7,18 @@ import { colors, fontSize, radius, space } from '../theme';
 export interface AddPasskeyBannerProps {
   services: Services;
   onRegistered: (result: AuthResult) => Promise<void>;
+  /** Optional seed-bound force-revoke action — see the popup's
+   *  AddPasskeyBanner for the full rationale. */
+  onForceRevoke?: () => Promise<void>;
 }
 
 export function AddPasskeyBanner(props: AddPasskeyBannerProps) {
   const [busy, setBusy] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revokeStatus, setRevokeStatus] = useState<string | null>(null);
 
-  const onPress = async () => {
+  const onAddPasskey = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -33,6 +38,20 @@ export function AddPasskeyBanner(props: AddPasskeyBannerProps) {
     }
   };
 
+  const onForceRevoke = async () => {
+    if (!props.onForceRevoke) return;
+    setRevokeBusy(true);
+    setError(null);
+    try {
+      await props.onForceRevoke();
+      setRevokeStatus('Other devices revoked. Add a passkey here next.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Force-revoke failed');
+    } finally {
+      setRevokeBusy(false);
+    }
+  };
+
   return (
     <View style={styles.banner}>
       <View style={styles.row}>
@@ -42,7 +61,7 @@ export function AddPasskeyBanner(props: AddPasskeyBannerProps) {
           next time.
         </Text>
         <Pressable
-          onPress={onPress}
+          onPress={onAddPasskey}
           disabled={busy}
           accessibilityRole="button"
           accessibilityLabel={busy ? 'Adding passkey' : 'Add passkey'}
@@ -56,6 +75,33 @@ export function AddPasskeyBanner(props: AddPasskeyBannerProps) {
           <Text style={styles.btnText}>{busy ? 'Adding…' : 'Add passkey'}</Text>
         </Pressable>
       </View>
+
+      {props.onForceRevoke && (
+        <View style={styles.revokeRow}>
+          <Text style={styles.revokeText}>
+            Lost a device? Drop every existing passkey registration on the
+            sync server.
+          </Text>
+          <Pressable
+            onPress={onForceRevoke}
+            disabled={revokeBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Force-revoke other devices"
+            accessibilityState={{ disabled: revokeBusy }}
+            style={({ pressed }) => [
+              styles.outlineBtn,
+              revokeBusy && styles.dim,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.outlineBtnText}>
+              {revokeBusy ? 'Revoking…' : 'Force-revoke other devices'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {revokeStatus && <Text style={styles.okText}>{revokeStatus}</Text>}
       {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
@@ -90,6 +136,38 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.85 },
   dim: { opacity: 0.5 },
+  revokeRow: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.warnBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.s,
+  },
+  revokeText: {
+    flex: 1,
+    fontSize: fontSize.xxs,
+    color: colors.warnText,
+  },
+  outlineBtn: {
+    borderWidth: 1,
+    borderColor: colors.warnButton,
+    paddingHorizontal: space.s,
+    paddingVertical: 2,
+    borderRadius: radius.md,
+  },
+  outlineBtnText: {
+    color: colors.warnHeading,
+    fontSize: fontSize.xxs,
+    fontWeight: '500',
+  },
+  okText: {
+    marginTop: 4,
+    fontSize: fontSize.xxs,
+    color: colors.okText,
+  },
   errorText: {
     marginTop: 4,
     fontSize: fontSize.xxs,

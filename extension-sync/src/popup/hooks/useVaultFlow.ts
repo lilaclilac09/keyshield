@@ -150,7 +150,10 @@ export function useVaultFlow(services: Services) {
    * The PRF secret only ever lives in this call stack.
    */
   const finalizeUnlock = useCallback(
-    async (authResult: AuthResult, opts: { showMnemonicOnNew: boolean }): Promise<void> => {
+    async (
+      authResult: AuthResult,
+      opts: { showMnemonicOnNew: boolean; seedForNewVault?: Uint8Array },
+    ): Promise<void> => {
       if (!authResult.success || !authResult.prfSecret) {
         throw new Error(
           authResult.error ?? 'Authentication did not return a PRF secret',
@@ -213,8 +216,10 @@ export function useVaultFlow(services: Services) {
         resultingCipher = remote;
         seedEnvelope = undefined;
       } else {
-        // First time anywhere — create the V2 vault.
-        const seed = generateSeed(services.vault['cfg'].crypto);
+        // First time anywhere — create the V2 vault. Reuse the
+        // caller-supplied seed if present so the seed pubkey we
+        // pre-registered matches the one we're about to commit.
+        const seed = opts.seedForNewVault ?? generateSeed(services.vault['cfg'].crypto);
         masterKey = await services.vault.deriveMasterKey(seed);
         vaultId = prfDerivedVaultId;
         recoveryVaultId = await services.vault.deriveVaultId(seed);
@@ -284,27 +289,43 @@ export function useVaultFlow(services: Services) {
         ? registrationResult
         : await services.auth.authenticateWithWebAuthn();
 
-      // Push the attestation to the sync worker so future devices can
-      // /auth/exchange against it. If a syncAuth client isn't
-      // configured (in-memory sync), we skip this entirely.
+      // Generate the seed up-front so we can register its public key
+      // alongside the passkey in the same /auth/register call. On a
+      // 2nd-device first-run the registerVault call will 409 — the
+      // seed we generated here is then discarded inside finalizeUnlock
+      // (the unwrapped envelope's seed wins), but the seed pubkey we
+      // POSTed is also discarded server-side (first-write-wins).
+      let seedForNewVault: Uint8Array | undefined;
       if (services.syncAuth && registrationResult.prfSecret) {
+        seedForNewVault = generateSeed(services.vault['cfg'].crypto);
         const vaultId = await services.vault.deriveVaultId(
           registrationResult.prfSecret,
         );
         try {
-          await services.syncAuth.registerVault(vaultId, registrationResult);
+          await services.syncAuth.registerVault(
+            vaultId,
+            registrationResult,
+            seedForNewVault,
+          );
         } catch (e: any) {
           // 409 → vault already registered on the backend (likely the
-          // user re-installed). That's recoverable: just skip and fall
-          // through to authenticate + exchange below.
-          if (e?.name !== 'SyncAuthAlreadyRegistered') {
+          // user re-installed). That's recoverable: drop our about-to-
+          // be-discarded seed and let finalizeUnlock unwrap the
+          // existing one.
+          if (e?.name === 'SyncAuthAlreadyRegistered') {
+            seedForNewVault = undefined;
+          } else {
             // eslint-disable-next-line no-console
             console.warn('[KeyShield] /auth/register failed:', e);
+            seedForNewVault = undefined;
           }
         }
       }
 
-      await finalizeUnlock(authResult, { showMnemonicOnNew: true });
+      await finalizeUnlock(authResult, {
+        showMnemonicOnNew: true,
+        seedForNewVault,
+      });
     },
     [services, finalizeUnlock],
   );
@@ -458,6 +479,7 @@ export function useVaultFlow(services: Services) {
           await services.syncAuth.registerVault(
             newPrfVaultId,
             registrationResult,
+            state.seed,
           );
         } catch (e: any) {
           if (e?.name !== 'SyncAuthAlreadyRegistered') {
@@ -703,6 +725,36 @@ export function useVaultFlow(services: Services) {
     [state, persist],
   );
 
+  /**
+   * Seed-bound force-revoke. Wipes every existing passkey
+   * registration on the sync backend using the in-memory seed as
+   * the only credential — the user just typed the recovery phrase
+   * and we know they hold it. Idempotent: a 404 (no seed pubkey on
+   * file) means there's nothing to force-revoke (the vault was
+   * registered before V1.1 added seed pubkeys); anything else gets
+   * surfaced.
+   *
+   * Only callable while `state.seed` is in scope, which means right
+   * after `restoreFromMnemonic` and BEFORE
+   * `registerPasskeyAfterRestore`. After re-registering a passkey
+   * we drop the seed from state.
+   */
+  const forceRevokeOtherDevices = useCallback(async (): Promise<void> => {
+    if (state.kind !== 'unlocked' || !state.seed) {
+      throw new Error(
+        'forceRevokeOtherDevices can only be called after a mnemonic ' +
+          'restore, before adding a new passkey to this device.',
+      );
+    }
+    if (!services.syncAuth) {
+      throw new Error('Sync backend is not configured');
+    }
+    await services.syncAuth.forceRevokeOthers(
+      state.recoveryVaultId,
+      state.seed,
+    );
+  }, [state, services]);
+
   /** Lock — drops in-memory state but keeps the encrypted cache. */
   const lock = useCallback(() => {
     setState({ kind: 'locked' });
@@ -733,6 +785,7 @@ export function useVaultFlow(services: Services) {
     cancelRestore,
     restoreFromMnemonic,
     registerPasskeyAfterRestore,
+    forceRevokeOtherDevices,
     acknowledgeMnemonic,
     upsertKey,
     removeKey,

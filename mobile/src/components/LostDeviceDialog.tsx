@@ -45,13 +45,14 @@ export function LostDeviceDialog(props: LostDeviceDialogProps) {
               text="Sign out of iCloud Keychain (Apple) or Google Password Manager (Android / Chrome) on the lost device — Find My / Find My Device can do this remotely. That removes the synced passkey from the lost device and stops it reading your vault entirely."
             />
 
-            <View style={styles.caveat}>
-              <Text style={styles.caveatText}>
-                <Text style={styles.bold}>Honest caveat: </Text>
-                KeyShield cannot today force-revoke a passkey that&apos;s
-                registered on our sync server — server-side revocation is on
-                the V1.2 roadmap. Until then, the steps above are the practical
-                lockout.
+            <View style={styles.note}>
+              <Text style={styles.noteText}>
+                <Text style={styles.bold}>Server-side lockout: </Text>
+                after restoring on this device, the AddPasskeyBanner exposes
+                a "Force-revoke other devices" button. While the seed is in
+                memory KeyShield asks the sync server to wipe every existing
+                passkey registration, so the lost device's next sync attempt
+                404s — it can no longer pull fresh ciphertext.
               </Text>
             </View>
           </ScrollView>
@@ -143,13 +144,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   bold: { fontWeight: '600' },
-  caveat: {
-    backgroundColor: colors.warnBg,
+  note: {
+    backgroundColor: colors.okBg,
     padding: space.s,
     borderRadius: radius.md,
     marginTop: space.s,
   },
-  caveatText: { fontSize: fontSize.xs, color: colors.warnHeading },
+  noteText: { fontSize: fontSize.xs, color: colors.okText },
   footer: {
     flexDirection: 'row',
     gap: space.s,
