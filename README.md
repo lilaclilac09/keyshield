@@ -16,7 +16,7 @@ KeyShield Agentic is a Solana-native API key vault that serves **both humans and
 - ⚡ **Production-hardened Solana writes** — dynamic priority fees, `confirmed` commitment, shared Connection pool
 
 > ### Project status
-> This repo is under active development. **In scope and built today:** Solana program (Rust/Pinocchio) with session expiry + `revoke_all_agents`, `agent-sdk` SessionManager, `goat-wallet` priority-fee-aware send, `extension/` local vault + passkey + popup UI scaffold. **In scope, next:** recovery-phrase backup, session-management UI, owner-wallet adapter wiring, iOS app skeleton — see **[docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)** (V1 / V1.1 / V2) and **[docs/roadmap/VAULT_FACEID_BACKLOG.md](./docs/roadmap/VAULT_FACEID_BACKLOG.md)** (P0 / P1 / P2).
+> This repo is under active development. **In scope and built today:** Solana program (Rust/Pinocchio) with session expiry + `revoke_all_agents`, `agent-sdk` SessionManager, `goat-wallet` priority-fee-aware send, V1 single-device popup (`extension/`), V1.1 cross-device sync popup (`extension-sync/`) with WebAuthn-PRF + 24-word recovery phrase + seed-bound server-side force-revoke, Cloudflare Workers sync backend (`infra/sync-worker/`), and a React Native skeleton (`mobile/`). **In scope, next:** mobile owner-wallet deep-link adapter, R2 lifecycle for orphaned PRF slots, per-vault rate limiting on `/auth/*` — see **[docs/technical/SYNC_VAULT_ARCHITECTURE.md](./docs/technical/SYNC_VAULT_ARCHITECTURE.md)** (current V1.1) and **[docs/technical/LOCAL_VAULT_ARCHITECTURE.md](./docs/technical/LOCAL_VAULT_ARCHITECTURE.md)** (legacy V1 single-device).
 >
 > **Not on the current roadmap:** Lit Protocol threshold encryption, Bonsol ZK proofs, Arcium MPC, x402 streaming payments. These were in an earlier iteration of the pitch but were displaced by the simpler local-first-vault + passkey direction. The SDK has stub classes for them so the old import graph still resolves; they're not being built out. The end-user surfaces today are the `extension-sync/` browser popup and the `mobile/` React Native skeleton.
 
@@ -54,11 +54,19 @@ The Rust program also still contains a `payment_streams[8]` table and `grant_age
 
 ## Features (✅ built · 🧪 scaffolded · 💤 stub)
 
-### ✅ Local-first vault
+### ✅ Local-first vault (V1)
 - AES-256-GCM encryption in `chrome.storage.local`, master key gated by Face ID / passkey
 - Vault contents never leave the device; moving to a new device means re-importing keys
 - Passkey itself syncs via iCloud Keychain / Google Password Manager (so you only register Face ID once)
 - Lives in `extension/src/lib/vault.ts` + `auth.ts`, 23 unit tests
+
+### ✅ Cross-device sync vault (V1.1, `extension-sync/`)
+- WebAuthn PRF derives an HKDF-domain-separated AES-256-GCM key + a stable vault ID; cipher only ever leaves the device encrypted
+- 24-word BIP-39 recovery phrase wrapped under the PRF (dual-write at PRF-id + seed-id) so a fresh device with the same passkey OR the phrase can decrypt
+- Tombstone-merged conflict resolution surfaces a `ConflictDialog` per-key only when values actually diverge
+- **Seed-bound server-side force-revoke**: a recovery-phrase-only user can drop every existing passkey registration via Ed25519 over a server-issued nonce — the lost device's next sync 404s
+- Cloudflare Worker + R2 backend in `infra/sync-worker/`, runs in workerd-pool tests via `@cloudflare/vitest-pool-workers`
+- 219 unit + integration tests across the popup, hook, lib, and worker
 
 ### ✅ Per-device session model
 - One `agent_grant` per device, up to 32 concurrent on-chain
