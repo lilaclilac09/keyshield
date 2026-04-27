@@ -94,6 +94,13 @@ passkey gets registered, and write down the 24-word mnemonic the
 screen displays. Then in a private window, click "I have a
 recovery phrase" and paste the words — the vault should decrypt.
 
+To smoke-test seed-bound force-revoke: after the recovery-phrase
+unlock, click "Force-revoke other devices" in the AddPasskeyBanner.
+The first window's next /auth/exchange call should 404 (it's now
+unregistered); pulling the cipher still works as long as that
+window holds a non-expired JWT, but new logins are blocked until
+the keep-device adds a fresh passkey.
+
 ## 5. Rotating the JWT secret
 
 JWTs are short-lived (15 minutes by default) so a rotation is
@@ -121,7 +128,7 @@ If you genuinely need to migrate domains:
 
 1. Add the new domain as an additional accepted origin via
    `RP_ORIGIN` (it can be a JSON-array string the worker parses;
-   you'll need a code change for that — V1.2).
+   you'll need a code change for that — see `webauthn.ts`).
 2. Have users re-register passkeys at the new origin.
 3. After everyone has migrated, drop the old origin.
 

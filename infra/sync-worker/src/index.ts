@@ -272,12 +272,10 @@ app.post('/auth/exchange', async (c) => {
 // they can authenticate now, hold a JWT, and want to deauthorize this
 // device going forward). Useful for "I'm done with this computer".
 //
-// NOT a "I lost my phone" button: that case requires a seed-bound
-// asymmetric authentication path which is V1.2 work. The HTTP 401 a
-// lost device gets after this call is what gives the keep-device a
-// quiet way to confirm the lost device was cycled — but until V1.2
-// the practical lockout is still recovery + add-passkey + iCloud
-// sign-out as documented in `LostDeviceDialog`.
+// For the "I lost my phone" case (no JWT, no passkey on this device,
+// only the recovery phrase), use /auth/force-revoke below — that
+// path is gated on a seed-derived Ed25519 signature instead of a
+// JWT so the keep-device doesn't have to reauthenticate first.
 const RevokeRequestSchema = z.object({ vaultId: z.string().min(8) });
 
 app.post('/auth/revoke', async (c) => {

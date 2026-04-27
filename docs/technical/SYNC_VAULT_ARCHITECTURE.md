@@ -325,9 +325,55 @@ flow's `registerPasskeyAfterRestore`:
    wrap, drop `state.seed`.
 
 The OLD PRF-derived slot from the lost device is orphaned at the
-sync backend. Cleanup is a V1.2 housekeeping job (see §10).
+sync backend. Cleanup is a future housekeeping job (see §10).
 
-### 11.5 The five end-to-end paths
+### 11.5 Seed-bound force-revoke
+
+After a mnemonic restore the in-memory `state.seed` doubles as a
+revocation credential. The user can drop every existing passkey
+registration server-side without holding any of those passkeys —
+useful when a device is genuinely lost (not just borrowed).
+
+Wire layout (see `extension-sync/src/lib/seed-revoke.ts` and the new
+worker endpoints):
+
+```
+seed (32 bytes)
+   │
+   ├── HKDF info='keyshield-prf-v1:revoke-key'
+   ▼
+Ed25519 keypair (privateKey, publicKey)
+   │
+   ├── publicKey registered on /auth/register alongside the passkey.
+   │   Stored in REGISTRY/<vaultId> under `seedPublicKey`.
+   │
+   └── privateKey signs nonces from /auth/revoke-challenge.
+       /auth/force-revoke verifies and deletes the registration.
+```
+
+End-to-end:
+
+1. `POST /auth/revoke-challenge { vaultId }` → 32-byte random nonce,
+   stashed at `REGISTRY/<vaultId>-revoke-challenge`.
+2. Client signs `UTF-8(challenge)` with the seed-derived private key.
+3. `POST /auth/force-revoke { vaultId, challenge, signature }` →
+   server consumes the nonce, verifies against `seedPublicKey`,
+   and deletes both `REGISTRY/<vaultId>` and any pending WebAuthn
+   challenge. The vault ciphertext is NOT touched — revocation
+   drops AUTH only.
+
+Domain separation matters here: the HKDF `info` for the revoke key
+is distinct from `keyshield-prf-v1:encryption-key` (the AES-GCM
+master) and `keyshield-prf-v1:seed-wrap-key` (the envelope wrapper),
+so a leak of any one role can't be substituted for another.
+
+The popup surfaces this through the AddPasskeyBanner: alongside the
+"Add passkey" action it offers "Force-revoke other devices", wired
+to `useVaultFlow.forceRevokeOtherDevices()`. The action is only
+enabled while `state.seed` is in scope — i.e. between
+`restoreFromMnemonic` and `registerPasskeyAfterRestore`.
+
+### 11.6 The five end-to-end paths
 
 Each is exercised by `extension-sync/src/popup/hooks/useVaultFlow.test.tsx`:
 

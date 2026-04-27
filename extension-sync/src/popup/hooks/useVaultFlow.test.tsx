@@ -68,6 +68,9 @@ function makeDevice(opts: {
    *  carrying FAKE_PRF and the right JSON shapes. */
   registerResult?: AuthResult;
   authenticateResult?: AuthResult;
+  /** Optional syncAuth mock. Pass `'fake'` to install a recording stub
+   *  whose calls can be inspected via `services.syncAuth`. */
+  syncAuth?: 'fake';
 }): Harness {
   const sync = opts.sharedSync ?? new InMemorySyncBackend();
   const auth = {
@@ -77,11 +80,31 @@ function makeDevice(opts: {
     ),
     isWebAuthnAvailable: vi.fn(() => true),
   };
+  const syncAuth =
+    opts.syncAuth === 'fake'
+      ? {
+          registerVault: vi.fn(async () => {}),
+          fetchChallenge: vi.fn(async () => ({
+            challenge: 'c',
+            expiresAt: Date.now() + 60_000,
+          })),
+          exchange: vi.fn(async () => ({
+            token: 'tok',
+            expiresAt: Date.now() + 900_000,
+          })),
+          revokeVault: vi.fn(async () => {}),
+          fetchRevokeChallenge: vi.fn(async () => ({
+            challenge: 'rc',
+            expiresAt: Date.now() + 60_000,
+          })),
+          forceRevokeOthers: vi.fn(async () => {}),
+        }
+      : null;
   const services = {
     auth,
     vault: new LocalVault({ storage: memoryStorage(), crypto: realCrypto }),
     sync,
-    syncAuth: null,
+    syncAuth,
     bearer: new BearerHolder(),
     session: new ExtensionSession({ storage: memoryStorage() }),
   };
@@ -299,9 +322,11 @@ describe('useVaultFlow — restore from recovery phrase (no passkey)', () => {
 });
 
 // ============================================================
-// 4. After-restore behaviour: edits work locally even without a JWT
-//    (the next "register a passkey on this device" step is V1.2 work,
-//    but the popup must not crash if the user just sits there).
+// 4. After-restore behaviour: edits work locally even without a JWT.
+//    The "register a passkey on this device" + "force-revoke other
+//    devices" steps live in §5/§6; the popup must still not crash if
+//    the user just sits in the post-restore unlocked state for a
+//    while without taking either action.
 // ============================================================
 
 describe('useVaultFlow — post-restore CRUD', () => {
@@ -427,5 +452,90 @@ describe('useVaultFlow — registerPasskeyAfterRestore', () => {
     await expect(
       a.result.current.registerPasskeyAfterRestore(freshRegisterResult()),
     ).rejects.toThrow(/seed is still in memory/);
+  });
+});
+
+// ============================================================
+// 6. Seed-bound force-revoke
+// ============================================================
+
+describe('useVaultFlow — forceRevokeOtherDevices', () => {
+  it('after a mnemonic restore, calls syncAuth.forceRevokeOthers with the recovery vault id', async () => {
+    const sharedSync = new InMemorySyncBackend();
+
+    // A creates the vault on a real (no-syncAuth) device — the seed is
+    // generated locally inside finalizeUnlock and pushed to the shared
+    // InMemorySyncBackend, so C can pull and unwrap.
+    const dA = makeDevice({ sharedSync });
+    const a = renderHook(() => useVaultFlow(dA.services));
+    await waitFor(() => expect(a.result.current.state.kind).toBe('firstRun'));
+    await act(async () => {
+      await a.result.current.completeFirstRun(freshRegisterResult());
+    });
+    const mnemonic = flow(a.result, 'showMnemonic').mnemonic;
+    act(() => a.result.current.acknowledgeMnemonic());
+
+    // C restores from mnemonic with a recording syncAuth stub.
+    const dC = makeDevice({ sharedSync, syncAuth: 'fake' });
+    const c = renderHook(() => useVaultFlow(dC.services));
+    await waitFor(() => expect(c.result.current.state.kind).toBe('firstRun'));
+    act(() => c.result.current.startRestore());
+    await act(async () => {
+      await c.result.current.restoreFromMnemonic(mnemonic);
+    });
+    const restoredVaultId = flow(c.result, 'unlocked').recoveryVaultId;
+
+    // Force-revoke. The hook should hand the seed to syncAuth, which
+    // is what proves we're holding it long enough to authorise.
+    await act(async () => {
+      await c.result.current.forceRevokeOtherDevices();
+    });
+
+    expect(dC.services.syncAuth.forceRevokeOthers).toHaveBeenCalledTimes(1);
+    const [calledVaultId, calledSeed] =
+      dC.services.syncAuth.forceRevokeOthers.mock.calls[0];
+    expect(calledVaultId).toBe(restoredVaultId);
+    expect(calledSeed).toBeInstanceOf(Uint8Array);
+    expect(calledSeed.byteLength).toBe(32);
+  });
+
+  it('throws if the vault is not in a post-restore unlocked state', async () => {
+    const dA = makeDevice({ syncAuth: 'fake' });
+    const a = renderHook(() => useVaultFlow(dA.services));
+    await waitFor(() => expect(a.result.current.state.kind).toBe('firstRun'));
+    await act(async () => {
+      await a.result.current.completeFirstRun(freshRegisterResult());
+    });
+    act(() => a.result.current.acknowledgeMnemonic());
+    // 'unlocked' but state.seed never set (PRF unlock path).
+    await expect(a.result.current.forceRevokeOtherDevices()).rejects.toThrow(
+      /mnemonic restore/,
+    );
+    expect(dA.services.syncAuth.forceRevokeOthers).not.toHaveBeenCalled();
+  });
+
+  it('throws if syncAuth is not configured', async () => {
+    const sharedSync = new InMemorySyncBackend();
+    const dA = makeDevice({ sharedSync });
+    const a = renderHook(() => useVaultFlow(dA.services));
+    await waitFor(() => expect(a.result.current.state.kind).toBe('firstRun'));
+    await act(async () => {
+      await a.result.current.completeFirstRun(freshRegisterResult());
+    });
+    const mnemonic = flow(a.result, 'showMnemonic').mnemonic;
+    act(() => a.result.current.acknowledgeMnemonic());
+
+    // C restores WITHOUT a syncAuth stub.
+    const dC = makeDevice({ sharedSync });
+    const c = renderHook(() => useVaultFlow(dC.services));
+    await waitFor(() => expect(c.result.current.state.kind).toBe('firstRun'));
+    act(() => c.result.current.startRestore());
+    await act(async () => {
+      await c.result.current.restoreFromMnemonic(mnemonic);
+    });
+
+    await expect(c.result.current.forceRevokeOtherDevices()).rejects.toThrow(
+      /not configured/,
+    );
   });
 });
