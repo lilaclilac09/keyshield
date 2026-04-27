@@ -25,10 +25,8 @@ from typing import Any
 
 import webauthn
 from webauthn.helpers.structs import (
-    AuthenticationCredential,
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
-    RegistrationCredential,
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
@@ -132,9 +130,9 @@ def registration_verify(user_id: str, credential: dict, name: str = "Passkey") -
     if not pending or pending["expires"] < time.time():
         raise ValueError("registration challenge expired or not found")
 
-    reg_cred = RegistrationCredential.parse_raw(json.dumps(credential))
+    # webauthn 2.x accepts dict | str | RegistrationCredential directly.
     verification = webauthn.verify_registration_response(
-        credential=reg_cred,
+        credential=credential,
         expected_challenge=_b64url_bytes(pending["challenge"]),
         expected_rp_id=RP_ID,
         expected_origin=ORIGIN,
@@ -193,9 +191,8 @@ def authentication_verify(user_id: str, credential: dict) -> dict:
         if not row:
             raise ValueError("unknown credential")
 
-        auth_cred = AuthenticationCredential.parse_raw(json.dumps(credential))
         verification = webauthn.verify_authentication_response(
-            credential=auth_cred,
+            credential=credential,
             expected_challenge=_b64url_bytes(pending["challenge"]),
             expected_rp_id=RP_ID,
             expected_origin=ORIGIN,
