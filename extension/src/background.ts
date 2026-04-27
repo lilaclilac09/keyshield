@@ -23,6 +23,11 @@
 import type { DetectedKey } from './lib/detector';
 import { buildPaymentProofPayload, encodePaymentProof, type X402Payment } from './lib/x402';
 import type { SessionSigs } from './lib/lit';
+import {
+  setCloudToken, clearCloudToken, getCloudToken,
+  cloudStore, cloudList, cloudDecrypt, cloudHealth,
+  providerToUpstream,
+} from './lib/cloud';
 
 // Lazy Lit loader — returns cached module after first import
 let _litModule: typeof import('./lib/lit') | null = null;
@@ -192,6 +197,26 @@ async function handleMessage(
         sendResponse(await checkHealth());
         break;
 
+      // ── Cloud-mode handlers (talk to KeyShield backend at :8000) ────────
+      case 'KS_TOKEN_SYNC':
+        // Dashboard content script bridge — forwards localStorage.ks_token
+        await setCloudToken(message.token as string);
+        console.log('[KeyShield:bg] cloud token synced from dashboard');
+        sendResponse({ success: true });
+        break;
+
+      case 'KS_TOKEN_CLEAR':
+        await clearCloudToken();
+        sendResponse({ success: true });
+        break;
+
+      case 'KS_CLOUD_STATUS':
+        sendResponse({
+          hasToken: !!(await getCloudToken()),
+          health:   await cloudHealth(),
+        });
+        break;
+
       case 'UPDATE_VAULT_ENTRY':
         sendResponse(await handleUpdateVaultEntry(
           message.id as string,
@@ -264,14 +289,60 @@ async function handleKeysDetected(keys: DetectedKey[]): Promise<void> {
 
 // ── STORE_KEY ─────────────────────────────────────────────────────────────────
 
-async function handleStoreKey(key: DetectedKey): Promise<{ success: boolean; error?: string }> {
+async function handleStoreKey(key: DetectedKey): Promise<{ success: boolean; error?: string; mode?: string }> {
+  const sanitizedValue = sanitizeKeyValue(key.key);
+  if (!sanitizedValue) return { success: false, error: 'Invalid key value' };
+
+  // ── Cloud mode (preferred): if dashboard token exists, store via /manage/store
+  const cloudToken = await getCloudToken();
+  if (cloudToken) {
+    const upstream = providerToUpstream(key.provider);
+    if (upstream) {
+      const r = await cloudStore(upstream, sanitizedValue);
+      if (r.ok) {
+        // Mirror in local vault metadata so the popup's VAULT tab shows it
+        const id = `cloud-${upstream}-${Date.now()}`;
+        const entry: VaultEntry = {
+          id,
+          name: `${key.provider || upstream} — ${key.domain}`,
+          provider: key.provider || upstream,
+          domain: key.domain,
+          ciphertext: 'cloud:keyshield',
+          dataToEncryptHash: '',
+          walletPubkey: 'cloud',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          domains: [key.domain],
+          encrypted: true,
+        };
+        await appendToVault(entry);
+        await clearPendingDetection(key.provider, key.domain);
+        const remaining = await getPendingDetections();
+        chrome.action.setBadgeText({ text: remaining.length > 0 ? String(remaining.length) : '' });
+
+        // Native Chrome notification — user sees confirmation, no tab opens
+        try {
+          chrome.notifications.create({
+            type:    'basic',
+            iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+            title:   '✓ Key saved to vault',
+            message: `${upstream} key from ${key.domain}`,
+          }, () => { /* lastError ignored */ });
+        } catch { /* notifications may be denied */ }
+
+        return { success: true, mode: 'cloud' };
+      }
+      // If cloud failed (network, expired, etc.), fall through to Lit path
+      console.warn('[KeyShield:bg] cloud store failed, falling back to Lit:', r.error);
+    }
+  }
+
+  // ── Lit mode (fallback): requires wallet session
   if (!activeSession || Date.now() > activeSession.expiresAt) {
-    return { success: false, error: 'No wallet session — connect your wallet in the popup' };
+    return { success: false, error: 'Sign in to KeyShield dashboard at localhost:3000 (or connect a wallet) to store keys.' };
   }
 
   const { walletPubkey } = activeSession;
-  const sanitizedValue = sanitizeKeyValue(key.key);
-  if (!sanitizedValue) return { success: false, error: 'Invalid key value' };
 
   const { encryptForExtension } = await getLit();
   const { ciphertext, dataToEncryptHash } = await encryptForExtension(sanitizedValue, walletPubkey);

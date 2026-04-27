@@ -32,8 +32,47 @@ async function init() {
   startDetection();
   setupX402Listener();
   setupAutofill();
+  syncDashboardToken();   // bridge: dashboard localStorage → extension
 
   console.log('[KeyShield] Content script initialized');
+}
+
+// ── Dashboard token bridge ───────────────────────────────────────────────────
+//
+// When this script runs on the KeyShield dashboard (http://localhost:3000),
+// read the session token out of localStorage and forward it to the background
+// service worker. This is how the extension picks up your login automatically
+// — no extension ID to paste, no manual pairing.
+
+const DASHBOARD_HOSTS = ['localhost', '127.0.0.1', 'keyshield.dev'];
+
+function syncDashboardToken() {
+  if (!DASHBOARD_HOSTS.some(h => location.hostname === h || location.hostname.endsWith('.' + h))) {
+    return;
+  }
+  // Only run on the dashboard ports
+  if (location.port && !['3000', '3001'].includes(location.port)) return;
+
+  const push = () => {
+    try {
+      const tok = localStorage.getItem('ks_token');
+      if (tok) {
+        chrome.runtime.sendMessage({ type: 'KS_TOKEN_SYNC', token: tok }, () => {
+          // ignore lastError
+        });
+      } else {
+        chrome.runtime.sendMessage({ type: 'KS_TOKEN_CLEAR' }, () => { /* */ });
+      }
+    } catch { /* extension context invalidated during reload */ }
+  };
+
+  push();
+  // Re-sync if dashboard logs out / re-logs in
+  window.addEventListener('storage', e => {
+    if (e.key === 'ks_token') push();
+  });
+  // Re-sync periodically as a belt-and-suspenders
+  setInterval(push, 30_000);
 }
 
 // ── Key Detection ─────────────────────────────────────────────────────────────
