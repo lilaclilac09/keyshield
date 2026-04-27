@@ -1,5 +1,13 @@
 # ⚡ KeyShield Quick Start
 
+> 📖 **Looking for a fuller, step-by-step guide?** See
+> **[docs/get-started/](./docs/get-started/)** — three numbered
+> walkthroughs (local dev / frontend integration / self-host)
+> with verify-as-you-go bullets at every step.
+>
+> This file is the cheat-sheet version: shortest path from a
+> clean checkout to a deployed program + a running popup.
+
 ## 🚀 Quick Fix for `make deploy` (Future Upgrades)
 
 Use Helius for devnet so `make deploy CLUSTER=devnet` is faster and more reliable:
