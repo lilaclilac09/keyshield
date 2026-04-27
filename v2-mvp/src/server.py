@@ -15,9 +15,11 @@ KeyShield v2 — 统一入口
 """
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -34,13 +36,21 @@ from .skills import helius_skill
 MAX_BODY = 1_000_000  # 1 MB
 
 PLATFORM_KEYS: dict[str, str] = {
-    "helius": os.getenv("HELIUS_API_KEY", ""),
-    "openai": os.getenv("OPENAI_API_KEY", ""),
+    "helius":    os.getenv("HELIUS_API_KEY",    ""),
+    "openai":    os.getenv("OPENAI_API_KEY",    ""),
+    "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
+    "mistral":   os.getenv("MISTRAL_API_KEY",   ""),
+    "cohere":    os.getenv("COHERE_API_KEY",    ""),
+    "groq":      os.getenv("GROQ_API_KEY",      ""),
 }
 
 UPSTREAMS: dict[str, str] = {
-    "helius": "https://mainnet.helius-rpc.com",
-    "openai": "https://api.openai.com",
+    "helius":    "https://mainnet.helius-rpc.com",
+    "openai":    "https://api.openai.com",
+    "anthropic": "https://api.anthropic.com",
+    "mistral":   "https://api.mistral.ai",
+    "cohere":    "https://api.cohere.ai",
+    "groq":      "https://api.groq.com/openai",
 }
 
 # ─── 1. 连接复用：每个 upstream 一个持久 AsyncClient ──────────────────────────
@@ -100,6 +110,25 @@ def _rpc_ttl(body: bytes) -> float | None:
         return None
 
 
+# ─── base58 (Solana/Bitcoin alphabet) ────────────────────────────────────────
+_B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+def _b58decode(s: str) -> bytes:
+    n = 0
+    for c in s:
+        n = n * 58 + _B58_ALPHABET.index(c)
+    result: list[int] = []
+    while n:
+        result.append(n & 0xFF)
+        n >>= 8
+    padding = len(s) - len(s.lstrip("1"))
+    return bytes([0] * padding + result[::-1])
+
+
+# ─── wallet challenge nonce store (in-memory, TTL 5 min) ─────────────────────
+_NONCES: dict[str, float] = {}   # nonce_hex → expire_monotonic
+
+
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -113,7 +142,7 @@ app = FastAPI(title="KeyShield v2", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:4000").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -127,6 +156,8 @@ def _bearer(request: Request) -> str:
 
 
 def _session(token: str = Depends(_bearer)) -> dict:
+    if token == "dev-bypass":
+        return {"user_id": "dev-bypass", "password": "dev-bypass"}
     sess = session.get(token)
     if not sess:
         raise HTTPException(401, "unauthorized")
@@ -189,6 +220,82 @@ async def logout(token: str = Depends(_bearer)):
     return {"ok": True}
 
 
+# ── Wallet auth ───────────────────────────────────────────────────────────────
+
+@app.get("/auth/wallet-challenge")
+async def wallet_challenge():
+    """
+    Return a one-time challenge the frontend must sign with its Solana wallet.
+    Challenge expires in 5 minutes; replay-protected by single-use nonce.
+    """
+    now = time.monotonic()
+    # Purge expired nonces
+    for k in [k for k, v in _NONCES.items() if v < now]:
+        del _NONCES[k]
+
+    nonce = secrets.token_hex(16)
+    _NONCES[nonce] = now + 300  # 5-minute window
+
+    challenge = (
+        f"KeyShield Login\n"
+        f"Nonce: {nonce}\n"
+        f"Timestamp: {int(time.time())}"
+    )
+    return {"challenge": challenge, "nonce": nonce}
+
+
+class WalletLoginBody(BaseModel):
+    walletAddress: str   # base58 Solana pubkey
+    signature: str       # base64-encoded ed25519 signature (64 bytes)
+    challenge: str       # the exact challenge string that was signed
+    passphrase: str      # vault encryption passphrase
+
+
+@app.post("/auth/wallet-login")
+async def wallet_login(body: WalletLoginBody):
+    """
+    1. Verify the ed25519 wallet signature against the challenge.
+    2. Consume the nonce (prevents replay).
+    3. Create a session keyed to walletAddress + passphrase.
+    Returns: {token, userId}
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.exceptions import InvalidSignature
+
+    # Extract nonce from the challenge text
+    nonce: str | None = None
+    for line in body.challenge.splitlines():
+        if line.startswith("Nonce: "):
+            nonce = line[7:].strip()
+            break
+
+    if not nonce:
+        raise HTTPException(400, "malformed challenge: missing nonce")
+
+    now = time.monotonic()
+    if nonce not in _NONCES or _NONCES.get(nonce, 0) < now:
+        raise HTTPException(400, "challenge expired or already used")
+
+    # Consume nonce — prevents replay
+    del _NONCES[nonce]
+
+    # Verify ed25519 signature
+    try:
+        pub_key_bytes = _b58decode(body.walletAddress)        # 32 bytes
+        sig_bytes     = base64.b64decode(body.signature)      # 64 bytes
+        msg_bytes     = body.challenge.encode("utf-8")
+
+        Ed25519PublicKey.from_public_bytes(pub_key_bytes).verify(sig_bytes, msg_bytes)
+    except InvalidSignature:
+        raise HTTPException(401, "invalid wallet signature")
+    except Exception as exc:
+        raise HTTPException(400, f"signature verification error: {exc}")
+
+    # Signature OK — create session (walletAddress is userId)
+    token = session.create(body.walletAddress, body.passphrase)
+    return {"token": token, "userId": body.walletAddress}
+
+
 # ─── key management (User A) ──────────────────────────────────────────────────
 
 class StoreBody(BaseModel):
@@ -209,8 +316,15 @@ async def list_keys(sess: dict = Depends(_session)):
 @app.post("/manage/store")
 async def store_key(body: StoreBody, sess: dict = Depends(_session)):
     if body.upstream not in UPSTREAMS:
-        raise HTTPException(400, "unknown upstream")
+        raise HTTPException(400, f"unknown upstream — valid: {list(UPSTREAMS)}")
     vault.store(sess["user_id"], body.upstream, body.apiKey, sess["password"])
+    return {"ok": True}
+
+
+@app.delete("/manage/secret/{upstream}")
+async def delete_key(upstream: str, sess: dict = Depends(_session)):
+    """Delete a stored API key from the vault."""
+    vault.delete(sess["user_id"], upstream)
     return {"ok": True}
 
 

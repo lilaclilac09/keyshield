@@ -35,6 +35,12 @@ def store(user_id: str, upstream: str, api_key: str, password: str) -> None:
     os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)  # chmod 600
 
 
+def delete(user_id: str, upstream: str) -> None:
+    """Remove a stored key. Silently succeeds if it doesn't exist."""
+    file_path = VAULT_DIR / user_id / f"{upstream}.enc"
+    file_path.unlink(missing_ok=True)
+
+
 def load(user_id: str, upstream: str, password: str) -> str:
     file_path = VAULT_DIR / user_id / f"{upstream}.enc"
     try:
