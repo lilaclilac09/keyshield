@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 import httpx
 from pydantic import BaseModel
 
-from . import vault, session, passkey, usage, agents
+from . import vault, session, passkey, usage, agents, pricing
 from . import api_router
 from .skills import helius_skill
 
@@ -1027,6 +1027,63 @@ async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
         "new_balance": new_balance,
         "payment_proof": body.payment_proof or "(demo — no on-chain verification)",
     }
+
+
+# ─── owner-set per-upstream pricing ───────────────────────────────────────────
+#
+# Lets a vault owner declare "charge $X per call when an agent uses my key
+# for upstream Y". Default is no row → no charge (opt-in billing). The proxy
+# debit path that consumes these prices ships in the next slice once
+# sessions can distinguish agent-callers from the owner.
+
+
+class SetPriceBody(BaseModel):
+    price_usd: float
+
+
+@app.get("/billing/pricing")
+async def list_pricing(sess: dict = Depends(_session)):
+    """All per-upstream prices the current owner has set."""
+    loop = asyncio.get_event_loop()
+    rows = await loop.run_in_executor(None, pricing.list_prices, sess["user_id"])
+    return {"pricing": rows}
+
+
+@app.put("/billing/pricing/{upstream}")
+async def set_pricing(
+    upstream: str,
+    body: SetPriceBody,
+    sess: dict = Depends(_session),
+):
+    """Set or update the per-call price the owner charges for `upstream`."""
+    if upstream not in UPSTREAMS:
+        raise HTTPException(404, f"unknown upstream — must be one of {list(UPSTREAMS)}")
+    if body.price_usd < 0:
+        raise HTTPException(400, "price_usd must be >= 0")
+    if body.price_usd > 1.0:
+        # Hard cap during the opt-in phase. Anything above $1/call is
+        # almost certainly a typo — we'll lift this once the agent
+        # debit path is wired and we've seen real usage shapes.
+        raise HTTPException(400, "price_usd capped at $1.00 per call during preview")
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None, pricing.set_price, sess["user_id"], upstream, body.price_usd
+    )
+    return {
+        "ok": True,
+        "upstream": upstream,
+        "price_usd": round(body.price_usd, 6),
+    }
+
+
+@app.delete("/billing/pricing/{upstream}")
+async def clear_pricing(upstream: str, sess: dict = Depends(_session)):
+    """Disable billing for this (owner, upstream) — reverts to the default $0."""
+    loop = asyncio.get_event_loop()
+    existed = await loop.run_in_executor(
+        None, pricing.clear_price, sess["user_id"], upstream
+    )
+    return {"ok": True, "removed": existed}
 
 
 # ─── health ───────────────────────────────────────────────────────────────────
