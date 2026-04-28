@@ -146,7 +146,96 @@ def _b58decode(s: str) -> bytes:
 
 
 # ─── wallet challenge nonce store (in-memory, TTL 5 min) ─────────────────────
-_NONCES: dict[str, float] = {}   # nonce_hex → expire_monotonic
+#
+# Stored as nonce → (expire_monotonic, original_challenge_text). We keep the
+# full challenge so the login handler can reject submissions that swapped in
+# a different challenge body (replay-with-tampered-text). The nonce alone
+# isn't sufficient — the wallet signs the WHOLE challenge string, so the
+# server has to compare the supplied bytes against the issued bytes
+# verbatim, otherwise an attacker could trick a wallet into signing
+# arbitrary text and reuse a stolen nonce.
+_NONCES: dict[str, tuple[float, str]] = {}
+
+
+def _purge_expired_nonces() -> None:
+    """Drop expired entries. Cheap to call; runs O(n) on each /challenge."""
+    now = time.monotonic()
+    for k in [k for k, v in _NONCES.items() if v[0] < now]:
+        del _NONCES[k]
+
+
+def _record_nonce(nonce: str, challenge: str, ttl_secs: float = 300.0) -> None:
+    _NONCES[nonce] = (time.monotonic() + ttl_secs, challenge)
+
+
+def _validate_challenge(supplied: str) -> str:
+    """
+    Look up the supplied challenge text against the issued nonces. Returns
+    the nonce string on success. Raises HTTPException with a precise error
+    message otherwise. Does NOT consume the nonce — caller must
+    `_consume_nonce(nonce)` only AFTER signature verification succeeds, so
+    a typo / wallet glitch / network blip doesn't burn the user's challenge
+    and force them to fetch a new one.
+    """
+    nonce: str | None = None
+    for line in supplied.splitlines():
+        if line.startswith("Nonce: "):
+            nonce = line[7:].strip()
+            break
+    if not nonce:
+        raise HTTPException(400, "malformed challenge: missing 'Nonce:' line")
+
+    entry = _NONCES.get(nonce)
+    if entry is None:
+        raise HTTPException(400, "challenge expired or already used")
+
+    expiry, stored_challenge = entry
+    if expiry < time.monotonic():
+        # Garbage-collect on the way out.
+        _NONCES.pop(nonce, None)
+        raise HTTPException(400, "challenge expired")
+
+    if stored_challenge != supplied:
+        # Same nonce but tampered text — reject without consuming so a real
+        # client with the right text can still log in.
+        raise HTTPException(400, "challenge text does not match issued challenge")
+
+    return nonce
+
+
+def _consume_nonce(nonce: str) -> None:
+    _NONCES.pop(nonce, None)
+
+
+def _decode_b58_pubkey(s: str, *, label: str) -> bytes:
+    """Strict 32-byte base58 decode for ed25519 pubkeys, with a helpful
+    400 message instead of an opaque ValueError."""
+    try:
+        raw = _b58decode(s)
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid base58 {label}: {exc}")
+    if len(raw) != 32:
+        raise HTTPException(
+            400,
+            f"{label} must decode to 32 bytes (got {len(raw)}); "
+            f"check it's a valid Solana / ed25519 pubkey",
+        )
+    return raw
+
+
+def _decode_b64_signature(s: str) -> bytes:
+    """Strict 64-byte base64 decode for ed25519 signatures."""
+    try:
+        raw = base64.b64decode(s, validate=True)
+    except (ValueError, base64.binascii.Error) as exc:
+        raise HTTPException(400, f"invalid base64 signature: {exc}")
+    if len(raw) != 64:
+        raise HTTPException(
+            400,
+            f"signature must be 64 bytes (got {len(raw)}); "
+            f"ed25519 signatures are exactly 64 bytes",
+        )
+    return raw
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -338,19 +427,14 @@ async def wallet_challenge():
     Return a one-time challenge the frontend must sign with its Solana wallet.
     Challenge expires in 5 minutes; replay-protected by single-use nonce.
     """
-    now = time.monotonic()
-    # Purge expired nonces
-    for k in [k for k, v in _NONCES.items() if v < now]:
-        del _NONCES[k]
-
+    _purge_expired_nonces()
     nonce = secrets.token_hex(16)
-    _NONCES[nonce] = now + 300  # 5-minute window
-
     challenge = (
         f"KeyShield Login\n"
         f"Nonce: {nonce}\n"
         f"Timestamp: {int(time.time())}"
     )
+    _record_nonce(nonce, challenge)
     return {"challenge": challenge, "nonce": nonce}
 
 
@@ -364,44 +448,30 @@ class WalletLoginBody(BaseModel):
 @app.post("/auth/wallet-login")
 async def wallet_login(body: WalletLoginBody):
     """
-    1. Verify the ed25519 wallet signature against the challenge.
-    2. Consume the nonce (prevents replay).
-    3. Create a session keyed to walletAddress + passphrase.
+    1. Validate the supplied challenge text against what the server issued
+       (matches stored nonce → original challenge text).
+    2. Decode + length-check the wallet pubkey and signature.
+    3. Verify the ed25519 signature.
+    4. Only on full success: consume the nonce (so a typo / wallet glitch
+       can be retried without re-fetching a challenge) and create a session.
     Returns: {token, userId}
     """
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from cryptography.exceptions import InvalidSignature
 
-    # Extract nonce from the challenge text
-    nonce: str | None = None
-    for line in body.challenge.splitlines():
-        if line.startswith("Nonce: "):
-            nonce = line[7:].strip()
-            break
+    nonce = _validate_challenge(body.challenge)
+    pub_key_bytes = _decode_b58_pubkey(body.walletAddress, label="wallet address")
+    sig_bytes = _decode_b64_signature(body.signature)
+    msg_bytes = body.challenge.encode("utf-8")
 
-    if not nonce:
-        raise HTTPException(400, "malformed challenge: missing nonce")
-
-    now = time.monotonic()
-    if nonce not in _NONCES or _NONCES.get(nonce, 0) < now:
-        raise HTTPException(400, "challenge expired or already used")
-
-    # Consume nonce — prevents replay
-    del _NONCES[nonce]
-
-    # Verify ed25519 signature
     try:
-        pub_key_bytes = _b58decode(body.walletAddress)        # 32 bytes
-        sig_bytes     = base64.b64decode(body.signature)      # 64 bytes
-        msg_bytes     = body.challenge.encode("utf-8")
-
         Ed25519PublicKey.from_public_bytes(pub_key_bytes).verify(sig_bytes, msg_bytes)
     except InvalidSignature:
+        # Don't consume the nonce — let the user retry with a corrected
+        # signature without having to fetch a new challenge first.
         raise HTTPException(401, "invalid wallet signature")
-    except Exception as exc:
-        raise HTTPException(400, f"signature verification error: {exc}")
 
-    # Signature OK — create session (walletAddress is userId)
+    _consume_nonce(nonce)
     token = session.create(body.walletAddress, body.passphrase)
     return {"token": token, "userId": body.walletAddress}
 
@@ -428,18 +498,14 @@ class AgentLoginBody(BaseModel):
 @app.get("/auth/agent-challenge")
 async def agent_challenge():
     """Return a one-time challenge for agent authentication (same format as wallet-challenge)."""
-    now = time.monotonic()
-    for k in [k for k, v in _NONCES.items() if v < now]:
-        del _NONCES[k]
-
+    _purge_expired_nonces()
     nonce = secrets.token_hex(16)
-    _NONCES[nonce] = now + 300
-
     challenge = (
         f"KeyShield Agent Login\n"
         f"Nonce: {nonce}\n"
         f"Timestamp: {int(time.time())}"
     )
+    _record_nonce(nonce, challenge)
     return {"challenge": challenge, "nonce": nonce}
 
 
@@ -459,38 +525,28 @@ async def agent_login(body: AgentLoginBody):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from cryptography.exceptions import InvalidSignature
 
-    # Extract + consume nonce
-    nonce: str | None = None
-    for line in body.challenge.splitlines():
-        if line.startswith("Nonce: "):
-            nonce = line[7:].strip()
-            break
-    if not nonce:
-        raise HTTPException(400, "malformed challenge")
+    nonce = _validate_challenge(body.challenge)
+    pub_bytes = _decode_b58_pubkey(body.agentPubkey, label="agent pubkey")
+    sig_bytes = _decode_b64_signature(body.signature)
+    msg_bytes = body.challenge.encode("utf-8")
 
-    now = time.monotonic()
-    if nonce not in _NONCES or _NONCES.get(nonce, 0) < now:
-        raise HTTPException(400, "challenge expired or already used")
-    del _NONCES[nonce]
-
-    # Verify agent's ed25519 signature
     try:
-        pub_bytes = _b58decode(body.agentPubkey)
-        sig_bytes = base64.b64decode(body.signature)
-        msg_bytes = body.challenge.encode("utf-8")
         Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, msg_bytes)
     except InvalidSignature:
+        # Don't consume the nonce — caller can retry on transient sig errors.
         raise HTTPException(401, "invalid agent signature")
-    except Exception as exc:
-        raise HTTPException(400, f"signature error: {exc}")
 
-    # Check delegation
+    # Check delegation BEFORE consuming the nonce so an unauthorized agent
+    # also doesn't burn the user's challenge.
     loop = asyncio.get_event_loop()
     delegation = await loop.run_in_executor(None, agents.lookup_owner, body.agentPubkey)
     if not delegation:
         raise HTTPException(403, "agent pubkey not registered — ask the vault owner to register it")
     if delegation["owner_wallet"] != body.ownerWallet:
         raise HTTPException(403, "agent pubkey is registered under a different wallet")
+
+    # All checks passed — now consume the nonce + finalize.
+    _consume_nonce(nonce)
 
     # Update last_used (fire-and-forget; run_in_executor returns a Future, schedule it)
     asyncio.ensure_future(loop.run_in_executor(None, agents.touch, body.agentPubkey))

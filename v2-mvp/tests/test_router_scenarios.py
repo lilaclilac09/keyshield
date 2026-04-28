@@ -21,6 +21,7 @@ import pytest
 pytestmark = pytest.mark.anyio
 import sys
 import os
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src import api_router
