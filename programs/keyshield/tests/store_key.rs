@@ -5,6 +5,7 @@
 mod common;
 
 use common::{program_id, set_sbf_out_dir, vault_pda};
+use keyshield::state::Vault;
 use mollusk_svm::{
     program::keyed_account_for_system_program,
     result::Check,
@@ -18,8 +19,9 @@ use solana_sdk::{
     system_program,
 };
 
-/// Vault account size (must match state::Vault::SIZE).
-const VAULT_SIZE: usize = 288;
+/// Vault account size — pulled from the live Vault::SIZE so the test
+/// stays in sync with the layout. Was hardcoded `288` from V0.
+const VAULT_SIZE: usize = Vault::SIZE;
 
 /// Create an uninitialized vault account with 288 bytes so the program can Assign and write.
 fn uninitialized_vault_account() -> AccountSharedData {

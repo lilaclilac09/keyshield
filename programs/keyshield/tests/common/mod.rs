@@ -15,8 +15,14 @@ pub fn set_sbf_out_dir() {
 }
 
 /// Fixed program ID for tests (deterministic PDAs).
+///
+/// MUST NOT be the all-zeroes pubkey — that's the System Program's ID,
+/// and the Solana runtime will short-circuit to its built-in handler
+/// before our loaded `.so` ever runs, leaving every test failing with
+/// `Custom(6001)` (System Program's "account already in use" or a
+/// similar code that happens to overlap with our VaultNotFound).
 pub fn program_id() -> Pubkey {
-    Pubkey::new_from_array([0u8; 32])
+    Pubkey::new_from_array([1u8; 32])
 }
 
 /// Derive vault PDA (seeds: b"vault", owner).

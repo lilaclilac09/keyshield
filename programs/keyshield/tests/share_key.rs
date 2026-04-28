@@ -4,6 +4,7 @@
 mod common;
 
 use common::{program_id, set_sbf_out_dir, share_pda, vault_pda};
+use keyshield::state::Vault;
 use mollusk_svm::{
     program::keyed_account_for_system_program,
     result::Check,
@@ -20,7 +21,10 @@ use solana_sdk::{
 const VAULT_DISCRIMINATOR: [u8; 8] = *b"keyshld\0";
 
 fn make_initialized_vault_account(owner: &Pubkey) -> AccountSharedData {
-    let mut data = vec![0u8; 288];
+    // Use Vault::SIZE so the buffer matches the program's layout.
+    // Hardcoded `288` was from the V0 layout and silently failed
+    // every test once the struct grew.
+    let mut data = vec![0u8; Vault::SIZE];
     data[0..8].copy_from_slice(&VAULT_DISCRIMINATOR);
     data[8..40].copy_from_slice(owner.as_ref());
     AccountSharedData::create(1_000_000, data, program_id(), false, 0)

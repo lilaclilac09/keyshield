@@ -4,6 +4,7 @@
 mod common;
 
 use common::{program_id, set_sbf_out_dir, vault_pda};
+use keyshield::state::Vault;
 use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
     account::{AccountSharedData, WritableAccount},
@@ -16,7 +17,10 @@ use solana_sdk::{
 const VAULT_DISCRIMINATOR: [u8; 8] = *b"keyshld\0";
 
 fn make_initialized_vault_account(owner: &Pubkey) -> AccountSharedData {
-    let mut data = vec![0u8; 288];
+    // Use the live Vault::SIZE so the layout stays in sync if the
+    // struct grows. Was hardcoded `288` from the V0 layout, which is
+    // why every test was failing with VaultNotFound.
+    let mut data = vec![0u8; Vault::SIZE];
     data[0..8].copy_from_slice(&VAULT_DISCRIMINATOR);
     data[8..40].copy_from_slice(owner.as_ref());
     AccountSharedData::create(1_000_000, data, program_id(), false, 0)
