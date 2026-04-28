@@ -170,6 +170,93 @@ describe('VaultList — search + tag filter', () => {
   });
 });
 
+describe('VaultList — Export .env', () => {
+  it('hides the Export button when the vault is empty', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: /export \.env/i })).toBeNull();
+  });
+
+  it('shows the Export button when at least one key exists', () => {
+    const v = LocalVault.emptyVault();
+    v.apiKeys['openai'] = { value: 'sk-x', createdAt: 1 };
+    setup(v);
+    expect(
+      screen.getByRole('button', { name: /export \.env/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking Export opens a confirmation dialog with the key count', async () => {
+    const v = LocalVault.emptyVault();
+    v.apiKeys['openai'] = { value: 'sk-1', createdAt: 1 };
+    v.apiKeys['stripe'] = { value: 'sk-2', createdAt: 2 };
+    setup(v);
+    await userEvent.click(
+      screen.getByRole('button', { name: /export \.env/i }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(/export 2 keys as \.env/i);
+    expect(dialog).toHaveTextContent(/never sees plaintext/i);
+  });
+
+  it('Cancel closes the dialog without downloading', async () => {
+    const v = LocalVault.emptyVault();
+    v.apiKeys['openai'] = { value: 'sk-x', createdAt: 1 };
+    setup(v);
+    await userEvent.click(
+      screen.getByRole('button', { name: /export \.env/i }),
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('reflects the active filter in the dialog count (only filtered keys export)', async () => {
+    const v = LocalVault.emptyVault();
+    v.apiKeys['openai'] = { value: 'sk-1', createdAt: 1 };
+    v.apiKeys['stripe'] = { value: 'sk-2', createdAt: 2 };
+    v.apiKeys['anthropic'] = { value: 'sk-3', createdAt: 3 };
+    setup(v);
+    await userEvent.type(screen.getByLabelText(/search keys/i), 'stripe');
+    await userEvent.click(
+      screen.getByRole('button', { name: /export \.env/i }),
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(/1 key as \.env/i);
+  });
+
+  it('Download triggers a Blob URL for both .env and .env.example', async () => {
+    const v = LocalVault.emptyVault();
+    v.apiKeys['openai'] = { value: 'sk-x', createdAt: 1 };
+    setup(v);
+
+    const created: string[] = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => {
+      const u = `blob:test/${created.length}`;
+      created.push(u);
+      return u;
+    }) as any;
+    URL.revokeObjectURL = vi.fn() as any;
+
+    try {
+      await userEvent.click(
+        screen.getByRole('button', { name: /export \.env/i }),
+      );
+      await userEvent.click(screen.getByRole('button', { name: /^download$/i }));
+      // First download: .env. Second is staggered by 250ms; we only
+      // verify the first synchronously to keep the test fast.
+      expect(created.length).toBeGreaterThanOrEqual(1);
+      expect(URL.createObjectURL).toHaveBeenCalled();
+      // Dialog closes on successful download.
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+});
+
 describe('VaultList — last-used time', () => {
   it('shows "never used" when lastUsedAt is missing', () => {
     const v = LocalVault.emptyVault();

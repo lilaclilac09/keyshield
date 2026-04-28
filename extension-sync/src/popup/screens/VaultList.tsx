@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import type { ApiKeyRecord, VaultPlain } from '../../lib/vault';
+import {
+  formatVaultAsEnv,
+  formatVaultAsEnvExample,
+  triggerDownload,
+} from '../../lib/env-export';
 
 export interface VaultListProps {
   vault: VaultPlain;
@@ -39,6 +44,7 @@ export function VaultList(props: VaultListProps) {
   const [revealedName, setRevealedName] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [exportConfirm, setExportConfirm] = useState(false);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -59,6 +65,31 @@ export function VaultList(props: VaultListProps) {
       })
       .sort(([a], [b]) => a.localeCompare(b));
   }, [props.vault.apiKeys, search, activeTag]);
+
+  // Filter the export by whatever search/tag the user already
+  // narrowed to: WYSIWYG matches what the list shows. Only kicks in
+  // when there's an actual filter, otherwise all keys export.
+  const exportNames = useMemo<string[] | undefined>(() => {
+    const filtered = search.trim() !== '' || activeTag !== null;
+    if (!filtered) return undefined;
+    return entries.map(([name]) => name);
+  }, [search, activeTag, entries]);
+
+  const exportCount = exportNames?.length ?? Object.keys(props.vault.apiKeys).length;
+
+  const downloadEnv = () => {
+    const envText = formatVaultAsEnv(props.vault, {
+      selectedNames: exportNames,
+    });
+    const exampleText = formatVaultAsEnvExample(props.vault, {
+      selectedNames: exportNames,
+    });
+    triggerDownload('.env', envText);
+    // Stagger so browsers don't merge both downloads into one
+    // tab activity / hide the second behind a popup blocker.
+    setTimeout(() => triggerDownload('.env.example', exampleText), 250);
+    setExportConfirm(false);
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,13 +129,79 @@ export function VaultList(props: VaultListProps) {
               : `${totalCount} stored on this device`}
           </div>
         </div>
-        <button
-          onClick={props.onLock}
-          className="text-[11px] text-stone-500 hover:text-stone-900"
-        >
-          Lock
-        </button>
+        <div className="flex items-center gap-3">
+          {totalCount > 0 && (
+            <button
+              onClick={() => setExportConfirm(true)}
+              className="text-[11px] text-stone-500 hover:text-stone-900"
+            >
+              Export .env
+            </button>
+          )}
+          <button
+            onClick={props.onLock}
+            className="text-[11px] text-stone-500 hover:text-stone-900"
+          >
+            Lock
+          </button>
+        </div>
       </header>
+
+      {exportConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-env-title"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-stone-900/40 p-4"
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+            <header className="border-b border-stone-200 px-4 py-3">
+              <div id="export-env-title" className="text-sm font-semibold">
+                Export {exportCount}
+                {exportCount === 1 ? ' key' : ' keys'} as .env
+              </div>
+              <div className="mt-0.5 text-[11px] text-stone-500">
+                Decryption happens entirely in your browser. The sync server
+                never sees plaintext.
+              </div>
+            </header>
+            <div className="px-4 py-3 text-[12px] leading-relaxed text-stone-700">
+              <p>
+                Two files will download:
+              </p>
+              <ul className="mt-2 space-y-1 pl-4">
+                <li>
+                  <code className="rounded bg-stone-100 px-1">.env</code> —
+                  contains your real key values. <strong>Do not commit.</strong>
+                </li>
+                <li>
+                  <code className="rounded bg-stone-100 px-1">.env.example</code> —
+                  same key names, no values. Safe to commit.
+                </li>
+              </ul>
+              <div className="mt-3 rounded-md bg-amber-50 p-2 text-[11px] text-amber-900">
+                <strong>Add <code>.env</code> to your <code>.gitignore</code>{' '}
+                before running this in a project directory.</strong> KeyShield
+                can't edit your filesystem from a browser tab.
+              </div>
+            </div>
+            <footer className="flex gap-2 border-t border-stone-200 p-3">
+              <button
+                onClick={() => setExportConfirm(false)}
+                className="flex-1 rounded-md border border-stone-300 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={downloadEnv}
+                className="flex-1 rounded-md bg-stone-900 py-1.5 text-xs font-medium text-white"
+              >
+                Download
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* Search + tag filter */}
       {totalCount > 0 && (
