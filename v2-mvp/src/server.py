@@ -589,10 +589,21 @@ async def decrypt_key(upstream: str, sess: dict = Depends(_session)):
         raise HTTPException(404, "key not found or wrong passphrase")
 
 
+# Slug prefixes for non-proxy secrets (passwords, notes, env files, ssh keys).
+# api_key items must be in UPSTREAMS so the /proxy/{upstream} route works;
+# user-defined secrets just need a recognized type prefix.
+ALLOWED_USER_PREFIXES = ("pw__", "note__", "env__", "ssh__")
+
+
 @app.post("/manage/store")
 async def store_key(body: StoreBody, sess: dict = Depends(_session)):
-    if body.upstream not in UPSTREAMS:
-        raise HTTPException(400, f"unknown upstream — valid: {list(UPSTREAMS)}")
+    is_api_key      = body.upstream in UPSTREAMS
+    is_user_secret  = any(body.upstream.startswith(p) for p in ALLOWED_USER_PREFIXES)
+    if not (is_api_key or is_user_secret):
+        raise HTTPException(
+            400,
+            f"upstream must be in {list(UPSTREAMS)} or start with {list(ALLOWED_USER_PREFIXES)}",
+        )
     vault.store(sess["user_id"], body.upstream, body.apiKey, sess["password"])
     return {"ok": True}
 
