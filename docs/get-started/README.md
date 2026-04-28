@@ -10,6 +10,7 @@ that matches what you're trying to do:
 
 | If you want to … | Read |
 |---|---|
+| **Inject vault keys into an agent process** from the terminal (`keyshield run -- python my-agent.py`) | [CLI](./cli.md) |
 | **Run the popup locally** to develop, contribute a fix, or just see it work | [Local development](./local-development.md) |
 | **Use KeyShield from your own frontend** (read keys, build the popup into your app) | [Frontend integration](./frontend-integration.md) |
 | **Operate your own deployment** (your Cloudflare account, your Solana program ID) | [Self-host](./self-host.md) |

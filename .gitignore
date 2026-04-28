@@ -44,3 +44,15 @@ rocksdb/
 0000*.log
 **/*.log
 .gstack/
+
+# Python build artifacts (stops `pytest` from leaving untracked files)
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+**/.venv/
+*.egg-info/

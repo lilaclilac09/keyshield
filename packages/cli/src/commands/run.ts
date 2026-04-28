@@ -1,6 +1,7 @@
 /**
- * `keyshield run <command> [args...]` — like `op run`. Reads .env,
- * spawns the command with env vars injected.
+ * `keyshield run <command> [args...]` — like `op run`. Resolves the
+ * source (logged-in v2-mvp server, or local .env), pulls all keys,
+ * spawns the command with them injected as env vars.
  *
  * Exit code is forwarded from the child process. Signals are
  * forwarded too: if the user Ctrl-C's, the child gets SIGINT and the
@@ -8,13 +9,26 @@
  */
 
 import { spawn } from 'node:child_process';
-import { loadEnv } from '../lib/load-env.js';
+import { resolveSource } from '../lib/source.js';
 
 export interface RunOptions {
   envFile?: string;
+  mode?: 'v2' | 'local';
   /** Default behaviour is to merge over process.env. Set true to wipe
    *  the process env first so only KeyShield-injected vars are visible. */
   clean?: boolean;
+}
+
+function envify(name: string): string {
+  // Mirror the popup's formatter: foo-bar → FOO_BAR, drop unsafe chars,
+  // prefix leading digits. Used for v2-mvp upstreams which are stored
+  // with lowercase slugs like "openai".
+  let out = name
+    .replace(/[\s./\\-]+/g, '_')
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, '');
+  if (out.length > 0 && /^[0-9]/.test(out)) out = '_' + out;
+  return out;
 }
 
 export async function runRun(
@@ -26,15 +40,22 @@ export async function runRun(
     return 64;
   }
 
-  const { parsed, path } = await loadEnv({ envFile: opts.envFile });
+  const src = await resolveSource(opts);
+  const all = await src.getAll();
 
   const baseEnv = opts.clean ? {} : { ...process.env };
   const env: Record<string, string> = { ...baseEnv } as Record<string, string>;
-  for (const [k, v] of parsed.values) env[k] = v;
+  for (const [k, v] of all) {
+    // Locally-sourced keys are already env-shaped (FOO_BAR=value) by
+    // the popup's writer. v2-sourced keys are slug-shaped (openai)
+    // and need normalizing.
+    const target = /^[A-Z_][A-Z0-9_]*$/.test(k) ? k : envify(k);
+    if (target.length > 0) env[target] = v;
+  }
 
   const [cmd, ...args] = argv;
   process.stderr.write(
-    `[keyshield] injecting ${parsed.values.size} keys from ${path}\n`,
+    `[keyshield] injecting ${all.size} keys from ${src.describe()}\n`,
   );
 
   return new Promise<number>((resolve) => {
