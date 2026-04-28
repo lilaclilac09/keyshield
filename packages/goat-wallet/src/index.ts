@@ -14,13 +14,42 @@
  * @version 2.0.0
  */
 
-import { Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
 import { KeyShieldAgent, EphemeralSignerSession } from '@keyshield/agent-sdk';
+
+/**
+ * Ask the RPC for recent prioritization fees and return the median (in
+ * micro-lamports per compute unit). Falls back to a conservative default
+ * if the RPC returns nothing.
+ *
+ * Mainnet without a priority fee can sit unlanded for minutes during
+ * congestion — this is a P0 fix, not a nice-to-have.
+ */
+export async function estimatePriorityFeeMicroLamports(
+  connection: Connection,
+  fallback = 10_000,
+): Promise<number> {
+  try {
+    const fees = await (connection as any).getRecentPrioritizationFees?.();
+    if (!Array.isArray(fees) || fees.length === 0) return fallback;
+    const sorted = fees
+      .map((f: any) => Number(f.prioritizationFee))
+      .filter((n: number) => Number.isFinite(n) && n >= 0)
+      .sort((a: number, b: number) => a - b);
+    if (sorted.length === 0) return fallback;
+    return sorted[Math.floor(sorted.length / 2)] || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 // ==================== TYPES ====================
 
 export interface GOATWalletConfig {
-  rpcUrl: string;
+  /** Either supply rpcUrl (a Connection is created) ... */
+  rpcUrl?: string;
+  /** ... or pass an existing Connection to reuse (P2-4). */
+  connection?: Connection;
   programId: string;
   keyShieldProgramId: string;
   ownerPublicKey: string;
@@ -73,7 +102,17 @@ export class KeyShieldGOATPlugin implements GOATPlugin {
   
   constructor(config: GOATWalletConfig) {
     this.config = config;
-    this.connection = new Connection(config.rpcUrl);
+    if (config.connection) {
+      this.connection = config.connection;
+    } else if (config.rpcUrl) {
+      this.connection = new Connection(config.rpcUrl);
+    } else {
+      throw new Error(
+        'KeyShieldGOATPlugin requires either `connection` or `rpcUrl`. ' +
+          'Pass a Connection pointing at a paid RPC (Helius / Triton / ' +
+          'QuickNode) — public mainnet-beta is rate-limited.',
+      );
+    }
     this.ownerPubkey = new PublicKey(config.ownerPublicKey);
     this.agentPubkey = new PublicKey(config.agentPublicKey);
   }
@@ -129,15 +168,16 @@ export class KeyShieldGOATPlugin implements GOATPlugin {
     if (!this.currentSigner || this.currentSigner.isExpired()) {
       await this.createSigner();
     }
-    
+    const signer = this.currentSigner!; // createSigner() guarantees this is set
+
     // Check if action is allowed
     // For now, assume all transactions are allowed
-    if (!this.currentSigner.isActionAllowed('sign')) {
+    if (!signer.isActionAllowed('sign')) {
       throw new Error('Signing not allowed with current signer');
     }
-    
+
     // Get the private key and sign
-    const privateKey = this.currentSigner.getPrivateKey();
+    const privateKey = signer.getPrivateKey();
     
     // Sign transaction
     tx.sign(privateKey as any);
@@ -193,20 +233,41 @@ export class KeyShieldGOATPlugin implements GOATPlugin {
   }
   
   /**
-   * Send transaction
+   * Send transaction.
+   *
+   * Prepends a ComputeBudgetProgram.setComputeUnitPrice instruction using a
+   * median of recent prioritization fees. Without this, transactions on a
+   * congested mainnet may sit unlanded for minutes or be dropped entirely.
+   *
+   * If the transaction already has a setComputeUnitPrice instruction, the
+   * caller is assumed to know what they're doing and we leave it alone.
    */
   async sendTransaction(tx: Transaction): Promise<string> {
-    // Sign the transaction
-    const signedTx = await this.signTransaction(tx);
-    
-    // Send to network
-    const signature = await this.connection.sendRawTransaction(
-      signedTx.serialize()
+    const hasComputePriceIx = tx.instructions.some(
+      (ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        // SetComputeUnitPrice discriminator is 3 (first byte of ix.data)
+        ix.data.length > 0 && ix.data[0] === 3,
     );
-    
-    // Confirm if needed
-    await this.connection.confirmTransaction(signature);
-    
+
+    if (!hasComputePriceIx) {
+      const microLamports = await estimatePriorityFeeMicroLamports(this.connection);
+      tx.instructions.unshift(
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports }),
+      );
+    }
+
+    const signedTx = await this.signTransaction(tx);
+
+    const signature = await this.connection.sendRawTransaction(
+      signedTx.serialize(),
+      // skipPreflight default is fine — preflight catches a lot of bugs.
+    );
+
+    // Explicit commitment avoids the default, which on older web3.js was
+    // 'finalized' (~13s). 'confirmed' is enough for grant/revoke UX.
+    await this.connection.confirmTransaction(signature, 'confirmed');
+
     return signature;
   }
   
@@ -336,50 +397,33 @@ export class CrossMintKeyShieldWallet {
 }
 
 // ==================== USAGE EXAMPLES ====================
-
-/**
- * Example: Using with GOAT SDK
- * 
- * ```typescript
- * import { createGOATPlugin } from '@keyshield/goat-wallet';
- * import { GOATSDK } from '@goat-sdk/core';
- * 
- * const plugin = createGOATPlugin({
- *   rpcUrl: 'https://api.mainnet-beta.solana.com',
- *   programId: '...',
- *   keyShieldProgramId: '...',
- *   ownerPublicKey: 'OwnerWalletAddress...',
- *   agentPublicKey: 'AgentWalletAddress...',
- * });
- * 
- * await plugin.initialize();
- * 
- * // Create ephemeral signer for swap
- * await plugin.createSigner({
- *   allowedActions: ['swap', 'send'],
- *   expirySeconds: 300,
- * });
- * 
- * // Sign and send transaction
- * const tx = new Transaction().add(/* instructions *\/);
- * const signature = await plugin.sendTransaction(tx);
- * ```
- * 
- * Example: With CrossMint
- * 
- * ```typescript
- * import { createGOATPlugin, CrossMintKeyShieldWallet } from '@keyshield/goat-wallet';
- * 
- * const plugin = createGOATPlugin({
- *   // ... config
- * });
- * 
- * const wallet = new CrossMintKeyShieldWallet(plugin, {
- *   clientId: 'your-client-id',
- *   environment: 'production',
- * });
- * 
- * await wallet.initializeCrossMint();
-```
+//
+// Example: Using with GOAT SDK
+//
+//   import { createGOATPlugin } from '@keyshield/goat-wallet';
+//   import { GOATSDK } from '@goat-sdk/core';
+//
+//   const plugin = createGOATPlugin({
+//     rpcUrl: 'https://api.mainnet-beta.solana.com',
+//     programId: '...',
+//     keyShieldProgramId: '...',
+//     ownerPublicKey: 'OwnerWalletAddress...',
+//     agentPublicKey: 'AgentWalletAddress...',
+//   });
+//
+//   await plugin.initialize();
+//   await plugin.createSigner({ allowedActions: ['swap', 'send'], expirySeconds: 300 });
+//
+//   const tx = new Transaction().add(/* your instructions here */);
+//   const signature = await plugin.sendTransaction(tx);
+//
+// Example: With CrossMint
+//
+//   const plugin = createGOATPlugin({ /* config */ });
+//   const wallet = new CrossMintKeyShieldWallet(plugin, {
+//     clientId: 'your-client-id',
+//     environment: 'production',
+//   });
+//   await wallet.initializeCrossMint();
 
 export default KeyShieldGOATPlugin;
