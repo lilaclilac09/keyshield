@@ -127,8 +127,17 @@ def log_call(
     cost_usd:    float,
     latency_ms:  float,
     status_code: int,
+    force_debit: bool = False,
 ) -> None:
-    """Record one proxy call. Also deducts from balance when platform key is used."""
+    """
+    Record one proxy call. Deducts from balance when:
+      - key_type == 'platform' (legacy: KeyShield-supplied key, user pays us), OR
+      - force_debit (caller has signalled "owner opted into pricing for this call").
+
+    `force_debit` lets the proxy debit even on self-custodian calls when the
+    owner has set a per-upstream price — the cost passed in already reflects
+    that price, no re-derivation needed.
+    """
     conn = _db()
     try:
         conn.execute("""
@@ -141,8 +150,8 @@ def log_call(
               int(time.time())))
         conn.commit()
 
-        # Deduct from prepaid balance when using platform key
-        if key_type == "platform" and cost_usd > 0:
+        debits = (key_type == "platform") or force_debit
+        if debits and cost_usd > 0:
             _ensure_balance(conn, user_id)
             conn.execute("""
                 UPDATE user_balance

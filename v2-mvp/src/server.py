@@ -327,9 +327,20 @@ def _resolve_key(sess: dict, upstream: str) -> tuple[str, str]:
         return platform_key, "platform"
 
 
-def _x402_body(upstream: str, resource_url: str) -> dict:
-    """Coinbase x402 payment-required response body."""
-    # 1 USDC = 1_000_000 atomic units (6 decimals); charge $0.01 per call
+def _x402_body(
+    upstream: str,
+    resource_url: str,
+    price_usd: float | None = None,
+) -> dict:
+    """
+    Coinbase x402 payment-required response body. When the owner has set
+    a per-call price for this upstream, the quoted amount is theirs;
+    otherwise we fall back to the legacy $0.01 platform-key default.
+    """
+    quote_usd = price_usd if (price_usd is not None and price_usd > 0) else 0.01
+    # USDC has 6 decimals — convert dollars to atomic units, round up
+    # so a sub-cent price still asks for ≥1 atomic unit.
+    atomic = max(1, int(round(quote_usd * 1_000_000)))
     return {
         "x402Version": 1,
         "error": "X-PAYMENT-REQUIRED",
@@ -337,7 +348,7 @@ def _x402_body(upstream: str, resource_url: str) -> dict:
             {
                 "scheme": "exact",
                 "network": "base-sepolia",
-                "maxAmountRequired": "10000",        # $0.01 USDC (6 decimals)
+                "maxAmountRequired": str(atomic),
                 "resource": resource_url,
                 "description": f"KeyShield API proxy — {upstream}",
                 "mimeType": "application/json",
@@ -359,16 +370,26 @@ async def _log_usage_bg(
     content:     bytes,
     latency_ms:  float,
     status_code: int,
+    billed_cost: float | None = None,
 ) -> None:
-    """Fire-and-forget usage logger. Runs in background — never blocks the response."""
+    """
+    Fire-and-forget usage logger. Runs in background — never blocks the response.
+
+    `billed_cost` is the owner-declared per-call price; when set it overrides
+    the token-derived cost (the owner is saying "this is what I charge,
+    don't second-guess it from the response shape").
+    """
     try:
         tok_in, tok_out, cost = usage.extract_token_usage(upstream, content)
+        if billed_cost is not None:
+            cost = billed_cost
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
             usage.log_call,
             user_id, upstream, key_type, method, path,
             tok_in, tok_out, cost, latency_ms, status_code,
+            billed_cost is not None,  # force_debit
         )
     except Exception:
         pass  # Logging must never crash the proxy
@@ -751,14 +772,22 @@ async def proxy(upstream: str, path: str, request: Request, sess: dict = Depends
 
     api_key, key_type = _resolve_key(sess, upstream)
 
-    # ── x402: platform key + no balance → 402 Payment Required ──────────────
-    if key_type == "platform":
-        loop = asyncio.get_event_loop()
+    # ── x402 gate ───────────────────────────────────────────────────────────
+    # Two paths into the gate:
+    #   1. platform key (KeyShield-supplied) — token-cost based, gated when balance ≤ 0
+    #   2. owner-set price for this (user, upstream) — flat per-call, gated when balance ≤ 0
+    # Owner who hasn't opted in to pricing keeps the legacy free self-custodian path.
+    loop = asyncio.get_event_loop()
+    owner_price = await loop.run_in_executor(
+        None, pricing.get_price, sess["user_id"], upstream
+    )
+    requires_payment = key_type == "platform" or (owner_price is not None and owner_price > 0)
+    if requires_payment:
         balance = await loop.run_in_executor(None, usage.get_balance, sess["user_id"])
         if balance <= 0:
             return JSONResponse(
                 status_code=402,
-                content=_x402_body(upstream, str(request.url)),
+                content=_x402_body(upstream, str(request.url), owner_price),
                 headers={"X-Payment-Required": "x402"},
             )
 
@@ -768,10 +797,13 @@ async def proxy(upstream: str, path: str, request: Request, sess: dict = Depends
     )
     latency_ms = (time.monotonic() - t0) * 1000
 
-    # Fire-and-forget usage logging
+    # Fire-and-forget usage logging. owner_price overrides the
+    # token-derived cost when set — it's what the owner declared they'd
+    # charge for this call, regardless of how many tokens flowed.
     asyncio.create_task(_log_usage_bg(
         sess["user_id"], upstream, key_type,
         request.method, path, content, latency_ms, status,
+        billed_cost=owner_price,
     ))
 
     resp_headers.pop("content-encoding", None)
