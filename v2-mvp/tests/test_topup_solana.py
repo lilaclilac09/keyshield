@@ -108,9 +108,35 @@ class TestSolQuote:
 # ─── helpers for synthesizing tx responses ─────────────────────────────────
 
 
-def _sol_transfer_tx(sender: str, recipient: str, lamports: int) -> dict:
+def _sol_transfer_tx(
+    sender: str,
+    recipient: str,
+    lamports: int,
+    *,
+    memo: str | None = None,
+) -> dict:
     """Synthesize a getTransaction(jsonParsed) result for a successful
-    SystemProgram.transfer."""
+    SystemProgram.transfer. Optionally includes a Memo Program ix."""
+    instructions: list[dict] = [
+        {
+            "programId": "11111111111111111111111111111111",
+            "program": "system",
+            "parsed": {
+                "type": "transfer",
+                "info": {
+                    "source": sender,
+                    "destination": recipient,
+                    "lamports": lamports,
+                },
+            },
+        },
+    ]
+    if memo is not None:
+        instructions.append({
+            "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+            "program": "spl-memo",
+            "parsed": memo,
+        })
     return {
         "blockTime": 1_700_000_000,
         "slot": 100,
@@ -123,20 +149,7 @@ def _sol_transfer_tx(sender: str, recipient: str, lamports: int) -> dict:
                     {"pubkey": "11111111111111111111111111111111",
                      "signer": False, "writable": False},
                 ],
-                "instructions": [
-                    {
-                        "programId": "11111111111111111111111111111111",
-                        "program": "system",
-                        "parsed": {
-                            "type": "transfer",
-                            "info": {
-                                "source": sender,
-                                "destination": recipient,
-                                "lamports": lamports,
-                            },
-                        },
-                    }
-                ],
+                "instructions": instructions,
             },
             "signatures": ["sigA"],
         },
@@ -206,10 +219,14 @@ def _usdc_transfer_checked_tx(
     }
 
 
-def _patch_tx(monkeypatch, tx_or_none):
+def _patch_tx(monkeypatch, tx_or_none, *, capture: dict | None = None):
     from src import billing_solana as bsol
 
     async def fake_get_transaction(rpc_url, tx_signature, **kwargs):
+        if capture is not None:
+            capture["rpc_url"] = rpc_url
+            capture["tx_signature"] = tx_signature
+            capture["commitment"] = kwargs.get("commitment")
         return tx_or_none
 
     monkeypatch.setattr(bsol, "get_transaction", fake_get_transaction)
@@ -637,3 +654,253 @@ class TestBillingSolanaModule:
 
         with pytest.raises(bsol.PaymentVerificationError, match="503"):
             await bsol.fetch_sol_usd_price(fetch_impl=fake_fetch)
+
+
+# ─── memo binding (anti-replay across users) ───────────────────────────────
+
+
+class TestMemoBinding:
+    def _seed_memo(self, user_id: str) -> str:
+        from src import billing_solana as bsol
+        return bsol.issue_topup_memo(user_id)
+
+    def test_quote_includes_memo_when_authed(self, client, monkeypatch):
+        from src import billing_solana as bsol
+
+        async def fake_price(**kwargs):
+            return bsol.SolUsdPrice(
+                price_usd=160.0, publish_time=1_700_000_000, confidence_usd=0.0,
+            )
+
+        monkeypatch.setattr(bsol, "fetch_sol_usd_price", fake_price)
+        token, _ = _login(client)
+        r = client.get(
+            "/billing/sol-quote?amount_usd=1.6", headers=_auth(token),
+        )
+        body = r.json()
+        assert "memo" in body
+        assert body["memo"].startswith("ks-topup-")
+
+    def test_quote_omits_memo_when_unauthed(self, client, monkeypatch):
+        from src import billing_solana as bsol
+
+        async def fake_price(**kwargs):
+            return bsol.SolUsdPrice(
+                price_usd=160.0, publish_time=1_700_000_000, confidence_usd=0.0,
+            )
+
+        monkeypatch.setattr(bsol, "fetch_sol_usd_price", fake_price)
+        body = client.get("/billing/sol-quote?amount_usd=1.6").json()
+        assert "memo" not in body
+
+    def test_topup_with_matching_memo_succeeds(self, client, monkeypatch):
+        from src import server
+
+        token, sender = _login(client)
+        memo = self._seed_memo(sender)
+        tx = _sol_transfer_tx(
+            sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000, memo=memo,
+        )
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "ok", "memo": memo},
+        )
+        assert r.status_code == 200, r.text
+
+    def test_topup_with_unknown_memo_400(self, client, monkeypatch):
+        from src import server
+
+        token, sender = _login(client)
+        tx = _sol_transfer_tx(
+            sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000, memo="ks-topup-x",
+        )
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "x", "memo": "ks-topup-never-issued"},
+        )
+        assert r.status_code == 400
+        assert "memo" in r.json()["detail"].lower()
+
+    def test_topup_with_other_users_memo_400(self, client, monkeypatch):
+        from src import server
+
+        a_token, alice = _login(client, "AliceMemo111111111111111111111111111111")
+        _b_token, _bob = _login(client, "BobMemo11111111111111111111111111111111")
+
+        # Memo issued to bob.
+        bob_memo = self._seed_memo(_bob)
+
+        # Alice tries to spend bob's memo.
+        tx = _sol_transfer_tx(
+            alice, server.PAYMENT_ADDRESS_SOLANA, 10_000_000, memo=bob_memo,
+        )
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(a_token),
+            json={"tx_signature": "x", "memo": bob_memo},
+        )
+        assert r.status_code == 400
+        assert "different user" in r.json()["detail"]
+
+    def test_topup_memo_present_in_quote_but_missing_on_chain_400(self, client, monkeypatch):
+        from src import server
+
+        token, sender = _login(client)
+        memo = self._seed_memo(sender)
+        # Tx WITHOUT a memo ix.
+        tx = _sol_transfer_tx(sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000)
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "x", "memo": memo},
+        )
+        assert r.status_code == 400
+        assert "memo" in r.json()["detail"].lower()
+
+    def test_memo_is_consumed_after_credit(self, client, monkeypatch):
+        from src import server, billing_solana as bsol
+
+        token, sender = _login(client)
+        memo = self._seed_memo(sender)
+        tx = _sol_transfer_tx(
+            sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000, memo=memo,
+        )
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "first", "memo": memo},
+        )
+        assert r.status_code == 200
+        # Trying to reuse the memo now → not recognized.
+        with pytest.raises(bsol.PaymentVerificationError):
+            bsol.verify_topup_memo(memo, sender)
+
+    def test_topup_without_memo_still_works(self, client, monkeypatch):
+        """Memo is optional. Backwards-compat: omit, server skips
+        memo verification entirely."""
+        from src import server
+
+        token, sender = _login(client)
+        tx = _sol_transfer_tx(
+            sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000,
+        )
+        _patch_tx(monkeypatch, tx)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "no-memo"},
+        )
+        assert r.status_code == 200
+
+
+# ─── finalized commitment ──────────────────────────────────────────────────
+
+
+class TestFinalized:
+    def test_default_uses_confirmed(self, client, monkeypatch):
+        from src import server
+
+        token, sender = _login(client)
+        tx = _sol_transfer_tx(sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000)
+        captured: dict = {}
+        _patch_tx(monkeypatch, tx, capture=captured)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "abc"},
+        )
+        assert r.status_code == 200
+        assert captured["commitment"] == "confirmed"
+        assert r.json()["commitment"] == "confirmed"
+
+    def test_finalized_flag_uses_finalized(self, client, monkeypatch):
+        from src import server
+
+        token, sender = _login(client)
+        tx = _sol_transfer_tx(sender, server.PAYMENT_ADDRESS_SOLANA, 10_000_000)
+        captured: dict = {}
+        _patch_tx(monkeypatch, tx, capture=captured)
+        _patch_price(monkeypatch, 100.0)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "abc", "finalized": True},
+        )
+        assert r.status_code == 200
+        assert captured["commitment"] == "finalized"
+        assert r.json()["commitment"] == "finalized"
+
+    def test_404_message_reflects_commitment_level(self, client, monkeypatch):
+        token, _ = _login(client)
+        _patch_tx(monkeypatch, None)
+        r = client.post(
+            "/billing/topup-solana",
+            headers=_auth(token),
+            json={"tx_signature": "missing", "finalized": True},
+        )
+        assert r.status_code == 404
+        assert "finalized" in r.json()["detail"]
+
+
+# ─── MAX_TOPUP_USD env var ─────────────────────────────────────────────────
+
+
+class TestMaxTopupEnv:
+    def test_default_limit_is_10(self, client):
+        r = client.get("/billing/sol-quote?amount_usd=10.01")
+        assert r.status_code == 400
+        assert "10" in r.json()["detail"]
+
+    def test_lifted_limit_via_env_takes_effect(self, client, monkeypatch):
+        from src import server, billing_solana as bsol
+
+        async def fake_price(**kwargs):
+            return bsol.SolUsdPrice(
+                price_usd=100.0, publish_time=1_700_000_000, confidence_usd=0.0,
+            )
+
+        monkeypatch.setattr(bsol, "fetch_sol_usd_price", fake_price)
+        # Lift the cap to $100.
+        monkeypatch.setattr(server, "MAX_TOPUP_USD", 100.0)
+
+        r = client.get("/billing/sol-quote?amount_usd=50")
+        assert r.status_code == 200
+        # Still rejects beyond the new limit.
+        r2 = client.get("/billing/sol-quote?amount_usd=200")
+        assert r2.status_code == 400
+        assert "100" in r2.json()["detail"]
+
+    def test_legacy_topup_route_uses_same_env_var(self, client, monkeypatch):
+        from src import server
+
+        token, _ = _login(client)
+        monkeypatch.setattr(server, "MAX_TOPUP_USD", 50.0)
+        r = client.post(
+            "/billing/topup",
+            headers=_auth(token),
+            json={"amount_usd": 30.0},
+        )
+        # Default route credits without on-chain verification (it's the
+        # demo/legacy path); expect 200 because 30 < 50.
+        assert r.status_code == 200
+        r2 = client.post(
+            "/billing/topup",
+            headers=_auth(token),
+            json={"amount_usd": 75.0},
+        )
+        # Above the new ceiling.
+        assert r2.status_code == 400

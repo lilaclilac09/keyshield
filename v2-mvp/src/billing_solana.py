@@ -29,6 +29,8 @@ import httpx
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+MEMO_PROGRAM_V2 = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+MEMO_PROGRAM_V1 = "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo"
 
 # USDC SPL mint addresses
 USDC_MINT_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -121,9 +123,19 @@ async def get_transaction(
     tx_signature: str,
     *,
     fetch_impl: Any = None,
+    commitment: str = "confirmed",
 ) -> dict:
     """Call getTransaction(jsonParsed) and return the `result` object,
-    or None if not found / not finalized yet."""
+    or None if not found / not yet at the requested commitment.
+
+    `commitment` is "confirmed" (default; ~13s, OK for ≤$10 demo
+    payments) or "finalized" (32 confirmations; reorg-safe but
+    slower). Pass through as-is to the RPC.
+    """
+    if commitment not in ("confirmed", "finalized"):
+        raise PaymentVerificationError(
+            f"unsupported commitment level: {commitment}",
+        )
     body = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -132,7 +144,7 @@ async def get_transaction(
             tx_signature,
             {
                 "encoding": "jsonParsed",
-                "commitment": "confirmed",
+                "commitment": commitment,
                 "maxSupportedTransactionVersion": 0,
             },
         ],
@@ -270,3 +282,100 @@ def find_usdc_transfer(
         f"no USDC transfer from {expected_sender_authority} to "
         f"owner-of-ATA {expected_recipient_owner}",
     )
+
+
+# ─── memo: anti-replay across users ────────────────────────────────────────
+#
+# The frontend includes a `Memo` instruction in the same transaction with
+# a server-issued reference string. The server records the (memo,
+# user_id) mapping when issuing the quote, and verifies on credit that
+# the tx contains the memo AND the memo was issued for THIS user.
+#
+# Why this matters: without a memo, a tx that legitimately transfers
+# SOL to PAYMENT_ADDRESS_SOLANA (e.g. for some other reason) could be
+# claimed as a topup by anyone who controls the source wallet.
+# Memo binds the on-chain transfer to a specific KeyShield session.
+
+import secrets
+
+
+def find_memo(tx_result: dict) -> str | None:
+    """Return the Memo program's payload text if present, else None.
+
+    Handles two response shapes:
+      - jsonParsed parsed memo:     {"parsed": "<text>", "program": "spl-memo", ...}
+      - unparsed (raw) memo:        {"data": "<base58 bytes>", "programId": "Memo..."}
+    """
+    if not tx_result:
+        return None
+    for ix in _instructions(tx_result):
+        prog = ix.get("programId")
+        if prog not in (MEMO_PROGRAM_V2, MEMO_PROGRAM_V1):
+            continue
+        # jsonParsed: the memo text comes through as a string at parsed.
+        parsed = ix.get("parsed")
+        if isinstance(parsed, str):
+            return parsed
+        # Some wallets return parsed.info.memo
+        if isinstance(parsed, dict):
+            info = parsed.get("info")
+            if isinstance(info, dict) and isinstance(info.get("memo"), str):
+                return info["memo"]
+            if isinstance(parsed.get("memo"), str):
+                return parsed["memo"]
+        # Fallback: raw data is base58 of utf-8 bytes.
+        raw = ix.get("data")
+        if isinstance(raw, str):
+            try:
+                # Lazy import — only needed for unparsed memos.
+                import base58  # type: ignore
+                return base58.b58decode(raw).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+    return None
+
+
+# In-memory store: memo -> (expiry_monotonic, user_id). Lives only in
+# this process; restarting uvicorn invalidates pending quotes, which
+# is fine — clients re-quote.
+_TOPUP_MEMOS: dict[str, tuple[float, str]] = {}
+
+
+def _purge_expired_memos() -> None:
+    import time as _t
+    now = _t.monotonic()
+    for k in [k for k, v in _TOPUP_MEMOS.items() if v[0] < now]:
+        del _TOPUP_MEMOS[k]
+
+
+def issue_topup_memo(user_id: str, *, ttl_secs: float = 300.0) -> str:
+    """Generate a fresh memo for this user. The memo is unique per
+    quote and expires after `ttl_secs` (default 5 minutes — ample for
+    a Solana confirmation)."""
+    import time as _t
+    _purge_expired_memos()
+    memo = f"ks-topup-{secrets.token_hex(8)}"
+    _TOPUP_MEMOS[memo] = (_t.monotonic() + ttl_secs, user_id)
+    return memo
+
+
+def verify_topup_memo(memo: str, user_id: str) -> None:
+    """Raise if the memo wasn't issued, expired, or was issued for a
+    different user. Does NOT consume — caller is expected to consume
+    only after the on-chain credit succeeds (so a 4xx during verify
+    leaves the memo usable for retry)."""
+    import time as _t
+    entry = _TOPUP_MEMOS.get(memo)
+    if entry is None:
+        raise PaymentVerificationError("memo not recognized or already consumed")
+    expiry, owner = entry
+    if expiry < _t.monotonic():
+        _TOPUP_MEMOS.pop(memo, None)
+        raise PaymentVerificationError("memo expired — request a new quote")
+    if owner != user_id:
+        # Don't leak whose memo it is; just refuse.
+        raise PaymentVerificationError("memo was issued for a different user")
+
+
+def consume_topup_memo(memo: str) -> None:
+    _TOPUP_MEMOS.pop(memo, None)
