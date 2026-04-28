@@ -31,14 +31,29 @@ export async function readVault(
   bucket: R2Bucket,
   vaultId: string,
 ): Promise<VaultCipher | null> {
+  return (await readVaultWithEtag(bucket, vaultId)).cipher;
+}
+
+/**
+ * Same as `readVault`, but also surfaces the R2 ETag in the same
+ * round trip — used by the GET handler to populate the response's
+ * `ETag` header without a second round trip to R2.
+ */
+export async function readVaultWithEtag(
+  bucket: R2Bucket,
+  vaultId: string,
+): Promise<{ cipher: VaultCipher | null; etag: string | null }> {
   const obj = await bucket.get(vaultId);
-  if (!obj) return null;
+  if (!obj) return { cipher: null, etag: null };
   try {
     const json = await obj.json();
     const parsed = VaultCipherSchema.safeParse(json);
-    return parsed.success ? parsed.data : null;
+    return {
+      cipher: parsed.success ? parsed.data : null,
+      etag: obj.etag,
+    };
   } catch {
-    return null;
+    return { cipher: null, etag: obj.etag };
   }
 }
 

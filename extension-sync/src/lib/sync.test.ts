@@ -147,6 +147,148 @@ describe('HttpSyncBackend', () => {
   });
 });
 
+describe('HttpSyncBackend — ETag conditional GET', () => {
+  function etagResponse(body: unknown, etag: string): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        ETag: etag,
+        'Cache-Control': 'private, max-age=10',
+      },
+    });
+  }
+
+  it('does NOT send If-None-Match on the first pull', async () => {
+    const fetchImpl = vi.fn(async () => etagResponse(makeCipher(1), '"e1"'));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    const [, init] = fetchImpl.mock.calls[0] as any;
+    expect(init.headers['If-None-Match']).toBeUndefined();
+  });
+
+  it('caches the ETag and sends it on the next pull', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    await b.pull('vid');
+    const [, secondInit] = fetchImpl.mock.calls[1] as any;
+    expect(secondInit.headers['If-None-Match']).toBe('"e1"');
+  });
+
+  it('returns null on 304 (caller falls back to local cache)', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    const first = await b.pull('vid');
+    expect(first?.updatedAt).toBe(1);
+    const second = await b.pull('vid');
+    expect(second).toBeNull(); // 304 → null, fetchLatestCipher uses cache
+  });
+
+  it('updates the cached ETag when the server returns a fresh one', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(etagResponse(makeCipher(2), '"e2"'))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    await b.pull('vid');
+    await b.pull('vid');
+    const [, third] = fetchImpl.mock.calls[2] as any;
+    expect(third.headers['If-None-Match']).toBe('"e2"');
+  });
+
+  it('clears the cached ETag on a successful push', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(new Response(null, { status: 200 })) // PUT
+      .mockResolvedValueOnce(etagResponse(makeCipher(2), '"e2"'));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    await b.push('vid', makeCipher(2));
+    await b.pull('vid');
+    // Third call should be unconditional (no If-None-Match) because
+    // the push invalidated the cached ETag.
+    const [, third] = fetchImpl.mock.calls[2] as any;
+    expect(third.headers['If-None-Match']).toBeUndefined();
+  });
+
+  it('clears the cached ETag on remove', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(etagResponse(makeCipher(2), '"e2"'));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    await b.remove('vid');
+    await b.pull('vid');
+    const [, third] = fetchImpl.mock.calls[2] as any;
+    expect(third.headers['If-None-Match']).toBeUndefined();
+  });
+
+  it('clears the cached ETag on 404 (vault was wiped server-side)', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"e1"'))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(etagResponse(makeCipher(99), '"e99"'));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('vid');
+    expect(await b.pull('vid')).toBeNull();
+    await b.pull('vid');
+    const [, third] = fetchImpl.mock.calls[2] as any;
+    expect(third.headers['If-None-Match']).toBeUndefined();
+  });
+
+  it('isolates ETags per vault id', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(etagResponse(makeCipher(1), '"vidA"'))
+      .mockResolvedValueOnce(etagResponse(makeCipher(2), '"vidB"'))
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    const b = new HttpSyncBackend({
+      baseUrl: 'https://x.example',
+      fetchImpl: fetchImpl as any,
+    });
+    await b.pull('A');
+    await b.pull('B');
+    await b.pull('A');
+    const [, third] = fetchImpl.mock.calls[2] as any;
+    // The third call is for vault A — should send vidA's etag, not vidB's.
+    expect(third.headers['If-None-Match']).toBe('"vidA"');
+  });
+});
+
 describe('fetchLatestCipher', () => {
   it('returns the sync cipher when present', async () => {
     const b = new InMemorySyncBackend();

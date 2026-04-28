@@ -101,6 +101,13 @@ export class HttpSyncBackend implements SyncBackend {
   private readonly refreshToken?: HttpSyncBackendConfig['refreshToken'];
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  /**
+   * Per-vault ETag cache. Populated on each successful `pull`,
+   * invalidated on `push`/`remove`. The next `pull` sends it as
+   * `If-None-Match` so the worker can answer 304 without re-sending
+   * the full ciphertext.
+   */
+  private readonly etags = new Map<string, string>();
 
   constructor(cfg: HttpSyncBackendConfig) {
     this.baseUrl = cfg.baseUrl.replace(/\/$/, '');
@@ -123,16 +130,17 @@ export class HttpSyncBackend implements SyncBackend {
     method: 'GET' | 'PUT' | 'DELETE',
     vaultId: string,
     body?: unknown,
+    extraHeaders?: Record<string, string>,
   ): Promise<Response> {
     let token = await this.resolveToken();
-    let res = await this.send(method, vaultId, body, token);
+    let res = await this.send(method, vaultId, body, token, extraHeaders);
     // Auto-refresh on 401 if a refresher is wired up. We retry exactly
     // once — if refresh + retry still 401s, surface the failure.
     if (res.status === 401 && this.refreshToken) {
       const fresh = await this.refreshToken();
       if (fresh) {
         token = fresh;
-        res = await this.send(method, vaultId, body, token);
+        res = await this.send(method, vaultId, body, token, extraHeaders);
       }
     }
     return res;
@@ -143,6 +151,7 @@ export class HttpSyncBackend implements SyncBackend {
     vaultId: string,
     body: unknown,
     token: string | null,
+    extraHeaders: Record<string, string> = {},
   ): Promise<Response> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), this.timeoutMs);
@@ -152,6 +161,7 @@ export class HttpSyncBackend implements SyncBackend {
         headers: {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...extraHeaders,
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: ctrl.signal,
@@ -162,11 +172,23 @@ export class HttpSyncBackend implements SyncBackend {
   }
 
   async pull(vaultId: string): Promise<VaultCipher | null> {
-    const res = await this.request('GET', vaultId);
-    if (res.status === 404) return null;
+    // Conditional GET: if we've pulled this vault before and have an
+    // ETag, send it. The worker returns 304 (no body) when nothing
+    // changed; `fetchLatestCipher` then falls back to the local cache.
+    const cached = this.etags.get(vaultId);
+    const headers = cached ? { 'If-None-Match': cached } : undefined;
+
+    const res = await this.request('GET', vaultId, undefined, headers);
+    if (res.status === 304) return null;
+    if (res.status === 404) {
+      this.etags.delete(vaultId);
+      return null;
+    }
     if (!res.ok) {
       throw new Error(`SyncBackend.pull(${vaultId}) -> ${res.status}`);
     }
+    const newEtag = res.headers.get('ETag');
+    if (newEtag) this.etags.set(vaultId, newEtag);
     return (await res.json()) as VaultCipher;
   }
 
@@ -176,11 +198,15 @@ export class HttpSyncBackend implements SyncBackend {
     if (!res.ok) {
       throw new Error(`SyncBackend.push(${vaultId}) -> ${res.status}`);
     }
+    // Server now holds a different object; our cached ETag is stale.
+    // Drop it so the next `pull` is unconditional and re-populates.
+    this.etags.delete(vaultId);
     return true;
   }
 
   async remove(vaultId: string): Promise<void> {
     const res = await this.request('DELETE', vaultId);
+    this.etags.delete(vaultId);
     // 404 is fine — already gone.
     if (res.status !== 404 && !res.ok) {
       throw new Error(`SyncBackend.remove(${vaultId}) -> ${res.status}`);

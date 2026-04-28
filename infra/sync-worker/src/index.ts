@@ -25,7 +25,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { ed25519 } from '@noble/curves/ed25519';
 import { extractBearer, issueJwt, verifyJwt } from './auth';
-import { readVault, writeVault, deleteVault, VaultCipherSchema } from './cas';
+import { readVaultWithEtag, writeVault, deleteVault, VaultCipherSchema } from './cas';
 import {
   bumpCounter,
   consumeChallenge,
@@ -78,10 +78,55 @@ app.use('/vault/:id', async (c, next) => {
   await next();
 });
 
+// Browser/agent caches use ETag/If-None-Match for cheap freshness
+// checks. We respond with `Cache-Control: private` so the response
+// is cacheable BY THE BROWSER ONLY — never by an intermediate proxy
+// or edge cache, since vault ciphertext is per-user secret.
+const VAULT_CACHE_CONTROL = 'private, max-age=10';
+
+function quoteEtag(etag: string): string {
+  return etag.startsWith('"') ? etag : `"${etag}"`;
+}
+
+function ifNoneMatchHits(serverEtag: string, clientHeader: string): boolean {
+  if (clientHeader.trim() === '*') return true;
+  const serverNorm = serverEtag.replace(/^W\//, '').replace(/^"|"$/g, '');
+  for (const part of clientHeader.split(',')) {
+    const norm = part.trim().replace(/^W\//, '').replace(/^"|"$/g, '');
+    if (norm === serverNorm) return true;
+  }
+  return false;
+}
+
 app.get('/vault/:id', async (c) => {
-  const cipher = await readVault(c.env.VAULTS, c.req.param('id'));
+  const id = c.req.param('id');
+  const ifNoneMatch = c.req.header('if-none-match');
+
+  // Conditional-GET fast path: if the client has a cached etag and
+  // it still matches what's in R2, return 304 without reading the
+  // body. R2 HEAD is cheaper than GET (metadata only).
+  if (ifNoneMatch) {
+    const head = await c.env.VAULTS.head(id);
+    if (!head) return c.json({ error: 'not found' }, 404);
+    if (ifNoneMatchHits(head.etag, ifNoneMatch)) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: quoteEtag(head.etag),
+          'Cache-Control': VAULT_CACHE_CONTROL,
+        },
+      });
+    }
+  }
+
+  const { cipher, etag } = await readVaultWithEtag(c.env.VAULTS, id);
   if (!cipher) return c.json({ error: 'not found' }, 404);
-  return c.json(cipher);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Cache-Control': VAULT_CACHE_CONTROL,
+  };
+  if (etag) headers['ETag'] = quoteEtag(etag);
+  return new Response(JSON.stringify(cipher), { status: 200, headers });
 });
 
 app.put('/vault/:id', async (c) => {
