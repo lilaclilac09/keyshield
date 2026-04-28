@@ -124,6 +124,49 @@ export class V2Client {
     }
   }
 
+  // ─── Agents ────────────────────────────────────────────────────
+
+  async registerAgent(
+    token: string,
+    pubkeyB58: string,
+    name = 'agent',
+    scopes = '*',
+  ): Promise<RegisteredAgent> {
+    const res = await this.request('POST', '/agents/register', token, {
+      pubkeyB58,
+      name,
+      scopes,
+    });
+    if (!res.ok) {
+      throw new Error(`registerAgent failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as RegisteredAgent;
+    return body;
+  }
+
+  async listAgents(token: string): Promise<AgentRecord[]> {
+    const res = await this.request('GET', '/agents/list', token);
+    if (!res.ok) {
+      throw new Error(`listAgents failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as { agents?: AgentRecord[] };
+    return body.agents ?? [];
+  }
+
+  async revokeAgent(token: string, agentId: number): Promise<void> {
+    const res = await this.request(
+      'DELETE',
+      `/agents/${agentId}`,
+      token,
+    );
+    if (res.status === 404) {
+      throw new AgentNotFoundError(agentId);
+    }
+    if (!res.ok) {
+      throw new Error(`revokeAgent(${agentId}) failed: HTTP ${res.status}`);
+    }
+  }
+
   private async request(
     method: 'GET' | 'POST' | 'DELETE',
     path: string,
@@ -153,4 +196,27 @@ export class KeyNotFoundError extends Error {
     super(`key for upstream "${upstream}" not found on server`);
     this.name = 'KeyNotFoundError';
   }
+}
+
+export class AgentNotFoundError extends Error {
+  constructor(public readonly agentId: number) {
+    super(`agent #${agentId} not found on server`);
+    this.name = 'AgentNotFoundError';
+  }
+}
+
+export interface AgentRecord {
+  id: number;
+  pubkey_b58: string;
+  name: string;
+  scopes: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface RegisteredAgent {
+  ok: boolean;
+  agentId: number;
+  name: string;
+  pubkey: string;
 }

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { V2Client, KeyNotFoundError } from '../src/lib/v2-client.js';
+import {
+  V2Client,
+  KeyNotFoundError,
+  AgentNotFoundError,
+} from '../src/lib/v2-client.js';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -132,5 +136,91 @@ describe('V2Client.storeKey / deleteKey', () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 502 }));
     const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
     await expect(c.logout('tok')).rejects.toThrow(/502/);
+  });
+});
+
+describe('V2Client agent endpoints', () => {
+  it('listAgents returns the agents array', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        agents: [
+          {
+            id: 1,
+            pubkey_b58: 'PK1',
+            name: 'TradingBot',
+            scopes: '*',
+            created_at: 100,
+            last_used_at: 200,
+          },
+          {
+            id: 2,
+            pubkey_b58: 'PK2',
+            name: 'Indexer',
+            scopes: 'helius',
+            created_at: 50,
+            last_used_at: null,
+          },
+        ],
+      }),
+    );
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    const agents = await c.listAgents('tok');
+    expect(agents).toHaveLength(2);
+    expect(agents[0].name).toBe('TradingBot');
+    expect(agents[1].last_used_at).toBeNull();
+    const [url, init] = fetchImpl.mock.calls[0] as any;
+    expect(url).toBe('http://srv/agents/list');
+    expect(init.method).toBe('GET');
+  });
+
+  it('listAgents returns [] when none registered', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ agents: [] }));
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    expect(await c.listAgents('tok')).toEqual([]);
+  });
+
+  it('registerAgent POSTs body and returns the new id', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        agentId: 7,
+        name: 'TradingBot',
+        pubkey: 'PK1',
+      }),
+    );
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    const result = await c.registerAgent('tok', 'PK1', 'TradingBot', '*');
+    expect(result.agentId).toBe(7);
+    const [url, init] = fetchImpl.mock.calls[0] as any;
+    expect(url).toBe('http://srv/agents/register');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      pubkeyB58: 'PK1',
+      name: 'TradingBot',
+      scopes: '*',
+    });
+  });
+
+  it('revokeAgent DELETEs /agents/{id}', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    await c.revokeAgent('tok', 42);
+    const [url, init] = fetchImpl.mock.calls[0] as any;
+    expect(url).toBe('http://srv/agents/42');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('revokeAgent throws AgentNotFoundError on 404', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 404 }));
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    await expect(c.revokeAgent('tok', 99)).rejects.toBeInstanceOf(
+      AgentNotFoundError,
+    );
+  });
+
+  it('revokeAgent throws on other non-OK statuses', async () => {
+    const fetchImpl = vi.fn(async () => new Response('', { status: 500 }));
+    const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
+    await expect(c.revokeAgent('tok', 1)).rejects.toThrow(/500/);
   });
 });

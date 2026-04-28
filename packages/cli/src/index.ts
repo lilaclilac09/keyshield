@@ -21,6 +21,13 @@ import { runDoctor } from './commands/doctor.js';
 import { runLogin } from './commands/login.js';
 import { runLogout } from './commands/logout.js';
 import { runStatus } from './commands/status.js';
+import { runStore } from './commands/store.js';
+import { runDelete } from './commands/delete.js';
+import {
+  runAgentList,
+  runAgentRevoke,
+  runAgentRegister,
+} from './commands/agent.js';
 
 const program = new Command();
 program
@@ -98,6 +105,57 @@ program
   .option('--fix', 'amend .gitignore in place if it is missing .env')
   .action(async (opts) => {
     process.exitCode = await runDoctor(opts);
+  });
+
+// ─── v2-mvp write side ──────────────────────────────────────────────
+program
+  .command('store <upstream>')
+  .description('save an API key on the v2-mvp server (requires login)')
+  .option(
+    '--env-var <name>',
+    'read the value from this env var instead of stdin / prompt',
+  )
+  .option('--value <v>', 'inline value (NOT recommended — visible in shell history)')
+  .action(async (upstream: string, opts) => {
+    process.exitCode = await runStore(upstream, opts);
+  });
+
+program
+  .command('delete <upstream>')
+  .description('remove a key from the v2-mvp server (requires login)')
+  .option('-f, --force', 'skip the confirmation prompt')
+  .action(async (upstream: string, opts) => {
+    process.exitCode = await runDelete(upstream, opts);
+  });
+
+// ─── v2-mvp agent management ────────────────────────────────────────
+const agent = program
+  .command('agent')
+  .description('manage AI-agent registrations on the v2-mvp server');
+
+agent
+  .command('list')
+  .description('list all agents registered under your account')
+  .option('--json', 'output as JSON')
+  .action(async (opts) => {
+    process.exitCode = await runAgentList(opts);
+  });
+
+agent
+  .command('register <pubkey-b58>')
+  .description('register a new ed25519 agent pubkey under your account')
+  .option('-n, --name <name>', 'human-friendly name for the agent', 'agent')
+  .option('-s, --scopes <s>', 'comma-separated scope list (or "*")', '*')
+  .action(async (pubkey: string, opts) => {
+    process.exitCode = await runAgentRegister(pubkey, opts);
+  });
+
+agent
+  .command('revoke <agent-id>')
+  .description("revoke an agent's access by id (see `agent list`)")
+  .option('-f, --force', 'skip the confirmation prompt')
+  .action(async (id: string, opts) => {
+    process.exitCode = await runAgentRevoke(id, opts);
   });
 
 program.parseAsync(process.argv).catch((err) => {
