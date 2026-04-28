@@ -303,11 +303,21 @@ def _bearer(request: Request) -> str:
 
 def _session(token: str = Depends(_bearer)) -> dict:
     if token == "dev-bypass":
-        return {"user_id": "dev-bypass", "password": "dev-bypass"}
+        return {"user_id": "dev-bypass", "password": "dev-bypass", "caller_id": None}
     sess = session.get(token)
     if not sess:
         raise HTTPException(401, "unauthorized")
     return sess
+
+
+def _billing_id(sess: dict) -> str:
+    """
+    Whose balance gets debited / credited. Defaults to user_id (the
+    vault owner) but switches to caller_id when an agent session is
+    in play — that way the agent pays out of its own pocket and the
+    owner's balance stays untouched.
+    """
+    return sess.get("caller_id") or sess["user_id"]
 
 
 def _resolve_key(sess: dict, upstream: str) -> tuple[str, str]:
@@ -362,15 +372,16 @@ def _x402_body(
 
 
 async def _log_usage_bg(
-    user_id:     str,
-    upstream:    str,
-    key_type:    str,
-    method:      str,
-    path:        str,
-    content:     bytes,
-    latency_ms:  float,
-    status_code: int,
-    billed_cost: float | None = None,
+    user_id:        str,
+    upstream:       str,
+    key_type:       str,
+    method:         str,
+    path:           str,
+    content:        bytes,
+    latency_ms:     float,
+    status_code:    int,
+    billed_cost:    float | None = None,
+    debit_user_id:  str | None = None,
 ) -> None:
     """
     Fire-and-forget usage logger. Runs in background — never blocks the response.
@@ -378,6 +389,10 @@ async def _log_usage_bg(
     `billed_cost` is the owner-declared per-call price; when set it overrides
     the token-derived cost (the owner is saying "this is what I charge,
     don't second-guess it from the response shape").
+
+    `debit_user_id` is who actually pays. None / equal to user_id = owner
+    self-call (legacy). Different from user_id = agent caller; debit hits
+    the agent's balance while the row still belongs to the owner's audit log.
     """
     try:
         tok_in, tok_out, cost = usage.extract_token_usage(upstream, content)
@@ -390,6 +405,7 @@ async def _log_usage_bg(
             user_id, upstream, key_type, method, path,
             tok_in, tok_out, cost, latency_ms, status_code,
             billed_cost is not None,  # force_debit
+            debit_user_id,
         )
     except Exception:
         pass  # Logging must never crash the proxy
@@ -572,8 +588,11 @@ async def agent_login(body: AgentLoginBody):
     # Update last_used (fire-and-forget; run_in_executor returns a Future, schedule it)
     asyncio.ensure_future(loop.run_in_executor(None, agents.touch, body.agentPubkey))
 
-    # Create session as the owner
-    token = session.create(body.ownerWallet, body.passphrase)
+    # Create session as the owner — but stamp the agent's pubkey as
+    # caller_id so billing routes the cost to the agent's wallet.
+    token = session.create(
+        body.ownerWallet, body.passphrase, caller_id=body.agentPubkey
+    )
     return {
         "token":      token,
         "userId":     body.ownerWallet,   # owner's wallet = vault namespace
@@ -773,17 +792,17 @@ async def proxy(upstream: str, path: str, request: Request, sess: dict = Depends
     api_key, key_type = _resolve_key(sess, upstream)
 
     # ── x402 gate ───────────────────────────────────────────────────────────
-    # Two paths into the gate:
-    #   1. platform key (KeyShield-supplied) — token-cost based, gated when balance ≤ 0
-    #   2. owner-set price for this (user, upstream) — flat per-call, gated when balance ≤ 0
-    # Owner who hasn't opted in to pricing keeps the legacy free self-custodian path.
+    # Pricing is owner-defined (per-vault), but billing hits whoever
+    # is actually calling: the owner themselves on a self-call, or
+    # the agent's wallet on an agent-session.
     loop = asyncio.get_event_loop()
     owner_price = await loop.run_in_executor(
         None, pricing.get_price, sess["user_id"], upstream
     )
+    billing_id = _billing_id(sess)
     requires_payment = key_type == "platform" or (owner_price is not None and owner_price > 0)
     if requires_payment:
-        balance = await loop.run_in_executor(None, usage.get_balance, sess["user_id"])
+        balance = await loop.run_in_executor(None, usage.get_balance, billing_id)
         if balance <= 0:
             return JSONResponse(
                 status_code=402,
@@ -797,13 +816,15 @@ async def proxy(upstream: str, path: str, request: Request, sess: dict = Depends
     )
     latency_ms = (time.monotonic() - t0) * 1000
 
-    # Fire-and-forget usage logging. owner_price overrides the
-    # token-derived cost when set — it's what the owner declared they'd
-    # charge for this call, regardless of how many tokens flowed.
+    # Fire-and-forget usage logging. user_id stays the owner so the
+    # row appears on the owner's audit log; debit_user_id is who
+    # actually pays — same person on a self-call, the agent on an
+    # agent-session.
     asyncio.create_task(_log_usage_bg(
         sess["user_id"], upstream, key_type,
         request.method, path, content, latency_ms, status,
         billed_cost=owner_price,
+        debit_user_id=billing_id,
     ))
 
     resp_headers.pop("content-encoding", None)
@@ -1017,15 +1038,25 @@ async def usage_history(limit: int = 50, sess: dict = Depends(_session)):
 
 @app.get("/billing/balance")
 async def billing_balance(sess: dict = Depends(_session)):
-    """Return user's prepaid credit balance and total spend."""
+    """
+    Return the caller's prepaid credit balance + spend. For an
+    owner session this is the owner's wallet; for an agent session
+    (caller_id set) the agent sees its own balance, not the
+    owner's — that's what they actually pay from.
+
+    `caller_id` is echoed when present so a client can confirm the
+    session is operating as an agent (vs. as the owner themselves).
+    """
     loop = asyncio.get_event_loop()
-    balance = await loop.run_in_executor(None, usage.get_balance, sess["user_id"])
-    stats   = await loop.run_in_executor(None, usage.get_stats,   sess["user_id"])
+    payer = _billing_id(sess)
+    balance = await loop.run_in_executor(None, usage.get_balance, payer)
+    stats   = await loop.run_in_executor(None, usage.get_stats,   payer)
     total_cost = sum(s["cost_usd"] for s in stats.get("stats", []))
     return {
-        "balance_usd":    balance,
+        "balance_usd":     balance,
         "total_spent_usd": round(total_cost, 6),
         "free_credit_usd": usage.FREE_CREDIT_USD,
+        "caller_id":       sess.get("caller_id"),
     }
 
 
@@ -1050,14 +1081,19 @@ async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
         raise HTTPException(400, "amount must be between $0 and $10")
 
     # TODO: verify body.payment_proof on-chain before crediting
+    # Top-up targets the caller's balance — same identity that gets
+    # debited on a /proxy call — so an agent can fund itself without
+    # bothering the owner.
     loop = asyncio.get_event_loop()
+    payer = _billing_id(sess)
     new_balance = await loop.run_in_executor(
-        None, usage.topup, sess["user_id"], body.amount_usd
+        None, usage.topup, payer, body.amount_usd
     )
     return {
-        "ok":          True,
-        "new_balance": new_balance,
+        "ok":            True,
+        "new_balance":   new_balance,
         "payment_proof": body.payment_proof or "(demo — no on-chain verification)",
+        "caller_id":     sess.get("caller_id"),
     }
 
 

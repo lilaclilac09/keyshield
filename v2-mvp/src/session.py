@@ -3,6 +3,11 @@ Session 管理：用户登录一次 → 拿到 session token → 后续请求不
 
 密码用 SERVER_SECRET 加密后存入 SQLite。
 服务重启后 session 仍有效（不用重新登录）。
+
+`caller_id` 是为 slice 3 加的：当一个 agent 用 owner 的密钥登录时，
+session.user_id 仍是 owner（vault 解密用 owner 的密码），但
+caller_id 记录这是谁在调（用 agent pubkey）。计费根据 caller_id 走，
+所以 agent 调用扣 agent 自己的余额，owner 的钱包不动。
 """
 
 import os
@@ -43,18 +48,31 @@ def _db() -> sqlite3.Connection:
             expires_at INTEGER NOT NULL
         )
     """)
+    # Slice 3: optional caller identity (e.g. agent pubkey). NULL =
+    # session represents the owner themselves. Added with ALTER so an
+    # existing DB doesn't need a fresh migration.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "caller_id" not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN caller_id TEXT")
     conn.execute("DELETE FROM sessions WHERE expires_at < ?", (int(time.time()),))
     conn.commit()
     return conn
 
 
-def create(user_id: str, password: str) -> str:
+def create(user_id: str, password: str, caller_id: str | None = None) -> str:
+    """
+    Create a session for `user_id` (the vault owner). Pass `caller_id`
+    when the session is being created on behalf of a non-owner identity
+    — typically an agent pubkey from /auth/agent-login. Billing reads
+    caller_id when present, so the agent's own balance gets debited.
+    """
     token = secrets.token_hex(32)
     expires_at = int(time.time()) + SESSION_TTL
     with _db() as conn:
         conn.execute(
-            "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?, ?, ?, ?)",
-            (token, user_id, _encrypt(password), expires_at),
+            "INSERT INTO sessions (token, user_id, enc_pass, expires_at, caller_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (token, user_id, _encrypt(password), expires_at, caller_id),
         )
     return token
 
@@ -62,12 +80,17 @@ def create(user_id: str, password: str) -> str:
 def get(token: str) -> dict | None:
     with _db() as conn:
         row = conn.execute(
-            "SELECT user_id, enc_pass FROM sessions WHERE token = ? AND expires_at > ?",
+            "SELECT user_id, enc_pass, caller_id FROM sessions "
+            "WHERE token = ? AND expires_at > ?",
             (token, int(time.time())),
         ).fetchone()
     if not row:
         return None
-    return {"user_id": row[0], "password": _decrypt(row[1])}
+    return {
+        "user_id":   row[0],
+        "password":  _decrypt(row[1]),
+        "caller_id": row[2],   # None for owner sessions
+    }
 
 
 def delete(token: str) -> None:

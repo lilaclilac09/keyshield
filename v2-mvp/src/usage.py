@@ -117,20 +117,27 @@ def _flat_cost(upstream: str) -> float:
 # ── Core functions ────────────────────────────────────────────────────────────
 
 def log_call(
-    user_id:     str,
-    upstream:    str,
-    key_type:    str,
-    method:      str,
-    path:        str,
-    tokens_in:   int,
-    tokens_out:  int,
-    cost_usd:    float,
-    latency_ms:  float,
-    status_code: int,
-    force_debit: bool = False,
+    user_id:       str,
+    upstream:      str,
+    key_type:      str,
+    method:        str,
+    path:          str,
+    tokens_in:     int,
+    tokens_out:    int,
+    cost_usd:      float,
+    latency_ms:    float,
+    status_code:   int,
+    force_debit:   bool = False,
+    debit_user_id: str | None = None,
 ) -> None:
     """
-    Record one proxy call. Deducts from balance when:
+    Record one proxy call. The audit row always lives under `user_id`
+    (the vault owner) so the dashboard can show "calls against my key".
+    The debit hits `debit_user_id` when given — that's how an agent
+    pays for a call against the owner's vault without touching the
+    owner's balance. Defaults to debiting `user_id` when None.
+
+    Deducts from balance when:
       - key_type == 'platform' (legacy: KeyShield-supplied key, user pays us), OR
       - force_debit (caller has signalled "owner opted into pricing for this call").
 
@@ -152,13 +159,14 @@ def log_call(
 
         debits = (key_type == "platform") or force_debit
         if debits and cost_usd > 0:
-            _ensure_balance(conn, user_id)
+            payer = debit_user_id or user_id
+            _ensure_balance(conn, payer)
             conn.execute("""
                 UPDATE user_balance
                 SET balance_usd = balance_usd - ?,
                     updated_at  = ?
                 WHERE user_id = ?
-            """, (cost_usd, int(time.time()), user_id))
+            """, (cost_usd, int(time.time()), payer))
             conn.commit()
     finally:
         conn.close()
