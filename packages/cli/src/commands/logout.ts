@@ -1,5 +1,6 @@
 import { V2Client } from '../lib/v2-client.js';
 import { clearSession, loadSession } from '../lib/session-store.js';
+import { clearKeysCache } from '../lib/keys-cache.js';
 
 export async function runLogout(): Promise<number> {
   const session = await loadSession();
@@ -20,6 +21,9 @@ export async function runLogout(): Promise<number> {
     );
   }
   await clearSession();
+  // Drop any cached keys for this token so a stale process can't
+  // serve them after the user has explicitly logged out.
+  await clearKeysCache(session.token);
   process.stdout.write(`logged out from ${session.server}\n`);
   return 0;
 }

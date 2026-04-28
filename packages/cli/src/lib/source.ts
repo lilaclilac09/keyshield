@@ -14,6 +14,11 @@ import { V2Client, KeyNotFoundError } from './v2-client.js';
 import { loadSession } from './session-store.js';
 import { loadEnv, resolveEnvPath, type LoadOptions } from './load-env.js';
 import { lookupKey } from './env-file.js';
+import {
+  loadKeysCache,
+  saveKeysCache,
+  DEFAULT_TTL_MS,
+} from './keys-cache.js';
 
 export interface KeySource {
   /** Human-readable description for `--verbose` / status messages. */
@@ -29,6 +34,12 @@ export interface KeySource {
 export interface SourceOptions extends LoadOptions {
   /** Force a particular mode regardless of saved session. */
   mode?: 'v2' | 'local';
+  /** Disable the on-disk getAll cache (v2 mode only). */
+  noCache?: boolean;
+  /** Override the default 30s TTL for the getAll cache. */
+  cacheTtlMs?: number;
+  /** Override the cache directory (mostly for tests). */
+  cacheDir?: string;
 }
 
 export async function resolveSource(
@@ -40,11 +51,11 @@ export async function resolveSource(
     if (!session) {
       throw new Error('--mode=v2 but no active session. Run `keyshield login` first.');
     }
-    return makeV2Source(session);
+    return makeV2Source(session, opts);
   }
   // Auto: prefer session if present.
   const session = await loadSession();
-  if (session) return makeV2Source(session);
+  if (session) return makeV2Source(session, opts);
   return makeLocalSource(opts);
 }
 
@@ -68,19 +79,48 @@ function makeLocalSource(opts: LoadOptions): KeySource {
   };
 }
 
-function makeV2Source(session: {
-  server: string;
-  userId: string;
-  token: string;
-}): KeySource {
+function makeV2Source(
+  session: {
+    server: string;
+    userId: string;
+    token: string;
+  },
+  opts: SourceOptions = {},
+): KeySource {
   const client = new V2Client({ baseUrl: session.server });
+  const cacheTtlMs = opts.cacheTtlMs ?? DEFAULT_TTL_MS;
+  const cacheDir = opts.cacheDir;
+  const cacheEnabled = !opts.noCache;
   return {
     describe: () => `${session.server} (as ${session.userId})`,
     async list() {
+      if (cacheEnabled) {
+        const cached = await loadKeysCache(session.token, {
+          ttlMs: cacheTtlMs,
+          dir: cacheDir,
+        });
+        if (cached) return [...cached.keys()].sort();
+      }
       const items = await client.listKeys(session.token);
       return items.map((i) => i.upstream).sort();
     },
     async get(name: string) {
+      // Cache hit: serve directly without round-trip. Try exact and
+      // case-insensitive match — same fallback as the network path.
+      if (cacheEnabled) {
+        const cached = await loadKeysCache(session.token, {
+          ttlMs: cacheTtlMs,
+          dir: cacheDir,
+        });
+        if (cached) {
+          const direct = cached.get(name);
+          if (direct !== undefined) return direct;
+          const lower = name.toLowerCase().replace(/[-_]/g, '');
+          for (const [k, v] of cached) {
+            if (k.toLowerCase().replace(/[-_]/g, '') === lower) return v;
+          }
+        }
+      }
       // v2-mvp's lookup is exact on the upstream slug; normalize the
       // user's input against the listed names so `keyshield get
       // OPENAI` finds an entry stored as `openai`.
@@ -101,6 +141,13 @@ function makeV2Source(session: {
       }
     },
     async getAll() {
+      if (cacheEnabled) {
+        const cached = await loadKeysCache(session.token, {
+          ttlMs: cacheTtlMs,
+          dir: cacheDir,
+        });
+        if (cached) return cached;
+      }
       // List, then concurrently fetch each. Bounded by 8 in flight to
       // be polite to the server.
       const items = await client.listKeys(session.token);
@@ -117,6 +164,18 @@ function makeV2Source(session: {
         })(),
       );
       await Promise.all(workers);
+      if (cacheEnabled) {
+        // Persist for the next invocation. Failures here are
+        // non-fatal — the keys are already in hand for this run.
+        try {
+          await saveKeysCache(session.token, results, {
+            ttlMs: cacheTtlMs,
+            dir: cacheDir,
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
       return results;
     },
   };

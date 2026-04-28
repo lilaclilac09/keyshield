@@ -92,6 +92,8 @@ program
   .option('-e, --env-file <path>', 'override the local-mode .env path')
   .option('--mode <m>', 'force "v2" or "local"')
   .option('--clean', 'wipe parent process env before injecting')
+  .option('--no-cache', 'bypass the 30s on-disk cache (v2 mode)')
+  .option('--no-merge-env', 'skip auto-merging ./.env defaults (v2 mode)')
   .allowUnknownOption(true)
   .argument('<command...>', 'command and args to run')
   .action(async (cmd: string[], opts) => {

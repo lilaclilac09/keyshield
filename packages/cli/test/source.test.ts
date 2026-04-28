@@ -172,6 +172,135 @@ describe('resolveSource — v2 mode (active session)', () => {
   });
 });
 
+describe('resolveSource — v2 mode caching', () => {
+  let cacheDir: string;
+  beforeEach(async () => {
+    cacheDir = path.join(tmp, 'cache');
+    const xdgPath = path.join(tmp, 'keyshield', 'session.json');
+    await saveSession(
+      {
+        server: 'http://srv',
+        userId: 'alice',
+        token: 'tok-cache',
+        createdAt: 0,
+      },
+      xdgPath,
+    );
+  });
+
+  function mockKeysFetch(): { calls: string[]; fn: typeof fetch } {
+    const calls: string[] = [];
+    const fn = vi.fn(async (url: any) => {
+      const u = String(url);
+      calls.push(u);
+      if (u.endsWith('/manage/list')) {
+        return new Response(
+          JSON.stringify({
+            keys: ['openai', 'stripe'],
+            items: [
+              { upstream: 'openai', createdAt: 1, updatedAt: 1 },
+              { upstream: 'stripe', createdAt: 2, updatedAt: 2 },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const slug = u.split('/').pop()!;
+      return new Response(
+        JSON.stringify({ upstream: slug, key: `key-${slug}` }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as any;
+    return { calls, fn };
+  }
+
+  it('getAll caches after the first fetch; second call hits zero network', async () => {
+    const { calls, fn } = mockKeysFetch();
+    globalThis.fetch = fn;
+
+    const src1 = await resolveSource({ cacheDir });
+    const all1 = await src1.getAll();
+    expect(all1.size).toBe(2);
+    const callsAfterFirst = calls.length;
+    expect(callsAfterFirst).toBeGreaterThan(0);
+
+    // Fresh resolveSource — proves the cache survives across V2Source
+    // instances (i.e., across separate CLI invocations).
+    const src2 = await resolveSource({ cacheDir });
+    const all2 = await src2.getAll();
+    expect(all2.get('openai')).toBe('key-openai');
+    expect(all2.get('stripe')).toBe('key-stripe');
+    expect(calls.length).toBe(callsAfterFirst); // no additional fetches
+  });
+
+  it('--no-cache bypasses the cache for both reads and writes', async () => {
+    const { calls, fn } = mockKeysFetch();
+    globalThis.fetch = fn;
+
+    const src1 = await resolveSource({ cacheDir, noCache: true });
+    await src1.getAll();
+    const after1 = calls.length;
+
+    const src2 = await resolveSource({ cacheDir, noCache: true });
+    await src2.getAll();
+    // Same number of network calls again — nothing was cached.
+    expect(calls.length).toBe(after1 * 2);
+  });
+
+  it('expired cache triggers a re-fetch', async () => {
+    const { calls, fn } = mockKeysFetch();
+    globalThis.fetch = fn;
+
+    const src1 = await resolveSource({ cacheDir, cacheTtlMs: 50 });
+    await src1.getAll();
+    const after1 = calls.length;
+
+    await new Promise((r) => setTimeout(r, 80));
+    const src2 = await resolveSource({ cacheDir, cacheTtlMs: 50 });
+    await src2.getAll();
+    expect(calls.length).toBeGreaterThan(after1);
+  });
+
+  it('get() serves from the cache without a network round-trip', async () => {
+    const { calls, fn } = mockKeysFetch();
+    globalThis.fetch = fn;
+
+    // Populate cache via getAll first.
+    const src1 = await resolveSource({ cacheDir });
+    await src1.getAll();
+    const after1 = calls.length;
+
+    const src2 = await resolveSource({ cacheDir });
+    expect(await src2.get('openai')).toBe('key-openai');
+    expect(calls.length).toBe(after1);
+  });
+
+  it('get() falls back to the network when the requested key is not cached', async () => {
+    const { calls, fn } = mockKeysFetch();
+    globalThis.fetch = fn;
+
+    const src1 = await resolveSource({ cacheDir });
+    await src1.getAll();
+    const after1 = calls.length;
+
+    // 'twilio' wasn't in the original list — cache hit on the map
+    // doesn't include it, so we should fall through to fetch.
+    globalThis.fetch = vi.fn(async (url: any) => {
+      const u = String(url);
+      if (u.endsWith('/manage/decrypt/twilio')) {
+        return new Response(
+          JSON.stringify({ upstream: 'twilio', key: 'sk-tw' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      throw new Error(`unexpected URL: ${u}`);
+    }) as any;
+    const src2 = await resolveSource({ cacheDir });
+    expect(await src2.get('twilio')).toBe('sk-tw');
+    expect(calls.length).toBe(after1); // original mock untouched
+  });
+});
+
 describe('resolveSource — explicit mode override', () => {
   it('--mode=local ignores any active session', async () => {
     const xdgPath = path.join(tmp, 'keyshield', 'session.json');

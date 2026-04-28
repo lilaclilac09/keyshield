@@ -49,3 +49,23 @@ export async function loadEnv(opts: LoadOptions = {}): Promise<Loaded> {
   }
   return { path: p, parsed: parseEnvFile(content) };
 }
+
+/**
+ * Same as `loadEnv` but returns null when the file is missing
+ * instead of throwing. Used by `keyshield run` for auto-merging a
+ * project's `.env` on top of the v2 source — absence is normal,
+ * not a user error.
+ */
+export async function loadEnvOptional(
+  opts: LoadOptions = {},
+): Promise<Loaded | null> {
+  const p = await resolveEnvPath(opts);
+  let content: string;
+  try {
+    content = await fs.readFile(p, 'utf8');
+  } catch (e: any) {
+    if (e?.code === 'ENOENT') return null;
+    throw e;
+  }
+  return { path: p, parsed: parseEnvFile(content) };
+}
