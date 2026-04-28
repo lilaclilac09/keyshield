@@ -10,6 +10,7 @@ that matches what you're trying to do:
 
 | If you want to … | Read |
 |---|---|
+| **Top up with SOL or USDC** from a connected Solana wallet (real on-chain payment, not a stub) | [Topup with SOL](./topup-with-sol.md) |
 | **Inject vault keys into an agent process** from the terminal (`keyshield run -- python my-agent.py`) | [CLI](./cli.md) |
 | **Run the popup locally** to develop, contribute a fix, or just see it work | [Local development](./local-development.md) |
 | **Use KeyShield from your own frontend** (read keys, build the popup into your app) | [Frontend integration](./frontend-integration.md) |

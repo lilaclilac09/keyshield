@@ -36,6 +36,20 @@ from .skills import helius_skill
 
 # Payment wallet — set this to your real address in production
 PAYMENT_ADDRESS = os.getenv("PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000")
+# Solana payment receiver (base58 pubkey). When set, /billing/topup-solana
+# accepts on-chain SOL + USDC transfers to this address.
+PAYMENT_ADDRESS_SOLANA = os.getenv(
+    "PAYMENT_ADDRESS_SOLANA",
+    "11111111111111111111111111111111",  # placeholder; configure in prod
+)
+SOLANA_RPC_URL = os.getenv(
+    "SOLANA_RPC_URL",
+    "https://api.mainnet-beta.solana.com",
+)
+# Slippage tolerance for the Pyth-priced SOL → USD conversion check.
+# Default: accept ±5% slippage between the user's quoted price and what we
+# observe at credit time, since the user's tx confirms after the quote.
+SOL_PRICE_SLIPPAGE = float(os.getenv("SOL_PRICE_SLIPPAGE", "0.05"))
 # USDC on Base Sepolia (testnet)
 USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
@@ -1026,6 +1040,186 @@ async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
         "ok":          True,
         "new_balance": new_balance,
         "payment_proof": body.payment_proof or "(demo — no on-chain verification)",
+    }
+
+
+# ─── Solana on-chain topup ──────────────────────────────────────────────────
+#
+# Real payment path. The user's connected Solana wallet sends SOL or USDC
+# to PAYMENT_ADDRESS_SOLANA. The frontend then POSTs the tx signature here
+# and we verify on-chain via Helius (or any Solana RPC) + Pyth before
+# crediting. Idempotent: each tx_signature can only credit once.
+
+from . import billing_solana as bsol  # noqa: E402
+
+
+class SolQuoteBody(BaseModel):
+    amount_usd: float
+
+
+@app.get("/billing/sol-quote")
+async def billing_sol_quote(amount_usd: float):
+    """How many lamports for `amount_usd`, at the current SOL/USD oracle
+    price. Frontend uses this just before prompting the wallet to sign a
+    transfer."""
+    if amount_usd <= 0 or amount_usd > 10:
+        raise HTTPException(400, "amount_usd must be between 0 and 10")
+    try:
+        price = await bsol.fetch_sol_usd_price()
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(502, f"price oracle failure: {e}")
+    if price.price_usd <= 0:
+        raise HTTPException(502, "price oracle returned non-positive price")
+    sol_amount = amount_usd / price.price_usd
+    lamports = int(sol_amount * 1_000_000_000)
+    return {
+        "amount_usd":      amount_usd,
+        "amount_sol":      round(sol_amount, 9),
+        "amount_lamports": lamports,
+        "sol_usd_price":   price.price_usd,
+        "price_publish_time": price.publish_time,
+        "valid_for_secs":  60,
+        "payment_address": PAYMENT_ADDRESS_SOLANA,
+    }
+
+
+class TopupSolanaBody(BaseModel):
+    tx_signature: str
+    expected_amount_usd: float | None = None
+
+
+@app.post("/billing/topup-solana")
+async def billing_topup_solana(
+    body: TopupSolanaBody,
+    sess: dict = Depends(_session),
+):
+    """Verify a Solana SOL transfer to PAYMENT_ADDRESS_SOLANA, credit
+    the session user. Idempotent on tx_signature."""
+    user_id = sess["user_id"]
+
+    try:
+        tx = await bsol.get_transaction(SOLANA_RPC_URL, body.tx_signature)
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(502, f"could not fetch transaction: {e}")
+    if tx is None:
+        raise HTTPException(404, "transaction not found or not yet confirmed")
+
+    try:
+        lamports = bsol.find_sol_transfer(
+            tx, expected_sender=user_id,
+            expected_recipient=PAYMENT_ADDRESS_SOLANA,
+        )
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(400, str(e))
+
+    try:
+        price = await bsol.fetch_sol_usd_price()
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(502, f"price oracle failure: {e}")
+    if price.price_usd <= 0:
+        raise HTTPException(502, "price oracle returned non-positive price")
+
+    sol_amount = lamports / 1_000_000_000
+    amount_usd = sol_amount * price.price_usd
+
+    if body.expected_amount_usd is not None:
+        # Caller pre-quoted a USD amount; reject if observed value is
+        # off by more than slippage.
+        delta = abs(amount_usd - body.expected_amount_usd)
+        if delta / max(body.expected_amount_usd, 1e-9) > SOL_PRICE_SLIPPAGE:
+            raise HTTPException(
+                400,
+                f"price slippage too large: paid ${amount_usd:.4f}, "
+                f"expected ${body.expected_amount_usd:.4f}",
+            )
+
+    loop = asyncio.get_event_loop()
+    try:
+        new_balance = await loop.run_in_executor(
+            None, usage.credit_solana_topup,
+            user_id, body.tx_signature, "SOL",
+            lamports, amount_usd,
+        )
+    except usage.TopupAlreadyCredited:
+        raise HTTPException(409, "this transaction was already credited")
+
+    return {
+        "credited_atoms": lamports,
+        "credited_unit":  "lamports",
+        "credited_usd":   round(amount_usd, 6),
+        "balance_usd":    new_balance,
+        "tx_signature":   body.tx_signature,
+        "sol_usd_price":  price.price_usd,
+    }
+
+
+class TopupUsdcBody(BaseModel):
+    tx_signature: str
+    network: str = "mainnet"  # 'mainnet' or 'devnet'
+
+
+@app.post("/billing/topup-solana-usdc")
+async def billing_topup_solana_usdc(
+    body: TopupUsdcBody,
+    sess: dict = Depends(_session),
+):
+    """Verify a Solana USDC SPL transfer (1 USDC = $1) and credit.
+    Idempotent on tx_signature."""
+    user_id = sess["user_id"]
+    mint = (
+        bsol.USDC_MINT_DEVNET if body.network == "devnet"
+        else bsol.USDC_MINT_MAINNET
+    )
+
+    try:
+        tx = await bsol.get_transaction(SOLANA_RPC_URL, body.tx_signature)
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(502, f"could not fetch transaction: {e}")
+    if tx is None:
+        raise HTTPException(404, "transaction not found or not yet confirmed")
+
+    try:
+        atoms = bsol.find_usdc_transfer(
+            tx,
+            expected_sender_authority=user_id,
+            expected_recipient_owner=PAYMENT_ADDRESS_SOLANA,
+            usdc_mint=mint,
+        )
+    except bsol.PaymentVerificationError as e:
+        raise HTTPException(400, str(e))
+
+    amount_usd = atoms / 1_000_000  # USDC = 6 decimals, 1 token = $1
+
+    loop = asyncio.get_event_loop()
+    try:
+        new_balance = await loop.run_in_executor(
+            None, usage.credit_solana_topup,
+            user_id, body.tx_signature, "USDC",
+            atoms, amount_usd,
+        )
+    except usage.TopupAlreadyCredited:
+        raise HTTPException(409, "this transaction was already credited")
+
+    return {
+        "credited_atoms": atoms,
+        "credited_unit":  "usdc-6dp",
+        "credited_usd":   round(amount_usd, 6),
+        "balance_usd":    new_balance,
+        "tx_signature":   body.tx_signature,
+    }
+
+
+@app.get("/billing/topup-history")
+async def billing_topup_history(
+    limit: int = 20,
+    sess: dict = Depends(_session),
+):
+    """List the user's confirmed Solana topups."""
+    loop = asyncio.get_event_loop()
+    return {
+        "topups": await loop.run_in_executor(
+            None, usage.list_topups, sess["user_id"], min(max(limit, 1), 100),
+        ),
     }
 
 

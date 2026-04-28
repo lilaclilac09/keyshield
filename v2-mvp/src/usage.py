@@ -74,6 +74,21 @@ def _db() -> sqlite3.Connection:
             balance_usd REAL    NOT NULL DEFAULT 0.0,
             updated_at  INTEGER NOT NULL
         );
+        -- One row per credited Solana payment. tx_signature is the
+        -- on-chain identifier and PRIMARY KEY enforces idempotency:
+        -- a second /billing/topup-solana with the same signature
+        -- raises IntegrityError, which the route maps to 409.
+        CREATE TABLE IF NOT EXISTS topup_tx (
+            tx_signature TEXT    PRIMARY KEY,
+            user_id      TEXT    NOT NULL,
+            chain        TEXT    NOT NULL,
+            asset        TEXT    NOT NULL,
+            amount_atoms INTEGER NOT NULL,
+            amount_usd   REAL    NOT NULL,
+            credited_at  INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_topup_user
+            ON topup_tx (user_id, credited_at DESC);
     """)
     conn.commit()
     return conn
@@ -266,3 +281,84 @@ def _ensure_balance(conn: sqlite3.Connection, user_id: str) -> None:
         VALUES (?, ?, ?)
     """, (user_id, FREE_CREDIT_USD, int(time.time())))
     conn.commit()
+
+
+# ── Solana topup with idempotency ────────────────────────────────────────────
+
+
+class TopupAlreadyCredited(Exception):
+    """Raised when the same tx_signature is submitted twice."""
+
+
+def credit_solana_topup(
+    user_id:      str,
+    tx_signature: str,
+    asset:        str,           # 'SOL' or 'USDC'
+    amount_atoms: int,
+    amount_usd:   float,
+) -> float:
+    """Insert into topup_tx (idempotent on PRIMARY KEY) AND credit the
+    user's balance, in one transaction. Returns the new balance.
+
+    Raises TopupAlreadyCredited if the tx_signature was already used.
+    """
+    if amount_usd <= 0:
+        raise ValueError("amount_usd must be > 0")
+
+    conn = _db()
+    try:
+        _ensure_balance(conn, user_id)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""
+                INSERT INTO topup_tx
+                  (tx_signature, user_id, chain, asset, amount_atoms,
+                   amount_usd, credited_at)
+                VALUES (?, ?, 'solana', ?, ?, ?, ?)
+            """, (
+                tx_signature, user_id, asset, amount_atoms, amount_usd,
+                int(time.time()),
+            ))
+            conn.execute("""
+                UPDATE user_balance
+                SET balance_usd = balance_usd + ?,
+                    updated_at  = ?
+                WHERE user_id = ?
+            """, (amount_usd, int(time.time()), user_id))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise TopupAlreadyCredited(tx_signature)
+
+        row = conn.execute(
+            "SELECT balance_usd FROM user_balance WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return round(row[0], 6) if row else 0.0
+    finally:
+        conn.close()
+
+
+def list_topups(user_id: str, limit: int = 20) -> list[dict]:
+    """User's recent Solana topups, newest first."""
+    conn = _db()
+    try:
+        rows = conn.execute("""
+            SELECT tx_signature, chain, asset, amount_atoms, amount_usd, credited_at
+            FROM topup_tx
+            WHERE user_id = ?
+            ORDER BY credited_at DESC
+            LIMIT ?
+        """, (user_id, limit)).fetchall()
+        return [
+            {
+                "tx_signature": r[0],
+                "chain":        r[1],
+                "asset":        r[2],
+                "amount_atoms": r[3],
+                "amount_usd":   round(r[4], 6),
+                "credited_at":  r[5],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
