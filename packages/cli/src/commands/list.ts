@@ -1,17 +1,20 @@
-import { loadEnv } from '../lib/load-env.js';
+import { resolveSource } from '../lib/source.js';
 
 export interface ListOptions {
   envFile?: string;
-  /** When true, output as JSON `["KEY1", "KEY2", ...]`. */
+  mode?: 'v2' | 'local';
   json?: boolean;
 }
 
 export async function runList(opts: ListOptions = {}): Promise<number> {
-  const { parsed } = await loadEnv({ envFile: opts.envFile });
-  const names = [...parsed.values.keys()].sort();
+  const src = await resolveSource(opts);
+  const names = await src.list();
   if (opts.json) {
     process.stdout.write(JSON.stringify(names) + '\n');
   } else {
+    if (names.length === 0) {
+      process.stderr.write(`(no keys in ${src.describe()})\n`);
+    }
     for (const n of names) process.stdout.write(n + '\n');
   }
   return 0;
