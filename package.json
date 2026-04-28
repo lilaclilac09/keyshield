@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "packages/agent-sdk",
+    "packages/cli",
     "packages/goat-wallet",
     "extension-sync",
     "infra/sync-worker",
