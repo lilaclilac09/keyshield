@@ -1,0 +1,34 @@
+# Runs the workspace-wide TypeScript test suite (354+ tests across
+# packages/, extension/, extension-sync/, infra/sync-worker/, mobile/).
+#
+# Complements the `test.yml` workflow which covers the Rust/Solana program
+# (cargo build-sbf + Mollusk + Surfpool).
+
+name: node-tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: npm test + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspaces --if-present
+
+      - name: Test
+        run: npm test
