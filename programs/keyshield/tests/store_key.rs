@@ -34,21 +34,28 @@ fn uninitialized_vault_account() -> AccountSharedData {
     )
 }
 
+/// Build the StoreKey instruction payload.
+///
+/// IMPORTANT: this layout must match what `process_store_key` reads
+/// in src/instructions/store_key.rs. The handler was simplified to
+/// drop the V0 `zk_commit` and `mpc_hash` fields (no longer per-key).
+/// Sending the old 107-byte payload would cause the program to read
+/// the bump from the wrong offset (byte 9 of zk_commit instead of
+/// the real bump byte), which then produces a wrong PDA derivation
+/// and a PrivilegeEscalation when the program calls
+/// system_program::Assign with PDA-signed seeds.
 fn build_store_key_data(
     encrypted_key_hash: [u8; 32],
-    zk_commit: [u8; 32],
-    mpc_hash: [u8; 32],
     timestamp: u64,
     key_type: u8,
     vault_bump: u8,
 ) -> Vec<u8> {
     let mut data = vec![0u8]; // discriminator StoreKey = 0
-    data.extend_from_slice(&encrypted_key_hash);
-    data.extend_from_slice(&zk_commit);
-    data.extend_from_slice(&mpc_hash);
-    data.extend_from_slice(&timestamp.to_le_bytes());
-    data.push(key_type);
-    data.push(vault_bump);
+    data.extend_from_slice(&encrypted_key_hash);     // 32 bytes
+    data.extend_from_slice(&timestamp.to_le_bytes()); // 8 bytes
+    data.push(key_type);                              // 1 byte
+    data.push(vault_bump);                            // 1 byte
+    // = 42 bytes after the discriminator
     data
 }
 
@@ -67,14 +74,7 @@ fn test_store_key_success() {
 
     let vault_account = uninitialized_vault_account();
 
-    let data = build_store_key_data(
-        [1u8; 32],
-        [2u8; 32],
-        [3u8; 32],
-        0,
-        0,
-        vault_bump,
-    );
+    let data = build_store_key_data([1u8; 32], 0, 0, vault_bump);
 
     let instruction = Instruction::new_with_bytes(
         program_id,
@@ -115,14 +115,7 @@ fn test_store_key_double_init_fails() {
     let owner_account = AccountSharedData::new(owner_lamports, 0, &system_program::id());
     let vault_account = uninitialized_vault_account();
 
-    let data = build_store_key_data(
-        [1u8; 32],
-        [2u8; 32],
-        [3u8; 32],
-        0,
-        0,
-        vault_bump,
-    );
+    let data = build_store_key_data([1u8; 32], 0, 0, vault_bump);
 
     let instruction = Instruction::new_with_bytes(
         program_id,
@@ -188,14 +181,7 @@ fn test_store_key_owner_must_be_signer() {
     let owner_account = AccountSharedData::new(10_000_000, 0, &system_program::id());
     let vault_account = uninitialized_vault_account();
 
-    let data = build_store_key_data(
-        [1u8; 32],
-        [2u8; 32],
-        [3u8; 32],
-        0,
-        0,
-        vault_bump,
-    );
+    let data = build_store_key_data([1u8; 32], 0, 0, vault_bump);
 
     let instruction = Instruction::new_with_bytes(
         program_id,
