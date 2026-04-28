@@ -22,8 +22,11 @@
   ```bash
   export PAYMENT_ADDRESS_SOLANA="<your base58 receiver pubkey>"
   export SOLANA_RPC_URL="https://mainnet.helius-rpc.com/?api-key=$HELIUS_KEY"
-  # Optional: tighter or looser SOL/USD price slippage tolerance
+  # Optional: tighter or looser SOL/USD price slippage tolerance.
   export SOL_PRICE_SLIPPAGE="0.05"
+  # Optional: per-call topup ceiling. Default $10 (demo-safe).
+  # Raise once you've audited your verifier in production.
+  export MAX_TOPUP_USD="10"
   ```
 - A frontend already integrated with `@solana/wallet-adapter-react`
   (you have this — `WalletConnector.tsx` already uses it).
@@ -66,7 +69,9 @@ the `SystemProgram.transfer` instruction.
 // Request (Bearer required)
 {
   "tx_signature": "5J7sX...",
-  "expected_amount_usd": 5.00     // optional; rejects if slippage > 5%
+  "expected_amount_usd": 5.00,    // optional; rejects if slippage > 5%
+  "memo":         "ks-topup-...", // optional but recommended (see below)
+  "finalized":    false           // optional; true = wait for finalized commitment
 }
 
 // 200 OK
@@ -76,7 +81,8 @@ the `SystemProgram.transfer` instruction.
   "credited_usd":   5.00,
   "balance_usd":    5.10,
   "tx_signature":   "5J7sX...",
-  "sol_usd_price":  160.25
+  "sol_usd_price":  160.25,
+  "commitment":     "confirmed"   // or "finalized" if you set the flag
 }
 ```
 
@@ -261,6 +267,74 @@ what the agent draws against on `/proxy/openai/...` calls. There's
 no separate "agent topup" flow — by design.
 
 ---
+
+## Memo binding (recommended for production)
+
+Without a memo, a SOL transfer to `PAYMENT_ADDRESS_SOLANA` from your
+own wallet will be credited to your account regardless of *intent*.
+If you also use the same address for some other on-chain reason
+(refund, donation, NFT minting fee), the verifier can't tell topups
+apart from non-topups.
+
+The `memo` field fixes that. The flow:
+
+1. Frontend calls `/billing/sol-quote?amount_usd=5` **with the
+   user's Bearer token**. Response now includes `memo: "ks-topup-..."`.
+2. Frontend builds the tx with **two** instructions:
+   - `SystemProgram.transfer({...})`
+   - `new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [], data: Buffer.from(memo, "utf8") })`
+3. Wallet signs + broadcasts.
+4. Frontend POSTs `/billing/topup-solana` with both `tx_signature`
+   AND `memo`.
+5. Server checks: memo was issued for this user, on-chain memo
+   matches. Only then credits.
+
+Memo Program ID (v2): `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`.
+
+```ts
+import { TransactionInstruction, PublicKey } from '@solana/web3.js';
+
+const MEMO_PROGRAM_ID = new PublicKey(
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr',
+);
+
+const memoIx = new TransactionInstruction({
+  programId: MEMO_PROGRAM_ID,
+  keys: [],
+  data: Buffer.from(quote.memo, 'utf8'),
+});
+const tx = new Transaction()
+  .add(SystemProgram.transfer({ fromPubkey, toPubkey, lamports }))
+  .add(memoIx);
+```
+
+Memos expire after 5 minutes (TTL on the server) and are single-use:
+once a topup credits, the memo is consumed and a retry would 400.
+
+## Finalized commitment
+
+By default we read at `commitment=confirmed` (~13 s after broadcast,
+fine for ≤ $10 demo amounts). Set `"finalized": true` in the topup
+body to wait for `commitment=finalized` (~30 s, 32 confirmations,
+re-org safe). Use this for higher-value topups in production.
+
+```json
+{ "tx_signature": "...", "memo": "ks-...", "finalized": true }
+```
+
+The response includes `"commitment": "finalized"` so the client can
+verify the level the server actually checked at.
+
+## Per-call topup ceiling
+
+Default is $10 — safe for a demo. Raise via env var, no code change:
+
+```bash
+export MAX_TOPUP_USD=100
+```
+
+Applies to `/billing/sol-quote`, `/billing/topup-solana`, and the
+legacy `/billing/topup` (which is the demo no-verify path).
 
 ## Threat model notes
 

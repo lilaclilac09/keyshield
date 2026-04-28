@@ -50,6 +50,9 @@ SOLANA_RPC_URL = os.getenv(
 # Default: accept ±5% slippage between the user's quoted price and what we
 # observe at credit time, since the user's tx confirms after the quote.
 SOL_PRICE_SLIPPAGE = float(os.getenv("SOL_PRICE_SLIPPAGE", "0.05"))
+# Per-call topup ceiling. Default $10 (demo-safe). Production deployments
+# can raise via env without code changes.
+MAX_TOPUP_USD = float(os.getenv("MAX_TOPUP_USD", "10"))
 # USDC on Base Sepolia (testnet)
 USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
@@ -1028,8 +1031,10 @@ async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
       3. Client retries the request with X-Payment-Proof: {tx_hash}
       4. This endpoint verifies the tx and tops up the balance
     """
-    if body.amount_usd <= 0 or body.amount_usd > 10:
-        raise HTTPException(400, "amount must be between $0 and $10")
+    if body.amount_usd <= 0 or body.amount_usd > MAX_TOPUP_USD:
+        raise HTTPException(
+            400, f"amount must be between $0 and ${MAX_TOPUP_USD:g}",
+        )
 
     # TODO: verify body.payment_proof on-chain before crediting
     loop = asyncio.get_event_loop()
@@ -1058,12 +1063,25 @@ class SolQuoteBody(BaseModel):
 
 
 @app.get("/billing/sol-quote")
-async def billing_sol_quote(amount_usd: float):
+async def billing_sol_quote(
+    amount_usd: float,
+    request: Request,
+):
     """How many lamports for `amount_usd`, at the current SOL/USD oracle
-    price. Frontend uses this just before prompting the wallet to sign a
-    transfer."""
-    if amount_usd <= 0 or amount_usd > 10:
-        raise HTTPException(400, "amount_usd must be between 0 and 10")
+    price. Frontend uses this just before prompting the wallet to sign
+    a transfer.
+
+    If a Bearer token is supplied (optional), the response includes a
+    fresh `memo` string. The frontend should add a Memo Program
+    instruction to the same transaction with that exact memo. The
+    /billing/topup-solana handler then verifies the on-chain memo
+    matches what was issued, binding the on-chain transfer to a
+    specific KeyShield session — anti-replay across users.
+    """
+    if amount_usd <= 0 or amount_usd > MAX_TOPUP_USD:
+        raise HTTPException(
+            400, f"amount_usd must be between 0 and {MAX_TOPUP_USD:g}",
+        )
     try:
         price = await bsol.fetch_sol_usd_price()
     except bsol.PaymentVerificationError as e:
@@ -1072,7 +1090,18 @@ async def billing_sol_quote(amount_usd: float):
         raise HTTPException(502, "price oracle returned non-positive price")
     sol_amount = amount_usd / price.price_usd
     lamports = int(sol_amount * 1_000_000_000)
-    return {
+
+    # Try to derive a memo if the caller is authenticated. We don't
+    # use Depends(_session) so unauthenticated quote requests still
+    # work for landing-page UX.
+    memo: str | None = None
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        sess = session.get(auth[7:])
+        if sess:
+            memo = bsol.issue_topup_memo(sess["user_id"])
+
+    body = {
         "amount_usd":      amount_usd,
         "amount_sol":      round(sol_amount, 9),
         "amount_lamports": lamports,
@@ -1081,11 +1110,24 @@ async def billing_sol_quote(amount_usd: float):
         "valid_for_secs":  60,
         "payment_address": PAYMENT_ADDRESS_SOLANA,
     }
+    if memo is not None:
+        body["memo"] = memo
+    return body
 
 
 class TopupSolanaBody(BaseModel):
     tx_signature: str
     expected_amount_usd: float | None = None
+    # Optional: server-issued memo (from /billing/sol-quote). When
+    # provided, the on-chain tx MUST include a Memo Program ix with
+    # this exact text, AND the memo must have been issued for the
+    # current user. Anti-replay across users.
+    memo: str | None = None
+    # Optional: when True, look up the tx at finalized commitment
+    # (32 conf, ~13s+) instead of the default 'confirmed'. Use for
+    # high-value topups; ignored for ≤$10 since reorg risk is
+    # negligible at small amounts.
+    finalized: bool = False
 
 
 @app.post("/billing/topup-solana")
@@ -1097,12 +1139,28 @@ async def billing_topup_solana(
     the session user. Idempotent on tx_signature."""
     user_id = sess["user_id"]
 
+    # Optional memo binding (anti-replay across users): verify the
+    # supplied memo was issued for THIS user, BEFORE we go fetch the
+    # tx. Don't consume yet — keep it usable for retry until the
+    # credit lands.
+    if body.memo is not None:
+        try:
+            bsol.verify_topup_memo(body.memo, user_id)
+        except bsol.PaymentVerificationError as e:
+            raise HTTPException(400, str(e))
+
+    commitment = "finalized" if body.finalized else "confirmed"
     try:
-        tx = await bsol.get_transaction(SOLANA_RPC_URL, body.tx_signature)
+        tx = await bsol.get_transaction(
+            SOLANA_RPC_URL, body.tx_signature, commitment=commitment,
+        )
     except bsol.PaymentVerificationError as e:
         raise HTTPException(502, f"could not fetch transaction: {e}")
     if tx is None:
-        raise HTTPException(404, "transaction not found or not yet confirmed")
+        raise HTTPException(
+            404,
+            f"transaction not found or not yet {commitment}",
+        )
 
     try:
         lamports = bsol.find_sol_transfer(
@@ -1111,6 +1169,16 @@ async def billing_topup_solana(
         )
     except bsol.PaymentVerificationError as e:
         raise HTTPException(400, str(e))
+
+    # If a memo was supplied, the on-chain tx must contain it.
+    if body.memo is not None:
+        on_chain_memo = bsol.find_memo(tx)
+        if on_chain_memo != body.memo:
+            raise HTTPException(
+                400,
+                f"on-chain memo {on_chain_memo!r} does not match "
+                f"supplied memo",
+            )
 
     try:
         price = await bsol.fetch_sol_usd_price()
@@ -1143,6 +1211,10 @@ async def billing_topup_solana(
     except usage.TopupAlreadyCredited:
         raise HTTPException(409, "this transaction was already credited")
 
+    # Credit succeeded — consume the memo so it can't be reused.
+    if body.memo is not None:
+        bsol.consume_topup_memo(body.memo)
+
     return {
         "credited_atoms": lamports,
         "credited_unit":  "lamports",
@@ -1150,12 +1222,15 @@ async def billing_topup_solana(
         "balance_usd":    new_balance,
         "tx_signature":   body.tx_signature,
         "sol_usd_price":  price.price_usd,
+        "commitment":     commitment,
     }
 
 
 class TopupUsdcBody(BaseModel):
     tx_signature: str
     network: str = "mainnet"  # 'mainnet' or 'devnet'
+    memo: str | None = None
+    finalized: bool = False
 
 
 @app.post("/billing/topup-solana-usdc")
@@ -1164,19 +1239,31 @@ async def billing_topup_solana_usdc(
     sess: dict = Depends(_session),
 ):
     """Verify a Solana USDC SPL transfer (1 USDC = $1) and credit.
-    Idempotent on tx_signature."""
+    Idempotent on tx_signature. Same memo + finalized semantics as
+    /billing/topup-solana."""
     user_id = sess["user_id"]
     mint = (
         bsol.USDC_MINT_DEVNET if body.network == "devnet"
         else bsol.USDC_MINT_MAINNET
     )
 
+    if body.memo is not None:
+        try:
+            bsol.verify_topup_memo(body.memo, user_id)
+        except bsol.PaymentVerificationError as e:
+            raise HTTPException(400, str(e))
+
+    commitment = "finalized" if body.finalized else "confirmed"
     try:
-        tx = await bsol.get_transaction(SOLANA_RPC_URL, body.tx_signature)
+        tx = await bsol.get_transaction(
+            SOLANA_RPC_URL, body.tx_signature, commitment=commitment,
+        )
     except bsol.PaymentVerificationError as e:
         raise HTTPException(502, f"could not fetch transaction: {e}")
     if tx is None:
-        raise HTTPException(404, "transaction not found or not yet confirmed")
+        raise HTTPException(
+            404, f"transaction not found or not yet {commitment}",
+        )
 
     try:
         atoms = bsol.find_usdc_transfer(
@@ -1187,6 +1274,14 @@ async def billing_topup_solana_usdc(
         )
     except bsol.PaymentVerificationError as e:
         raise HTTPException(400, str(e))
+
+    if body.memo is not None:
+        on_chain_memo = bsol.find_memo(tx)
+        if on_chain_memo != body.memo:
+            raise HTTPException(
+                400,
+                f"on-chain memo {on_chain_memo!r} does not match supplied memo",
+            )
 
     amount_usd = atoms / 1_000_000  # USDC = 6 decimals, 1 token = $1
 
@@ -1200,12 +1295,16 @@ async def billing_topup_solana_usdc(
     except usage.TopupAlreadyCredited:
         raise HTTPException(409, "this transaction was already credited")
 
+    if body.memo is not None:
+        bsol.consume_topup_memo(body.memo)
+
     return {
         "credited_atoms": atoms,
         "credited_unit":  "usdc-6dp",
         "credited_usd":   round(amount_usd, 6),
         "balance_usd":    new_balance,
         "tx_signature":   body.tx_signature,
+        "commitment":     commitment,
     }
 
 
