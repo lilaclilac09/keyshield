@@ -296,6 +296,14 @@ async def cli_download():
         raise HTTPException(404, "cli missing")
     return FileResponse(p, media_type="text/x-shellscript", filename="keyshield-cli.sh")
 
+@app.get("/passkey")
+async def passkey_page():
+    """Self-contained passkey register + login page. No frontend needed."""
+    p = Path(__file__).parent / "static" / "passkey.html"
+    if not p.exists():
+        raise HTTPException(404, "passkey page missing")
+    return FileResponse(p, media_type="text/html")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv(
