@@ -153,6 +153,39 @@ export class V2Client {
     return body.agents ?? [];
   }
 
+  /** Fetch a server-issued challenge string for agent authentication. */
+  async agentChallenge(): Promise<{ challenge: string; nonce: string }> {
+    const res = await this.request('GET', '/auth/agent-challenge');
+    if (!res.ok) {
+      throw new Error(`agentChallenge failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as { challenge?: string; nonce?: string };
+    if (!body.challenge || !body.nonce) {
+      throw new Error('agent-challenge response missing challenge or nonce');
+    }
+    return { challenge: body.challenge, nonce: body.nonce };
+  }
+
+  /**
+   * Self-authenticate as an agent: caller has already signed `challenge`
+   * with the agent secret, and we just exchange that for a session token.
+   */
+  async agentLogin(params: {
+    ownerWallet: string;
+    agentPubkey: string;
+    signature: string;
+    challenge: string;
+    passphrase: string;
+  }): Promise<string> {
+    const res = await this.request('POST', '/auth/agent-login', undefined, params);
+    if (!res.ok) {
+      throw new Error(`agent-login failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as { token?: string };
+    if (!body.token) throw new Error('agent-login response missing `token` field');
+    return body.token;
+  }
+
   async revokeAgent(token: string, agentId: number): Promise<void> {
     const res = await this.request(
       'DELETE',

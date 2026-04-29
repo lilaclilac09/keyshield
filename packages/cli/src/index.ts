@@ -27,6 +27,9 @@ import {
   runAgentList,
   runAgentRevoke,
   runAgentRegister,
+  runAgentCreate,
+  runAgentLogin,
+  runAgentLocalList,
 } from './commands/agent.js';
 
 const program = new Command();
@@ -150,6 +153,30 @@ agent
   .option('-s, --scopes <s>', 'comma-separated scope list (or "*")', '*')
   .action(async (pubkey: string, opts) => {
     process.exitCode = await runAgentRegister(pubkey, opts);
+  });
+
+agent
+  .command('create <name>')
+  .description('generate an ed25519 keypair locally and register it under your account')
+  .option('-s, --scopes <s>', 'comma-separated scope list (or "*")', '*')
+  .option('--print', 'print keypair material to stdout instead of saving to disk')
+  .action(async (name: string, opts) => {
+    process.exitCode = await runAgentCreate(name, opts);
+  });
+
+agent
+  .command('login <name>')
+  .description('authenticate as a stored agent; replaces the active session')
+  .option('--passphrase <pw>', 'owner vault passphrase (or $KEYSHIELD_PASSWORD)')
+  .action(async (name: string, opts) => {
+    process.exitCode = await runAgentLogin(name, opts);
+  });
+
+agent
+  .command('local-list')
+  .description('list locally stored agent names (~/.config/keyshield/agents/)')
+  .action(async () => {
+    process.exitCode = await runAgentLocalList();
   });
 
 agent

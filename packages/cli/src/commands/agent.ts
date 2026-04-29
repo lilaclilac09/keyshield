@@ -7,10 +7,25 @@
  *   keyshield agent list                      → /agents/list
  *   keyshield agent revoke <id>               → /agents/{id} DELETE
  *   keyshield agent register <pubkey> ...     → /agents/register
+ *   keyshield agent create <name> ...         → gen keypair locally + register
+ *   keyshield agent login <name>              → challenge-sign-login, save session
  */
 
 import { V2Client, AgentNotFoundError } from '../lib/v2-client.js';
-import { loadSession } from '../lib/session-store.js';
+import { loadSession, saveSession } from '../lib/session-store.js';
+import { promptPassword } from '../lib/prompt-password.js';
+import {
+  generateKeyPair,
+  sign,
+  base58Encode,
+  base64Encode,
+} from '../lib/ed25519.js';
+import {
+  loadAgent,
+  saveAgent,
+  listAgents,
+  type StoredAgent,
+} from '../lib/agent-store.js';
 
 async function clientFromSession(): Promise<{
   client: V2Client;
@@ -126,6 +141,203 @@ export async function runAgentRevoke(
   process.stdout.write(`revoked agent #${agentId}\n`);
   return 0;
 }
+
+export interface AgentCreateOptions {
+  scopes?: string;
+  /** Don't write to disk — just print the generated material. Useful
+   *  when the user wants to ship the seed somewhere else themselves. */
+  print?: boolean;
+}
+
+/**
+ * `keyshield agent create <name>` — generate an ed25519 keypair,
+ * persist it under ~/.config/keyshield/agents/<name>.json, then
+ * register the pubkey with the v2-mvp server. Idempotent up to the
+ * filename: if `<name>` already exists locally, refuse to clobber.
+ */
+export async function runAgentCreate(
+  name: string,
+  opts: AgentCreateOptions = {},
+): Promise<number> {
+  const ctx = await clientFromSession();
+  if (!ctx) return 1;
+
+  if (!opts.print) {
+    const existing = await loadAgent(name).catch(() => null);
+    if (existing) {
+      process.stderr.write(
+        `agent "${name}" already exists locally. Pick a different name or delete the file first.\n`,
+      );
+      return 1;
+    }
+  }
+
+  const session = await loadSession();
+  if (!session) {
+    // Defensive — clientFromSession already guarded, but TS narrowing.
+    return 1;
+  }
+
+  const kp = generateKeyPair();
+  const pubkey_b58 = base58Encode(kp.publicKey);
+  const secret_b64 = base64Encode(kp.secretKey);
+
+  let result;
+  try {
+    result = await ctx.client.registerAgent(
+      ctx.token,
+      pubkey_b58,
+      name,
+      opts.scopes ?? '*',
+    );
+  } catch (e: any) {
+    process.stderr.write(`register failed: ${e?.message ?? e}\n`);
+    return 1;
+  }
+
+  if (opts.print) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          name,
+          pubkey_b58,
+          secret_b64,
+          server: ctx.server,
+          ownerWallet: session.userId,
+          agentId: result.agentId,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    return 0;
+  }
+
+  const stored: StoredAgent = {
+    name,
+    pubkey_b58,
+    secret_b64,
+    server: ctx.server,
+    ownerWallet: session.userId,
+    agentId: result.agentId,
+    createdAt: Math.floor(Date.now() / 1000),
+  };
+  await saveAgent(stored);
+
+  process.stdout.write(
+    `created agent "${name}" (#${result.agentId})\n` +
+      `  pubkey:  ${pubkey_b58}\n` +
+      `  server:  ${ctx.server}\n` +
+      `  owner:   ${session.userId}\n` +
+      `  saved:   ${process.env.XDG_CONFIG_HOME ?? '~'}/.config/keyshield/agents/${name}.json (mode 0600)\n` +
+      `\n` +
+      `Use it:\n` +
+      `  keyshield agent login ${name}\n` +
+      `  keyshield run -- node my-agent.js\n`,
+  );
+  return 0;
+}
+
+
+export interface AgentLoginOptions {
+  /** Owner vault passphrase. Falls back to $KEYSHIELD_PASSWORD or TTY prompt. */
+  passphrase?: string;
+}
+
+/**
+ * `keyshield agent login <name>` — sign the server's challenge with the
+ * stored agent secret, exchange for a session token, save the token as
+ * the active session. After this, normal `keyshield run` calls bill
+ * against the *agent's* balance (caller_id wiring), not the owner's.
+ */
+export async function runAgentLogin(
+  name: string,
+  opts: AgentLoginOptions = {},
+): Promise<number> {
+  const stored = await loadAgent(name);
+  if (!stored) {
+    process.stderr.write(
+      `no agent "${name}" found. Create one with: keyshield agent create ${name}\n`,
+    );
+    return 1;
+  }
+
+  let passphrase = opts.passphrase ?? process.env.KEYSHIELD_PASSWORD;
+  if (!passphrase) {
+    try {
+      passphrase = await promptPassword(
+        `Owner vault passphrase for ${stored.ownerWallet} @ ${stored.server}: `,
+      );
+    } catch (e: any) {
+      process.stderr.write(`${e?.message ?? e}\n`);
+      return 130;
+    }
+  }
+  if (!passphrase) {
+    process.stderr.write('empty passphrase — aborted.\n');
+    return 64;
+  }
+
+  const client = new V2Client({ baseUrl: stored.server });
+
+  let challenge: string;
+  try {
+    const ch = await client.agentChallenge();
+    challenge = ch.challenge;
+  } catch (e: any) {
+    process.stderr.write(`failed to get challenge: ${e?.message ?? e}\n`);
+    return 1;
+  }
+
+  const secret = Uint8Array.from(Buffer.from(stored.secret_b64, 'base64'));
+  const signature = sign(new TextEncoder().encode(challenge), secret);
+
+  let token: string;
+  try {
+    token = await client.agentLogin({
+      ownerWallet: stored.ownerWallet,
+      agentPubkey: stored.pubkey_b58,
+      signature: base64Encode(signature),
+      challenge,
+      passphrase,
+    });
+  } catch (e: any) {
+    process.stderr.write(`agent-login failed: ${e?.message ?? e}\n`);
+    return 1;
+  }
+
+  // Persist the resulting session as the active one — `keyshield run`
+  // (and every other source-aware command) will pick it up
+  // automatically and bill against the agent's balance.
+  await saveSession({
+    server: stored.server,
+    userId: stored.ownerWallet,
+    token,
+    createdAt: Math.floor(Date.now() / 1000),
+  });
+
+  process.stdout.write(
+    `logged in as agent "${name}" against ${stored.server}\n` +
+      `  pubkey:  ${stored.pubkey_b58}\n` +
+      `  owner:   ${stored.ownerWallet}\n` +
+      `  billing: agent balance (caller_id = ${stored.pubkey_b58.slice(0, 8)}…)\n`,
+  );
+  return 0;
+}
+
+
+export async function runAgentLocalList(): Promise<number> {
+  const names = await listAgents();
+  if (names.length === 0) {
+    process.stderr.write(
+      `(no local agents in ~/.config/keyshield/agents/)\n`,
+    );
+    return 0;
+  }
+  for (const n of names) process.stdout.write(`${n}\n`);
+  return 0;
+}
+
 
 export interface AgentRegisterOptions {
   name?: string;
