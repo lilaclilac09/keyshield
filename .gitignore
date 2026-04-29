@@ -19,6 +19,18 @@ Cargo.lock
 .vscode/
 .idea/
 *.iml
+.cursor/
+
+# Claude Code / agent session artifacts (worktrees, settings, backups)
+# `.claude/` is kept tracked (project conventions live there); only the
+# session-local subpaths and ad-hoc dump dirs are ignored.
+.claude/worktrees/
+.claude/settings.local.json
+.dropped-*
+.openclaw/
+.keyshield-demo/
+.gbrain/
+.aget/
 
 # Node modules (if not already ignored)
 node_modules/

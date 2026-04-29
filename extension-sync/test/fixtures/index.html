@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KeyShield · Manual Verify Hub</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      body {
+        max-width: 880px;
+        margin: 32px auto;
+        padding: 0 20px;
+        line-height: 1.5;
+      }
+      h1 { margin: 0 0 4px; }
+      .sub { color: #666; margin: 0 0 24px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin: 16px 0 32px;
+      }
+      .card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 14px 16px;
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      }
+      .tag {
+        display: inline-block;
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #eef;
+        color: #336;
+        margin-right: 6px;
+      }
+      .tag.trap { background: #fee; color: #933; }
+      ol li { margin: 6px 0; }
+      code {
+        background: #f4f4f4;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      h2 { margin-top: 32px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>🛡️ KeyShield · Manual Verify Hub</h1>
+    <p class="sub">
+      Drop the unpacked extension into Chrome, open each fixture, and walk
+      the checklist below. These pages are inert &mdash; the keys are
+      synthetic and do nothing.
+    </p>
+
+    <h2>Fixtures</h2>
+    <div class="grid">
+      <a class="card" href="./openai-platform.html">
+        <span class="tag">happy</span><strong>OpenAI dashboard</strong>
+        <div>One key in a password field, page styled like platform.openai.com.</div>
+      </a>
+      <a class="card" href="./helius-dashboard.html">
+        <span class="tag">happy</span><strong>Helius RPC</strong>
+        <div>UUID-shaped key inline as <code>?api-key=&hellip;</code>.</div>
+      </a>
+      <a class="card" href="./stripe-keys.html">
+        <span class="tag">happy</span><strong>Stripe keys</strong>
+        <div>Two fields: publishable + secret. Auto-detect should label both.</div>
+      </a>
+      <a class="card" href="./multi-key-env.html">
+        <span class="tag">paste</span><strong>.env paste</strong>
+        <div>Textarea pre-filled with 4 secrets. Tests multi-key extraction.</div>
+      </a>
+      <a class="card" href="./trap-page.html">
+        <span class="tag trap">trap</span><strong>False-positive trap</strong>
+        <div>UUIDs, JWTs, git SHAs, &ldquo;openai&rdquo; in prose. Should NOT alert.</div>
+      </a>
+    </div>
+
+    <h2>Checklist</h2>
+    <p>Open each page in order. For each item, verify the listed behaviour.</p>
+
+    <h3>Detection</h3>
+    <ol>
+      <li>OpenAI page &mdash; toast appears within ~3 s with provider <code>OpenAI</code>.</li>
+      <li>Helius page &mdash; toast labels the UUID match as <code>Helius</code>.</li>
+      <li>Stripe page &mdash; one toast for the secret <code>sk_live_&hellip;</code>; the publishable <code>pk_live_&hellip;</code> may auto-suppress (lower priority).</li>
+      <li>.env paste &mdash; opening the popup right after the page loads shows ≥ 3 distinct providers staged.</li>
+      <li>Trap page &mdash; no toast appears for at least 5 s.</li>
+    </ol>
+
+    <h3>One-click save</h3>
+    <ol>
+      <li>Click <em>Save</em> on the OpenAI toast &mdash; toast disappears, popup vault list shows <code>OpenAI</code> entry.</li>
+      <li>Reopen the popup after closing &mdash; the saved entry persists (cache hit).</li>
+      <li>Click <em>×</em> to dismiss the Helius toast &mdash; toast removed, popup does NOT gain a Helius entry.</li>
+      <li>Auto-dismiss timing &mdash; if you ignore a toast, it disappears on its own around 10 s.</li>
+    </ol>
+
+    <h3>Cross-device sanity (optional, requires <code>VITE_KEYSHIELD_SYNC_URL</code>)</h3>
+    <ol>
+      <li>Save a key on Chrome A.</li>
+      <li>On Chrome B with the same passkey, reopen the popup &mdash; the same entry is there after a pull.</li>
+    </ol>
+
+    <h2>How to load the extension</h2>
+    <pre><code>cd extension-sync
+npm install
+npm run build              # produces dist/
+# In Chrome:
+#   chrome://extensions  →  Developer mode  →  Load unpacked  →  pick dist/</code></pre>
+
+    <p style="color:#888; font-size:12px; margin-top:32px;">
+      All keys on these pages are synthetic patterns &mdash; they will not
+      authenticate against any real provider. Treat them like passwords
+      anyway in case you ever copy this folder somewhere unexpected.
+    </p>
+  </body>
+</html>

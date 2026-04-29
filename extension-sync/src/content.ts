@@ -265,18 +265,20 @@ function setupX402Listener() {
   
   // Also check for x402 headers
   const originalXHROpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+  // The signature of XHR.open is overloaded; using `any` here keeps the
+  // monkey-patch shape transparent while still passing the args through.
+  XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, ...args: any[]) {
     this.addEventListener('load', () => {
       if (this.status === 402) {
         handle402Response({
           status: 402,
           headers: this.getAllResponseHeaders(),
-          url: url as string,
+          url: String(args[1] ?? ''),
         } as unknown as Response);
       }
     });
-    return originalXHROpen.call(this, method, url, ...rest);
-  };
+    return (originalXHROpen as any).apply(this, args);
+  } as any;
 }
 
 /**

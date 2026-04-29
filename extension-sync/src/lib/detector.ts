@@ -612,6 +612,40 @@ export class KeyDetector {
   static getTrustedDomains(): string[] {
     return [...TRUSTED_DOMAINS];
   }
+
+  /**
+   * Watch the page for newly-added inputs and re-run detectFormFields
+   * whenever the DOM changes. Returns a teardown function that
+   * disconnects the observer.
+   *
+   * Used by content.ts to react to SPA navigation and dynamically
+   * mounted forms (e.g. modal dialogs that mount on click).
+   */
+  static setupFormMonitoring(
+    onDetect: (keys: DetectedKey[]) => void,
+  ): () => void {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+      // Node / SSR — no-op teardown.
+      return () => {};
+    }
+    const fire = () => {
+      try {
+        const keys = this.detectFormFields();
+        if (keys.length > 0) onDetect(keys);
+      } catch (err) {
+        console.warn('[KeyShield] setupFormMonitoring error:', err);
+      }
+    };
+    fire();
+    const observer = new MutationObserver(() => fire());
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['value'],
+    });
+    return () => observer.disconnect();
+  }
 }
 
 export default KeyDetector;

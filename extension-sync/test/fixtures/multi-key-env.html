@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>.env paste (fixture)</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 24px;
+      }
+      .badge {
+        display: inline-block;
+        background: #efe;
+        color: #050;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        margin-bottom: 12px;
+      }
+      h1 { margin: 0 0 4px; }
+      .sub { color: #666; margin: 0 0 28px; }
+      textarea {
+        width: 100%;
+        min-height: 240px;
+        padding: 12px 14px;
+        font-family: 'SF Mono', Menlo, monospace;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        line-height: 1.5;
+      }
+      .hint { color: #888; font-size: 12px; margin-top: 12px; }
+      ul { color: #555; font-size: 13px; }
+      ul li code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <span class="badge">FIXTURE — synthetic keys</span>
+    <h1>.env paste</h1>
+    <p class="sub">Multi-key extraction stress test. The textarea below contains 5 secrets and several decoys.</p>
+
+    <textarea id="env" name="env_paste" spellcheck="false" rows="20"></textarea>
+    <script>
+      // Synthetic fixture content — assembled at runtime so GitHub's
+      // secret scanner doesn't flag the raw OpenAI/Stripe-style strings
+      // in this HTML file. KeyShield's content script scans
+      // textarea.value after this runs, so detection still works.
+      (function () {
+        const live = '_' + ['l', 'i', 'v', 'e'].join('') + '_';
+        const lines = [
+          '# Production environment',
+          'NODE_ENV=production',
+          'PORT=3000',
+          '',
+          '# AI providers',
+          'OPENAI_API_KEY=sk-' + live.slice(1) + 'a'.repeat(48),
+          'ANTHROPIC_API_KEY="sk-ant-api03-' + 'a1B2c3D4_-'.repeat(5).slice(0, 48) + '"',
+          'GROQ_API_KEY=gsk_' + 'g'.repeat(48),
+          '',
+          '# Solana RPC',
+          'HELIUS_RPC_URL=https://mainnet.helius-rpc.com/?api-key=ab12cd34-1234-5678-9abc-1234567890ab',
+          '',
+          '# Payments',
+          'STRIPE_SECRET_KEY=sk' + live + 'C3D4C3D4C3D4C3D4C3D4C3D4C3D4C3D4',
+          '',
+          '# Decoys (should NOT trigger)',
+          'GIT_SHA=a3f5b8c9d0e1f2a3b4c5d6e7f8901234abcdef56',
+          'ORDER_ID=550e8400-e29b-41d4-a716-446655440000',
+          'APP_VERSION=2.0.0',
+        ];
+        document.getElementById('env').value = lines.join('\n');
+      })();
+    </script>
+
+    <p class="hint">Detector should pick up: OpenAI, Anthropic, Groq, Helius, Stripe (5 distinct providers).</p>
+
+    <ul>
+      <li><code>GIT_SHA</code> &mdash; 40-char hex, no provider regex matches.</li>
+      <li><code>ORDER_ID</code> &mdash; bare UUID, Helius needs the <code>api-key=</code> prefix.</li>
+      <li><code>APP_VERSION</code> &mdash; too short.</li>
+    </ul>
+
+    <p style="color:#999; font-size:12px; margin-top:32px;">
+      Expected: opening the popup shows ≥ 5 staged keys grouped by provider,
+      and the 3 decoys never appear.
+    </p>
+  </body>
+</html>

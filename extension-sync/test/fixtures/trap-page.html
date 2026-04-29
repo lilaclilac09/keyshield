@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>False-positive trap (fixture)</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 24px;
+        color: #222;
+      }
+      .badge {
+        display: inline-block;
+        background: #fee;
+        color: #933;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        margin-bottom: 12px;
+      }
+      h1 { margin: 0 0 4px; color: #933; }
+      .sub { color: #666; margin: 0 0 28px; }
+      h2 {
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #888;
+        margin-top: 28px;
+        margin-bottom: 6px;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        overflow-x: auto;
+      }
+      .row { margin-bottom: 12px; }
+      label { font-size: 12px; color: #666; display: block; margin-bottom: 4px; }
+      input[type="text"] {
+        width: 100%;
+        padding: 8px 10px;
+        font-family: 'SF Mono', Menlo, monospace;
+        font-size: 12px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <span class="badge">TRAP — none of these should trigger an alert</span>
+    <h1>False-positive trap page</h1>
+    <p class="sub">Strings that look like keys but aren&rsquo;t. Keep this page open for ≥ 5 s and confirm no toast fires.</p>
+
+    <h2>Order ID (bare UUID)</h2>
+    <div class="row">
+      <label for="order_id">Order ID</label>
+      <input id="order_id" name="order_id" type="text" value="550e8400-e29b-41d4-a716-446655440000" />
+    </div>
+
+    <h2>Git SHA (40-char hex)</h2>
+    <pre>$ git log
+commit a3f5b8c9d0e1f2a3b4c5d6e7f8901234abcdef56
+Author: alice@example.com
+Date:   Mon Apr 28 17:00:00 2026
+
+    fix: handle stale ciphertext on push retry</pre>
+
+    <h2>JWT (3-segment, base64)</h2>
+    <pre>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c</pre>
+
+    <h2>Prose mention</h2>
+    <p>I just integrated <strong>OpenAI</strong> with my app and used the <strong>Stripe</strong> dashboard to set up payments. The <strong>Anthropic</strong> docs were also helpful.</p>
+
+    <h2>SHA-256 hash</h2>
+    <div class="row">
+      <label for="hash">Content hash</label>
+      <input id="hash" name="content_hash" type="text" value="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" />
+    </div>
+
+    <h2>Random base64 blob (avatar)</h2>
+    <pre>iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==</pre>
+
+    <p style="color:#933; font-size:12px; margin-top:32px;">
+      <strong>Pass criterion:</strong> after 5 seconds, no KeyShield toast
+      has appeared. If one fires, that&rsquo;s a false positive worth
+      filing.
+    </p>
+  </body>
+</html>

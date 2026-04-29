@@ -1,0 +1,54 @@
+name: Deploy fixtures to GitHub Pages
+
+# Publishes extension-sync/test/fixtures/ to GitHub Pages so reviewers
+# (hackathon judges, anyone testing the extension) can hit a live URL
+# instead of having to clone + open file:// pages locally.
+#
+# After the first run, the fixture hub will live at:
+#   https://<owner>.github.io/<repo>/
+#
+# Enable Pages once via the GitHub UI:
+#   Settings → Pages → Source: "GitHub Actions"
+# Then push to main or hit "Run workflow" to publish.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'extension-sync/test/fixtures/**'
+      - '.github/workflows/pages-fixtures.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage fixture directory for Pages
+        run: |
+          mkdir -p _site
+          cp -r extension-sync/test/fixtures/. _site/
+          # Tell Pages not to run Jekyll over our static HTML.
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
