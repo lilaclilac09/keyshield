@@ -35,7 +35,12 @@ from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticatorDat
 DB_PATH   = Path(os.getenv("KS_DB_PATH", "keyshield.db"))
 RP_ID     = os.getenv("KS_RP_ID", "localhost")
 RP_NAME   = os.getenv("KS_RP_NAME", "KeyShield")
-ORIGIN    = os.getenv("KS_ORIGIN", "http://localhost:3001")
+
+# KS_ORIGIN accepts a single URL or a comma-separated list. webauthn 2.x
+# accepts list[str] for expected_origin and matches if any entry matches.
+# Default covers the common dev ports the dashboard might bind to.
+_origin_env = os.getenv("KS_ORIGIN", "http://localhost:3000,http://localhost:3001")
+ORIGIN: list[str] = [o.strip() for o in _origin_env.split(",") if o.strip()]
 
 # In-memory pending challenge stores (keyed by user_id)
 _PENDING_REGS:  dict[str, dict] = {}
