@@ -2,10 +2,14 @@
 
 > **Status: spec v2** — amended after Architect review (2026-04-30).
 > Use case B (transparent x402 retry) and Phase 4 (x402 integration)
-> have been **removed from this spec** because they depend on a
-> non-existent spec 10 and on-chain `pay_x402` instruction that hasn't
-> been written. They are tracked in `proxy-rs/specs/10-embedded-wallet-stub.md`
-> and become a Stage-2 deliverable. v1 spec lives in git history.
+> have been **removed from this spec** because they depend on
+> infrastructure that didn't exist when this spec was written. They
+> are now tracked in `proxy-rs/specs/10-embedded-wallet.md` (full
+> spec, promoted from stub on 2026-04-30 — answers all 7 open
+> questions, adds 4 new on-chain ixs and 8 endpoints). When spec 10
+> Phase 10.7 lands `ks-wallet`, spec 09 Phase 4 becomes a half-day
+> wiring exercise that plugs `EmbeddedWallet` into the
+> `PaymentInterceptor` slot.
 
 > Promotes ks-upstream's existing Helius support into a standalone,
 > typed, two-tier-cached client. Payment integration is a future
