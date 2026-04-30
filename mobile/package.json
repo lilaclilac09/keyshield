@@ -2,14 +2,13 @@
   "name": "@keyshield/mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "KeyShield mobile (React Native) — Path A vault on iOS / Android, reusing the extension-sync lib code",
+  "description": "KeyShield mobile (React Native) — Path A vault on iOS / Android. Was originally pinned to @keyshield/extension-sync; now standalone since extension-sync was removed (2026-04-30).",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@keyshield/extension-sync": "*",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "react": "^18.3.1",
     "react-native": "^0.76.0",
