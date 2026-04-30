@@ -117,10 +117,37 @@ What's actually built, what's broken, what's left. Ground truth as of
 | ✅ | UniversalVault PDA | state.rs |
 | ✅ | AgentGrant PDA | state.rs |
 | ✅ | PaymentStream PDA (designed for MPP) | state.rs |
+| ✅ | EphemeralSigner struct (64 bytes, 8 slots/grant) | state.rs:309 |
+| ✅ | `CreateEphemeralSigner` instruction (#23) | lib.rs:120 |
 | ✅ | Mollusk unit tests in CI | .github/workflows/test.yml |
 | 📋 | `open_stream` / `settle_stream` instructions for MPP | not yet wired |
 | 📋 | Real on-chain x402 verification (Base USDC, separate from this program) | server.py:1067 TODO |
 | 📋 | `cargo test-sbf` integration via Surfpool | test.yml has it but `continue-on-error: true` |
+
+### 6a. Ephemeral signers — the unbuilt "embedded wallet" pillar
+
+The on-chain design exists end-to-end:
+- `EphemeralSigner` PDA struct (state.rs:309) — 64 bytes per slot
+- `AgentGrant` carries `[EphemeralSigner; 8]` array (state.rs:376)
+- `CreateEphemeralSigner` instruction reserved as #23 (lib.rs:120)
+- Error space 6070-6079 reserved for ephemeral-signer failures
+- `agent-sdk/src/types.ts:95` defines the TS interface
+
+What's **NOT yet built** above the chain layer:
+- 📋 Server endpoint that wraps "create ephemeral signer for this agent"
+  into a single API call (e.g., `POST /agents/{id}/wallet/create`)
+- 📋 Server endpoint to top up an ephemeral signer's balance (e.g.,
+  `POST /agents/{id}/wallet/topup` — accepts SOL/USDC transfer signed
+  by owner)
+- 📋 Frontend UI: "Give this agent a wallet" button in AgentsSection,
+  + balance display, + top-up flow
+- 📋 x402 / MPP integration: when balance hits 0, the ephemeral signer
+  is what signs the on-chain micropayment instead of the owner
+
+This is the missing **product pillar** the user described as
+"agent embedded wallet — top up directly or via x402/MPP". Promote to
+**P3 priority** below until you decide it should be P1 (it might —
+it's the differentiator vs. Coinbase Agentic).
 
 ## 7. Infra
 
