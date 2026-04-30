@@ -20,6 +20,11 @@ Cargo.lock
 .idea/
 *.iml
 
+# Tooling state (always-untracked, never want to commit)
+.claude/
+.cursor/
+.dropped-*/
+
 # Node modules (if not already ignored)
 node_modules/
 **/node_modules/
