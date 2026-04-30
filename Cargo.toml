@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["programs/keyshield"]
+exclude = ["proxy-rs"]
 
 [workspace.dependencies]
 pinocchio = "0.8"

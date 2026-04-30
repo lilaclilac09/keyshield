@@ -1,0 +1,20 @@
+[package]
+name = "ks-upstream"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+http = { workspace = true }
+ks-cache = { path = "../ks-cache" }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+ks-cache = { path = "../ks-cache" }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+wiremock = { workspace = true }

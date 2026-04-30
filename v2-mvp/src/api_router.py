@@ -57,7 +57,22 @@ PROVIDERS: dict[str, dict] = {
         "base": "https://api.mistral.ai",
         "auth": "bearer",
     },
+    # ADR-001 #4: Alchemy was registered in server.py provider_map but
+    # missing here, so /proxy/alchemy/* always 500'd. Bearer auth.
+    "alchemy": {
+        "base": "https://eth-mainnet.g.alchemy.com",
+        "auth": "bearer",
+    },
 }
+
+# Test-only knob used by `proxy-rs/tests/oracle_diff/`. When set,
+# every provider's `base` is rewritten to point at the override URL,
+# so a single mock-upstream stand-in can intercept all egress.
+# Production behavior is unchanged when unset.
+_UPSTREAM_OVERRIDE_BASE = os.getenv("KS_UPSTREAM_OVERRIDE_BASE", "").strip()
+if _UPSTREAM_OVERRIDE_BASE:
+    for _p in PROVIDERS.values():
+        _p["base"] = _UPSTREAM_OVERRIDE_BASE
 
 # ─── One persistent HTTP/2 client per provider (Oliver move #1) ───────────────
 _CLIENTS: dict[str, httpx.AsyncClient] = {

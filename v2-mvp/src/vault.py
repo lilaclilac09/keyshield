@@ -9,7 +9,14 @@ import hashlib
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-VAULT_DIR = Path(__file__).parent.parent / "vault"
+# Override-able by tests via `KS_VAULT_DIR`. Production path unchanged
+# when env is unset. Used by `proxy-rs/tests/oracle_diff/` so Python
+# and Rust read the same vault files.
+_VAULT_DIR_ENV = os.getenv("KS_VAULT_DIR", "").strip()
+VAULT_DIR = (
+    Path(_VAULT_DIR_ENV) if _VAULT_DIR_ENV
+    else Path(__file__).parent.parent / "vault"
+)
 SALT_LEN = 16
 NONCE_LEN = 12
 KDF_ITERS = 100_000

@@ -80,7 +80,7 @@ UPSTREAMS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com",
     "mistral":   "https://api.mistral.ai",
     "cohere":    "https://api.cohere.ai",
-    "groq":      "https://api.groq.com/openai",
+    "groq":      "https://api.groq.com",
     # Solana RPC
     "helius":    "https://mainnet.helius-rpc.com",
     # Trading / DeFi — injected via x-api-key or Authorization
@@ -89,6 +89,16 @@ UPSTREAMS: dict[str, str] = {
     "pyth":      "https://hermes.pyth.network",        # Pyth price feeds (public, key optional)
     "alchemy":   "https://eth-mainnet.g.alchemy.com",
 }
+
+# Test-only knob used by `proxy-rs/tests/oracle_diff/`. When set, every
+# upstream's base URL is rewritten to point at the override, so a single
+# mock-upstream stand-in can intercept all egress. Production behavior
+# is unchanged when unset. Same env var also rewrites
+# `api_router.PROVIDERS[*].base` (read at import in api_router.py).
+_UPSTREAM_OVERRIDE_BASE = os.getenv("KS_UPSTREAM_OVERRIDE_BASE", "").strip()
+if _UPSTREAM_OVERRIDE_BASE:
+    for _name in list(UPSTREAMS):
+        UPSTREAMS[_name] = _UPSTREAM_OVERRIDE_BASE
 
 # ─── 1. 连接复用：每个 upstream 一个持久 AsyncClient ──────────────────────────
 _CLIENTS: dict[str, httpx.AsyncClient] = {
@@ -408,7 +418,17 @@ async def _forward(
 ) -> tuple[int, dict, bytes, str]:
     """转发一个请求，返回 (status, headers, content, cache_status)。"""
     ck = _cache_key(upstream, path, body)
-    ttl = _rpc_ttl(body) if method.upper() == "POST" else None
+    # ADR-001 #8: gate RPC method-name caching to Helius only. Python had
+    # a latent bug where any upstream POST whose body parsed as JSON-RPC
+    # with a known method got cached (e.g. /proxy/0x with body
+    # `{"method":"getBalance",...}`). Helius is the only upstream where
+    # method-name caching is correct; everywhere else, only the path/body
+    # cache (via the broader _cache_key) should engage.
+    ttl = (
+        _rpc_ttl(body)
+        if upstream == "helius" and method.upper() == "POST"
+        else None
+    )
 
     if ttl is not None:
         cached = _cache_get(ck)
@@ -1328,6 +1348,53 @@ async def billing_topup_history(
             None, usage.list_topups, sess["user_id"], min(max(limit, 1), 100),
         ),
     }
+
+
+# ─── internal bridge (Rust hot path → Python control plane) ──────────────────
+#
+# These endpoints exist for the Rust `ks-proxy` sidecar's per-call balance
+# read and buffered usage-log ingest. Per BOUNDARY.md, Rust binds :8000
+# and falls through here for everything except `/proxy/*`, `/manage/batch`,
+# `/health`. See `proxy-rs/specs/07-bridge.md`.
+
+@app.get("/_internal/balance/{user_id}")
+async def _internal_balance(user_id: str):
+    """Return the user's prepaid credit balance — used by Rust's 402 gate."""
+    loop = asyncio.get_event_loop()
+    balance = await loop.run_in_executor(None, usage.get_balance, user_id)
+    return {"balance_usd": balance}
+
+
+@app.post("/_internal/log")
+async def _internal_log(payload: dict):
+    """Ingest a buffered batch of usage entries from the Rust hot path."""
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        raise HTTPException(400, "entries must be a list")
+
+    loop = asyncio.get_event_loop()
+
+    def _flush_batch() -> None:
+        for e in entries:
+            try:
+                usage.log_call(
+                    e.get("user_id", ""),
+                    e.get("upstream", ""),
+                    e.get("key_type", ""),
+                    e.get("method", ""),
+                    e.get("path", ""),
+                    int(e.get("tok_in", 0) or 0),
+                    int(e.get("tok_out", 0) or 0),
+                    float(e.get("cost", 0.0) or 0.0),
+                    float(e.get("latency_ms", 0.0) or 0.0),
+                    int(e.get("status", 0) or 0),
+                )
+            except Exception:
+                # Logging is non-critical — drop the entry, keep the batch.
+                pass
+
+    await loop.run_in_executor(None, _flush_batch)
+    return {"ok": True, "ingested": len(entries)}
 
 
 # ─── health ───────────────────────────────────────────────────────────────────
