@@ -200,9 +200,12 @@ The top-level README and AGENTS.md mention these as if they exist. They don't, o
 
 ### P0 — actually broken (fix this week)
 
-- ✅ Mobile package.json orphaned `@keyshield/extension-sync` dep — **fixed in this PR**
-- 📋 `frontend/content.js` audit — does it actually do API-key auto-detection?
-  If yes, surface as a feature; if no, drop the claim.
+- ✅ Mobile package.json orphaned `@keyshield/extension-sync` dep — **fixed**
+- ✅ `frontend/content.js` audit — confirmed real (8 providers, 12 regex patterns); README updated.
+- 🔴 **Frontend ActivitySection calls `/mpp/streams/open|record|settle|close`
+  but Python has NO `/mpp/*` endpoints** — UI buttons silently 404. Either
+  build the Python MPP server-side (per spec 10 + ROADMAP §6a → embedded
+  wallet) or remove the dead UI. Discovered while writing spec 09.
 
 ### P1 — product-completing (fix this month)
 
