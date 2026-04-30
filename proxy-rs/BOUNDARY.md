@@ -1,12 +1,29 @@
 # BOUNDARY: hot path vs control plane
 
-The Rust proxy (`ks-proxy`) handles the **hot path** — every API call from an
-agent. Everything else stays in `v2-mvp/src/server.py` ("control plane") and is
-reached by Rust falling through to it.
+> **Read first:** the "Out-of-scope (stays in Python)" list below is NOT
+> "features the project doesn't have". Those are **product features the
+> `frontend/` UI actively uses** — vault CRUD, agents, usage analytics,
+> billing/Solana topup, passkey, wallet auth — they all reach through Rust
+> via the fallthrough. The split is "where does the implementation live",
+> not "what's part of the product". See **ADR-002** for the architecture
+> decision.
+
+The Rust proxy (`ks-proxy`) handles the **hot path** — every authenticated
+API-key-injecting upstream call. Everything else stays in
+`v2-mvp/src/server.py` ("control plane") and is reached by Rust **reverse-
+proxying** to it (NOT bypassing it; both serve the same `:8000` from the
+client's view).
 
 The Rust binary owns: decode session → resolve key → forward to upstream →
 cache → return. It owns no business logic, no DB writes, no auth flows beyond
 bearer-token lookup.
+
+**Frontend integration:** `frontend/` (the React + Vite dashboard / Chrome
+extension) sends every request to `:8000`. ks-proxy handles `/proxy/*`,
+`/manage/batch`, `/health` directly; everything else (vault CRUD, agents,
+usage, billing, passkey, etc.) gets reverse-proxied to Python on `:8001`.
+The frontend doesn't know — and shouldn't care — which path took which
+route.
 
 ## In-scope (Rust)
 
@@ -25,20 +42,26 @@ bearer-token lookup.
 | 402 bypass on platform-key zero balance    | server.py:780-788       | ks-proxy     |
 | Background usage logging (buffered)        | server.py:378-399, 797-800 | ks-proxy  |
 
-## Out-of-scope (stays in Python)
+## Reached via fallthrough (implementation stays in Python)
 
-| Feature                                              | v2-mvp source         |
-|------------------------------------------------------|-----------------------|
-| `/auth/login`, `/auth/logout`                        | server.py:435-444     |
-| `/auth/wallet-challenge`, `/auth/wallet-login`       | server.py:449-501     |
-| `/auth/agent-challenge`, `/auth/agent-login`         | server.py:523-586     |
-| `/agents/register|list|{id}`                         | server.py:597-629     |
-| `/auth/passkey/*` (WebAuthn)                         | server.py:929-991     |
-| `/manage/store|delete|list|decrypt` (vault writes)   | server.py:639-696     |
-| `/usage/stats|history`                               | server.py:996-1008    |
-| `/billing/*` (x402, Solana topup, memos)             | server.py:1011-1330   |
-| `/skill/helius/*` (high-level skill tools)           | server.py:894-915     |
-| Static asset serving                                 | server.py:275-305     |
+These ARE product features. `frontend/` calls every one of them. ks-proxy
+reverse-proxies them to Python on `:8001`. They're not "out of scope" —
+they're "implemented elsewhere on purpose" (see ADR-002).
+
+| Feature                                              | v2-mvp source        | Used by frontend            |
+|------------------------------------------------------|----------------------|------------------------------|
+| `/auth/login`, `/auth/logout`                        | server.py:435-444    | `lib/auth.ts` + sections    |
+| `/auth/wallet-challenge`, `/auth/wallet-login`       | server.py:449-501    | `lib/auth.ts`               |
+| `/auth/agent-challenge`, `/auth/agent-login`         | server.py:523-586    | docs only (agent SDK)       |
+| `/agents/register|list|{id}`                         | server.py:597-629    | `AgentsSection.tsx`         |
+| `/auth/passkey/register-options|register-verify`     | server.py:929-953    | `lib/auth.ts`               |
+| `/auth/passkey/auth-options|auth-verify`             | server.py:956-978    | `lib/auth.ts`               |
+| `/auth/passkey/list`, `/auth/passkey/{credId}` DELETE | server.py:981-991    | `SessionsSection.tsx`       |
+| `/manage/store|list|decrypt|secret` (vault CRUD)     | server.py:639-696    | `useVaults.ts`, `Settings`  |
+| `/usage/stats|history`                               | server.py:996-1008   | `ActivitySection.tsx`       |
+| `/billing/balance|sol-quote|topup-solana|topup-history` | server.py:1011-1330 | `ActivitySection.tsx`     |
+| `/skill/helius/*` (high-level skill tools)           | server.py:894-915    | not yet in frontend         |
+| Static asset serving (`/passkey`, `/install.sh`...)  | server.py:275-305    | docs / install flow         |
 
 ## Bridge (Rust → Python internal HTTP)
 
