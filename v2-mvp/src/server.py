@@ -276,6 +276,48 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="KeyShield v2", lifespan=_lifespan)
 
+# ─── firewall: Rust ↔ Python shared secret ──────────────────────────────────
+#
+# In production, Python `:8001` is internal-only — clients hit the Rust
+# proxy on `:8000`, and ks-proxy reverse-proxies to Python with the
+# `X-Internal-Secret` header (see `proxy-rs/crates/ks-proxy/src/handlers.rs`
+# `fallthrough`). Any direct curl to `:8001` without the header gets 403.
+#
+# When `KS_INTERNAL_SECRET` is empty (dev mode), this middleware fails open
+# but logs a warning at startup so you notice if you forgot to set it.
+import sys as _sys
+
+_INTERNAL_SECRET = os.getenv("KS_INTERNAL_SECRET", "").strip()
+if not _INTERNAL_SECRET:
+    print(
+        "⚠️  KS_INTERNAL_SECRET is empty — Python :8001 is OPEN to anyone "
+        "who can reach the host. Set this in production.",
+        file=_sys.stderr,
+    )
+
+
+@app.middleware("http")
+async def _require_internal_secret(request: Request, call_next):
+    """Reject any request that didn't come through ks-proxy.
+
+    Two carve-outs so dev experience doesn't suffer:
+      * `OPTIONS` (CORS preflight) — must succeed without secret so browsers
+        can negotiate before the real (secret-bearing) request fires.
+      * `KS_INTERNAL_SECRET` empty — fail open (dev mode).
+    """
+    if not _INTERNAL_SECRET:
+        return await call_next(request)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    if request.headers.get("x-internal-secret", "") != _INTERNAL_SECRET:
+        return JSONResponse(
+            {"error": "forbidden — direct access to Python :8001 not allowed; "
+                      "use the public ks-proxy on :8000 instead"},
+            status_code=403,
+        )
+    return await call_next(request)
+
+
 # ─── static asset serving (install.sh + SDK download) ────────────────────────
 from fastapi.responses import FileResponse, PlainTextResponse
 from pathlib import Path

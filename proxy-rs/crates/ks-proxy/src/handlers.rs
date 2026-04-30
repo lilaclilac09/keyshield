@@ -369,6 +369,12 @@ const HOP_BY_HOP: &[&str] = &[
     "content-length",
 ];
 
+/// Headers we strip from inbound client requests before reverse-proxying to
+/// Python. `x-internal-secret` is the firewall token between Rust and Python
+/// — clients must NOT be able to smuggle their own value; ks-proxy re-injects
+/// it from `state.bridge.internal_secret` after stripping.
+const STRIP_FROM_INBOUND: &[&str] = &["x-internal-secret"];
+
 pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
@@ -399,8 +405,18 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
         if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
             continue;
         }
+        if STRIP_FROM_INBOUND.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
+            continue;
+        }
         // reqwest accepts http::HeaderName/HeaderValue directly.
         builder = builder.header(name.as_str(), value.as_bytes());
+    }
+
+    // Firewall: Rust ↔ Python is gated by a shared secret. ks-proxy re-injects
+    // this on every fallthrough so the client cannot reach Python by curling
+    // :8001 directly. Empty secret = dev mode (Python fails open with warn).
+    if !state.bridge.internal_secret.is_empty() {
+        builder = builder.header("x-internal-secret", state.bridge.internal_secret.as_str());
     }
 
     let resp = match builder.send().await {

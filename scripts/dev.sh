@@ -76,6 +76,18 @@ wait_for_health() {
 command -v cargo >/dev/null || die "cargo not on PATH"
 command -v npm >/dev/null || die "npm not on PATH"
 
+# Firewall: shared secret between Rust :8000 and Python :8001. Generated
+# fresh per session unless KS_INTERNAL_SECRET is already exported. Python
+# rejects requests without this header; Rust auto-injects it on every
+# fallthrough so clients on :8000 don't need to know it.
+if [[ -z "${KS_INTERNAL_SECRET:-}" ]]; then
+  KS_INTERNAL_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 32)"
+  export KS_INTERNAL_SECRET
+  log "generated KS_INTERNAL_SECRET (32 bytes hex) for this session"
+else
+  log "using KS_INTERNAL_SECRET from environment"
+fi
+
 if (( NO_RUST == 0 )); then
   if [[ ! -x proxy-rs/target/release/ks-proxy ]]; then
     log "building proxy-rs (release, first run only)..."
@@ -168,7 +180,10 @@ $(c '32;1' "✓ keyshield is running")
 
   Frontend:  http://localhost:5173
   Public:    http://localhost:8000   $([[ $NO_RUST == 0 ]] && echo "(Rust ks-proxy)" || echo "(Python — Rust skipped)")
-  Internal:  http://localhost:8001   $([[ $NO_RUST == 0 ]] && echo "(Python control plane)" || echo "(same as public)")
+  Internal:  http://localhost:8001   $([[ $NO_RUST == 0 ]] && echo "(Python — firewalled, secret required)" || echo "(same as public)")
+
+  Direct curl to :8001 (dev only — usually you'd hit :8000 instead):
+    curl -H 'X-Internal-Secret: $KS_INTERNAL_SECRET' http://127.0.0.1:8001/health
 
   Press Ctrl-C to stop everything.
 
