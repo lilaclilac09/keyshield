@@ -178,8 +178,10 @@ it's the differentiator vs. Coinbase Agentic).
 | ✅ | `proxy-rs/ADR-002-architecture.md` | Why fallthrough not full port |
 | ✅ | `proxy-rs/ADR-003-firewall.md` | KS_INTERNAL_SECRET design (this session) |
 | ✅ | `proxy-rs/specs/00-08` | Stage 1 port specs (8 files) |
-| ✅ | `proxy-rs/specs/SPEC-WRITING-GUIDE.md` | How to write specs for keyshield (this session) |
-| ✅ | `docs/PAYMENT-FLOWS.md` | x402 / MPP / Solana topup byte-level walks (this session) |
+| ✅ | `proxy-rs/specs/09-helius-client.md` | v2 (post-Architect review) — full HeliusClient spec, x402 deferred to Stage 2 |
+| ✅ | `proxy-rs/specs/10-embedded-wallet-stub.md` | 1-page stub; needs full spec before x402/MPP code starts |
+| ✅ | `proxy-rs/specs/SPEC-WRITING-GUIDE.md` | How to write specs for keyshield |
+| ✅ | `docs/PAYMENT-FLOWS.md` | x402 / MPP / Solana topup byte-level walks |
 
 ## 9. README claims that aren't true
 
@@ -209,9 +211,11 @@ The top-level README and AGENTS.md mention these as if they exist. They don't, o
 
 ### P1 — product-completing (fix this month)
 
-- 📋 **x402 on-chain verification** — server.py:1067 TODO. Without it, anyone can claim payment for free up to $10/call. Block before any external launch.
+- 📋 **Promote spec 10 stub to full spec** — answer the 7 open questions in `proxy-rs/specs/10-embedded-wallet-stub.md`. Blocks: Phase 4 of spec 09 (x402 retry), the `/mpp/streams/*` P0 fix, the entire embedded-wallet pillar (ROADMAP §6a). Until this lands, ks-helius v2 ships without payment retry and the frontend MPP UI stays dead.
+- 📋 **Spec 09 Phase 0+1 engineer dispatch** — v2 spec is Architect-approved for these 2 phases (scaffolding + 5 typed wrappers + single-flight + TTL invariants). 2.5 engineer-days. Ready to launch.
+- 📋 **x402 on-chain verification** — server.py:1067 TODO. Now blocked on spec 10 promotion (since x402 retry path goes through EmbeddedWallet). Without it, anyone can claim payment for free up to $10/call.
+- ✅ **README cleanup** — done in earlier PR. Lit/Bonsol/Arcium/GOAT-250 marked 📋 placeholder.
 - 📋 **E2E tests (Playwright)** — `bash scripts/dev.sh` then click through every section. One spec per top-level user action. Without these, "tests pass" still doesn't mean "product works".
-- 📋 **README cleanup** — drop the Lit/Bonsol/Arcium/GOAT-250 false claims OR build them. Currently a developer reading README and trying integration would hit dead ends.
 
 ### P2 — Stage 2 productionization
 
