@@ -179,7 +179,8 @@ it's the differentiator vs. Coinbase Agentic).
 | ✅ | `proxy-rs/ADR-003-firewall.md` | KS_INTERNAL_SECRET design (this session) |
 | ✅ | `proxy-rs/specs/00-08` | Stage 1 port specs (8 files) |
 | ✅ | `proxy-rs/specs/09-helius-client.md` | v2 (post-Architect review) — full HeliusClient spec, x402 deferred to Stage 2 |
-| ✅ | `proxy-rs/specs/10-embedded-wallet-stub.md` | 1-page stub; needs full spec before x402/MPP code starts |
+| ✅ | `proxy-rs/specs/10-embedded-wallet.md` | full v1 — 7 open questions answered, 4 new on-chain ixs designed |
+| ✅ | `proxy-rs/specs/11-user-interactions.md` | 31-interaction matrix, 21 owner / 7 agent / 3 dev |
 | ✅ | `proxy-rs/specs/SPEC-WRITING-GUIDE.md` | How to write specs for keyshield |
 | ✅ | `docs/PAYMENT-FLOWS.md` | x402 / MPP / Solana topup byte-level walks |
 
@@ -211,8 +212,9 @@ The top-level README and AGENTS.md mention these as if they exist. They don't, o
 
 ### P1 — product-completing (fix this month)
 
-- 📋 **Promote spec 10 stub to full spec** — answer the 7 open questions in `proxy-rs/specs/10-embedded-wallet-stub.md`. Blocks: Phase 4 of spec 09 (x402 retry), the `/mpp/streams/*` P0 fix, the entire embedded-wallet pillar (ROADMAP §6a). Until this lands, ks-helius v2 ships without payment retry and the frontend MPP UI stays dead.
-- 📋 **Spec 09 Phase 0+1 engineer dispatch** — v2 spec is Architect-approved for these 2 phases (scaffolding + 5 typed wrappers + single-flight + TTL invariants). 2.5 engineer-days. Ready to launch.
+- ✅ **Spec 10 promoted to full v1** — `proxy-rs/specs/10-embedded-wallet.md` (commit 661a948e). 7 open questions answered, 4 new on-chain ixs designed.
+- ✅ **Spec 09 Phase 0+1 shipped** — `proxy-rs/crates/ks-helius/` exists with 16 tests passing, single-flight + per-record TTL invariants verified, `pycompat::cache_key` byte-parity with Python confirmed.
+- 🔴 **Spec 10 Phase 10.1+10.2 (on-chain ixs) NOT done** — Engineer β hit "You've hit your org's monthly usage limit" mid-task. Needs re-dispatch when quota recovers, or split into smaller pieces if recurring. Blocks: real x402 retry path, `/mpp/streams/*` P0 fix, embedded wallet pillar.
 - 📋 **x402 on-chain verification** — server.py:1067 TODO. Now blocked on spec 10 promotion (since x402 retry path goes through EmbeddedWallet). Without it, anyone can claim payment for free up to $10/call.
 - ✅ **README cleanup** — done in earlier PR. Lit/Bonsol/Arcium/GOAT-250 marked 📋 placeholder.
 - 📋 **E2E tests (Playwright)** — `bash scripts/dev.sh` then click through every section. One spec per top-level user action. Without these, "tests pass" still doesn't mean "product works".
