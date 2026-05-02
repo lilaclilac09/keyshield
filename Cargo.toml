@@ -4,6 +4,5 @@ members = ["programs/keyshield"]
 exclude = ["proxy-rs"]
 
 [workspace.dependencies]
-pinocchio = "0.8"
-pinocchio-token = "0.3"
-pinocchio-system = "0.2"
+pinocchio = "0.9"
+pinocchio-system = "0.3"
