@@ -357,6 +357,200 @@ impl PaymentStream {
     }
 }
 
+// ==================== EMBEDDED WALLET (Spec 10) ====================
+//
+// New "agent embedded wallet" PDA introduced by spec 10
+// (`proxy-rs/specs/10-embedded-wallet.md`). This struct lives in its
+// own PDA account (NOT inside `UniversalVault`) so that:
+//   1. Per-agent USDC token authority is a real on-chain account that
+//      can own an associated token account.
+//   2. The legacy `PaymentStream` struct (108 bytes embedded in vault)
+//      keeps working for ix #30-#33 with no layout migration.
+//
+// Backwards compat note (per the engineer α/β/γ coordination memo):
+// adding fields to the existing in-vault `PaymentStream` would have
+// shifted byte offsets used by the proxy and existing tests, so the
+// embedded-wallet pillar uses a fresh struct with a versioned
+// discriminator instead.
+
+/// Discriminator for AgentPaymentStream PDA accounts.
+pub const AGENT_PAYMENT_STREAM_DISCRIMINATOR: [u8; 8] = *b"ksaywal1";
+
+/// Number of (envelope_hash, nonce) pairs the on-chain replay ring
+/// buffer remembers. Sized at 64 (down from spec's "256") so the PDA
+/// fits comfortably in a single 10KiB account; if real-world use shows
+/// 64 to be too small we bump and migrate. 64 entries × 48 bytes per
+/// entry = 3072 bytes for the ring alone.
+pub const CONSUMED_NONCES_LEN: usize = 64;
+
+/// Single replay-protection entry written by `pay_x402`.
+/// `envelope_hash` is the sha256 of the canonical `X402Envelope`,
+/// `nonce` is the random 16 bytes the client picked for the call.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ConsumedNonce {
+    pub envelope_hash: [u8; 32],
+    pub nonce: [u8; 16],
+}
+
+impl ConsumedNonce {
+    pub const SIZE: usize = 32 + 16;
+
+    pub fn empty() -> Self {
+        Self { envelope_hash: [0; 32], nonce: [0; 16] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.envelope_hash == [0u8; 32]
+    }
+}
+
+/// Standalone Payment Stream PDA introduced by spec 10 for the embedded
+/// wallet pillar. Each agent gets its own account; the agent's
+/// EphemeralSigner spends out of `usdc_ata`.
+///
+/// Layout is `repr(C)` so byte offsets are stable across builds. The
+/// `discriminator` field is the version tag — bump if fields change.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AgentPaymentStream {
+    /// Account-type tag: AGENT_PAYMENT_STREAM_DISCRIMINATOR.
+    pub discriminator: [u8; 8],
+
+    /// Wallet that owns the agent (= AgentGrant.owner = vault owner).
+    pub owner: Pubkey,
+
+    /// Pubkey of the AgentGrant this stream pays for. We bind one
+    /// stream to one grant; revocation on the grant immediately blocks
+    /// new payments from this stream.
+    pub agent_pubkey: Pubkey,
+
+    /// Server keypair authorised to call ix #26 (`mpp_settle`).
+    pub mpp_settler_pubkey: Pubkey,
+
+    /// USDC mint this stream is denominated in.
+    pub usdc_mint: Pubkey,
+
+    /// USDC associated token account owned by this stream PDA. Holds
+    /// the actual escrowed dollars.
+    pub usdc_ata: Pubkey,
+
+    /// Hard budget cap in micro-USDC. Enforced on-chain; once reached
+    /// every `pay_x402` / `mpp_settle` aborts with `BudgetExceeded`.
+    pub max_total_micro_usdc: u64,
+
+    /// Cumulative spent total in micro-USDC across all pay/settle ixs.
+    pub spent_total_micro_usdc: u64,
+
+    /// Per-unit cost (micro-USDC) for `mpp_settle`. Settler reports
+    /// `units_consumed` and the on-chain code multiplies.
+    pub cost_per_unit_micro_usdc: u64,
+
+    /// Soft cap, off-chain enforced (see Q7). Stored on-chain only as
+    /// a hint so reading clients can render budget UI consistently.
+    /// Bits-of-f64 to keep the struct portable across hosts.
+    pub max_rate_usd_per_min_bits: u64,
+
+    /// Settler cadence advisory. Off-chain settler uses this; the
+    /// on-chain code does not enforce it.
+    pub settlement_interval_secs: u32,
+
+    /// 1 = stream is open and accepting payments; 0 = closed (after
+    /// `withdraw_agent_wallet`).
+    pub is_active: u8,
+
+    /// PDA bump byte (so the program can re-sign as the stream).
+    pub bump: u8,
+
+    /// Padding to make the next field 8-byte aligned.
+    pub _pad0: [u8; 2],
+
+    /// Last successful payment timestamp (unix seconds). Updated by
+    /// both `pay_x402` and `mpp_settle`.
+    pub last_payment_ts: i64,
+
+    /// Stream creation timestamp.
+    pub created_at: i64,
+
+    /// Ring buffer index pointing at the next slot to overwrite.
+    /// Wraps at CONSUMED_NONCES_LEN.
+    pub consumed_nonces_head: u8,
+
+    /// Padding to keep the ring buffer 8-byte aligned.
+    pub _pad1: [u8; 7],
+
+    /// Replay-protection ring buffer.
+    pub consumed_nonces: [ConsumedNonce; CONSUMED_NONCES_LEN],
+
+    /// Reserved for future fields (bumps discriminator if used).
+    pub _reserved: [u8; 64],
+}
+
+impl AgentPaymentStream {
+    pub const SIZE: usize = 8 + 32 * 5 + 8 * 4 + 4 + 1 + 1 + 2 + 8 + 8 + 1 + 7
+        + (CONSUMED_NONCES_LEN * ConsumedNonce::SIZE) + 64;
+
+    /// Decimals for SPL USDC. Hard-coded — every USDC mint we accept
+    /// has 6 decimals.
+    pub const USDC_DECIMALS: u8 = 6;
+
+    /// Search the ring buffer for a matching (envelope_hash, nonce)
+    /// pair. Returns `true` if the pair has already been consumed.
+    pub fn nonce_already_consumed(
+        consumed: &[ConsumedNonce; CONSUMED_NONCES_LEN],
+        envelope_hash: &[u8; 32],
+        nonce: &[u8; 16],
+    ) -> bool {
+        for entry in consumed.iter() {
+            if entry.is_empty() {
+                continue;
+            }
+            if &entry.envelope_hash == envelope_hash && &entry.nonce == nonce {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Byte offsets for AgentPaymentStream fields. Used directly by ix
+/// handlers so we don't pay for a full deserialize on every call.
+/// MUST match the struct layout above.
+pub mod aps_offset {
+    pub const DISCRIMINATOR: usize = 0;
+    pub const OWNER: usize = 8;
+    pub const AGENT_PUBKEY: usize = 40;
+    pub const MPP_SETTLER: usize = 72;
+    pub const USDC_MINT: usize = 104;
+    pub const USDC_ATA: usize = 136;
+    pub const MAX_TOTAL: usize = 168;
+    pub const SPENT_TOTAL: usize = 176;
+    pub const COST_PER_UNIT: usize = 184;
+    pub const MAX_RATE_BITS: usize = 192;
+    pub const SETTLEMENT_INTERVAL: usize = 200;
+    pub const IS_ACTIVE: usize = 204;
+    pub const BUMP: usize = 205;
+    // pad0 [206..208]
+    pub const LAST_PAYMENT_TS: usize = 208;
+    pub const CREATED_AT: usize = 216;
+    pub const NONCES_HEAD: usize = 224;
+    // pad1 [225..232]
+    pub const NONCES: usize = 232;
+    // reserved at NONCES + 64*48 = 232 + 3072 = 3304
+}
+
+/// Byte offset of `AgentGrant.revoked_at` within the 128-byte grant
+/// slot. Spec 10 needs a real revocation timestamp (not just the
+/// `is_active = 0` flag) so `pay_x402` can short-circuit. The agent
+/// grant struct uses 86 bytes of named fields then 15 bytes of
+/// `_reserved`, leaving the trailing 27 bytes (offsets 101..128) of
+/// each 128-byte slot unused. We park `revoked_at: i64` at offset
+/// 120 (8 bytes before the slot end) so it sits in unused trailing
+/// space without touching `_reserved`. `revoked_at == 0` means
+/// "active". Bumping this constant requires a coordinated migration
+/// with the proxy and CLI.
+pub const AGENT_GRANT_REVOKED_AT_OFFSET: usize = 120;
+
 /// Universal Vault account structure
 #[repr(C)]
 pub struct UniversalVault {

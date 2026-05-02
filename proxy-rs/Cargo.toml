@@ -6,6 +6,7 @@ members = [
     "crates/ks-cache",
     "crates/ks-upstream",
     "crates/ks-proxy",
+    "crates/ks-helius",
 ]
 
 [workspace.package]
@@ -15,10 +16,13 @@ version = "0.1.0"
 
 [workspace.dependencies]
 aes-gcm = "0.10"
+async-trait = "0.1"
 axum = "0.7"
 bytes = "1"
+dashmap = "6"
 futures = "0.3"
 http = "1"
+moka = { version = "0.12", features = ["future"] }
 pbkdf2 = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }

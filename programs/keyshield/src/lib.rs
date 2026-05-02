@@ -62,6 +62,10 @@ use instructions::{
         process_pay_for_service,
         process_close_payment_stream,
     },
+    open_stream::process_open_payment_stream,
+    pay_x402::process_pay_x402,
+    mpp_settle::process_mpp_settle,
+    withdraw::process_withdraw_agent_wallet,
     Instruction,
 };
 use pinocchio::{
@@ -124,6 +128,12 @@ fn process_instruction(
         Instruction::SettlePayment => process_settle_payment(program_id, accounts, data),
         Instruction::PayForService => process_pay_for_service(program_id, accounts, data),
         Instruction::ClosePaymentStream => process_close_payment_stream(program_id, accounts, data),
+
+        // Embedded Wallet — spec 10 Phase 10.1 + 10.2
+        Instruction::OpenPaymentStream => process_open_payment_stream(program_id, accounts, data),
+        Instruction::PayX402 => process_pay_x402(program_id, accounts, data),
+        Instruction::MppSettle => process_mpp_settle(program_id, accounts, data),
+        Instruction::WithdrawAgentWallet => process_withdraw_agent_wallet(program_id, accounts, data),
     }
 }
 
@@ -149,15 +159,22 @@ mod tests {
         assert_eq!(Instruction::try_from_u8(22), Some(Instruction::AccessWithAgent));
         assert_eq!(Instruction::try_from_u8(23), Some(Instruction::CreateEphemeralSigner));
         
+        // Embedded Wallet (spec 10)
+        assert_eq!(Instruction::try_from_u8(24), Some(Instruction::OpenPaymentStream));
+        assert_eq!(Instruction::try_from_u8(25), Some(Instruction::PayX402));
+        assert_eq!(Instruction::try_from_u8(26), Some(Instruction::MppSettle));
+        assert_eq!(Instruction::try_from_u8(27), Some(Instruction::WithdrawAgentWallet));
+
         // Payment Stream
         assert_eq!(Instruction::try_from_u8(30), Some(Instruction::GrantAgentPaymentAccess));
         assert_eq!(Instruction::try_from_u8(31), Some(Instruction::SettlePayment));
         assert_eq!(Instruction::try_from_u8(32), Some(Instruction::PayForService));
         assert_eq!(Instruction::try_from_u8(33), Some(Instruction::ClosePaymentStream));
-        
+
         // Invalid
         assert_eq!(Instruction::try_from_u8(3), None);
         assert_eq!(Instruction::try_from_u8(9), None);
+        assert_eq!(Instruction::try_from_u8(28), None);
         assert_eq!(Instruction::try_from_u8(99), None);
     }
 }

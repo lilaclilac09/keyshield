@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use ks_cache::TtlCache;
-use ks_proxy::{bridge, router, AppState};
+use ks_proxy::{bridge, router, stealth, AppState};
 use ks_session::SessionStore;
 use ks_upstream::{UpstreamClients, UpstreamId};
 use ks_vault::VaultPath;
@@ -54,6 +54,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .unwrap_or_else(UpstreamClients::new);
 
+    let stealth_on = stealth::read_stealth_env();
+    if stealth_on {
+        tracing::info!("stealth mode enabled — unauthed requests will see nginx");
+    }
+
     let state = AppState {
         vault: VaultPath::new(vault_root),
         sessions: Arc::new(sessions),
@@ -61,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache,
         bridge: bridge_inst,
         log_buffer,
+        stealth: stealth_on,
     };
 
     let app = router(state);

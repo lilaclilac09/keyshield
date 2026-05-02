@@ -57,6 +57,16 @@ pub enum KeyShieldError {
     ArciumMPCFailed = 6091,
     InvalidBonsolProof = 6092,
     MPCSignatureInvalid = 6093,
+
+    // Embedded wallet errors - Phase 10.1/10.2 (6100-6107)
+    BudgetExceeded = 6100,
+    NonceReused = 6101,
+    AgentRevoked = 6102,
+    NotOwner = 6103,
+    PaymentStreamExpired = 6104,
+    InvalidEnvelope = 6105,
+    InsufficientStreamBalance = 6106,
+    NotMppSettler = 6107,
 }
 
 impl From<KeyShieldError> for ProgramError {

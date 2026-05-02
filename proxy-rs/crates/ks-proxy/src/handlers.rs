@@ -20,6 +20,7 @@ use ks_vault::VaultError;
 use serde_json::{json, Value};
 
 use crate::bridge::UsageEntry;
+use crate::stealth;
 use crate::usage::extract_token_usage;
 use crate::AppState;
 
@@ -30,12 +31,23 @@ const MAX_BODY: usize = 1_000_000;
 
 // ─── /health ─────────────────────────────────────────────────────────────────
 
-pub async fn health(State(state): State<AppState>) -> Json<Value> {
+pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    // In stealth mode, /health must NOT leak that this is keyshield. Require
+    // a valid bearer token; otherwise serve nginx 404.
+    if state.stealth {
+        let Some(token) = bearer_token(&headers) else {
+            return stealth::nginx_404_response();
+        };
+        if let Err(_resp) = resolve_session(&state, token) {
+            return stealth::nginx_404_response();
+        }
+    }
     Json(json!({
         "status": "ok",
         "version": "0.1",
         "cache_entries": state.cache.len(),
     }))
+    .into_response()
 }
 
 // ─── /proxy/:upstream[/*path] ────────────────────────────────────────────────
@@ -75,13 +87,23 @@ async fn proxy_inner(
     // 1. Bearer extraction
     let token = match bearer_token(&headers) {
         Some(t) => t,
-        None => return (StatusCode::UNAUTHORIZED, "unauthorized").into_response(),
+        None => {
+            if state.stealth {
+                return stealth::nginx_unauth_response(uri.path());
+            }
+            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+        }
     };
 
     // 2. Session lookup. dev-bypass mirrors server.py:330.
     let session = match resolve_session(&state, token) {
         Ok(s) => s,
-        Err(resp) => return resp,
+        Err(resp) => {
+            if state.stealth {
+                return stealth::nginx_unauth_response(uri.path());
+            }
+            return resp;
+        }
     };
 
     // 3. UpstreamId — unknown upstream = 404 (server.py:781).
@@ -218,11 +240,22 @@ pub async fn batch(
 ) -> Response {
     let token = match bearer_token(&headers) {
         Some(t) => t,
-        None => return (StatusCode::UNAUTHORIZED, "unauthorized").into_response(),
+        None => {
+            if state.stealth {
+                // /manage/batch is a non-`/` path → nginx 404.
+                return stealth::nginx_404_response();
+            }
+            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+        }
     };
     let session = match resolve_session(&state, token) {
         Ok(s) => s,
-        Err(resp) => return resp,
+        Err(resp) => {
+            if state.stealth {
+                return stealth::nginx_404_response();
+            }
+            return resp;
+        }
     };
 
     let req: BatchRequest = match serde_json::from_slice(&body) {
@@ -379,6 +412,19 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
     let method = req.method().clone();
     let uri = req.uri().clone();
     let headers = req.headers().clone();
+
+    // Stealth mode: any unauthed fallthrough request never reaches Python.
+    // It gets the nginx welcome (for `/`) or nginx 404 (everything else).
+    if state.stealth {
+        let needs_nginx = match bearer_token(&headers) {
+            None => true,
+            Some(token) => resolve_session(&state, token).is_err(),
+        };
+        if needs_nginx {
+            return stealth::nginx_unauth_response(uri.path());
+        }
+    }
+
     let (_parts, body) = req.into_parts();
     let body_bytes = match body_to_bytes(body, usize::MAX).await {
         Ok(b) => b,

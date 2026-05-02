@@ -1392,6 +1392,150 @@ async def billing_topup_history(
     }
 
 
+# ─── MPP — Metered Payment Protocol streams (stub-on-chain mode) ─────────────
+#
+# Wire-shape contract: see frontend/components/sections/ActivitySection.tsx
+# (interfaces MppStream, MppSummary, MppEvent at lines 52-91; calls at
+# 166-167, 204, 227, 247, 262). Field names in responses are snake_case
+# verbatim. POST bodies use the camelCase shape the frontend sends.
+#
+# Stub mode: settlements DB-only — no on-chain CPI yet. The seam lives
+# in `mpp_streams.settle_on_chain()`. Phase 10.4-real (post-β) replaces
+# its body with a real `mpp_settle` ix CPI per spec 10 §Q3.
+# ROADMAP P0 fix: ActivitySection MPP buttons now functional.
+
+from . import mpp_streams as mpp  # noqa: E402
+
+
+class MppOpenStreamBody(BaseModel):
+    # camelCase to match frontend payload at ActivitySection.tsx:207-212.
+    agentPubkey:            str
+    upstream:               str
+    agentName:              str = ""
+    ratePerTokenMicroUsdc:  int = 0
+    ratePerCallMicroUsdc:   int = 0
+    settlementIntervalSecs: int = 60
+
+
+class MppRecordBody(BaseModel):
+    # ActivitySection.tsx:229 sends {tokens, calls}. `calls` defaults
+    # to 1 so callers can omit it for "1 call, N tokens".
+    tokens: int = 0
+    calls:  int = 1
+
+
+@app.post("/mpp/streams")
+async def mpp_open_stream(
+    body: MppOpenStreamBody,
+    sess: dict = Depends(_session),
+):
+    """Open a new metered payment stream. Stub-on-chain: tracked in
+    SQLite, no Solana ix yet. Returns the stream row + emits an 'open'
+    event."""
+    if body.upstream not in UPSTREAMS:
+        raise HTTPException(400, f"unknown upstream: {body.upstream}")
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None,
+            mpp.open_stream,
+            sess["user_id"],
+            body.agentPubkey.strip(),
+            body.agentName.strip(),
+            body.upstream,
+            int(body.ratePerTokenMicroUsdc),
+            int(body.ratePerCallMicroUsdc),
+            int(body.settlementIntervalSecs),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"stream": stream}
+
+
+@app.get("/mpp/streams")
+async def mpp_list_streams(sess: dict = Depends(_session)):
+    """All MPP streams (open + closed) for the current user, plus a
+    summary block. Frontend ActivitySection.tsx:172-176 reads
+    `streams` and `summary` from this body."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, mpp.list_streams, sess["user_id"])
+
+
+@app.post("/mpp/streams/{stream_id}/record")
+async def mpp_record(
+    stream_id: int,
+    body: MppRecordBody,
+    sess: dict = Depends(_session),
+):
+    """Record `calls` and `tokens` against an open stream. Auto-settles
+    when elapsed >= settlement_interval_secs. The `stream` field in
+    the response carries `just_settled_micro_usdc` (0 if no settlement
+    occurred this call) so the frontend can surface an auto-settle
+    toast — see ActivitySection.tsx:233."""
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None, mpp.record_usage,
+            sess["user_id"], stream_id,
+            int(body.calls), int(body.tokens),
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except mpp.StreamClosed:
+        raise HTTPException(400, "stream is closed — cannot record")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"stream": stream}
+
+
+@app.post("/mpp/streams/{stream_id}/settle")
+async def mpp_settle(
+    stream_id: int,
+    sess: dict = Depends(_session),
+):
+    """Manually settle an open stream's pending balance. Stub-on-chain:
+    DB-only; no Solana ix yet."""
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None, mpp.settle_stream, sess["user_id"], stream_id,
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    return {"stream": stream}
+
+
+@app.post("/mpp/streams/{stream_id}/close")
+async def mpp_close(
+    stream_id: int,
+    sess: dict = Depends(_session),
+):
+    """Close a stream, auto-settling any pending balance first.
+    Idempotent — re-closing returns the row unchanged."""
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None, mpp.close_stream, sess["user_id"], stream_id,
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    return {"stream": stream}
+
+
+@app.get("/mpp/events")
+async def mpp_events(
+    limit: int = 20,
+    sess: dict = Depends(_session),
+):
+    """Recent stream events (open/record/settle/close) for the current
+    user, newest first. Drives ActivitySection.tsx:697 events
+    drawer."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, mpp.list_events, sess["user_id"], min(max(limit, 1), 100),
+    )
+
+
 # ─── internal bridge (Rust hot path → Python control plane) ──────────────────
 #
 # These endpoints exist for the Rust `ks-proxy` sidecar's per-call balance
