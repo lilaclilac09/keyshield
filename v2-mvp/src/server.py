@@ -1536,6 +1536,206 @@ async def mpp_events(
     )
 
 
+# ─── MPP Phase 10.5: build-tx endpoints (owner-signed, frontend submits) ────
+#
+# `open_payment_stream` (#24) and `withdraw_agent_wallet` (#27) both
+# require an OWNER signature (see programs/keyshield/src/instructions/
+# open_stream.rs:85 + withdraw.rs:72). The server cannot submit them
+# directly — instead it returns the byte-perfect ix payload here, the
+# frontend wraps it in a Transaction the wallet adapter signs in-browser.
+#
+# Response shape (`BuildTxResponse`) mirrors what @solana/web3.js
+# `TransactionInstruction` constructor wants — `programId` string,
+# `keys` array of `{pubkey, isSigner, isWritable}`, and the base64
+# `data`. Frontend code looks like:
+#
+#   const tx = new Transaction().add(new TransactionInstruction({
+#     programId: new PublicKey(resp.programId),
+#     keys: resp.keys.map(k => ({
+#       pubkey: new PublicKey(k.pubkey),
+#       isSigner: k.isSigner, isWritable: k.isWritable,
+#     })),
+#     data: Buffer.from(resp.data, "base64"),
+#   }));
+
+from . import mpp_onchain  # noqa: E402
+
+
+class _AccountMetaJson(BaseModel):
+    pubkey:     str
+    isSigner:   bool
+    isWritable: bool
+
+
+class BuildTxResponse(BaseModel):
+    programId: str
+    keys:      list[_AccountMetaJson]
+    data:      str  # base64-encoded ix payload (discriminator + body)
+
+
+def _ix_to_response(ix: "mpp_onchain._SimpleInstruction") -> BuildTxResponse:
+    """Serialise a _SimpleInstruction into the JSON shape the frontend
+    needs. Kept tiny so unit tests can call it without HTTP."""
+    import base64
+    return BuildTxResponse(
+        programId=ix.program_id,
+        keys=[
+            _AccountMetaJson(
+                pubkey=a.pubkey,
+                isSigner=a.is_signer,
+                isWritable=a.is_writable,
+            )
+            for a in ix.accounts
+        ],
+        data=base64.b64encode(ix.data).decode("ascii"),
+    )
+
+
+class BuildOpenTxBody(BaseModel):
+    """Body for /mpp/streams/{id}/build-open-tx.
+
+    The frontend computes the PDA + bump itself via @solana/web3.js
+    (`PublicKey.findProgramAddress(["agent_payment_stream", agent,
+    owner], programId)`), creates the USDC ATA in the same tx, and
+    passes everything here so the server can byte-pack the ix data."""
+
+    ownerPubkey:                str
+    streamPda:                  str   # frontend-derived
+    bump:                       int   # frontend-derived bump
+    usdcAta:                    str   # frontend-created ATA pubkey
+    maxTotalMicroUsdc:          int   # cap for the whole stream lifetime
+    costPerUnitMicroUsdc:       int = 1
+    maxRateUsdPerMinBits:       int = 0   # f64::to_bits portable encoding
+    settlementIntervalSecsOverride: int = 0  # 0 → use the stream's stored value
+
+
+class BuildWithdrawTxBody(BaseModel):
+    """Body for /mpp/streams/{id}/build-withdraw-tx.
+
+    Owner must have already revoked the agent grant (see
+    withdraw.rs:9-13). The withdraw_amount is what the caller claims
+    is currently in the source ATA; SPL transfer will reject if the
+    ATA balance is smaller, so a wrong value is safe — it just causes
+    the ix to fail."""
+
+    ownerPubkey:                str
+    streamPda:                  str
+    streamAta:                  str
+    ownerAta:                   str
+    withdrawAmountMicroUsdc:    int
+
+
+@app.post(
+    "/mpp/streams/{stream_id}/build-open-tx",
+    response_model=BuildTxResponse,
+)
+async def mpp_build_open_tx(
+    stream_id: int,
+    body: BuildOpenTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build the unsigned `open_payment_stream` ix (#24) for an
+    existing off-chain stream row. Returns the ix bytes for the
+    frontend wallet adapter to sign in-browser.
+
+    503 if KS_VAULT_PDA / KS_KEYSHIELD_PROGRAM_ID env aren't set
+    (server can't pin which on-chain program to target).
+    """
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "MPP on-chain config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA on the server",
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _lookup_and_build():
+        # Verify the off-chain stream row exists + belongs to this user.
+        # _get_owned_stream raises StreamNotFound otherwise (caught below).
+        conn = mpp._db()
+        try:
+            row = mpp._get_owned_stream(conn, sess["user_id"], stream_id)
+        finally:
+            conn.close()
+
+        interval = (
+            int(body.settlementIntervalSecsOverride)
+            if body.settlementIntervalSecsOverride > 0
+            else int(row["settlement_interval_secs"])
+        )
+        return mpp_onchain.build_open_payment_stream_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            agent_pubkey=row["agent_pubkey"],
+            stream_pda=body.streamPda.strip(),
+            usdc_ata=body.usdcAta.strip(),
+            bump=int(body.bump),
+            max_total_micro_usdc=int(body.maxTotalMicroUsdc),
+            cost_per_unit_micro_usdc=int(body.costPerUnitMicroUsdc),
+            max_rate_usd_per_min_bits=int(body.maxRateUsdPerMinBits),
+            settlement_interval_secs=interval,
+        )
+
+    try:
+        ix = await loop.run_in_executor(None, _lookup_and_build)
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
+
+
+@app.post(
+    "/mpp/streams/{stream_id}/build-withdraw-tx",
+    response_model=BuildTxResponse,
+)
+async def mpp_build_withdraw_tx(
+    stream_id: int,
+    body: BuildWithdrawTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build the unsigned `withdraw_agent_wallet` ix (#27) for an
+    existing off-chain stream row. Frontend wraps + signs in-browser.
+
+    503 if MPP env config incomplete (see build-open-tx)."""
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "MPP on-chain config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA on the server",
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _lookup_and_build():
+        conn = mpp._db()
+        try:
+            mpp._get_owned_stream(conn, sess["user_id"], stream_id)
+        finally:
+            conn.close()
+        return mpp_onchain.build_withdraw_agent_wallet_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            stream_pda=body.streamPda.strip(),
+            stream_ata=body.streamAta.strip(),
+            owner_ata=body.ownerAta.strip(),
+            withdraw_amount_micro_usdc=int(body.withdrawAmountMicroUsdc),
+        )
+
+    try:
+        ix = await loop.run_in_executor(None, _lookup_and_build)
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
+
+
 # ─── internal bridge (Rust hot path → Python control plane) ──────────────────
 #
 # These endpoints exist for the Rust `ks-proxy` sidecar's per-call balance

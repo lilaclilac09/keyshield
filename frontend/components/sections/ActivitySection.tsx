@@ -436,13 +436,19 @@ export const ActivitySection: React.FC = () => {
 
       {/* ── MPP — Metered Payment streams ────────────────────────────────── */}
       <div className="rounded-2xl border border-[#1c2238] bg-[#0a0d1a]/60 overflow-hidden">
-        {/* Under-construction banner: backend /mpp/* endpoints not yet built.
-            See proxy-rs/specs/10-embedded-wallet.md Phase 10.4 + ROADMAP P0. */}
+        {/* Phase 10.4 stub-on-chain banner. Off-chain CRUD works end-to-end
+            (open / record / settle / close persist in SQLite). On-chain ix
+            submission is partial: `mpp_settle` (#26) is wired through
+            v2-mvp/src/mpp_onchain.py + falls back to stub when env unset.
+            `open_payment_stream` (#24) and `withdraw_agent_wallet` (#27)
+            have server-side ix builders + /mpp/streams/{id}/build-{open,
+            withdraw}-tx endpoints; remaining work is the wallet-adapter
+            sign+submit UI. See ROADMAP P0a + spec 10. */}
         <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2 text-[11px] text-amber-300">
           <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 font-bold">!</span>
           <span>
-            <strong className="text-amber-200">Under construction</strong>
-            <span className="text-amber-300/70"> — Python <code className="text-amber-200">/mpp/*</code> endpoints in development (spec 10 Phase 10.4). UI is wired; clicking actions will fail until the backend lands.</span>
+            <strong className="text-amber-200">Beta — wallet sign-off pending</strong>
+            <span className="text-amber-300/70"> · Off-chain CRUD live. <code className="text-amber-200">mpp_settle</code> on-chain via <code className="text-amber-200">KS_MPP_SETTLER_KEY</code>; <code className="text-amber-200">open</code> / <code className="text-amber-200">withdraw</code> need wallet-adapter sign UI (server endpoints ready).</span>
           </span>
         </div>
         <div className="px-5 py-3.5 border-b border-[#141a2e] flex items-center justify-between">

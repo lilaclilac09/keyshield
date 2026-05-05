@@ -465,3 +465,243 @@ class TestEvents:
         # Explicit `limit=2` truncates to 2 newest.
         evs = client.get("/mpp/events?limit=2", headers=_auth(login)).json()["events"]
         assert len(evs) == 2
+
+
+# ─── Spec 10 Phase 10.5: build-tx endpoints ───────────────────────────────
+#
+# Owner-signed ixs where the server only assembles the byte-perfect ix
+# payload; frontend wallet adapter signs + submits in-browser. Tests
+# verify the response shape (programId / keys / data), the env
+# guardrails (503 when MPP config incomplete), and that stored
+# settlement_interval is honoured when the request omits an override.
+
+
+@pytest.fixture
+def mpp_env(monkeypatch):
+    """Configure the KS_* env vars mpp_onchain.load_mpp_config() needs.
+    Uses a deterministic test keypair so tests are reproducible."""
+    from src import mpp_onchain
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+    )
+    from cryptography.hazmat.primitives import serialization
+
+    seed = bytes(range(32))
+    priv = Ed25519PrivateKey.from_private_bytes(seed)
+    pub_bytes = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    secret_key = seed + pub_bytes
+    b58_key = (
+        mpp_onchain._base58.b58encode(secret_key).decode()  # type: ignore[union-attr]
+        if mpp_onchain._HAS_BASE58
+        else mpp_onchain._b58encode_pure(secret_key)
+    )
+
+    monkeypatch.setenv("KS_MPP_SETTLER_KEY", b58_key)
+    monkeypatch.setenv(
+        "KS_PLATFORM_USDC_ATA",
+        mpp_onchain._b58encode_pure(b"\x00" * 31 + b"\x01"),
+    )
+    monkeypatch.setenv(
+        "KS_KEYSHIELD_PROGRAM_ID",
+        mpp_onchain._b58encode_pure(b"\x00" * 31 + b"\x02"),
+    )
+    monkeypatch.setenv(
+        "KS_VAULT_PDA",
+        mpp_onchain._b58encode_pure(b"\x00" * 31 + b"\x03"),
+    )
+    mpp_onchain._WARNED_ENV_MISSING = False
+    yield
+
+
+class TestBuildTxEndpoints:
+    """build-open-tx / build-withdraw-tx response contract."""
+
+    def _open_stream(self, client, login) -> int:
+        r = client.post("/mpp/streams", json=_open_payload(), headers=_auth(login))
+        assert r.status_code == 200, r.text
+        return r.json()["stream"]["id"]
+
+    # — env guardrails —
+
+    def test_build_open_returns_503_when_env_missing(self, client, login):
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/build-open-tx",
+            json={
+                "ownerPubkey":       "1" * 32,
+                "streamPda":         "1" * 32,
+                "bump":              255,
+                "usdcAta":           "1" * 32,
+                "maxTotalMicroUsdc": 1_000_000,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 503
+        assert "MPP on-chain config incomplete" in r.text
+
+    def test_build_withdraw_returns_503_when_env_missing(self, client, login):
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/build-withdraw-tx",
+            json={
+                "ownerPubkey":             "1" * 32,
+                "streamPda":               "1" * 32,
+                "streamAta":               "1" * 32,
+                "ownerAta":                "1" * 32,
+                "withdrawAmountMicroUsdc": 500_000,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 503
+
+    # — happy paths —
+
+    def test_build_open_tx_returns_ix_bytes(self, client, login, mpp_env):
+        """Server returns the ix payload — programId from
+        KS_KEYSHIELD_PROGRAM_ID, 8 keys in spec order, base64 data of
+        30 bytes (1 disc + 1 bump + 8+8+8+4 body)."""
+        import base64
+
+        sid = self._open_stream(client, login)
+        owner = "8" * 32
+        stream_pda = "9" * 32
+        usdc_ata = "ATA" + ("1" * 29)
+
+        r = client.post(
+            f"/mpp/streams/{sid}/build-open-tx",
+            json={
+                "ownerPubkey":              owner,
+                "streamPda":                stream_pda,
+                "bump":                     254,
+                "usdcAta":                  usdc_ata,
+                "maxTotalMicroUsdc":        2_500_000,
+                "costPerUnitMicroUsdc":     1,
+                "maxRateUsdPerMinBits":     0,
+                "settlementIntervalSecsOverride": 0,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+
+        from src import mpp_onchain
+        expected_program = mpp_onchain._b58encode_pure(b"\x00" * 31 + b"\x02")
+        assert body["programId"] == expected_program
+
+        assert len(body["keys"]) == 8
+        assert body["keys"][0] == {
+            "pubkey": owner, "isSigner": True, "isWritable": False,
+        }
+        assert body["keys"][2]["pubkey"] == stream_pda
+        assert body["keys"][2]["isWritable"] is True
+        assert body["keys"][4]["pubkey"] == usdc_ata
+        assert body["keys"][7]["pubkey"] == mpp_onchain.SYSTEM_PROGRAM_ID
+
+        raw = base64.b64decode(body["data"])
+        assert len(raw) == 30
+        assert raw[0] == 0x18
+        assert raw[1] == 254
+        assert int.from_bytes(raw[2:10], "little") == 2_500_000
+
+    def test_build_withdraw_tx_returns_ix_bytes(self, client, login, mpp_env):
+        import base64
+
+        sid = self._open_stream(client, login)
+        owner = "Owner" + ("1" * 27)
+        stream_pda = "Stream" + ("2" * 26)
+        stream_ata = "StreamAta" + ("3" * 23)
+        owner_ata = "OwnerAta" + ("4" * 24)
+
+        r = client.post(
+            f"/mpp/streams/{sid}/build-withdraw-tx",
+            json={
+                "ownerPubkey":             owner,
+                "streamPda":               stream_pda,
+                "streamAta":               stream_ata,
+                "ownerAta":                owner_ata,
+                "withdrawAmountMicroUsdc": 750_000,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+
+        assert len(body["keys"]) == 7
+        assert body["keys"][0] == {
+            "pubkey": owner, "isSigner": True, "isWritable": True,
+        }
+        assert body["keys"][2]["pubkey"] == stream_pda
+        assert body["keys"][2]["isWritable"] is True
+        assert body["keys"][3]["pubkey"] == stream_ata
+        assert body["keys"][4]["pubkey"] == owner_ata
+
+        raw = base64.b64decode(body["data"])
+        assert len(raw) == 9
+        assert raw[0] == 0x1B
+        assert int.from_bytes(raw[1:9], "little") == 750_000
+
+    # — error paths —
+
+    def test_build_open_404_when_stream_missing(self, client, login, mpp_env):
+        r = client.post(
+            "/mpp/streams/99999/build-open-tx",
+            json={
+                "ownerPubkey":       "1" * 32,
+                "streamPda":         "1" * 32,
+                "bump":              255,
+                "usdcAta":           "1" * 32,
+                "maxTotalMicroUsdc": 1_000_000,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 404
+
+    def test_build_open_400_when_zero_max_total(self, client, login, mpp_env):
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/build-open-tx",
+            json={
+                "ownerPubkey":       "1" * 32,
+                "streamPda":         "1" * 32,
+                "bump":              255,
+                "usdcAta":           "1" * 32,
+                "maxTotalMicroUsdc": 0,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 400
+        assert "max_total_micro_usdc must be positive" in r.text
+
+    def test_build_open_uses_stored_settlement_interval(
+        self, client, login, mpp_env,
+    ):
+        """When the request omits settlementIntervalSecsOverride (or
+        sends 0), the server uses the value the stream was opened with
+        — guarantees the on-chain ix matches what the frontend already
+        committed to off-chain."""
+        import base64
+
+        r_open = client.post(
+            "/mpp/streams",
+            json=_open_payload(settlementIntervalSecs=300),
+            headers=_auth(login),
+        )
+        sid = r_open.json()["stream"]["id"]
+
+        r = client.post(
+            f"/mpp/streams/{sid}/build-open-tx",
+            json={
+                "ownerPubkey":       "1" * 32,
+                "streamPda":         "1" * 32,
+                "bump":              255,
+                "usdcAta":           "1" * 32,
+                "maxTotalMicroUsdc": 1_000_000,
+            },
+            headers=_auth(login),
+        )
+        assert r.status_code == 200, r.text
+        raw = base64.b64decode(r.json()["data"])
+        assert int.from_bytes(raw[26:30], "little") == 300
