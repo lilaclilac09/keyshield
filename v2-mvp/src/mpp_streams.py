@@ -1,23 +1,25 @@
 """
-mpp_streams.py — Metered Payment Protocol streams (stub-on-chain mode).
+mpp_streams.py — Metered Payment Protocol streams.
 
 Implements the server-side state machine for `/mpp/streams/*` so the
-frontend's ActivitySection MPP UI works TODAY without waiting for the
-on-chain ixs (Engineer β, ROADMAP §6a + spec 10.1/10.2).
+frontend's ActivitySection MPP UI works (ROADMAP §6a + spec 10.4).
 
-Stub-on-chain mode:
-  - All accounting (open / record / settle / close) lives in SQLite.
-  - `settle_on_chain()` is a single-purpose seam — currently a no-op
-    that returns 0. Phase 10.4-real swaps the body for a real
-    `mpp_settle` ix CPI once #26 lands.
+On-chain mode (Phase 10.4-real, this file):
+  - `settle_on_chain()` submits a real `mpp_settle` (ix #26) when env
+    is configured (KS_MPP_SETTLER_KEY + KS_PLATFORM_USDC_ATA +
+    KS_KEYSHIELD_PROGRAM_ID). Idempotency log lives in
+    `mpp_settle_attempts`.
+  - With env unset OR with the stream's PaymentStream PDA still
+    DB-only (open_stream wiring is a P1 follow-up), `settle_on_chain`
+    transparently falls back to the stub (returns 0) — DB-side
+    settlement still happens so the UI keeps working.
   - Per spec 10 §Q3, x402 and MPP debit the SAME PaymentStream USDC
-    ATA on-chain. In stub mode we simulate that debit by booking
-    `pending_micro_usdc → settled_micro_usdc` and emitting a `settle`
-    event row.
+    ATA on-chain.
 
 Tables (created lazily on first call to `_db()`):
-  - mpp_streams: one row per opened stream
-  - mpp_events:  append-only audit log of open/record/settle/close
+  - mpp_streams:          one row per opened stream
+  - mpp_events:           append-only audit log of open/record/settle/close
+  - mpp_settle_attempts:  idempotency log for on-chain mpp_settle submissions
 
 The DB lives at v2-mvp/data/mpp.db so resetting MPP state doesn't nuke
 usage history. Same lifecycle pattern as `usage.DB_PATH`.
@@ -336,34 +338,23 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
         )
         return 0
 
+    # Pick the right way to run an async coroutine. If we're inside a
+    # running event loop (FastAPI request handler called settle_on_chain
+    # directly without a thread executor), asyncio.run() raises — fall
+    # back to a fresh worker-thread loop. If we're at module top-level
+    # (CLI scripts, tests), asyncio.run() is the simpler path.
     try:
-        debited = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
-    except RuntimeError as e:
-        # asyncio.run can't be called from inside a running event loop
-        # (e.g. when /mpp/streams/{id}/settle is invoked under FastAPI).
-        # Fall back to scheduling on a fresh thread loop.
-        if "asyncio.run() cannot be called" in str(e) or "running event loop" in str(e):
-            try:
-                debited = _run_async_in_thread(
-                    mpp_onchain.submit_mpp_settle(config, ix),
-                )
-            except Exception as inner:  # noqa: BLE001
-                logger.warning(
-                    "mpp_settle submit failed for stream %s: %s",
-                    stream_id, inner,
-                )
-                _record_settle_attempt(
-                    stream_id, micro_usdc, now_ts,
-                    success=False, debited=0, error=str(inner),
-                )
-                return 0
-        else:
-            logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
-            _record_settle_attempt(
-                stream_id, micro_usdc, now_ts,
-                success=False, debited=0, error=str(e),
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+
+    try:
+        if running_loop is not None:
+            debited = _run_async_in_thread(
+                mpp_onchain.submit_mpp_settle(config, ix),
             )
-            return 0
+        else:
+            debited = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
         _record_settle_attempt(

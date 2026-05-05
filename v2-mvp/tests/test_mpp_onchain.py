@@ -9,7 +9,6 @@ stub-fallback, and the idempotency test exercises the
 integration is a follow-up task and not covered here.
 """
 
-import time
 from pathlib import Path
 
 import pytest
