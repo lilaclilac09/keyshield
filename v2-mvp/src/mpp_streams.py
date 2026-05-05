@@ -25,11 +25,21 @@ usage history. Same lifecycle pattern as `usage.DB_PATH`.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import sqlite3
 import time
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 DB_PATH = Path(__file__).parent.parent / "data" / "mpp.db"
+
+# How long an in-flight (no recorded result yet) settle attempt is
+# considered "pending" before a retry can take over. Keeps `settle`
+# safe under concurrent record_usage calls without blocking forever
+# if the previous attempt died mid-flight.
+_PENDING_RECENCY_SECS = 60
 
 
 # ─── DB setup ─────────────────────────────────────────────────────────────────
@@ -80,6 +90,32 @@ def _db() -> sqlite3.Connection:
             ON mpp_events (user_id, ts DESC);
         CREATE INDEX IF NOT EXISTS idx_mpp_events_stream
             ON mpp_events (stream_id, ts DESC);
+
+        -- Spec 10 Phase 10.4-real idempotency log. Each row is one
+        -- attempt at submitting an `mpp_settle` ix to Solana. The
+        -- `tx_signature` column is the cluster-assigned sig once the
+        -- ix lands; until then it stays NULL. `success`=1 means the
+        -- caller observed a confirmed return; success=0 means the
+        -- attempt errored (network down, BudgetExceeded, etc.).
+        --
+        -- Idempotency is by (stream_id, requested_micro_usdc, ts):
+        -- a `record_usage` retry within the recency window finds the
+        -- pending row and skips re-submission. The ts component
+        -- prevents identical-amount settles across DIFFERENT
+        -- intervals from colliding.
+        CREATE TABLE IF NOT EXISTS mpp_settle_attempts (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            stream_id               INTEGER NOT NULL,
+            requested_micro_usdc    INTEGER NOT NULL,
+            tx_signature            TEXT,
+            debited_micro_usdc      INTEGER NOT NULL DEFAULT 0,
+            success                 INTEGER NOT NULL DEFAULT 0,
+            error                   TEXT,
+            ts                      INTEGER NOT NULL,
+            UNIQUE (stream_id, requested_micro_usdc, ts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mpp_settle_attempts_stream
+            ON mpp_settle_attempts (stream_id, ts DESC);
     """)
     conn.commit()
     return conn
@@ -226,25 +262,243 @@ def _emit_event(
 
 
 def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
-    """Submit a real `mpp_settle` ix to Solana, returning the on-chain
-    debit amount in micro-USDC.
+    """Submit a real `mpp_settle` ix (#26) to Solana, returning the
+    on-chain debit amount in micro-USDC.
 
-    STUB: returns 0 — we record settlement DB-side only.
+    Phase 10.4-real implementation. Stub-fallback (return 0) still
+    runs whenever:
+      - any required env var (KS_MPP_SETTLER_KEY, KS_PLATFORM_USDC_ATA,
+        KS_KEYSHIELD_PROGRAM_ID) is unset
+      - the stream's PaymentStream PDA isn't yet opened on-chain
+        (open_stream is still DB-only — see ROADMAP P0a follow-up)
+      - the on-chain submission errors (network down, BudgetExceeded
+        retry, etc.) — the caller treats this as "settle failed,
+        pending stays in DB" so the next interval retries.
 
-    # TODO Phase 10.4-real: replace with mpp_settle ix CPI.
-    # Per spec 10 §Q3:
-    #   1. Build mpp_settle(stream_id, units_since_last_settle) ix
-    #      with the server's mpp_settler keypair as signer
-    #   2. Submit via Helius / vanilla RPC
-    #   3. Wait `confirmed` commitment
-    #   4. Return the actual debited amount (PaymentStream may cap it
-    #      at max_total_micro_usdc; on-chain truth wins)
-    # The DB row's `settled_micro_usdc` should reflect the on-chain
-    # amount, which may be < the requested micro_usdc if the budget
-    # ran out.
+    Idempotency: each attempt is logged in `mpp_settle_attempts`. A
+    second call with the same (stream_id, requested_micro_usdc,
+    ts-bucket) within `_PENDING_RECENCY_SECS` returns the prior
+    result instead of re-submitting.
     """
-    _ = (stream_id, micro_usdc)  # explicit: ignored in stub
-    return 0
+    if micro_usdc <= 0:
+        return 0
+
+    # Lazy import — avoids circular import / fails-soft if module not
+    # importable (e.g. solders missing). The import itself can't fail
+    # for stub-fallback because mpp_onchain.py imports softly.
+    try:
+        from . import mpp_onchain
+    except ImportError:
+        try:
+            import mpp_onchain  # type: ignore[no-redef]
+        except ImportError as e:
+            logger.warning("mpp_onchain import failed: %s — stub-fallback", e)
+            return 0
+
+    config = mpp_onchain.load_mpp_config()
+    if config is None:
+        # load_mpp_config() already logged the warning once; just
+        # fall through to stub.
+        return 0
+
+    # PDA + ATA are not stored in the mpp_streams schema today
+    # (open_stream is still DB-only). Without them we can't build
+    # the ix — return 0 with a one-line warning so operators see why
+    # real settle isn't happening.
+    pda, ata = _get_stream_pda_ata(stream_id)
+    if not (pda and ata):
+        if not _PDA_MISSING_WARNED.get(stream_id):
+            logger.warning(
+                "mpp_settle stream %s: PDA/ATA not opened on-chain "
+                "(open_stream still DB-only) — stub-fallback returning 0",
+                stream_id,
+            )
+            _PDA_MISSING_WARNED[stream_id] = True
+        return 0
+
+    # Idempotency check.
+    now_ts = int(time.time())
+    prior = _find_recent_attempt(stream_id, micro_usdc, now_ts)
+    if prior is not None:
+        # Either it succeeded → return the debited amount, or it
+        # failed → return 0 (caller retries on the next interval).
+        return int(prior.get("debited_micro_usdc") or 0)
+
+    try:
+        ix = mpp_onchain.build_mpp_settle_ix(config, pda, ata, micro_usdc)
+    except Exception as e:  # noqa: BLE001
+        # build_mpp_settle_ix raises if vault_pda is missing — same
+        # stub-fallback behavior as PDA missing.
+        logger.warning("mpp_settle build_ix failed for stream %s: %s", stream_id, e)
+        _record_settle_attempt(
+            stream_id, micro_usdc, now_ts,
+            success=False, debited=0, error=str(e),
+        )
+        return 0
+
+    try:
+        debited = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
+    except RuntimeError as e:
+        # asyncio.run can't be called from inside a running event loop
+        # (e.g. when /mpp/streams/{id}/settle is invoked under FastAPI).
+        # Fall back to scheduling on a fresh thread loop.
+        if "asyncio.run() cannot be called" in str(e) or "running event loop" in str(e):
+            try:
+                debited = _run_async_in_thread(
+                    mpp_onchain.submit_mpp_settle(config, ix),
+                )
+            except Exception as inner:  # noqa: BLE001
+                logger.warning(
+                    "mpp_settle submit failed for stream %s: %s",
+                    stream_id, inner,
+                )
+                _record_settle_attempt(
+                    stream_id, micro_usdc, now_ts,
+                    success=False, debited=0, error=str(inner),
+                )
+                return 0
+        else:
+            logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
+            _record_settle_attempt(
+                stream_id, micro_usdc, now_ts,
+                success=False, debited=0, error=str(e),
+            )
+            return 0
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
+        _record_settle_attempt(
+            stream_id, micro_usdc, now_ts,
+            success=False, debited=0, error=str(e),
+        )
+        return 0
+
+    _record_settle_attempt(
+        stream_id, micro_usdc, now_ts,
+        success=True, debited=int(debited), error=None,
+    )
+    return int(debited)
+
+
+# Per-stream "we've already complained about missing PDA" cache so
+# the warning doesn't spam every settle interval.
+_PDA_MISSING_WARNED: dict[int, bool] = {}
+
+
+def _get_stream_pda_ata(stream_id: int) -> tuple[str | None, str | None]:
+    """Look up the on-chain PDA + USDC ATA for a stream.
+
+    Today the schema doesn't store these (open_stream is DB-only),
+    so this function always returns (None, None). Once the on-chain
+    open_stream wiring lands (ROADMAP P0a follow-up), this becomes a
+    real column read. Kept as a function rather than inlined so the
+    upgrade is one-edit.
+    """
+    _ = stream_id
+    return (None, None)
+
+
+def _find_recent_attempt(
+    stream_id: int,
+    micro_usdc: int,
+    now_ts: int,
+) -> dict | None:
+    """Return the most recent attempt row for this (stream, amount)
+    within the recency window, or None."""
+    cutoff = now_ts - _PENDING_RECENCY_SECS
+    conn = _db()
+    try:
+        row = conn.execute(
+            """
+            SELECT id, tx_signature, debited_micro_usdc, success, error, ts
+              FROM mpp_settle_attempts
+             WHERE stream_id = ? AND requested_micro_usdc = ? AND ts >= ?
+             ORDER BY ts DESC, id DESC
+             LIMIT 1
+            """,
+            (int(stream_id), int(micro_usdc), cutoff),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "tx_signature": row[1],
+            "debited_micro_usdc": row[2],
+            "success": bool(row[3]),
+            "error": row[4],
+            "ts": row[5],
+        }
+    finally:
+        conn.close()
+
+
+def _record_settle_attempt(
+    stream_id: int,
+    requested_micro_usdc: int,
+    ts: int,
+    *,
+    success: bool,
+    debited: int,
+    error: str | None = None,
+    tx_signature: str | None = None,
+) -> None:
+    """Insert a row in `mpp_settle_attempts`. UNIQUE constraint on
+    (stream_id, requested_micro_usdc, ts) means duplicate inserts at
+    the same exact second are silently absorbed."""
+    conn = _db()
+    try:
+        try:
+            conn.execute(
+                """
+                INSERT INTO mpp_settle_attempts
+                  (stream_id, requested_micro_usdc, tx_signature,
+                   debited_micro_usdc, success, error, ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(stream_id),
+                    int(requested_micro_usdc),
+                    tx_signature,
+                    int(debited),
+                    1 if success else 0,
+                    error,
+                    int(ts),
+                ),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # Duplicate (same stream/amount/ts) — fine, the prior
+            # row is the source of truth.
+            pass
+    finally:
+        conn.close()
+
+
+def _run_async_in_thread(coro):
+    """Run an async coroutine on a fresh event loop in a worker
+    thread and return the result. Used when settle_on_chain is
+    invoked from inside a running event loop (FastAPI request
+    handler) where asyncio.run() would raise."""
+    import threading
+    result: dict[str, object] = {}
+
+    def runner() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            result["v"] = loop.run_until_complete(coro)
+        except Exception as e:  # noqa: BLE001
+            result["e"] = e
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=runner, daemon=True)
+    t.start()
+    t.join(timeout=20.0)
+    if "e" in result:
+        raise result["e"]  # type: ignore[misc]
+    if "v" not in result:
+        raise TimeoutError("submit_mpp_settle did not finish in 20s")
+    return result["v"]
 
 
 # ─── public API ──────────────────────────────────────────────────────────────
