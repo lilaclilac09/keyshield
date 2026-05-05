@@ -505,3 +505,227 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
     # otherwise.
     amount_from_data = int.from_bytes(ix.data[1:9], "little")
     return amount_from_data
+
+
+# ─── Spec 10 Phase 10.5: open_stream / withdraw builders ──────────────────
+#
+# Both ixs are OWNER-signed (see programs/keyshield/src/instructions/
+# open_stream.rs:85 and withdraw.rs:72), so the server cannot submit them
+# directly with KS_MPP_SETTLER_KEY. Instead we expose builder functions
+# that produce the ix data + account list, and the caller (server.py
+# endpoint → frontend) is responsible for wrapping them in a Transaction
+# the owner's wallet signs in-browser.
+#
+# Discriminator parity is the only thing that needs to be byte-perfect
+# here; the rest is orchestration. Tests cover layout exhaustively.
+
+OPEN_PAYMENT_STREAM_DISCRIMINATOR = 24      # 0x18
+WITHDRAW_AGENT_WALLET_DISCRIMINATOR = 27    # 0x1b
+
+SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
+
+# Matches `APS_SEED` in programs/keyshield/src/instructions/open_stream.rs:38
+APS_SEED = b"agent_payment_stream"
+
+
+def derive_agent_payment_stream_pda(
+    agent_pubkey: str,
+    owner_pubkey: str,
+    program_id: str,
+) -> tuple[str, int]:
+    """Derive the AgentPaymentStream PDA for (agent, owner).
+
+    Seeds: ["agent_payment_stream", agent_pubkey, owner_pubkey]
+    Mirrors `seeds!(APS_SEED, agent.key(), owner.key(), &bump)` in
+    open_stream.rs:155.
+
+    Returns (pda_base58, bump). Raises MppSubmitError if `solders` is
+    not installed — PDA derivation requires the curve check.
+    """
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders not installed — cannot derive PDA. Install via "
+            "`pip install solders`.",
+        )
+    try:
+        agent_pk = Pubkey.from_string(agent_pubkey)        # type: ignore[union-attr]
+        owner_pk = Pubkey.from_string(owner_pubkey)        # type: ignore[union-attr]
+        program_pk = Pubkey.from_string(program_id)        # type: ignore[union-attr]
+    except Exception as e:  # noqa: BLE001
+        raise MppSubmitError(f"invalid pubkey for PDA derivation: {e}") from e
+
+    pda, bump = Pubkey.find_program_address(   # type: ignore[union-attr]
+        [APS_SEED, bytes(agent_pk), bytes(owner_pk)],
+        program_pk,
+    )
+    return (str(pda), bump)
+
+
+def build_open_payment_stream_ix_data(
+    bump: int,
+    max_total_micro_usdc: int,
+    cost_per_unit_micro_usdc: int,
+    max_rate_usd_per_min_bits: int,
+    settlement_interval_secs: int,
+) -> bytes:
+    """Construct the full ix data payload for `open_payment_stream`.
+
+    Wire layout (matches open_stream.rs after dispatcher strips byte 0):
+
+      [0]:      discriminator = 24 (0x18)
+      [1]:      bump (u8)
+      [2..10]:  max_total_micro_usdc (u64 little-endian)
+      [10..18]: cost_per_unit_micro_usdc (u64 little-endian)
+      [18..26]: max_rate_usd_per_min_bits (u64 — `f64::to_bits`)
+      [26..30]: settlement_interval_secs (u32 little-endian)
+
+    Total 30 bytes (1 discriminator + 29 body — matches the `data.len() <
+    29` check at open_stream.rs:71 once the dispatcher strips the lead
+    byte).
+    """
+    if not 0 <= bump <= 0xFF:
+        raise ValueError("bump must fit u8 (0..=255)")
+    if max_total_micro_usdc <= 0:
+        raise ValueError("max_total_micro_usdc must be positive (matches on-chain check)")
+    for name, val, max_val in (
+        ("max_total_micro_usdc",       max_total_micro_usdc,       0xFFFFFFFFFFFFFFFF),
+        ("cost_per_unit_micro_usdc",   cost_per_unit_micro_usdc,   0xFFFFFFFFFFFFFFFF),
+        ("max_rate_usd_per_min_bits",  max_rate_usd_per_min_bits,  0xFFFFFFFFFFFFFFFF),
+        ("settlement_interval_secs",   settlement_interval_secs,   0xFFFFFFFF),
+    ):
+        if val < 0 or val > max_val:
+            raise ValueError(f"{name}={val} out of range")
+
+    return (
+        bytes([OPEN_PAYMENT_STREAM_DISCRIMINATOR])
+        + bytes([bump])
+        + int(max_total_micro_usdc).to_bytes(8, "little")
+        + int(cost_per_unit_micro_usdc).to_bytes(8, "little")
+        + int(max_rate_usd_per_min_bits).to_bytes(8, "little")
+        + int(settlement_interval_secs).to_bytes(4, "little")
+    )
+
+
+def build_open_payment_stream_ix(
+    config: MppConfig,
+    owner_pubkey: str,
+    agent_pubkey: str,
+    stream_pda: str,
+    usdc_ata: str,
+    bump: int,
+    max_total_micro_usdc: int,
+    cost_per_unit_micro_usdc: int,
+    max_rate_usd_per_min_bits: int,
+    settlement_interval_secs: int,
+) -> _SimpleInstruction:
+    """Build the full open_payment_stream instruction.
+
+    Account order matches open_stream.rs:42-56:
+
+      0. [signer]    owner                       (owner_pubkey)
+      1. []          UniversalVault              (config.vault_pda)
+      2. [writable]  AgentPaymentStream PDA      (stream_pda)
+      3. []          USDC mint                   (config.usdc_mint)
+      4. []          USDC ATA                    (usdc_ata, created
+                                                   separately by SPL ATA ix)
+      5. []          AgentGrant pubkey           (agent_pubkey)
+      6. []          MPP settler                 (config.settler_pubkey)
+      7. []          System Program
+
+    The frontend signs this in-browser with the owner's wallet adapter,
+    typically alongside an SPL Associated Token Program `create` ix in
+    the same transaction.
+    """
+    if not config.vault_pda:
+        raise ValueError(
+            "config.vault_pda is required to build open_payment_stream ix; "
+            "set KS_VAULT_PDA env var",
+        )
+
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey,            is_signer=True,  is_writable=False),
+        _SimpleAccountMeta(pubkey=config.vault_pda,        is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=stream_pda,              is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=config.usdc_mint,        is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=usdc_ata,                is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=agent_pubkey,            is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=config.settler_pubkey,   is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID,       is_signer=False, is_writable=False),
+    )
+    return _SimpleInstruction(
+        program_id=config.keyshield_program_id,
+        accounts=accounts,
+        data=build_open_payment_stream_ix_data(
+            bump=bump,
+            max_total_micro_usdc=max_total_micro_usdc,
+            cost_per_unit_micro_usdc=cost_per_unit_micro_usdc,
+            max_rate_usd_per_min_bits=max_rate_usd_per_min_bits,
+            settlement_interval_secs=settlement_interval_secs,
+        ),
+    )
+
+
+def build_withdraw_agent_wallet_ix_data(withdraw_amount_micro_usdc: int) -> bytes:
+    """Construct the full ix data payload for `withdraw_agent_wallet`.
+
+    Wire layout (matches withdraw.rs after dispatcher strips byte 0):
+
+      [0]:    discriminator = 27 (0x1b)
+      [1..9]: withdraw_amount as u64 little-endian
+
+    Total 9 bytes. Withdraw.rs:59 checks `data.len() < 8` after
+    dispatcher strip, which corresponds to this 9-byte wire payload.
+    """
+    if withdraw_amount_micro_usdc < 0:
+        raise ValueError("withdraw_amount_micro_usdc must be non-negative")
+    if withdraw_amount_micro_usdc > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("withdraw_amount_micro_usdc exceeds u64 range")
+    return bytes([WITHDRAW_AGENT_WALLET_DISCRIMINATOR]) + int(
+        withdraw_amount_micro_usdc
+    ).to_bytes(8, "little")
+
+
+def build_withdraw_agent_wallet_ix(
+    config: MppConfig,
+    owner_pubkey: str,
+    stream_pda: str,
+    stream_ata: str,
+    owner_ata: str,
+    withdraw_amount_micro_usdc: int,
+) -> _SimpleInstruction:
+    """Build the full withdraw_agent_wallet instruction.
+
+    Account order matches withdraw.rs:38-45:
+
+      0. [signer, writable]  owner                (owner_pubkey)
+      1. []                  UniversalVault       (config.vault_pda)
+      2. [writable]          AgentPaymentStream   (stream_pda)
+      3. [writable]          PaymentStream's ATA  (stream_ata, drained)
+      4. [writable]          Owner's USDC ATA     (owner_ata, recipient)
+      5. []                  USDC mint            (config.usdc_mint)
+      6. []                  SPL Token Program
+
+    Owner must have already revoked the agent grant (`is_active=0` and
+    `revoked_at != 0`) — see withdraw.rs:9-13. The frontend signs this
+    in-browser with the owner's wallet adapter.
+    """
+    if not config.vault_pda:
+        raise ValueError(
+            "config.vault_pda is required to build withdraw_agent_wallet ix; "
+            "set KS_VAULT_PDA env var",
+        )
+
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey,        is_signer=True,  is_writable=True),
+        _SimpleAccountMeta(pubkey=config.vault_pda,    is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=stream_pda,          is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=stream_ata,          is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=owner_ata,           is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=config.usdc_mint,    is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID,    is_signer=False, is_writable=False),
+    )
+    return _SimpleInstruction(
+        program_id=config.keyshield_program_id,
+        accounts=accounts,
+        data=build_withdraw_agent_wallet_ix_data(withdraw_amount_micro_usdc),
+    )
