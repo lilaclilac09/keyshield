@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 import httpx
 from pydantic import BaseModel
 
-from . import vault, session, passkey, usage, agents
+from . import vault, session, passkey, usage, agents, mpp_streams as mpp
 from . import api_router
 from .skills import helius_skill
 
@@ -1390,6 +1390,114 @@ async def billing_topup_history(
             None, usage.list_topups, sess["user_id"], min(max(limit, 1), 100),
         ),
     }
+
+
+# ─── MPP — Metered Payment Protocol streams ──────────────────────────────────
+
+class MppOpenStreamBody(BaseModel):
+    agentPubkey: str
+    agentName: str = ""
+    upstream: str
+    ratePerTokenMicroUsdc: int = 0
+    ratePerCallMicroUsdc: int = 0
+    settlementIntervalSecs: int = 60
+
+
+class MppRecordBody(BaseModel):
+    tokens: int = 0
+    calls: int = 1
+
+
+@app.post("/mpp/streams")
+async def mpp_open_stream(body: MppOpenStreamBody, sess: dict = Depends(_session)):
+    if not body.agentPubkey.strip():
+        raise HTTPException(400, "agentPubkey required")
+    if body.ratePerTokenMicroUsdc <= 0 and body.ratePerCallMicroUsdc <= 0:
+        raise HTTPException(400, "rate must be > 0")
+    if body.settlementIntervalSecs < 5 or body.settlementIntervalSecs > 3600:
+        raise HTTPException(400, "settlementIntervalSecs must be 5-3600")
+
+    loop = asyncio.get_event_loop()
+    stream = await loop.run_in_executor(
+        None,
+        mpp.open_stream,
+        sess["user_id"],
+        body.agentPubkey.strip(),
+        body.agentName.strip(),
+        body.upstream.strip(),
+        int(body.ratePerTokenMicroUsdc),
+        int(body.ratePerCallMicroUsdc),
+        int(body.settlementIntervalSecs),
+    )
+    return {"stream": stream}
+
+
+@app.get("/mpp/streams")
+async def mpp_list_streams(sess: dict = Depends(_session)):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, mpp.list_streams, sess["user_id"])
+
+
+@app.get("/mpp/events")
+async def mpp_list_events(limit: int = 50, sess: dict = Depends(_session)):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, mpp.list_events, sess["user_id"], min(max(limit, 1), 100),
+    )
+
+
+@app.post("/mpp/streams/{stream_id}/record")
+async def mpp_record(
+    stream_id: int,
+    body: MppRecordBody,
+    sess: dict = Depends(_session),
+):
+    loop = asyncio.get_event_loop()
+    try:
+        stream, just_settled = await loop.run_in_executor(
+            None,
+            mpp.record_usage,
+            sess["user_id"],
+            int(stream_id),
+            int(body.tokens),
+            int(body.calls),
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except mpp.StreamClosed:
+        raise HTTPException(409, "stream is closed")
+
+    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+
+
+@app.post("/mpp/streams/{stream_id}/settle")
+async def mpp_settle(stream_id: int, sess: dict = Depends(_session)):
+    loop = asyncio.get_event_loop()
+    try:
+        stream, just_settled = await loop.run_in_executor(
+            None, mpp.settle_stream, sess["user_id"], int(stream_id)
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except mpp.StreamClosed:
+        raise HTTPException(409, "stream is closed")
+
+    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+
+
+@app.post("/mpp/streams/{stream_id}/close")
+async def mpp_close(stream_id: int, sess: dict = Depends(_session)):
+    loop = asyncio.get_event_loop()
+    try:
+        stream, just_settled = await loop.run_in_executor(
+            None, mpp.close_stream, sess["user_id"], int(stream_id)
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except mpp.StreamClosed:
+        raise HTTPException(409, "stream is closed")
+
+    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
 
 
 # ─── internal bridge (Rust hot path → Python control plane) ──────────────────

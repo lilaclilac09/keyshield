@@ -5,4 +5,5 @@ exclude = ["proxy-rs"]
 
 [workspace.dependencies]
 pinocchio = "0.9"
+pinocchio-token = "0.4"
 pinocchio-system = "0.3"

@@ -6,6 +6,11 @@ pub mod share_key;
 pub mod universal_vault;
 pub mod agent_access;
 pub mod payment_stream;
+// Spec 10 — Embedded wallet pillar (ix #24-#27).
+pub mod open_stream;
+pub mod pay_x402;
+pub mod mpp_settle;
+pub mod withdraw;
 
 /// Instruction discriminator enum
 /// 
@@ -13,7 +18,8 @@ pub mod payment_stream;
 /// 0-2: Original KeyShield instructions (legacy compatibility)
 /// 10-19: Universal Vault instructions
 /// 20-29: Agent Access instructions
-/// 30-39: Payment Stream instructions
+/// 24-27: Embedded Wallet (spec 10) instructions
+/// 30-39: Legacy Payment Stream instructions
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
@@ -32,6 +38,13 @@ pub enum Instruction {
     RevokeAgentAccess = 21,
     AccessWithAgent = 22,
     CreateEphemeralSigner = 23,
+    RevokeAllAgentAccess = 24,
+
+    // Embedded Wallet — Spec 10 Phase 10.1 + 10.2 (25-27)
+    OpenPaymentStream = 25,
+    PayX402 = 26,
+    MppSettle = 27,
+    WithdrawAgentWallet = 28,
 
     // Payment Stream instructions (30-39)
     GrantAgentPaymentAccess = 30,
@@ -58,6 +71,13 @@ impl Instruction {
             21 => Some(Instruction::RevokeAgentAccess),
             22 => Some(Instruction::AccessWithAgent),
             23 => Some(Instruction::CreateEphemeralSigner),
+            24 => Some(Instruction::RevokeAllAgentAccess),
+
+            // Embedded Wallet (spec 10)
+            25 => Some(Instruction::OpenPaymentStream),
+            26 => Some(Instruction::PayX402),
+            27 => Some(Instruction::MppSettle),
+            28 => Some(Instruction::WithdrawAgentWallet),
             
             // Payment Stream
             30 => Some(Instruction::GrantAgentPaymentAccess),

@@ -1,11 +1,67 @@
-//! Agent Access instruction handlers
-//!
-//! Instructions for managing agent access grants with:
-//! - Bonsol ZK proof verification
-//! - Arcium MPC support
-//! - Rate limiting
-//! - Session timeouts
-//! - Policy enforcement
+/// Process RevokeAllAgentAccess instruction
+///
+/// Revokes all agent grants in the Universal Vault.
+///
+/// Accounts:
+/// 0. [signer] Owner - The vault owner revoking all agent access
+/// 1. [writable] UniversalVault - PDA account
+///
+pub fn process_revoke_all_agent_access(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    _data: &[u8],
+) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let owner = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+    // Verify owner is signer
+    if !owner.is_signer() {
+        return Err(KeyShieldError::InvalidVaultOwner.into());
+    }
+
+    // Read vault data
+    let mut vault_data = borrow_vault_mut!(vault);
+
+    // Verify discriminator
+    let discriminator = &vault_data[0..8];
+    if discriminator != UniversalVault::DISCRIMINATOR {
+        return Err(KeyShieldError::UniversalVaultNotFound.into());
+    }
+
+    // Verify owner
+    let owner_bytes: [u8; 32] = vault_data[8..40].try_into()
+        .map_err(|_| KeyShieldError::UniversalVaultNotFound)?;
+    let vault_owner = Pubkey::try_from(&owner_bytes[..])
+        .map_err(|_| KeyShieldError::UniversalVaultNotFound)?;
+
+    if owner.key() != &vault_owner {
+        return Err(KeyShieldError::InvalidVaultOwner.into());
+    }
+
+    // Revoke all agent grants
+    let mut revoked = 0u8;
+    for i in 0..MAX_AGENTS {
+        let offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
+        let is_active = vault_data[offset + 58];
+        if is_active != 0 {
+            vault_data[offset + 58] = 0;
+            revoked += 1;
+        }
+    }
+    // Set agent grant count to 0
+    vault_data[61] = 0;
+
+    Ok(())
+}
+// Agent Access instruction handlers
+//
+// Instructions for managing agent access grants with:
+// - Bonsol ZK proof verification
+// - Arcium MPC support
+// - Rate limiting
+// - Session timeouts
+// - Policy enforcement
 
 use pinocchio::{
     account_info::AccountInfo,
@@ -20,6 +76,7 @@ use crate::{
     state::{
         AgentGrant, UniversalVault, MAX_AGENTS,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE,
+        AGENT_GRANT_REVOKED_AT_OFFSET,
         POLICY_RULES_START, POLICY_RULE_SIZE, MAX_POLICY_RULES_STORED,
     },
 };
@@ -255,6 +312,11 @@ pub fn process_revoke_agent_access(
         if existing_pubkey == agent_pubkey {
             // Set is_active to 0
             vault_data[offset + 58] = 0;
+            // Record revoked_at timestamp (i64)
+            let revoked_at = Clock::get()?.unix_timestamp;
+            let revoked_at_off = offset + AGENT_GRANT_REVOKED_AT_OFFSET;
+            vault_data[revoked_at_off..revoked_at_off + 8]
+                .copy_from_slice(&revoked_at.to_le_bytes());
             // Decrement count
             let count = vault_data[61];
             vault_data[61] = count.saturating_sub(1);
