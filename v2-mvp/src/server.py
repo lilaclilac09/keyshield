@@ -1084,6 +1084,13 @@ async def billing_balance(sess: dict = Depends(_session)):
     }
 
 
+import logging  # noqa: E402
+
+from . import x402_verify  # noqa: E402
+
+logger = logging.getLogger("keyshield.server")
+
+
 class TopupBody(BaseModel):
     amount_usd: float
     payment_proof: str = ""   # x402 payment proof (tx hash / receipt)
@@ -1092,29 +1099,94 @@ class TopupBody(BaseModel):
 @app.post("/billing/topup")
 async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
     """
-    Add prepaid credit. In production this verifies an x402 / MPP payment proof
-    on-chain before crediting. For demo: accepts any amount up to $10.
+    Add prepaid credit. Verifies an x402 payment proof (Base USDC tx
+    hash) on-chain before crediting, and refuses duplicate claims via
+    the x402_claims idempotency table — see v2-mvp/src/x402_verify.py
+    for the threat model.
 
     x402 flow:
       1. Client receives 402 from /proxy/{upstream}/...
-      2. Client pays USDC to PAYMENT_ADDRESS on Base
-      3. Client retries the request with X-Payment-Proof: {tx_hash}
-      4. This endpoint verifies the tx and tops up the balance
+      2. Client pays USDC to KS_X402_RECEIVER_ADDRESS on Base
+      3. Client retries with X-Payment-Proof: {tx_hash} (or POSTs here
+         directly with payment_proof in the body)
+      4. We verify the tx on-chain via Base RPC + check idempotency
+      5. If both pass, credit the balance
+
+    Behavior matrix:
+      - payment_proof empty + KS_X402_VERIFY_REQUIRED!=1 → demo credit
+        (preserves the legacy dev path; rejected in prod)
+      - payment_proof empty + KS_X402_VERIFY_REQUIRED=1   → 400
+      - payment_proof set, env unset → stub-fallback verify, idempotency
+        still applied (prevents replay even in dev)
+      - payment_proof set, env set   → real on-chain verify
+      - payment_proof already claimed → 409 Conflict
     """
     if body.amount_usd <= 0 or body.amount_usd > MAX_TOPUP_USD:
         raise HTTPException(
             400, f"amount must be between $0 and ${MAX_TOPUP_USD:g}",
         )
 
-    # TODO: verify body.payment_proof on-chain before crediting
     loop = asyncio.get_event_loop()
+    proof = (body.payment_proof or "").strip()
+    cfg = x402_verify.load_x402_config()
+
+    # Allow empty payment_proof in dev (preserves legacy demo flow).
+    # In prod (KS_X402_VERIFY_REQUIRED=1) refuse it.
+    if not proof:
+        if cfg is not None and cfg.verify_required:
+            raise HTTPException(
+                400,
+                "payment_proof is required when KS_X402_VERIFY_REQUIRED=1",
+            )
+        new_balance = await loop.run_in_executor(
+            None, usage.topup, sess["user_id"], body.amount_usd,
+        )
+        return {
+            "ok":            True,
+            "new_balance":   new_balance,
+            "payment_proof": "(demo — no on-chain verification)",
+            "verified_mode": "demo",
+        }
+
+    # Verify on-chain (or stub-fallback if env unset).
+    try:
+        verified, mode = await x402_verify.verify_on_chain(
+            cfg, proof, body.amount_usd,
+        )
+    except x402_verify.VerifyError as e:
+        raise HTTPException(400, f"x402 verification failed: {e}")
+    except Exception as e:  # noqa: BLE001 — network errors → 502
+        logger.exception("x402 RPC error")
+        raise HTTPException(502, f"x402 RPC error: {e}")
+
+    if not verified:
+        raise HTTPException(400, "x402 verification returned negative")
+
+    # Refuse stub-fallback when env requires real verification.
+    if mode == "stub-fallback" and cfg is not None and cfg.verify_required:
+        raise HTTPException(
+            503,
+            "stub-fallback unavailable when KS_X402_VERIFY_REQUIRED=1; "
+            "fix KS_X402_BASE_RPC_URL / KS_X402_RECEIVER_ADDRESS",
+        )
+
+    # Record claim — UNIQUE on payment_proof catches duplicates.
+    try:
+        await loop.run_in_executor(
+            None, x402_verify.record_claim,
+            proof, sess["user_id"], body.amount_usd, mode,
+        )
+    except x402_verify.DuplicateClaim:
+        raise HTTPException(409, "payment_proof already claimed")
+
     new_balance = await loop.run_in_executor(
-        None, usage.topup, sess["user_id"], body.amount_usd
+        None, usage.topup, sess["user_id"], body.amount_usd,
     )
     return {
-        "ok":          True,
-        "new_balance": new_balance,
-        "payment_proof": body.payment_proof or "(demo — no on-chain verification)",
+        "ok":            True,
+        "new_balance":   new_balance,
+        "payment_proof": proof,
+        "verified_mode": mode,
     }
 
 
