@@ -76,13 +76,41 @@ pub fn is_stealth_enabled() -> bool {
 
 /// Direct read of `KS_STEALTH`, no caching. Used by `AppState` builders so
 /// tests can flip the env var per-process without fighting a cached value.
+///
+/// Legacy default: false (stealth opt-in). Newer `read_stealth_env_with_default`
+/// lets the TLS-mode resolver supply a different default when the user hasn't
+/// pinned KS_STEALTH explicitly — see ADR-007 §"Stealth-default order".
 pub fn read_stealth_env() -> bool {
-    match std::env::var("KS_STEALTH") {
-        Ok(s) => matches!(
-            s.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        Err(_) => false,
+    read_stealth_env_with_default(false)
+}
+
+/// Resolve KS_STEALTH against an explicit default for the unset case.
+///
+///   - `KS_STEALTH=1|true|yes|on`     → true  (always wins)
+///   - `KS_STEALTH=0|false|no|off`    → false (always wins)
+///   - unset / blank                  → `default_when_unset`
+///
+/// This lets `main.rs` flip the default-on bit when TLS is enabled while
+/// preserving the dev-friendly explicit-off escape hatch.
+pub fn read_stealth_env_with_default(default_when_unset: bool) -> bool {
+    let raw = match std::env::var("KS_STEALTH") {
+        Ok(s) => s,
+        Err(_) => return default_when_unset,
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_when_unset;
+    }
+    match trimmed.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => true,
+        "0" | "false" | "no" | "off" => false,
+        _ => {
+            tracing::warn!(
+                "KS_STEALTH={raw:?} not recognised — using default ({default_when_unset}). \
+                 Valid: 1/0, true/false, yes/no, on/off",
+            );
+            default_when_unset
+        }
     }
 }
 
@@ -176,6 +204,38 @@ mod tests {
         std::env::remove_var("KS_STEALTH");
         assert!(!read_stealth_env());
 
+        match prev {
+            Some(v) => std::env::set_var("KS_STEALTH", v),
+            None => std::env::remove_var("KS_STEALTH"),
+        }
+    }
+
+    #[test]
+    fn read_stealth_env_with_default_resolution_order() {
+        // Mirrors the table in ADR-007 §"Stealth-default order":
+        //   - explicit "1"/"0" wins regardless of default
+        //   - unset / "" → use the default
+        let prev = std::env::var("KS_STEALTH").ok();
+
+        // Explicit on always beats default off.
+        std::env::set_var("KS_STEALTH", "1");
+        assert!(read_stealth_env_with_default(false));
+        // Explicit off always beats default on.
+        std::env::set_var("KS_STEALTH", "0");
+        assert!(!read_stealth_env_with_default(true));
+        // Unset → default.
+        std::env::remove_var("KS_STEALTH");
+        assert!(read_stealth_env_with_default(true));
+        assert!(!read_stealth_env_with_default(false));
+        // Empty string → default (matches "unset" semantics for shell quoting).
+        std::env::set_var("KS_STEALTH", "");
+        assert!(read_stealth_env_with_default(true));
+        // Garbage value → default (warn logged, but no panic / no surprise).
+        std::env::set_var("KS_STEALTH", "maybe");
+        assert!(!read_stealth_env_with_default(false));
+        assert!(read_stealth_env_with_default(true));
+
+        // Restore.
         match prev {
             Some(v) => std::env::set_var("KS_STEALTH", v),
             None => std::env::remove_var("KS_STEALTH"),

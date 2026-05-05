@@ -14,6 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 axum = { workspace = true }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 bytes = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
@@ -21,7 +22,13 @@ ks-cache = { path = "../ks-cache" }
 ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }
 ks-vault = { path = "../ks-vault" }
+rcgen = "0.13"
 reqwest = { workspace = true }
+# rustls 0.23 made CryptoProvider selection explicit. We pin `ring`
+# (no cmake / aws-lc-sys build deps) and disable default features so
+# we can opt into exactly one provider — see ADR-007 §"Provider".
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

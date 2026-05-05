@@ -14,6 +14,7 @@ use ks_vault::VaultPath;
 pub mod bridge;
 pub mod handlers;
 pub mod stealth;
+pub mod tls;
 pub mod usage;
 
 #[derive(Clone)]

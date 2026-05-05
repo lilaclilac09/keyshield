@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use ks_cache::TtlCache;
-use ks_proxy::{bridge, router, stealth, AppState};
+use ks_proxy::{bridge, router, stealth, tls, AppState};
 use ks_session::SessionStore;
 use ks_upstream::{UpstreamClients, UpstreamId};
 use ks_vault::VaultPath;
@@ -19,7 +19,7 @@ const UPSTREAM_IDS_ALL: [UpstreamId; 10] = [
 ];
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
 
     let bind = std::env::var("KS_BIND").unwrap_or_else(|_| "0.0.0.0:8000".into());
@@ -54,7 +54,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .unwrap_or_else(UpstreamClients::new);
 
-    let stealth_on = stealth::read_stealth_env();
+    // Resolve TLS mode + stealth default-on. ADR-007 §"Stealth-default
+    // order": KS_STEALTH explicit always wins; otherwise stealth defaults
+    // ON for any TLS mode and OFF for plain HTTP.
+    let tls_mode = tls::read_tls_mode();
+    let stealth_on =
+        stealth::read_stealth_env_with_default(tls_mode.stealth_default());
+
+    tracing::info!(
+        ?tls_mode,
+        stealth_on,
+        "ks-proxy startup config",
+    );
     if stealth_on {
         tracing::info!("stealth mode enabled — unauthed requests will see nginx");
     }
@@ -71,11 +82,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = router(state);
 
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
-    tracing::info!("ks-proxy listening on {bind}");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    match tls_mode {
+        tls::TlsMode::Off => {
+            let listener = tokio::net::TcpListener::bind(&bind).await?;
+            tracing::info!("ks-proxy listening on http://{bind}");
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
+        tls::TlsMode::SelfSigned => {
+            let tls_bind = tls::read_tls_bind();
+            let sans: Vec<String> = std::env::var("KS_TLS_DOMAIN")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| vec![s])
+                .unwrap_or_default();
+            let cfg = tls::build_self_signed_config(&sans).await?;
+            let addr: std::net::SocketAddr = tls_bind.parse()?;
+            tracing::info!(
+                "ks-proxy listening on https://{tls_bind} (self-signed cert; \
+                 browsers will warn — use --insecure / curl -k for testing)",
+            );
+            axum_server::bind_rustls(addr, cfg)
+                .serve(app.into_make_service())
+                .await?;
+        }
+        tls::TlsMode::Acme => {
+            // TODO(spec 12 follow-up): instant-acme HTTP-01 challenge +
+            // cert renewal task. Falling back to self-signed so the
+            // process still boots — better than crashing in production.
+            tracing::warn!(
+                "KS_TLS_MODE=acme is not yet implemented — falling back to \
+                 self-signed. Set KS_TLS_MODE=self-signed explicitly to \
+                 silence this warning, or wait for the ACME follow-up.",
+            );
+            let tls_bind = tls::read_tls_bind();
+            let sans: Vec<String> = std::env::var("KS_TLS_DOMAIN")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| vec![s])
+                .unwrap_or_default();
+            let cfg = tls::build_self_signed_config(&sans).await?;
+            let addr: std::net::SocketAddr = tls_bind.parse()?;
+            tracing::info!("ks-proxy listening on https://{tls_bind} (acme→self-signed fallback)");
+            axum_server::bind_rustls(addr, cfg)
+                .serve(app.into_make_service())
+                .await?;
+        }
+    }
 
     // After axum exits, flush whatever's still in the buffer.
     tracing::info!("draining log buffer");
