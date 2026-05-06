@@ -1,0 +1,1 @@
+{"upstream":"env__backend_staging","apiKey":"{\"vars\":[{\"key\":\"DATABASE_URL\",\"value\":\"postgres://localhost/myapp\"},{\"key\":\"STRIPE_SECRET\",\"value\":\"sk_live_abc123\"},{\"key\":\"SENTRY_DSN\",\"value\":\"https://abc@sentry.io/1\"}],\"notes\":\"\"}"}

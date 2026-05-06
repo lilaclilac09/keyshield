@@ -7,10 +7,10 @@
  * platform-detection / credentials providers it depends on are now
  * implemented (see ../lib/passkeyAdapter.ts). What's still missing:
  *
- *   - Owner-wallet wiring for renew / revoke-all (mobile wallets need
+ *   - Owner-wallet wiring for renew (mobile wallets need
  *     a deep-link adapter — separate from the popup's @solana/wallet-standard
  *     hook). Until that lands, the SessionBar shows the countdown but
- *     onRenew / onRevokeAll throw.
+ *     onRenew throws.
  *
  * To actually launch this app you'll need:
  *   1. `npx react-native init` to materialise the iOS / Android
@@ -51,12 +51,9 @@ export function AppShell({ services }: AppShellProps) {
 
   // The mobile owner-wallet adapter isn't wired yet (deep-link based,
   // separate from the popup's @solana/wallet-standard hook). Until it
-  // lands, renew / revoke-all surface a clear error to the user.
+  // lands, renew surfaces a clear error to the user.
   const onRenew = async () => {
     throw new Error('Renew is not yet wired on mobile.');
-  };
-  const onRevokeAll = async () => {
-    throw new Error('Revoke-all is not yet wired on mobile.');
   };
 
   let body: React.ReactNode;
@@ -147,7 +144,6 @@ export function AppShell({ services }: AppShellProps) {
           <SessionBar
             countdown={countdown}
             onRenew={onRenew}
-            onRevokeAll={onRevokeAll}
           />
           <SessionExpiryToast countdown={countdown} onRenew={onRenew} />
         </>

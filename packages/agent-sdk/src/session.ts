@@ -47,7 +47,6 @@ export const VAULT_LAYOUT = {
 export const IX = {
   GRANT_AGENT_ACCESS: 20,
   REVOKE_AGENT_ACCESS: 21,
-  REVOKE_ALL_AGENTS: 24,
 } as const;
 
 export const DEFAULT_SESSION_DURATION_SECS = 2 * 60 * 60; // 2 hours
@@ -132,10 +131,6 @@ export function encodeRevokeAgentAccessData(agent: PublicKey): Uint8Array {
   return buf;
 }
 
-export function encodeRevokeAllAgentsData(): Uint8Array {
-  return new Uint8Array([IX.REVOKE_ALL_AGENTS]);
-}
-
 export function deriveUniversalVaultPda(
   owner: PublicKey,
   programId: PublicKey,
@@ -215,12 +210,11 @@ export interface SessionManagerConfig {
 }
 
 /**
- * SessionManager orchestrates the four key operations from
+ * SessionManager orchestrates the key operations from
  * docs/technical/LOCAL_VAULT_ARCHITECTURE.md section 七:
  *   - grantSession    (流程 3)
  *   - renewSession    (流程 5)
  *   - revokeSession   (one device)
- *   - revokeAllSessions ("sign out everywhere")
  *   - listActiveSessions (for the session-management UI)
  *
  * It builds Solana instructions and reads vault state. It deliberately
@@ -282,25 +276,6 @@ export class SessionManager {
    */
   buildRevokeSessionTx(agentPubkey: PublicKey): Transaction {
     const data = encodeRevokeAgentAccessData(agentPubkey);
-    const ix = new TransactionInstruction({
-      programId: this.programId,
-      keys: [
-        { pubkey: this.ownerPubkey, isSigner: true, isWritable: false },
-        { pubkey: this.vaultPda, isSigner: false, isWritable: true },
-      ],
-      data: Buffer.from(data),
-    });
-    const tx = new Transaction();
-    tx.feePayer = this.ownerPubkey;
-    tx.add(ix);
-    return tx;
-  }
-
-  /**
-   * "Sign out everywhere" — deactivates every grant in the vault.
-   */
-  buildRevokeAllSessionsTx(): Transaction {
-    const data = encodeRevokeAllAgentsData();
     const ix = new TransactionInstruction({
       programId: this.programId,
       keys: [

@@ -5,7 +5,6 @@ import {
   parseActiveSessions,
   encodeGrantAgentAccessData,
   encodeRevokeAgentAccessData,
-  encodeRevokeAllAgentsData,
   deriveUniversalVaultPda,
   isSessionExpired,
   IX,
@@ -79,14 +78,6 @@ describe('encodeRevokeAgentAccessData', () => {
     expect(data.length).toBe(33);
     expect(data[0]).toBe(IX.REVOKE_AGENT_ACCESS);
     expect(Array.from(data.slice(1))).toEqual(Array.from(agent.toBytes()));
-  });
-});
-
-describe('encodeRevokeAllAgentsData', () => {
-  it('is a single byte equal to discriminator 24', () => {
-    const data = encodeRevokeAllAgentsData();
-    expect(data.length).toBe(1);
-    expect(data[0]).toBe(IX.REVOKE_ALL_AGENTS);
   });
 });
 
@@ -212,14 +203,6 @@ describe('SessionManager', () => {
     const data = tx.instructions[0].data;
     expect(data[0]).toBe(IX.REVOKE_AGENT_ACCESS);
     expect(Array.from(data.slice(1, 33))).toEqual(Array.from(agent.toBytes()));
-  });
-
-  it('buildRevokeAllSessionsTx uses discriminator 24 with no payload', () => {
-    const tx = manager().buildRevokeAllSessionsTx();
-    expect(tx.instructions).toHaveLength(1);
-    const data = tx.instructions[0].data;
-    expect(data.length).toBe(1);
-    expect(data[0]).toBe(IX.REVOKE_ALL_AGENTS);
   });
 
   it('listActiveSessions round-trips through parseActiveSessions', async () => {

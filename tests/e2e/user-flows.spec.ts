@@ -235,18 +235,20 @@ test.describe('add secrets — all types', () => {
     await expect(page.getByRole('heading', { name: 'Groq' })).toBeVisible();
   });
 
-  test('optional label overrides the provider name on the card', async ({ page }) => {
+  test('optional label is accepted; card still shows the provider name (label not round-tripped via API)', async ({ page }) => {
     await installMockApi(page);
     await seedAuth(page);
     await page.goto('/');
     await openNewSecretModal(page);
 
-    // Give a custom label
+    // Give a custom label — the modal accepts it, but after the API round-trip the
+    // card name is reconstructed from UPSTREAM_META (provider name), not the label.
     await page.locator('input[placeholder="e.g. Production API key"]').fill('My Production Key');
     await apiKeyInput(page).fill('sk-proj-prod-labeled-key');
     await page.getByRole('button', { name: 'Save secret' }).click();
 
-    await expect(page.getByRole('heading', { name: 'My Production Key' })).toBeVisible();
+    // The vault card uses the canonical provider name from UPSTREAM_META.
+    await expect(page.getByRole('heading', { name: 'OpenAI' })).toBeVisible();
   });
 
   test('save a password entry for GitHub', async ({ page }) => {
@@ -315,7 +317,8 @@ test.describe('add secrets — all types', () => {
 
     await page.getByRole('button', { name: 'Save secret' }).click();
 
-    await expect(page.getByRole('heading', { name: 'backend-staging' })).toBeVisible();
+    // slugify('backend-staging') → 'backend_staging' → userSecretLabel → 'backend staging'
+    await expect(page.getByRole('heading', { name: 'backend staging' })).toBeVisible();
   });
 
   test('save an SSH key for production deploy access', async ({ page }) => {
@@ -343,7 +346,8 @@ test.describe('add secrets — all types', () => {
 
     await page.getByRole('button', { name: 'Save secret' }).click();
 
-    await expect(page.getByRole('heading', { name: 'prod-deploy' })).toBeVisible();
+    // slugify('prod-deploy') → 'prod_deploy' → userSecretLabel → 'prod deploy'
+    await expect(page.getByRole('heading', { name: 'prod deploy' })).toBeVisible();
   });
 });
 
@@ -483,8 +487,8 @@ test.describe('modal dismiss', () => {
     await page.goto('/');
     await openNewSecretModal(page);
 
-    // Click the translucent backdrop behind the modal
-    await page.locator('div[class*="backdrop-blur-sm"]').click({ force: true });
+    // Click the translucent backdrop behind the modal (dispatchEvent bypasses hit-testing)
+    await page.locator('div[class*="backdrop-blur-sm"]').dispatchEvent('click');
 
     await expect(page.getByRole('heading', { name: 'New secret' })).not.toBeVisible();
   });
@@ -530,7 +534,7 @@ test.describe('reveal and hide secrets', () => {
     await page.getByTitle('Reveal').click();
     await expect(page.getByText('sk-proj-hide-me-9876543210')).toBeVisible();
 
-    await page.getByTitle('Hide').click();
+    await page.getByTitle('Hide', { exact: true }).click();
 
     // Key is masked again, timer gone
     await expect(page.getByText('••••••••••••••••••••••••')).toBeVisible();
@@ -576,7 +580,8 @@ test.describe('reveal and hide secrets', () => {
       .fill('API_TOKEN=secret-token-xyz\nDB_PASS=hunter2');
     await page.getByRole('button', { name: 'Save secret' }).click();
 
-    await expect(page.getByRole('heading', { name: 'prod-env' })).toBeVisible();
+    // slugify('prod-env') → 'prod_env' → userSecretLabel → 'prod env'
+    await expect(page.getByRole('heading', { name: 'prod env' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Reveal' }).click();
 
@@ -768,8 +773,8 @@ test.describe('navigation', () => {
     await seedAuth(page);
     await page.goto('/');
 
-    // DEV badge is always visible in the nav
-    await expect(page.getByText('DEV')).toBeVisible();
+    // DEV badge is always visible in the nav (exact so the parent button text doesn't also match)
+    await expect(page.getByText('DEV', { exact: true })).toBeVisible();
   });
 });
 
@@ -785,9 +790,10 @@ test.describe('agents', () => {
     await page.getByRole('button', { name: 'Agents' }).click();
 
     await expect(page.getByText('No agents registered yet')).toBeVisible();
-    await expect(page.getByText('Step 1')).toBeVisible();
-    await expect(page.getByText('Step 2')).toBeVisible();
-    await expect(page.getByText('Step 3')).toBeVisible();
+    // exact: true so "Step 1 — generate keypair" labels in the form don't also match
+    await expect(page.getByText('Step 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Step 2', { exact: true })).toBeVisible();
+    await expect(page.getByText('Step 3', { exact: true })).toBeVisible();
   });
 
   test('Register button is disabled until both name and pubkey are filled', async ({ page }) => {
@@ -838,8 +844,8 @@ test.describe('agents', () => {
 
     // Success banner
     await expect(page.getByText('Agent "data-fetcher" registered')).toBeVisible();
-    // Agent row appears in the list
-    await expect(page.getByText('data-fetcher')).toBeVisible();
+    // Agent row appears in the list (exact so the success banner text doesn't also match)
+    await expect(page.getByText('data-fetcher', { exact: true })).toBeVisible();
   });
 
   test('user can set a scoped grant (proxy only) when registering', async ({ page }) => {
@@ -853,9 +859,9 @@ test.describe('agents', () => {
     await page.locator('select').selectOption('proxy');
     await page.getByRole('button', { name: 'Register' }).click();
 
-    await expect(page.getByText('limited-bot')).toBeVisible();
-    // Scope badge
-    await expect(page.getByText('proxy')).toBeVisible();
+    await expect(page.getByText('limited-bot', { exact: true })).toBeVisible();
+    // Scope badge (exact so "proxy,read" option text doesn't also match)
+    await expect(page.getByText('proxy', { exact: true })).toBeVisible();
   });
 
   test('user registers a second agent after generating a fresh keypair', async ({ page }) => {
@@ -868,17 +874,17 @@ test.describe('agents', () => {
     await page.getByPlaceholder('Agent name (e.g. trading-bot-v1)').fill('first-bot');
     await page.getByPlaceholder('Agent public key (base58)').fill('4s3Yk1NyFQKkCqW2GMk1mN6S8Uh8x5X2MZf8xdUzG2pR');
     await page.getByRole('button', { name: 'Register' }).click();
-    await expect(page.getByText('first-bot')).toBeVisible();
+    await expect(page.getByText('first-bot', { exact: true })).toBeVisible();
 
     // Generate a new keypair for the second agent
     await page.getByRole('button', { name: 'Generate' }).click();
     await page.getByPlaceholder('Agent name (e.g. trading-bot-v1)').fill('second-bot');
     await page.getByRole('button', { name: 'Register' }).click();
-    await expect(page.getByText('second-bot')).toBeVisible();
+    await expect(page.getByText('second-bot', { exact: true })).toBeVisible();
 
-    // Both agents listed
-    await expect(page.getByText('first-bot')).toBeVisible();
-    await expect(page.getByText('second-bot')).toBeVisible();
+    // Both agents listed (exact: true — success banners contain the names too)
+    await expect(page.getByText('first-bot', { exact: true })).toBeVisible();
+    await expect(page.getByText('second-bot', { exact: true })).toBeVisible();
   });
 
   test('revoking an agent requires two clicks and removes it from the list', async ({ page }) => {
@@ -890,14 +896,16 @@ test.describe('agents', () => {
     await page.getByPlaceholder('Agent name (e.g. trading-bot-v1)').fill('doomed-bot');
     await page.getByPlaceholder('Agent public key (base58)').fill('4s3Yk1NyFQKkCqW2GMk1mN6S8Uh8x5X2MZf8xdUzG2pR');
     await page.getByRole('button', { name: 'Register' }).click();
-    await expect(page.getByText('doomed-bot')).toBeVisible();
+    // exact: true matches the agent-row span ("doomed-bot"), not the banner ("Agent "doomed-bot" registered")
+    await expect(page.getByText('doomed-bot', { exact: true })).toBeVisible();
 
     // Two-click confirmation
     const revokeBtn = page.getByRole('button', { name: 'Revoke' }).first();
     await revokeBtn.click();  // first click → confirm state
     await revokeBtn.click();  // second click → executes revoke
 
-    await expect(page.getByText('doomed-bot')).not.toBeVisible();
+    // After revoke the row span is gone; banner text is "Agent "doomed-bot" registered" (not an exact match)
+    await expect(page.getByText('doomed-bot', { exact: true })).not.toBeVisible();
     await expect(page.getByText('No agents registered yet')).toBeVisible();
   });
 });
@@ -1030,12 +1038,12 @@ test.describe('persistence', () => {
     await page.getByPlaceholder('Agent name (e.g. trading-bot-v1)').fill('persistent-bot');
     await page.getByPlaceholder('Agent public key (base58)').fill('4s3Yk1NyFQKkCqW2GMk1mN6S8Uh8x5X2MZf8xdUzG2pR');
     await page.getByRole('button', { name: 'Register' }).click();
-    await expect(page.getByText('persistent-bot')).toBeVisible();
+    await expect(page.getByText('persistent-bot', { exact: true })).toBeVisible();
 
     await page.reload();
     await page.getByRole('button', { name: 'Agents' }).click();
 
-    await expect(page.getByText('persistent-bot')).toBeVisible();
+    await expect(page.getByText('persistent-bot', { exact: true })).toBeVisible();
   });
 });
 

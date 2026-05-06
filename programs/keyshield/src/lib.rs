@@ -1,4 +1,3 @@
-use crate::instructions::agent_access;
 // KeyShield Agentic - Universal API-Key + Payment Vault on Solana
 //
 // A decentralized API key vault that serves BOTH humans and autonomous AI agents:
@@ -137,7 +136,6 @@ fn process_instruction(
         Instruction::SettlePayment => process_settle_payment(program_id, accounts, data),
         Instruction::PayForService => process_pay_for_service(program_id, accounts, data),
         Instruction::ClosePaymentStream => process_close_payment_stream(program_id, accounts, data),
-        Instruction::RevokeAllAgentAccess => agent_access::process_revoke_all_agent_access(program_id, accounts, data),
     }
 }
 
