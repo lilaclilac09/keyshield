@@ -125,7 +125,7 @@ pub fn process_withdraw_agent_wallet(
 
     let bump = sbuf[aps_offset::BUMP];
 
-    // ── Confirm grant has been revoked ────────────────────────────
+    // Confirm grant has been revoked
     {
         let vault_data = borrow_vault!(vault);
         if &vault_data[0..8] != UniversalVault::DISCRIMINATOR.as_ref() {
@@ -174,11 +174,11 @@ pub fn process_withdraw_agent_wallet(
         }
     }
 
-    // Mark stream inactive *before* the CPI so a re-entry can't grab it.
+    // Mark stream inactive before the CPI so a re-entry cannot grab it.
     sbuf[aps_offset::IS_ACTIVE] = 0;
     drop(sbuf);
 
-    // ── CPI 1: drain remaining USDC into owner's ATA (if non-zero) ──
+    // CPI 1: drain remaining USDC into owner's ATA (if non-zero)
     let bump_arr = [bump];
     let stream_seeds = seeds!(
         APS_SEED,
@@ -200,7 +200,7 @@ pub fn process_withdraw_agent_wallet(
         .invoke_signed(&[pda_signer.clone()])?;
     }
 
-    // ── CPI 2: close the USDC ATA — sends the rent lamports to owner ──
+    // CPI 2: close the USDC ATA — sends the rent lamports to owner
     CloseAccount {
         account: stream_ata,
         destination: owner,
@@ -208,7 +208,7 @@ pub fn process_withdraw_agent_wallet(
     }
     .invoke_signed(&[pda_signer])?;
 
-    // ── Close the AgentPaymentStream PDA itself by reclaiming all
+    // Close the AgentPaymentStream PDA itself by reclaiming all
     // its lamports to `owner` and zeroing the data. The runtime
     // garbage-collects accounts whose lamports == 0 and data == 0.
     {

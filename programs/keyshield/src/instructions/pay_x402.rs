@@ -91,9 +91,7 @@ pub fn process_pay_x402(
     }
 
     // 1+2. Locate the agent grant for `signer.key()` in the vault and
-    // confirm it isn't revoked. Per spec: signer must be in the
-    // grant's slot (we model "slot" as `agent_pubkey` — see module
-    // doc above for why).
+    // confirm it isn't revoked.
     let signer_pubkey = *signer.key();
     let grant_owner: Pubkey;
     {
@@ -135,13 +133,13 @@ pub fn process_pay_x402(
         }
     }
 
-    // 5 (out of order — cheap check first). Time bound.
+    // Time bound.
     let now = Clock::get()?.unix_timestamp;
     if now > expires_at {
         return Err(KeyShieldError::PaymentStreamExpired.into());
     }
 
-    // ── Read + validate the AgentPaymentStream ───────────────────
+    // Read + validate the AgentPaymentStream
     let mut sbuf = stream.try_borrow_mut_data()?;
     if sbuf.len() < AgentPaymentStream::SIZE {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
@@ -197,7 +195,7 @@ pub fn process_pay_x402(
         return Err(KeyShieldError::AgentNotAuthorized.into());
     }
 
-    // 4. Budget cap.
+    // Budget cap.
     let max_total = u64::from_le_bytes(
         sbuf[aps_offset::MAX_TOTAL..aps_offset::MAX_TOTAL + 8]
             .try_into()
@@ -215,7 +213,7 @@ pub fn process_pay_x402(
         return Err(KeyShieldError::BudgetExceeded.into());
     }
 
-    // 5b. Replay check — scan ring buffer.
+    // Replay check — scan ring buffer.
     {
         let nonces_off = aps_offset::NONCES;
         for i in 0..CONSUMED_NONCES_LEN {
@@ -233,7 +231,7 @@ pub fn process_pay_x402(
         }
     }
 
-    // 7a. Update state — record nonce, bump head, bump spent_total.
+    // Update state — record nonce, bump head, bump spent_total.
     let head = sbuf[aps_offset::NONCES_HEAD] as usize;
     let new_head = (head + 1) % CONSUMED_NONCES_LEN;
     let entry_off = aps_offset::NONCES + head * ConsumedNonce::SIZE;
@@ -250,7 +248,7 @@ pub fn process_pay_x402(
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
 
-    // 6. CPI to SPL Token: transfer_checked from stream's ATA to the
+    // CPI to SPL Token: transfer_checked from stream's ATA to the
     // recipient ATA, signed by the AgentPaymentStream PDA.
     let bump_arr = [bump];
     let stream_seeds = seeds!(

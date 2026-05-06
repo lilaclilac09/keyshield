@@ -4,7 +4,7 @@
 //! `AgentPaymentStream` PDA owned by this program, binds it to a
 //! specific `AgentGrant`, and records the metadata the other three
 //! ixs (#25 `pay_x402`, #26 `mpp_settle`, #27 `withdraw_agent_wallet`)
-//! use to enforce budget caps and authorisation.
+//! use to enforce budget caps and authorization.
 //!
 //! Critically, this ix does *not* itself create the USDC ATA. Token
 //! ATAs are owned by the SPL Associated Token Program — the client
@@ -43,7 +43,7 @@ pub const APS_SEED: &[u8] = b"agent_payment_stream";
 /// 0. `[signer]`   Owner — the wallet that owns the AgentGrant.
 /// 1. `[]`         UniversalVault — to validate `owner` is the vault owner
 ///                 and the agent grant exists / is active.
-/// 2. `[writable]` AgentPaymentStream PDA to initialise (system-owned at
+/// 2. `[writable]` AgentPaymentStream PDA to initialize (system-owned at
 ///                 entry; this ix `CreateAccount`s it under our program).
 /// 3. `[]`         USDC mint (recorded into the stream).
 /// 4. `[]`         USDC ATA pubkey (recorded into the stream — the
@@ -51,7 +51,7 @@ pub const APS_SEED: &[u8] = b"agent_payment_stream";
 ///                 the SPL Associated Token Program's `create`).
 /// 5. `[]`         Agent grant pubkey — the agent this stream pays
 ///                 for. Must already exist in `UniversalVault.agent_grants`.
-/// 6. `[]`         MPP settler pubkey (server keypair authorised for
+/// 6. `[]`         MPP settler pubkey (server keypair authorized for
 ///                 ix #26).
 /// 7. `[]`         System Program (for `CreateAccount`).
 ///
@@ -104,7 +104,7 @@ pub fn process_open_payment_stream(
         return Err(KeyShieldError::InvalidPaymentAmount.into());
     }
 
-    // ── Validate vault owner + agent grant ────────────────────────
+    // Validate vault owner + agent grant
     let vault_data = borrow_vault!(vault);
     let vault_disc = &vault_data[0..8];
     if vault_disc != UniversalVault::DISCRIMINATOR {
@@ -149,7 +149,7 @@ pub fn process_open_payment_stream(
     }
     drop(vault_data);
 
-    // ── Allocate the AgentPaymentStream PDA ──────────────────────
+    // Allocate the AgentPaymentStream PDA
     // Seeds: ["agent_payment_stream", agent_pubkey, owner_pubkey].
     let bump_arr = [bump];
     let stream_seeds = seeds!(APS_SEED, agent.key().as_ref(), owner.key().as_ref(), &bump_arr);
@@ -199,7 +199,7 @@ pub fn process_open_payment_stream(
         }
     }
 
-    // ── Initialise stream fields ─────────────────────────────────
+    // Initialize stream fields
     let now = Clock::get()?.unix_timestamp;
     let mut buf = stream.try_borrow_mut_data()?;
     if buf.len() < AgentPaymentStream::SIZE {
@@ -238,7 +238,7 @@ pub fn process_open_payment_stream(
     buf[aps_offset::CREATED_AT..aps_offset::CREATED_AT + 8]
         .copy_from_slice(&now.to_le_bytes());
     // Ring buffer head = 0; entries already zeroed.
-    let _ = (CONSUMED_NONCES_LEN, ConsumedNonce::SIZE); // referenced for compile parity
+    let _ = (CONSUMED_NONCES_LEN, ConsumedNonce::SIZE);
 
     Ok(())
 }

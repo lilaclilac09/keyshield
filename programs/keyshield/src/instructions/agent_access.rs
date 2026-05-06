@@ -1,11 +1,11 @@
-//! Agent Access instruction handlers
-//!
-//! Instructions for managing agent access grants with:
-//! - Bonsol ZK proof verification
-//! - Arcium MPC support
-//! - Rate limiting
-//! - Session timeouts
-//! - Policy enforcement
+// Agent Access instruction handlers
+//
+// Instructions for managing agent access grants with:
+// - Bonsol ZK proof verification
+// - Arcium MPC support
+// - Rate limiting
+// - Session timeouts
+// - Policy enforcement
 
 use pinocchio::{
     account_info::AccountInfo,
@@ -20,6 +20,7 @@ use crate::{
     state::{
         AgentGrant, UniversalVault, MAX_AGENTS,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE,
+        AGENT_GRANT_REVOKED_AT_OFFSET,
         POLICY_RULES_START, POLICY_RULE_SIZE, MAX_POLICY_RULES_STORED,
     },
 };
@@ -255,6 +256,11 @@ pub fn process_revoke_agent_access(
         if existing_pubkey == agent_pubkey {
             // Set is_active to 0
             vault_data[offset + 58] = 0;
+            // Record revoked_at timestamp (i64)
+            let revoked_at = Clock::get()?.unix_timestamp;
+            let revoked_at_off = offset + AGENT_GRANT_REVOKED_AT_OFFSET;
+            vault_data[revoked_at_off..revoked_at_off + 8]
+                .copy_from_slice(&revoked_at.to_le_bytes());
             // Decrement count
             let count = vault_data[61];
             vault_data[61] = count.saturating_sub(1);

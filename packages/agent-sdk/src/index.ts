@@ -28,7 +28,6 @@ export {
   parseActiveSessions,
   encodeGrantAgentAccessData,
   encodeRevokeAgentAccessData,
-  encodeRevokeAllAgentsData,
   deriveUniversalVaultPda,
   isSessionExpired,
   VAULT_LAYOUT,

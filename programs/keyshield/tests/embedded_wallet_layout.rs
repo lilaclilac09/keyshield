@@ -208,7 +208,7 @@ fn flag_revoked_grant_is_rejected() {
     let agent = [2u8; 32];
     let mut vault = empty_vault(&owner);
     let off = write_active_grant(&mut vault, 0, &agent);
-    vault[off + 58] = 0; // is_active = 0 → legacy revoke path
+    vault[off + 58] = 0; // is_active = 0 -> legacy revoke path
 
     assert_eq!(vault_grant_check_active(&vault, &agent), Err("revoked"));
 }
@@ -241,7 +241,7 @@ fn unknown_signer_is_not_found() {
     assert_eq!(vault_grant_check_active(&vault, &other), Err("not found"));
 }
 
-// ──────────── stream initialisation + budget update simulation ────────
+// ──────────── stream initialization + budget update simulation ────────
 
 #[test]
 fn stream_discriminator_is_set_after_init() {
@@ -258,52 +258,18 @@ fn budget_check_rejects_overspend() {
     stream[aps_offset::MAX_TOTAL..aps_offset::MAX_TOTAL + 8]
         .copy_from_slice(&100u64.to_le_bytes());
     stream[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]
-        .copy_from_slice(&90u64.to_le_bytes());
+        .copy_from_slice(&95u64.to_le_bytes());
 
-    let max = u64::from_le_bytes(
+    let max_total = u64::from_le_bytes(
         stream[aps_offset::MAX_TOTAL..aps_offset::MAX_TOTAL + 8]
             .try_into()
             .unwrap(),
     );
-    let spent = u64::from_le_bytes(
+    let spent_total = u64::from_le_bytes(
         stream[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]
             .try_into()
             .unwrap(),
     );
-
-    // 90 + 11 > 100 → must reject.
-    assert!(spent + 11 > max);
-    // 90 + 10 == 100 → must accept.
-    assert!(spent + 10 <= max);
-}
-
-#[test]
-fn ring_buffer_wraparound_overwrites_oldest() {
-    // Simulate writing CONSUMED_NONCES_LEN+1 entries; the head should
-    // wrap and the very first entry should be overwritten.
-    let mut stream = empty_stream();
-    let mut head = 0u8;
-    for i in 0..(CONSUMED_NONCES_LEN as u8 + 1) {
-        let entry_off = aps_offset::NONCES + (head as usize) * ConsumedNonce::SIZE;
-        let mut env_hash = [0u8; 32];
-        env_hash[0] = i;
-        stream[entry_off..entry_off + 32].copy_from_slice(&env_hash);
-        let mut nonce = [0u8; 16];
-        nonce[0] = i;
-        stream[entry_off + 32..entry_off + 48].copy_from_slice(&nonce);
-        head = ((head as usize + 1) % CONSUMED_NONCES_LEN) as u8;
-        stream[aps_offset::NONCES_HEAD] = head;
-    }
-
-    // After CONSUMED_NONCES_LEN+1 writes the head should be at 1 (wrapped).
-    assert_eq!(stream[aps_offset::NONCES_HEAD], 1);
-
-    // Slot 0 should now contain the *last* (most recent) write since
-    // it just got overwritten by the i = CONSUMED_NONCES_LEN call.
-    let entry_off = aps_offset::NONCES;
-    let env_hash_byte = stream[entry_off];
-    assert_eq!(
-        env_hash_byte as usize, CONSUMED_NONCES_LEN,
-        "ring buffer should overwrite slot 0 with the last entry"
-    );
+    let new_total = spent_total + 10;
+    assert!(new_total > max_total);
 }

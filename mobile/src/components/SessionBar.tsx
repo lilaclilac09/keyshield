@@ -7,7 +7,6 @@ import { colors, fontSize, space } from '../theme';
 export interface SessionBarProps {
   countdown: SessionCountdown;
   onRenew: () => void;
-  onRevokeAll: () => void;
   disabled?: boolean;
 }
 
@@ -53,19 +52,6 @@ export function SessionBar(props: SessionBarProps) {
               accessibilityState={{ disabled: !!props.disabled }}
             >
               <Text style={[styles.actionText, styles.warnText]}>Renew</Text>
-            </Pressable>
-          )}
-          {active && (
-            <Pressable
-              onPress={props.onRevokeAll}
-              disabled={props.disabled}
-              accessibilityRole="button"
-              accessibilityLabel="Revoke all"
-              accessibilityState={{ disabled: !!props.disabled }}
-            >
-              <Text style={[styles.actionText, styles.errText]}>
-                Revoke all
-              </Text>
             </Pressable>
           )}
         </View>

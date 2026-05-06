@@ -73,7 +73,7 @@ pub fn process_mpp_settle(
         return Err(KeyShieldError::InvalidPaymentAmount.into());
     }
 
-    // ── Read the AgentPaymentStream ──────────────────────────────
+    // Read the AgentPaymentStream
     let mut sbuf = stream.try_borrow_mut_data()?;
     if sbuf.len() < AgentPaymentStream::SIZE {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
@@ -87,7 +87,7 @@ pub fn process_mpp_settle(
         return Err(KeyShieldError::PaymentStreamInactive.into());
     }
 
-    // Settler authorisation: signer pubkey must match recorded
+    // Settler authorization: signer pubkey must match recorded
     // mpp_settler_pubkey on the stream.
     let recorded_settler_bytes: [u8; 32] = sbuf
         [aps_offset::MPP_SETTLER..aps_offset::MPP_SETTLER + 32]
@@ -117,7 +117,7 @@ pub fn process_mpp_settle(
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
 
-    // ── Verify agent grant still active in vault ─────────────────
+    // Verify agent grant still active in vault
     let stream_agent_bytes: [u8; 32] = sbuf
         [aps_offset::AGENT_PUBKEY..aps_offset::AGENT_PUBKEY + 32]
         .try_into()
@@ -172,7 +172,7 @@ pub fn process_mpp_settle(
         }
     }
 
-    // ── Compute amount + budget gate ─────────────────────────────
+    // Compute amount + budget gate
     let cost_per_unit = u64::from_le_bytes(
         sbuf[aps_offset::COST_PER_UNIT..aps_offset::COST_PER_UNIT + 8]
             .try_into()

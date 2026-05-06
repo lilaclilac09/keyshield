@@ -367,7 +367,7 @@ impl PaymentStream {
 //   2. The legacy `PaymentStream` struct (108 bytes embedded in vault)
 //      keeps working for ix #30-#33 with no layout migration.
 //
-// Backwards compat note (per the engineer α/β/γ coordination memo):
+// Backwards compat note (per the engineer alpha/beta/gamma coordination memo):
 // adding fields to the existing in-vault `PaymentStream` would have
 // shifted byte offsets used by the proxy and existing tests, so the
 // embedded-wallet pillar uses a fresh struct with a versioned
@@ -379,7 +379,7 @@ pub const AGENT_PAYMENT_STREAM_DISCRIMINATOR: [u8; 8] = *b"ksaywal1";
 /// Number of (envelope_hash, nonce) pairs the on-chain replay ring
 /// buffer remembers. Sized at 64 (down from spec's "256") so the PDA
 /// fits comfortably in a single 10KiB account; if real-world use shows
-/// 64 to be too small we bump and migrate. 64 entries × 48 bytes per
+/// 64 to be too small we bump and migrate. 64 entries x 48 bytes per
 /// entry = 3072 bytes for the ring alone.
 pub const CONSUMED_NONCES_LEN: usize = 64;
 
@@ -410,7 +410,7 @@ impl ConsumedNonce {
 /// EphemeralSigner spends out of `usdc_ata`.
 ///
 /// Layout is `repr(C)` so byte offsets are stable across builds. The
-/// `discriminator` field is the version tag — bump if fields change.
+/// `discriminator` field is the version tag - bump if fields change.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct AgentPaymentStream {
@@ -490,7 +490,7 @@ impl AgentPaymentStream {
     pub const SIZE: usize = 8 + 32 * 5 + 8 * 4 + 4 + 1 + 1 + 2 + 8 + 8 + 1 + 7
         + (CONSUMED_NONCES_LEN * ConsumedNonce::SIZE) + 64;
 
-    /// Decimals for SPL USDC. Hard-coded — every USDC mint we accept
+    /// Decimals for SPL USDC. Hard-coded - every USDC mint we accept
     /// has 6 decimals.
     pub const USDC_DECIMALS: u8 = 6;
 
@@ -514,7 +514,7 @@ impl AgentPaymentStream {
 }
 
 /// Byte offsets for AgentPaymentStream fields. Used directly by ix
-/// handlers so we don't pay for a full deserialize on every call.
+/// handlers so we do not pay for a full deserialize on every call.
 /// MUST match the struct layout above.
 pub mod aps_offset {
     pub const DISCRIMINATOR: usize = 0;
@@ -546,9 +546,7 @@ pub mod aps_offset {
 /// `_reserved`, leaving the trailing 27 bytes (offsets 101..128) of
 /// each 128-byte slot unused. We park `revoked_at: i64` at offset
 /// 120 (8 bytes before the slot end) so it sits in unused trailing
-/// space without touching `_reserved`. `revoked_at == 0` means
-/// "active". Bumping this constant requires a coordinated migration
-/// with the proxy and CLI.
+/// space without touching `_reserved`.
 pub const AGENT_GRANT_REVOKED_AT_OFFSET: usize = 120;
 
 /// Universal Vault account structure
