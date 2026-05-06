@@ -46,7 +46,7 @@ http-body-util = "0.1"
 # `reqwest` already enables `rustls-tls`; the dev profile picks up the
 # same crate but adds no production dep weight.
 reqwest = { workspace = true }
-serde = { workspace = true }
+serde_json = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
