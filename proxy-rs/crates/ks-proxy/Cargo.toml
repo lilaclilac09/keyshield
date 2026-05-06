@@ -41,6 +41,11 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 base64 = "0.22"
 http-body-util = "0.1"
+# Used by tests/acme_pebble.rs only — pebble's mgmt endpoint serves a
+# self-signed cert, so we need a client that accepts it. Workspace
+# `reqwest` already enables `rustls-tls`; the dev profile picks up the
+# same crate but adds no production dep weight.
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
