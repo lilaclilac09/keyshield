@@ -16,12 +16,14 @@ path = "src/lib.rs"
 axum = { workspace = true }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 bytes = { workspace = true }
+dashmap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 ks-cache = { path = "../ks-cache" }
 ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }
 ks-vault = { path = "../ks-vault" }
+instant-acme = { version = "0.8", features = ["rcgen"] }
 rcgen = "0.13"
 reqwest = { workspace = true }
 # rustls 0.23 made CryptoProvider selection explicit. We pin `ring`

@@ -160,8 +160,8 @@ it's the differentiator vs. Coinbase Agentic).
 | ✅ | CI for Rust + frontend + npm workspaces | .github/workflows/ |
 | ✅ | `KS_INTERNAL_SECRET` firewall (this PR) | scripts/dev.sh + Python middleware + Rust injection |
 | 📋 | Docker compose for production deploy | — |
-| 📋 | Real domain + TLS cert (ACME) | — |
-| 📋 | Stealth mode wired into deploy story | — |
+| ✅ | Real domain + TLS cert (rustls + Let's Encrypt ACME HTTP-01) | proxy-rs/crates/ks-proxy/src/{tls,acme}.rs (this PR) |
+| ✅ | Stealth mode wired into deploy story (default-on with TLS) | proxy-rs/crates/ks-proxy/src/stealth.rs (this PR) |
 | 📋 | Operator runbook (KS_INTERNAL_SECRET rotation, log retention, etc.) | — |
 
 ## 8. Docs
@@ -210,6 +210,26 @@ The top-level README and AGENTS.md mention these as if they exist. They don't, o
   build the Python MPP server-side (per spec 10 + ROADMAP §6a → embedded
   wallet) or remove the dead UI. Discovered while writing spec 09.
 
+### P0a — spec 10 Phase 10.4-real (mpp_settle on-chain)
+
+- ✅ **`mpp_settle` ix submission wired** — `v2-mvp/src/mpp_onchain.py`
+  builds the ix (#26) byte-for-byte to match
+  `programs/keyshield/src/instructions/mpp_settle.rs`; `settle_on_chain`
+  in `mpp_streams.py` submits when env is configured, falls back to
+  stub (return 0) otherwise. Idempotency log lives in new
+  `mpp_settle_attempts` SQLite table. 6 unit tests in
+  `tests/test_mpp_onchain.py` cover env-missing, byte-layout
+  (discriminator 0x1a + u64 LE), PDA-missing, and double-submit
+  prevention. Real Solana RPC integration test deferred.
+- 📋 **P1 follow-up: `open_stream` on-chain wiring.** `mpp_streams.open_stream`
+  is still DB-only — no `OpenPaymentStream` (ix #24) submission. Until
+  this lands, `_get_stream_pda_ata()` returns (None, None) and the
+  real `mpp_settle` path falls back to stub. The frontend "under
+  construction" banner stays until both this AND `close_stream` ship.
+- 📋 **P1 follow-up: `close_stream` on-chain wiring.** `mpp_streams.close_stream`
+  is DB-only — no final on-chain settle + PDA close. Pairs with the
+  `open_stream` follow-up; both want the same PDA-column wiring.
+
 ### P1 — product-completing (fix this month)
 
 - ✅ **Spec 10 promoted to full v1** — `proxy-rs/specs/10-embedded-wallet.md` (commit 661a948e). 7 open questions answered, 4 new on-chain ixs designed.
@@ -221,11 +241,17 @@ The top-level README and AGENTS.md mention these as if they exist. They don't, o
 
 ### P2 — Stage 2 productionization
 
-- 📋 TLS termination on Rust (rustls + ACME, https_proxy article pattern)
+- ✅ **TLS termination on Rust** (this PR) — rustls 0.23 + axum-server +
+  instant-acme HTTP-01 + 24h renewal task. Three modes via `KS_TLS_MODE`:
+  off (default), self-signed (rcgen), acme (LE). 18 lib + 22 integration
+  tests. See `proxy-rs/ADR-007-tls-and-stealth.md` + spec 12.
+- ✅ **Stealth mode wired** (this PR) — default-on derived from `KS_TLS_MODE`,
+  explicit `KS_STEALTH=0|1` overrides. ADR-007 §"Stealth-default order".
 - 📋 Single-binary deploy + Docker compose
-- 📋 Stealth mode wired (default-on for `:8000` in prod)
-- 📋 Operator runbook
-- 📋 Real domain + ACME cert lifecycle
+- 📋 Operator runbook (env contract, rate-limit safety, failure modes —
+  parts already in spec 12)
+- 📋 Real domain + ACME cert lifecycle (this PR provides the binary;
+  needs DNS + firewall ops)
 
 ### P3 — feature expansion
 

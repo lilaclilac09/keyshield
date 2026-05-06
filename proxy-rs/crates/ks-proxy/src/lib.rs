@@ -11,6 +11,7 @@ use ks_session::SessionStore;
 use ks_upstream::UpstreamClients;
 use ks_vault::VaultPath;
 
+pub mod acme;
 pub mod bridge;
 pub mod handlers;
 pub mod stealth;
