@@ -219,6 +219,7 @@ impl Harness {
             cache: Arc::new(TtlCache::new()),
             bridge,
             log_buffer,
+            stealth: false,
         };
 
         Self {

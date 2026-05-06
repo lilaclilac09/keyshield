@@ -13,6 +13,7 @@ use ks_vault::VaultPath;
 
 pub mod bridge;
 pub mod handlers;
+pub mod stealth;
 pub mod usage;
 
 #[derive(Clone)]
@@ -23,6 +24,9 @@ pub struct AppState {
     pub cache: Arc<TtlCache<bytes::Bytes>>,
     pub bridge: Arc<bridge::PythonBridge>,
     pub log_buffer: bridge::LogBuffer,
+    /// When `true`, unauthed requests get an nginx-shaped response instead
+    /// of a keyshield-flavored 401. Wire from `KS_STEALTH=1` in `main.rs`.
+    pub stealth: bool,
 }
 
 /// Build the axum `Router` for the hot path. Used by both `main.rs` and
