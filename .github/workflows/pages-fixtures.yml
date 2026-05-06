@@ -16,6 +16,11 @@ on:
     branches: [main]
     paths:
       - 'extension-sync/test/fixtures/**'
+      - 'extension-sync/src/**'
+      - 'extension-sync/manifest.ts'
+      - 'extension-sync/scripts/build-extension.mjs'
+      - 'extension-sync/vite.config.ts'
+      - 'extension-sync/package.json'
       - '.github/workflows/pages-fixtures.yml'
   workflow_dispatch:
 
@@ -37,11 +42,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Stage fixture directory for Pages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: extension-sync/package-lock.json
+
+      - name: Install extension-sync deps
+        working-directory: extension-sync
+        run: npm ci || npm install
+
+      - name: Build extension (dist/)
+        working-directory: extension-sync
+        run: npm run build:ext
+
+      - name: Stage fixtures + downloadable extension zip for Pages
         run: |
           mkdir -p _site
           cp -r extension-sync/test/fixtures/. _site/
-          # Tell Pages not to run Jekyll over our static HTML.
+          # Bundle dist/ as a downloadable zip so reviewers can grab a
+          # ready-to-Load-unpacked extension from the fixture index page.
+          (cd extension-sync/dist && zip -r ../../_site/keyshield-extension.zip . -q)
+          ls -la _site/
           touch _site/.nojekyll
 
       - uses: actions/configure-pages@v5

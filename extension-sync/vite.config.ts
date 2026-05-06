@@ -2,15 +2,19 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 
-// Vite config for the KeyShield browser-extension popup.
-//
-// We don't ship a manifest.json + service-worker bundle yet — that's a
-// follow-up once we pick a final extension framework. This config builds
-// the popup as a stand-alone SPA you can `npm run dev` against, which is
-// enough to develop the UI end-to-end.
+// Vite config for the KeyShield popup SPA. The wider extension build
+// (manifest.json, service worker, content script, icons) is wrapped in
+// scripts/build-extension.mjs which calls `vite build` first and then
+// bundles the rest with esbuild. `npm run dev` still serves the popup
+// alone for fast UI iteration.
 export default defineConfig({
   plugins: [react()],
   root: resolve(__dirname, 'src/popup'),
+  // Relative asset paths so the popup loads correctly when served from
+  // chrome-extension://<id>/popup.html — absolute "/assets/..." would
+  // be resolved against the extension root, which is fragile if we
+  // ever move popup.html into a subdir.
+  base: './',
   // Resolve `chrome.*` namespace to a no-op shim during dev — see
   // src/popup/chrome-shim.ts. The shim only kicks in when there is no
   // real chrome.storage available (i.e. running outside the extension).
