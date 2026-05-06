@@ -2163,6 +2163,72 @@ async def health():
 
 
 
+# ─── Ephemeral Signer (Agent Embedded Wallet) build-tx ─────────────────────
+#
+# Wraps ix #23 CreateEphemeralSigner — the differentiator vs Coinbase
+# Agentic. Owner-signed (frontend wallet adapter); server only assembles
+# the ix payload. Top-up + balance read are follow-ups.
+#
+# See v2-mvp/src/agent_wallet.py for the byte-layout contract.
+
+from . import agent_wallet  # noqa: E402
+
+
+class BuildEphemeralSignerTxBody(BaseModel):
+    """Frontend computes the ephemeral signer PDA itself (so it can
+    show the address before sign), passes it back. Allowed actions
+    default to PAY_AND_PROXY (0x05) — agent can pay + run proxy calls
+    but cannot decrypt raw vault keys."""
+
+    ownerPubkey:        str
+    agentPubkey:        str
+    ephemeralSignerPda: str
+    allowedActions:     int = 0x05  # PAY_X402 | PROXY_CALL
+    expirySeconds:      int = 0     # 0 = no expiry
+
+
+@app.post(
+    "/agents/{agent_id}/wallet/create-tx",
+    response_model=BuildTxResponse,
+)
+async def agents_build_ephemeral_signer_tx(
+    agent_id: str,
+    body: BuildEphemeralSignerTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build unsigned `create_ephemeral_signer` ix (#23) for an
+    existing agent grant. Frontend wallet adapter signs in-browser.
+
+    503 if KS_VAULT_PDA / KS_KEYSHIELD_PROGRAM_ID env aren't set.
+    404 if the agent isn't registered to this user.
+    """
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "Ephemeral signer config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA",
+        )
+
+    user_agents = agents.list_for_user(sess["user_id"])
+    if not any(a.get("id") == agent_id for a in user_agents):
+        raise HTTPException(404, "agent not found")
+
+    try:
+        ix = agent_wallet.build_create_ephemeral_signer_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            agent_pubkey=body.agentPubkey.strip(),
+            ephemeral_signer_pda=body.ephemeralSignerPda.strip(),
+            allowed_actions=int(body.allowedActions),
+            expiry_seconds=int(body.expirySeconds),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.server:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=True)
