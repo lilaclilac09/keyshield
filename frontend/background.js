@@ -1,20 +1,36 @@
 /**
  * KeyShield Background Script
  * ─────────────────────────────────────────────────────────────────────────────
- * Two paths:
+ * Three paths:
  *
  *  1. SAVE_KEY (from content.js):
  *     - If we have a stored session token → POST /manage/store directly.
- *       User sees a "✓ Saved" Chrome notification. NO new tab opens.
- *     - If no token → fall back to opening the dashboard with prefilled URL.
+ *       User sees a "✓ Saved" Chrome notification AND we sendResponse so the
+ *       content script can render an in-page success/failure toast.
+ *     - If no token / token expired → fall back to opening the dashboard with
+ *       a prefilled URL.
  *
  *  2. KS_TOKEN_REGISTER (from dashboard via externally_connectable):
  *     Dashboard sends this on login/logout. We persist in chrome.storage.local.
- *     Cleared on logout.
+ *
+ *  3. API_BASE override (chrome.storage.local.ks_api_base):
+ *     Lets QA point a single extension build at staging or prod without
+ *     re-zipping. Defaults to localhost in dev. The popup writes this value.
  */
 
-const KS_BASE       = 'http://localhost:8000';
-const DASHBOARD_URL = 'http://localhost:3000';
+const DEFAULT_KS_BASE       = 'http://localhost:8000';
+const DEFAULT_DASHBOARD_URL = 'http://localhost:3000';
+
+async function getApiBase() {
+  const { ks_api_base, ks_dashboard_url } = await chrome.storage.local.get([
+    'ks_api_base',
+    'ks_dashboard_url',
+  ]);
+  return {
+    apiBase:      ks_api_base      || DEFAULT_KS_BASE,
+    dashboardUrl: ks_dashboard_url || DEFAULT_DASHBOARD_URL,
+  };
+}
 
 // ── Storage helpers ─────────────────────────────────────────────────────────
 
@@ -51,8 +67,10 @@ async function directStore({ upstream, value }) {
   const { token } = await getStoredToken();
   if (!token) return { ok: false, reason: 'no-token' };
 
+  const { apiBase } = await getApiBase();
+
   try {
-    const r = await fetch(`${KS_BASE}/manage/store`, {
+    const r = await fetch(`${apiBase}/manage/store`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
@@ -78,16 +96,30 @@ async function directStore({ upstream, value }) {
 // ── SAVE_KEY (from content.js) ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== 'SAVE_KEY') return false;
+  // Accept both the structured form ({type, payload}) and the spec form
+  // ({action: "save-key", provider, key, source_url}) so we don't break
+  // either client.
+  let payload = null;
+  if (message.type === 'SAVE_KEY' && message.payload) {
+    payload = message.payload;
+  } else if (message.action === 'save-key') {
+    payload = {
+      upstream: message.provider,
+      value:    message.key,
+      name:     message.name || `${message.provider} (${new URL(message.source_url || 'http://x').hostname})`,
+      domain:   (() => { try { return new URL(message.source_url).hostname; } catch { return ''; } })(),
+    };
+  }
+  if (!payload) return false;
 
   (async () => {
-    const { upstream, name, value, domain } = message.payload;
+    const { upstream, name, value, domain } = payload;
 
     // Try direct API store
     const result = await directStore({ upstream, value });
 
     if (result.ok) {
-      notify('✓ Key saved to vault', `${upstream} key from ${domain}`);
+      notify('KeyShield', `Saved ${upstream} key to KeyShield`);
       sendResponse({ ok: true, mode: 'direct' });
       return;
     }
@@ -99,6 +131,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       'network':       'Backend unreachable — opening dashboard',
     }[result.reason] || `Error: ${result.reason}`;
 
+    const { dashboardUrl } = await getApiBase();
     const params = new URLSearchParams({
       action:   'add',
       upstream: upstream || 'openai',
@@ -108,7 +141,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
 
     notify('KeyShield', reasonMsg);
-    chrome.tabs.create({ url: `${DASHBOARD_URL}/?${params}` });
+    chrome.tabs.create({ url: `${dashboardUrl}/?${params}` });
     sendResponse({ ok: false, mode: 'fallback', reason: result.reason });
   })();
 

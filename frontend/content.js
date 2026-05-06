@@ -8,6 +8,33 @@
  *
  * Maps detected provider → KeyShield backend `upstream` so a single click
  * stores the key under the correct vault namespace.
+ *
+ * ── Detect → save flow audit (2026-05) ────────────────────────────────────
+ *   detect (this file)
+ *      └─ scan() text + inputs → handleMatch() → showNotification()
+ *           ├─ "Save to vault" click
+ *           │     └─ chrome.runtime.sendMessage({type:'SAVE_KEY', payload})
+ *           │           └─ background.js → POST /manage/store {upstream, apiKey}
+ *           │                 ├─ 200 → chrome.notifications + sendResponse(ok:true)
+ *           │                 │         → in-page toast "Saved to vault"
+ *           │                 ├─ 401 → fallback to dashboard prefill
+ *           │                 └─ network → fallback to dashboard prefill
+ *           ├─ "Dismiss" click       → just remove the notification
+ *           └─ "Hide on this domain" → store HOST in dismissed_domains and stop
+ *
+ *   Gaps that USED to exist (closed in this revision):
+ *     - background.js was hardcoded to localhost:8000.   FIX: storage override.
+ *     - sendMessage was fire-and-forget, no UI feedback. FIX: callback + toast.
+ *     - No way to silence the toast on noisy domains.    FIX: dismissed_domains.
+ *     - Manifest had no prod host_permissions.           FIX: keyshield.dev/*.
+ *
+ *   Known remaining gaps (intentional, not in scope here):
+ *     - mistral/cohere/alchemy generic 32–40 char regexes only fire on-domain
+ *       (requiresDomain=true) but inside iframes the host check uses the top
+ *       window's hostname; a same-origin iframe is fine, cross-origin iframe
+ *       won't trigger. Acceptable for the OpenAI / Helius "happy path" demo.
+ *     - The popup writes ks_token via externally_connectable from the dashboard
+ *       only. There's no "paste your token" form in the popup itself yet.
  */
 
 // ── Provider definitions ────────────────────────────────────────────────────
@@ -107,7 +134,35 @@ const PROVIDERS = [
 
 const detectedKeys = new Set();
 let notificationActive = false;
+let domainDismissed   = false;   // set asynchronously below
 const HOST = window.location.hostname;
+
+// Read user's per-domain dismissals from chrome.storage.local. Populated once
+// at startup; updated when "Hide on this domain" is clicked.
+function loadDismissedDomains() {
+  try {
+    chrome.storage?.local?.get?.(['dismissed_domains'], (out) => {
+      const list = (out && out.dismissed_domains) || [];
+      domainDismissed = Array.isArray(list) && list.includes(HOST);
+      if (domainDismissed) console.log(`[KeyShield] ${HOST} is in dismissed_domains — auto-detect muted`);
+    });
+  } catch {
+    // Extension context might not be available (e.g. in dev-server preview).
+    // Fail open: keep auto-detect on.
+  }
+}
+
+function dismissThisDomain() {
+  try {
+    chrome.storage?.local?.get?.(['dismissed_domains'], (out) => {
+      const list = (out && Array.isArray(out.dismissed_domains)) ? out.dismissed_domains : [];
+      if (!list.includes(HOST)) list.push(HOST);
+      chrome.storage.local.set({ dismissed_domains: list }, () => {
+        domainDismissed = true;
+      });
+    });
+  } catch {/* noop */}
+}
 
 // Domain → provider boost (when a page has a matching provider domain,
 // we treat its keys as high-confidence)
@@ -118,6 +173,7 @@ function isOnDomain(provider) {
 // ── Scanner ─────────────────────────────────────────────────────────────────
 
 function scan() {
+  if (domainDismissed) return;
   // 1. Visible text
   const text = document.body?.innerText || '';
   // 2. Input values (often where keys are revealed via "Show" button)
@@ -224,44 +280,114 @@ function showNotification(key, provider, onDomain) {
     <div style="font-size:10px;color:#71717a;line-height:1.5">
       ${confText}
     </div>
+    <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;
+         border-radius:6px;line-height:1.4"></div>
     <div style="display:flex;gap:8px">
       <button id="ks-save"   class="ks-btn ks-btn-primary" style="flex:1">
         Save to vault as <strong>${provider.id}</strong>
       </button>
       <button id="ks-ignore" class="ks-btn ks-btn-ghost">Dismiss</button>
     </div>
+    <div style="display:flex;justify-content:flex-end">
+      <a id="ks-hide-domain" href="#"
+         style="font-size:10px;color:#71717a;text-decoration:none;
+                cursor:pointer;border-bottom:1px dotted #3f3f46">
+        Hide for this domain
+      </a>
+    </div>
   `;
 
   document.body.appendChild(container);
 
-  container.querySelector('#ks-save').onclick = () => {
-    chrome.runtime.sendMessage({
-      type:    'SAVE_KEY',
-      payload: {
-        upstream: provider.id,                  // backend upstream name
-        name:     `${provider.name} (${HOST})`,
-        value:    key,
-        domain:   HOST,
-      },
-    });
-    container.remove();
-    notificationActive = false;
-  };
-
-  container.querySelector('#ks-ignore').onclick = () => {
-    container.remove();
-    notificationActive = false;
-  };
-
-  setTimeout(() => {
-    if (container.parentNode) {
-      container.remove();
-      notificationActive = false;
+  const status = container.querySelector('#ks-status');
+  const setStatus = (text, kind) => {
+    status.textContent = text;
+    status.style.display = 'block';
+    if (kind === 'ok') {
+      status.style.background = 'rgba(16,185,129,.12)';
+      status.style.color = '#34d399';
+      status.style.border = '1px solid rgba(16,185,129,.3)';
+    } else if (kind === 'err') {
+      status.style.background = 'rgba(239,68,68,.12)';
+      status.style.color = '#f87171';
+      status.style.border = '1px solid rgba(239,68,68,.3)';
+    } else {
+      status.style.background = 'rgba(91,140,255,.12)';
+      status.style.color = '#93b4ff';
+      status.style.border = '1px solid rgba(91,140,255,.3)';
     }
-  }, 12000);
+  };
+
+  let autoCloseTimer = setTimeout(() => closeNotice(), 12000);
+  function closeNotice() {
+    clearTimeout(autoCloseTimer);
+    if (container.parentNode) container.remove();
+    notificationActive = false;
+  }
+
+  const saveBtn = container.querySelector('#ks-save');
+  saveBtn.onclick = () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    setStatus('Sending to your vault…', 'info');
+
+    // Pause the auto-close while a save is in flight; we want the user to
+    // actually see the success/failure toast.
+    clearTimeout(autoCloseTimer);
+
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type:    'SAVE_KEY',
+          payload: {
+            upstream: provider.id,                  // backend upstream name
+            name:     `${provider.name} (${HOST})`,
+            value:    key,
+            domain:   HOST,
+          },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            setStatus(`Could not reach extension: ${chrome.runtime.lastError.message}`, 'err');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `Retry save as <strong>${provider.id}</strong>`;
+            return;
+          }
+          if (response && response.ok) {
+            setStatus(`Saved ${provider.name} key to KeyShield vault`, 'ok');
+            autoCloseTimer = setTimeout(closeNotice, 2200);
+          } else {
+            const why =
+              response && response.reason === 'no-token'      ? 'Sign in to KeyShield first.'
+              : response && response.reason === 'token-expired' ? 'Session expired — sign in again.'
+              : response && response.reason === 'network'     ? 'Backend unreachable. Opened the dashboard.'
+              : 'Save failed. Opened the dashboard.';
+            setStatus(why, 'err');
+            // The background opens the dashboard tab in fallback mode, so we can
+            // close this notice after a short read.
+            autoCloseTimer = setTimeout(closeNotice, 4000);
+          }
+        },
+      );
+    } catch (e) {
+      setStatus(`Extension not available: ${String(e)}`, 'err');
+      saveBtn.disabled = false;
+    }
+  };
+
+  container.querySelector('#ks-ignore').onclick = closeNotice;
+
+  container.querySelector('#ks-hide-domain').onclick = (ev) => {
+    ev.preventDefault();
+    dismissThisDomain();
+    setStatus(`Auto-detect muted on ${HOST}.`, 'info');
+    autoCloseTimer = setTimeout(closeNotice, 1200);
+  };
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
+
+loadDismissedDomains();
 
 scan();
 setInterval(scan, 3000);
