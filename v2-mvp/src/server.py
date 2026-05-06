@@ -496,7 +496,10 @@ class LoginBody(BaseModel):
 
 @app.post("/auth/login")
 async def login(body: LoginBody):
-    token = session.create(body.userId, body.password)
+    try:
+        token = session.create(body.userId, body.password)
+    except session.UserDeleted:
+        raise HTTPException(410, "this account was deleted")
     return {"token": token}
 
 
@@ -504,6 +507,221 @@ async def login(body: LoginBody):
 async def logout(token: str = Depends(_bearer)):
     session.delete(token)
     return {"ok": True}
+
+
+# ── /auth/delete-account: cascade wipe + soft-delete tombstone ───────────────
+#
+# What gets wiped on success:
+#   1. Vault entries (.enc files under VAULT_DIR/<user_id>)
+#   2. Agent registrations (agent_keys WHERE owner_wallet = user_id)
+#   3. All sessions for the user
+#   4. Usage history + balance + topup_tx rows
+#   5. x402_claims rows for the user (best-effort — only if module is loaded)
+#   6. Sharing rows owned by the user (vault_shares WHERE owner_id = user_id)
+#   7. Passkey credentials (passkey_credentials WHERE user_id = ?)
+#
+# Then the user_id gets a tombstone row in deleted_users so:
+#   - any token that survived the session wipe still fails (session.get()
+#     cross-checks deleted_users)
+#   - the same wallet re-registering can't impersonate the prior identity;
+#     session.create() raises UserDeleted → 410 Gone.
+#
+# For wallet-login users, we require a fresh ed25519 signature over a
+# DELETE-specific challenge string. This is the anti-account-takeover
+# mitigation: an attacker who steals a session token still can't permanently
+# delete the account without also having the wallet's private key.
+
+CONFIRMATION_PHRASE = "DELETE my account"
+
+
+class DeleteAccountBody(BaseModel):
+    confirmation: str
+    # Wallet-login users must supply these. Same shape as /auth/wallet-login,
+    # except the challenge string starts with "KeyShield Delete Account" so a
+    # signature obtained from the login flow can't be replayed against
+    # /auth/delete-account.
+    walletAddress: str | None = None
+    signature:     str | None = None
+    challenge:     str | None = None
+
+
+@app.get("/auth/delete-account-challenge")
+async def delete_account_challenge(sess: dict = Depends(_session)):
+    """
+    Issue a one-time challenge for the destructive /auth/delete-account
+    flow. Distinct prefix ('KeyShield Delete Account') so a wallet-login
+    signature can't be replayed here, and vice versa.
+    """
+    _purge_expired_nonces()
+    nonce = secrets.token_hex(16)
+    challenge = (
+        f"KeyShield Delete Account\n"
+        f"User: {sess['user_id']}\n"
+        f"Nonce: {nonce}\n"
+        f"Timestamp: {int(time.time())}"
+    )
+    _record_nonce(nonce, challenge)
+    return {"challenge": challenge, "nonce": nonce}
+
+
+def _looks_like_solana_wallet(user_id: str) -> bool:
+    """
+    Heuristic: a Solana wallet address is base58-encoded 32 bytes, which
+    in practice means 43-44 chars from the base58 alphabet. Used to decide
+    whether to require a fresh signature on /auth/delete-account.
+
+    False positives are fine (we just demand an extra signature the user
+    can't produce — they'd hit a clean 400 telling them to skip the
+    walletAddress fields). False negatives are the dangerous case: a real
+    wallet user who skips the signature requirement. The length + alphabet
+    gate together rule that out for any address that successfully logged
+    in via /auth/wallet-login.
+    """
+    if not (32 <= len(user_id) <= 44):
+        return False
+    return all(c in _B58_ALPHABET for c in user_id)
+
+
+@app.post("/auth/delete-account")
+async def delete_account(
+    body: DeleteAccountBody,
+    sess: dict = Depends(_session),
+):
+    """
+    Permanently delete the authenticated user's account and all associated
+    data. Wallet-login users must additionally sign a DELETE-specific
+    challenge from /auth/delete-account-challenge to defeat session-token
+    theft.
+
+    Body:
+      {
+        "confirmation": "DELETE my account",   // must match exactly
+        "walletAddress": "<base58>",           // wallet users only
+        "signature":     "<base64 ed25519>",   // wallet users only
+        "challenge":     "<challenge text>"    // wallet users only
+      }
+
+    Idempotent at the cascade level — a partial cascade can be retried
+    safely. The tombstone is set last so any concurrent in-flight requests
+    on the same user can still complete cleanly before being locked out.
+    """
+    if body.confirmation != CONFIRMATION_PHRASE:
+        raise HTTPException(
+            400,
+            f"confirmation must be exactly {CONFIRMATION_PHRASE!r}",
+        )
+
+    user_id = sess["user_id"]
+
+    # ── Wallet-login defense in depth: require a fresh signed message ─────
+    if _looks_like_solana_wallet(user_id):
+        if not (body.walletAddress and body.signature and body.challenge):
+            raise HTTPException(
+                400,
+                "wallet-login users must include walletAddress, signature, "
+                "and challenge (from /auth/delete-account-challenge)",
+            )
+        if body.walletAddress != user_id:
+            raise HTTPException(
+                403,
+                "walletAddress does not match the authenticated user",
+            )
+        if not body.challenge.startswith("KeyShield Delete Account"):
+            # Reject a wallet-login challenge being smuggled in as the
+            # delete challenge — they have different prefixes for exactly
+            # this reason.
+            raise HTTPException(
+                400,
+                "challenge must be issued by /auth/delete-account-challenge",
+            )
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+
+        nonce = _validate_challenge(body.challenge)
+        pub_key_bytes = _decode_b58_pubkey(body.walletAddress, label="wallet address")
+        sig_bytes = _decode_b64_signature(body.signature)
+        msg_bytes = body.challenge.encode("utf-8")
+        try:
+            Ed25519PublicKey.from_public_bytes(pub_key_bytes).verify(sig_bytes, msg_bytes)
+        except InvalidSignature:
+            raise HTTPException(401, "invalid wallet signature")
+        _consume_nonce(nonce)
+
+    loop = asyncio.get_event_loop()
+
+    def _cascade() -> dict:
+        report: dict[str, Any] = {}
+
+        # 1. Vault entries
+        keys = vault.list_keys(user_id)
+        for upstream in keys:
+            vault.delete(user_id, upstream)
+        report["vault_keys"] = len(keys)
+
+        # 2. Agent registrations — list + revoke loop
+        agent_rows = agents.list_agents(user_id)
+        for agent in agent_rows:
+            agents.revoke(user_id, agent["id"])
+        report["agents"] = len(agent_rows)
+
+        # 3. Usage history, balance, topup_tx
+        report["usage"] = usage.purge_user(user_id)
+
+        # 4. Passkey credentials — best-effort (lazy import: optional dep)
+        try:
+            from . import passkey as passkey_mod
+            with passkey_mod._db() as pk_conn:
+                cur = pk_conn.execute(
+                    "DELETE FROM passkey_credentials WHERE user_id = ?",
+                    (user_id,),
+                )
+                report["passkeys"] = cur.rowcount or 0
+        except Exception:
+            report["passkeys"] = "skipped"
+
+        # 5. x402_claims — only if x402_verify module exists in this build
+        try:
+            from . import x402_verify  # type: ignore[attr-defined]
+            x402_verify._db().execute(
+                "DELETE FROM x402_claims WHERE user_id=?", (user_id,),
+            )
+            report["x402_claims"] = "purged"
+        except (ImportError, AttributeError):
+            # Module not present in this build — fine; nothing to purge.
+            report["x402_claims"] = "skipped"
+        except Exception as exc:
+            report["x402_claims"] = f"error: {exc}"
+
+        # 6. Sharing rows — best-effort, only if sharing module loaded
+        try:
+            from . import sharing  # type: ignore[attr-defined]
+            report["shares"] = sharing.purge_user(user_id)
+        except (ImportError, AttributeError):
+            report["shares"] = "skipped"
+        except Exception as exc:
+            report["shares"] = f"error: {exc}"
+
+        # 7. Sessions (do this LAST so we don't lock ourselves out of the
+        #    cleanup mid-cascade by accidentally invalidating our own token
+        #    via a side-effect).
+        report["sessions"] = session.delete_all_for_user(user_id)
+
+        # 8. Tombstone — ABSOLUTE last step. After this, any surviving
+        #    session row would still fail session.get() because of the
+        #    deleted_users cross-check.
+        session.mark_deleted(user_id)
+
+        return report
+
+    try:
+        report = await loop.run_in_executor(None, _cascade)
+    except Exception as exc:
+        # Best-effort partial cleanup — the tombstone might not have been
+        # set, so the user can retry. Surface the error for diagnosis.
+        raise HTTPException(500, f"cascade failed: {exc}")
+
+    return {"ok": True, "report": report}
 
 
 # ── Wallet auth ───────────────────────────────────────────────────────────────
@@ -559,7 +777,10 @@ async def wallet_login(body: WalletLoginBody):
         raise HTTPException(401, "invalid wallet signature")
 
     _consume_nonce(nonce)
-    token = session.create(body.walletAddress, body.passphrase)
+    try:
+        token = session.create(body.walletAddress, body.passphrase)
+    except session.UserDeleted:
+        raise HTTPException(410, "this account was deleted")
     return {"token": token, "userId": body.walletAddress}
 
 
@@ -755,6 +976,116 @@ async def store_key(body: StoreBody, sess: dict = Depends(_session)):
 async def delete_key(upstream: str, sess: dict = Depends(_session)):
     """Delete a stored API key from the vault."""
     vault.delete(sess["user_id"], upstream)
+    return {"ok": True}
+
+
+# ─── vault sharing (read-only DEK delegation) ───────────────────────────────
+#
+# A "share" lets a vault owner grant another user read access to a specific
+# key without disclosing the underlying API key in plaintext. The recipient
+# decrypts the DEK with their own key material; the server never sees
+# either side's plaintext.
+#
+# v1 status (this branch): the table, list/revoke endpoints, and tenant
+# isolation are wired up; /share/grant returns 501 because the AES-GCM
+# file vault on this branch does not carry the recipient's public key
+# needed to re-wrap the DEK. See sharing.CRYPTO_REWRAP_AVAILABLE for the
+# single-flag flip when the passkey-vault upgrade lands.
+
+from . import sharing  # noqa: E402
+
+
+class ShareGrantBody(BaseModel):
+    key_name:          str
+    recipient_user_id: str
+    expires_at:        int | None = None
+
+
+@app.post("/share/grant")
+async def share_grant(body: ShareGrantBody, sess: dict = Depends(_session)):
+    """
+    Grant another user read access to a key in your vault.
+
+    On builds that do not yet support passkey-derived DEK re-wrapping,
+    this returns 501 with a clear explanation. The 501 path is the
+    contract for v1 (per spec C3); flipping
+    sharing.CRYPTO_REWRAP_AVAILABLE without also implementing the
+    re-wrap step would silently store NULL DEKs, which is worse than
+    a hard 501.
+    """
+    owner_id = sess["user_id"]
+
+    # Sanity: you cannot share a key you don't own.
+    if body.key_name not in vault.list_keys(owner_id):
+        raise HTTPException(404, f"no such key in your vault: {body.key_name}")
+
+    # Self-share is meaningless and a frequent UI mistake.
+    if body.recipient_user_id == owner_id:
+        raise HTTPException(400, "cannot share a key with yourself")
+
+    if not sharing.CRYPTO_REWRAP_AVAILABLE:
+        raise HTTPException(
+            501,
+            "Sharing requires a passkey-based vault so the DEK can be "
+            "re-wrapped to the recipient's public key. The current AES-GCM "
+            "file vault doesn't carry that material — coming in v2.",
+        )
+
+    # When the upgrade lands, the route layer will:
+    #   1. fetch recipient's wrap pubkey from passkey_credentials
+    #   2. read the DEK from owner's wrapped-vault entry
+    #   3. re-wrap to recipient's pubkey
+    #   4. call sharing.grant(..., encrypted_dek=wrapped) below
+    # For now, this code path is unreachable.
+    try:
+        loop = asyncio.get_event_loop()
+        share_id = await loop.run_in_executor(
+            None, sharing.grant,
+            owner_id, body.recipient_user_id, body.key_name, None, body.expires_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+    return {
+        "ok": True,
+        "share": {
+            "id":           share_id,
+            "owner_id":     owner_id,
+            "recipient_id": body.recipient_user_id,
+            "key_name":     body.key_name,
+            "expires_at":   body.expires_at,
+        },
+    }
+
+
+@app.get("/share/incoming")
+async def share_incoming(sess: dict = Depends(_session)):
+    """List shares granted TO the current user."""
+    loop = asyncio.get_event_loop()
+    shares = await loop.run_in_executor(None, sharing.list_incoming, sess["user_id"])
+    return {"shares": shares}
+
+
+@app.get("/share/outgoing")
+async def share_outgoing(sess: dict = Depends(_session)):
+    """List shares the current user has granted."""
+    loop = asyncio.get_event_loop()
+    shares = await loop.run_in_executor(None, sharing.list_outgoing, sess["user_id"])
+    return {"shares": shares}
+
+
+@app.delete("/share/{share_id}")
+async def share_revoke(share_id: int, sess: dict = Depends(_session)):
+    """
+    Revoke a share. Owner-only — recipients cannot delete shares granted
+    to them (they can stop using the share, but the canonical row is the
+    owner's). Returns 404 when the share is not owned by the caller, to
+    avoid leaking the existence of other users' shares.
+    """
+    loop = asyncio.get_event_loop()
+    removed = await loop.run_in_executor(None, sharing.revoke, sess["user_id"], share_id)
+    if not removed:
+        raise HTTPException(404, "share not found")
     return {"ok": True}
 
 

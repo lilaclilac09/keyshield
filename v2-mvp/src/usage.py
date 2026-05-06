@@ -338,6 +338,28 @@ def credit_solana_topup(
         conn.close()
 
 
+def purge_user(user_id: str) -> dict:
+    """
+    Delete all usage history, balance row, and topup_tx rows for a user.
+    Used by /auth/delete-account during cascade.
+
+    Returns counts so callers can assert / log how much was wiped.
+    NOTE: topup_tx is also wiped; this is intentional. The PRIMARY KEY on
+    tx_signature was a soft replay guard for credit, but the auth-level
+    soft-delete on the user row (in session.py) is the durable replay
+    guard now.
+    """
+    conn = _db()
+    try:
+        usage_n  = conn.execute("DELETE FROM usage_log    WHERE user_id = ?", (user_id,)).rowcount or 0
+        balance_n = conn.execute("DELETE FROM user_balance WHERE user_id = ?", (user_id,)).rowcount or 0
+        topup_n  = conn.execute("DELETE FROM topup_tx     WHERE user_id = ?", (user_id,)).rowcount or 0
+        conn.commit()
+        return {"usage_log": usage_n, "user_balance": balance_n, "topup_tx": topup_n}
+    finally:
+        conn.close()
+
+
 def list_topups(user_id: str, limit: int = 20) -> list[dict]:
     """User's recent Solana topups, newest first."""
     conn = _db()
