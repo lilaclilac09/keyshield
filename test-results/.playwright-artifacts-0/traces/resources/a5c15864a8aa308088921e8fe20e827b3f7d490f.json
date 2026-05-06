@@ -1,1 +1,0 @@
-{"upstream":"ssh__prod_deploy","apiKey":"{\"publicKey\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA alice@laptop\",\"privateKey\":\"-----BEGIN OPENSSH PRIVATE KEY-----\\nb3BlbnNzaC1rZXktdjEAAAAA\\n-----END OPENSSH PRIVATE KEY-----\",\"passphrase\":\"\",\"comment\":\"alice@laptop\"}"}

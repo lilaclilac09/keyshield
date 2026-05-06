@@ -61,3 +61,7 @@ __pycache__/
 .venv/
 **/.venv/
 *.egg-info/
+
+# Playwright test artifacts (traces, screenshots, network logs)
+test-results/
+playwright-report/
