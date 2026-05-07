@@ -1,5 +1,8 @@
 """
+
+
 Security fix tests for KeyShield v2-MVP.
+
 """
 
 import pytest
@@ -7,6 +10,8 @@ import time
 from pathlib import Path
 
 
+
+from tests.conftest import _auth
 class TestVault:
     """Tests for vault.py."""
 
@@ -17,11 +22,14 @@ class TestVault:
         result = load("alice", "openai", password="pw")
         assert result == "sk-test-key"
 
+
     def test_wrong_password_fails(self):
         from src.vault import store, load, VAULT_DIR
 
         store("bob", "anthropic", "sk-ant-test", password="pw")
         with pytest.raises(PermissionError):
+
+
             load("bob", "anthropic", password="wrong")
 
     def test_key_isolation(self):
@@ -31,6 +39,7 @@ class TestVault:
         store("u2", "openai", "bob-key", password="pw")
         assert load("u1", "openai", password="pw") == "alice-key"
         assert load("u2", "openai", password="pw") == "bob-key"
+
 
     def test_list_keys(self):
         from src.vault import store, list_keys, VAULT_DIR
@@ -49,6 +58,8 @@ class TestVault:
             load("alice", "openai", password="pw")
 
 
+
+
 class TestSession:
     """Tests for session.py."""
 
@@ -56,10 +67,13 @@ class TestSession:
         from src.session import create_token, get
 
         token = create_token("alice", "pw")
+
         sess = get(token)
         assert sess is not None
         assert sess["user_id"] == "alice"
         assert sess["password"] == "pw"
+
+
 
     def test_expired_token(self):
         from src.session import create_token, get
@@ -72,9 +86,12 @@ class TestSession:
         from src.session import create_token, verify_token
 
         token = create_token("alice", "pw")
+
         valid, err = verify_token(token)
         assert valid is True
         assert err is None
+
+
 
     def test_tampered_token(self):
         from src.session import verify_token
@@ -100,10 +117,13 @@ class TestAgentRevocation:
 
         register("owner1", "9WzDX...", name="bot1")
         result = lookup_owner("9WzDX...")
+
         assert result is not None
         assert result["name"] == "bot1"
 
     def test_revoke_agent(self):
+
+
         from src.agents import register, lookup_owner, revoke_agent
 
         register("owner1", "9WzDX...", name="bot1")
@@ -150,18 +170,24 @@ class TestAuthFlow:
     def test_store_key(self, client, login):
         r = client.post(
             "/manage/store", headers=_auth(login),
+
             json={"upstream": "openai", "apiKey": "sk-test-key"},
         )
         assert r.status_code == 200
+
+
 
     def test_list_keys(self, client, login):
         # Store a key first
         client.post("/manage/store", headers=_auth(login),
                     json={"upstream": "openai", "apiKey": "sk-test-key"})
         r = client.get("/manage/list", headers=_auth(login))
+
         assert r.status_code == 200
         keys = r.json()["keys"]
         assert "openai" in keys
+
+
 
     def test_agent_register(self, client, login):
         r = client.post("/agents/register", headers=_auth(login), json={

@@ -1,4 +1,5 @@
 """
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
 Comprehensive tests for all security fixes.
 
 Tests cover:
@@ -9,11 +10,15 @@ Tests cover:
   5. Server secret validation (X-Internal-Secret)
   6. Vault file permissions
   7. Challenge nonce replay protection
+=======
+Security fix tests for KeyShield v2-MVP.
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
 """
 
 import pytest
 import time
 from pathlib import Path
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
 from fastapi.testclient import TestClient
 
 
@@ -35,12 +40,26 @@ class TestVaultArgon2id:
         store("alice", "openai", "sk-test-key-12345", password="pw")
         result = load("alice", "openai", password="pw")
         assert result == "sk-test-key-12345"
+=======
+
+
+class TestVault:
+    """Tests for vault.py."""
+
+    def test_store_and_load(self):
+        from src.vault import store, load, VAULT_DIR
+
+        store("alice", "openai", "sk-test-key", password="pw")
+        result = load("alice", "openai", password="pw")
+        assert result == "sk-test-key"
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
 
     def test_wrong_password_fails(self):
         from src.vault import store, load, VAULT_DIR
 
         store("bob", "anthropic", "sk-ant-test", password="pw")
         with pytest.raises(PermissionError):
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
             load("bob", "anthropic", password="wrong-password")
 
     def test_key_isolation_between_users(self, client):
@@ -53,6 +72,17 @@ class TestVaultArgon2id:
         bob_key = load("bob", "openai", password="pw")
         assert alice_key == "alice-key"
         assert bob_key == "bob-key"
+=======
+            load("bob", "anthropic", password="wrong")
+
+    def test_key_isolation(self):
+        from src.vault import store, load, VAULT_DIR
+
+        store("u1", "openai", "alice-key", password="pw")
+        store("u2", "openai", "bob-key", password="pw")
+        assert load("u1", "openai", password="pw") == "alice-key"
+        assert load("u2", "openai", password="pw") == "bob-key"
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
 
     def test_list_keys(self):
         from src.vault import store, list_keys, VAULT_DIR
@@ -70,6 +100,7 @@ class TestVaultArgon2id:
         with pytest.raises(PermissionError):
             load("alice", "openai", password="pw")
 
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
     def test_delete_nonexistent_key(self):
         from src.vault import delete, VAULT_DIR
         # Should not raise
@@ -85,11 +116,22 @@ class TestSessionTokens:
         from src.session import create, get
 
         token = create("alice", "pw")
+=======
+
+class TestSession:
+    """Tests for session.py."""
+
+    def test_create_and_get(self, client):
+        from src.session import create_token, get
+
+        token = create_token("alice", "pw")
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
         sess = get(token)
         assert sess is not None
         assert sess["user_id"] == "alice"
         assert sess["password"] == "pw"
 
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
     def test_expired_token_returns_none(self):
         from src.session import create, get
 
@@ -103,10 +145,24 @@ class TestSessionTokens:
         from src.session import create, verify_token
 
         token = create("alice", "pw")
+=======
+    def test_expired_token(self):
+        from src.session import create_token, get
+
+        token = create_token("alice", "pw", ttl=1)
+        time.sleep(1.1)
+        assert get(token) is None
+
+    def test_verify_token(self):
+        from src.session import create_token, verify_token
+
+        token = create_token("alice", "pw")
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
         valid, err = verify_token(token)
         assert valid is True
         assert err is None
 
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
     def test_tampered_token_rejected(self):
         from src.session import verify_token
 
@@ -165,10 +221,37 @@ class TestAgentRevocation:
 
         agents.register("owner1", "9WzDX...", name="bot1")
         result = agents.lookup_owner("9WzDX...")
+=======
+    def test_tampered_token(self):
+        from src.session import verify_token
+
+        valid, err = verify_token("payload_part.tampered_sig")
+        assert valid is False
+
+    def test_delete_all_for_user(self):
+        from src.session import create_token, delete_all_for_user, get
+
+        t1 = create_token("alice", "pw")
+        t2 = create_token("alice", "pw")
+        count = delete_all_for_user("alice")
+        assert count >= 2
+        assert get(t1) is None
+
+
+class TestAgentRevocation:
+    """Tests for agents.py."""
+
+    def test_register_and_lookup(self):
+        from src.agents import register, lookup_owner
+
+        register("owner1", "9WzDX...", name="bot1")
+        result = lookup_owner("9WzDX...")
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
         assert result is not None
         assert result["name"] == "bot1"
 
     def test_revoke_agent(self):
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
         from src import agents
 
         agents.register("owner1", "9WzDX...", name="bot1")
@@ -316,16 +399,73 @@ class TestAuthFlow:
         r = client.post(
             "/manage/store",
             headers=_auth(token),
+=======
+        from src.agents import register, lookup_owner, revoke_agent
+
+        register("owner1", "9WzDX...", name="bot1")
+        agent_id = [a["id"] for a in []][0]  # placeholder
+        result = revoke_agent("owner1", "9WzDX...")
+        assert result is True
+
+    def test_re_revoke_is_idempotent(self):
+        from src.agents import register, lookup_owner, revoke_agent
+
+        register("owner1", "9WzDX...", name="bot1")
+        for _ in range(5):
+            revoke_agent("owner1", "9WzDX...")
+
+
+class TestX402:
+    """Tests for x402_verify.py."""
+
+    def test_stub_fallback(self):
+        from src.x402_verify import verify_on_chain
+        import asyncio
+
+        ok, mode = asyncio.run(verify_on_chain(None, "anything", 1.0))
+        assert ok is True
+        assert mode == "stub-fallback"
+
+    def test_empty_proof_raises(self):
+        from src.x402_verify import verify_on_chain
+        import asyncio
+
+        with pytest.raises(Exception, match="empty"):
+            asyncio.run(verify_on_chain(None, "", 1.0))
+
+
+class TestAuthFlow:
+    """End-to-end auth tests."""
+
+    def test_password_login(self, client):
+        r = client.post("/auth/login", json={"userId": "alice", "password": "pw"})
+        assert r.status_code == 200
+        token = r.json()["token"]
+        assert len(token) > 10
+
+    def test_store_key(self, client, login):
+        r = client.post(
+            "/manage/store", headers=_auth(login),
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
             json={"upstream": "openai", "apiKey": "sk-test-key"},
         )
         assert r.status_code == 200
 
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
         # Verify key is stored
         r = client.get("/manage/list", headers=_auth(token))
+=======
+    def test_list_keys(self, client, login):
+        # Store a key first
+        client.post("/manage/store", headers=_auth(login),
+                    json={"upstream": "openai", "apiKey": "sk-test-key"})
+        r = client.get("/manage/list", headers=_auth(login))
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py
         assert r.status_code == 200
         keys = r.json()["keys"]
         assert "openai" in keys
 
+<<<<<<< Updated upstream:src/python-legacy/tests/test_security_fixes.py
     def test_wallet_login_flow(self, client):
         import base64
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -534,3 +674,26 @@ class TestProxyRouting:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+=======
+    def test_agent_register(self, client, login):
+        r = client.post("/agents/register", headers=_auth(login), json={
+            "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            "name": "test-bot",
+        })
+        assert r.status_code == 200
+
+    def test_agent_list(self, client, login):
+        client.post("/agents/register", headers=_auth(login), json={
+            "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        })
+        r = client.get("/agents/list", headers=_auth(login))
+        assert r.status_code == 200
+        assert len(r.json()["agents"]) >= 1
+
+    def test_proxy_openai(self, client):
+        r = client.post(
+            "/proxy/openai/v1/models",
+            headers={"Authorization": "Bearer dev-bypass"},
+        )
+        assert r.status_code in (200, 403)
+>>>>>>> Stashed changes:v2-mvp/tests/test_security_fixes.py

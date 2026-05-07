@@ -1,4 +1,6 @@
 """
+
+
 Conftest — shared fixtures for KeyShield v2-MVP tests.
 """
 
@@ -49,8 +51,11 @@ def isolate_dbs(tmp_path, monkeypatch):
     yield
 
 
+
 @pytest.fixture(scope="session")
 def client():
+
+
     from fastapi.testclient import TestClient
     from src import server
     server._NONCES.clear()
@@ -59,10 +64,14 @@ def client():
 
 @pytest.fixture
 def login(client):
+
     r = client.post("/auth/login", json={"userId": "alice", "password": "pw"})
     assert r.status_code == 200, f"Login failed: {r.text}"
     return r.json()["token"]
 
 
+
+
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+

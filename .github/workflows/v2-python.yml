@@ -38,13 +38,13 @@ jobs:
           pip install --upgrade pip
           pip install ruff mypy pytest httpx cryptography pynacl base58
 
-      - name: Run ruff linter
+      - name: Run ruff linter (v2-mvp src)
         run: cd v2-mvp && ruff check src/ tests/ trading/
 
       - name: Run ruff format
         run: cd v2-mvp && ruff format --check src/ tests/ trading/
 
-      - name: Run mypy type checking
+      - name: Run mypy type checking (v2-mvp)
         run: cd v2-mvp && mypy src/ --ignore-missing-imports
 
   test:
