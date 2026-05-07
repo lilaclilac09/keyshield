@@ -38,14 +38,14 @@ jobs:
           pip install --upgrade pip
           pip install ruff mypy pytest httpx cryptography pynacl base58
 
-      - name: Run ruff linter
-        run: cd v2-mvp && ruff check src/python-legacy/src/ src/python-legacy/tests/ src/python-legacy/trading/
+      - name: Run ruff linter (v2-mvp src)
+        run: cd v2-mvp && ruff check src/ tests/ trading/
 
       - name: Run ruff format
-        run: cd v2-mvp && ruff format --check src/python-legacy/src/ src/python-legacy/tests/ src/python-legacy/trading/
+        run: cd v2-mvp && ruff format --check src/ tests/ trading/
 
-      - name: Run mypy type checking
-        run: cd v2-mvp && mypy src/python-legacy/src/ --ignore-missing-imports
+      - name: Run mypy type checking (v2-mvp)
+        run: cd v2-mvp && mypy src/ --ignore-missing-imports
 
   test:
     name: Run Tests
@@ -131,22 +131,22 @@ jobs:
       - name: Verify server starts
         run: |
           cd v2-mvp
-          timeout 10 python -c "from src.python-legacy.src.server import app; print('✓ Server app loaded')" || true
+          timeout 10 python -c "from src.server import app; print('✓ Server app loaded')" || true
 
       - name: Verify SDK loads
         run: |
           cd v2-mvp
-          python src/python-legacy/keyshield_sdk.py health || echo "SDK module OK"
+          python keyshield_sdk.py health || echo "SDK module OK"
 
       - name: Verify CLI loads
         run: |
           cd v2-mvp
-          bash src/python-legacy/keyshield-cli.sh 2>&1 | head -5 || true
+          bash keyshield-cli.sh 2>&1 | head -5 || true
 
       - name: Verify trading module loads
         run: |
           cd v2-mvp
-          python -c "from src.python-legacy.trading.agent import TradingOrchestrator; print('✓ Trading agent OK')"
+          python -c "from trading.agent import TradingOrchestrator; print('✓ Trading agent OK')"
 
       - name: Final status
         run: |
