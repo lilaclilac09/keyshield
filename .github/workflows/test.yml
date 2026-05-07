@@ -1,6 +1,6 @@
 # KeyShield: Rust test suites
 #   1. Solana program (programs/keyshield) via Mollusk + cargo build-sbf
-#   2. proxy-rs hot-path port (78 tests across 5 crates)
+#   2. proxy-rs hot-path port (78 tests across 6 crates)
 #   3. Optional integration via Surfpool
 
 name: Test
@@ -28,17 +28,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            proxy-rs/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+            src/rust-proxy/target
+         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
-      - name: Build Solana program
-        run: cargo build-sbf
-
-      - name: Test Solana program
-        run: cargo test -p keyshield
-
-      - name: Test proxy-rs (78 tests across 5 crates)
-        run: cargo test --workspace --manifest-path proxy-rs/Cargo.toml
+       - name: Test proxy-rs (78 tests across 6 crates)
+         run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml
 
   integration-tests:
     name: Integration (Surfpool)

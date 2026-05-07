@@ -2,12 +2,12 @@
   "name": "keyshield",
   "private": true,
   "workspaces": [
-    "packages/agent-sdk",
-    "packages/cli",
-    "packages/goat-wallet",
-    "infra/sync-worker",
-    "mobile"
-  ],
+     "src/sdk/packages/agent-sdk",
+     "src/sdk/packages/cli",
+     "src/sdk/packages/goat-wallet",
+     "infra/sync-worker",
+     "src/mobile-app"
+   ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",
     "dev:worker": "npm run dev --workspace=@keyshield/sync-worker",
