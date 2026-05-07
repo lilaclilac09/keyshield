@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KeyShield · Passkey</title>
+<style>
+  :root {
+    --bg: #0b0b14;
+    --panel: #14142a;
+    --border: #2a2a44;
+    --text: #f0f0f5;
+    --muted: #8a8aa0;
+    --accent: #7c3aed;
+    --accent-hover: #9061f0;
+    --error: #ef4444;
+    --success: #10b981;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.02em;
+  }
+  h1 .accent { color: var(--accent); }
+  .sub {
+    color: var(--muted);
+    margin: 0 0 32px 0;
+    font-size: 14px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 16px;
+    margin: 0 0 16px 0;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel h2 .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: white;
+    letter-spacing: 0.04em;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 12px 0 6px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #1f1f3d;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'SF Mono', Menlo, monospace;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background 120ms;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  button.secondary:hover:not(:disabled) { background: #1f1f3d; }
+  .status {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .status.error { background: #2a0e10; color: var(--error); border: 1px solid #4a1a1d; }
+  .status.success { background: #0e2a1d; color: var(--success); border: 1px solid #1a4a32; }
+  .status.info { background: #14142a; color: var(--muted); border: 1px solid var(--border); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .divider {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin: 24px 0;
+    position: relative;
+  }
+  .divider::before, .divider::after {
+    content: ''; position: absolute; top: 50%;
+    width: calc(50% - 24px); height: 1px;
+    background: var(--border);
+  }
+  .divider::before { left: 0; }
+  .divider::after { right: 0; }
+  code {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    background: #1f1f3d;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+  .footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 32px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Key<span class="accent">Shield</span> · Passkey</h1>
+  <p class="sub">Register a passkey, then sign in with Touch ID / Face ID.</p>
+
+  <!-- Step 1: Wallet login (gets the bearer needed to register a passkey) -->
+  <div class="panel">
+    <h2>1. Sign in with passphrase <span class="badge">PREREQ</span></h2>
+    <p class="sub" style="margin-bottom: 0;">Required once to bind the passkey to your account.</p>
+    <label>User ID (wallet address or username)</label>
+    <input id="user-id" placeholder="e.g. F6AhYT...J52R or alice" autocomplete="off" />
+    <label>Passphrase</label>
+    <input id="passphrase" type="password" placeholder="your vault passphrase" />
+    <button id="btn-login">Sign in</button>
+    <div id="login-status"></div>
+  </div>
+
+  <!-- Step 2: Register a passkey -->
+  <div class="panel">
+    <h2>2. Add a passkey</h2>
+    <p class="sub" style="margin-bottom: 0;">Touch ID / Face ID / hardware key. One-click setup.</p>
+    <label>Friendly name</label>
+    <input id="passkey-name" value="My Mac" />
+    <button id="btn-register" disabled>+ Add passkey</button>
+    <div id="register-status"></div>
+  </div>
+
+  <!-- Step 3: Login with passkey -->
+  <div class="panel">
+    <h2>3. Sign in with passkey</h2>
+    <p class="sub" style="margin-bottom: 0;">Replace the passphrase step above. Touch ID only.</p>
+    <button id="btn-passkey-login">Sign in with passkey</button>
+    <div id="passkey-status"></div>
+  </div>
+
+  <p class="footer">Endpoint: <code id="base-url"></code></p>
+</div>
+
+<script>
+const KS_BASE = window.location.origin;
+document.getElementById('base-url').textContent = KS_BASE;
+
+let bearerToken = null;
+
+// ---------- helpers ----------
+const $ = (id) => document.getElementById(id);
+const setStatus = (id, msg, kind) => {
+  const el = $(id);
+  el.className = 'status ' + (kind || 'info');
+  el.textContent = msg;
+};
+const clearStatus = (id) => { $(id).className = ''; $(id).textContent = ''; };
+
+// base64url <-> ArrayBuffer
+const b64uToBuf = (s) => {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+  const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+};
+const bufToB64u = (b) => {
+  const bytes = new Uint8Array(b);
+  let s = '';
+  for (const x of bytes) s += String.fromCharCode(x);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+// ---------- 1. passphrase login ----------
+$('btn-login').onclick = async () => {
+  const userId = $('user-id').value.trim();
+  const pass   = $('passphrase').value;
+  if (!userId || !pass) { setStatus('login-status', 'fill both fields', 'error'); return; }
+
+  $('btn-login').disabled = true;
+  clearStatus('login-status');
+  try {
+    const res = await fetch(`${KS_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, passphrase: pass }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    bearerToken = data.token || data.access_token;
+    if (!bearerToken) throw new Error('no token in response');
+    setStatus('login-status', 'logged in. you can now register a passkey.', 'success');
+    $('btn-register').disabled = false;
+  } catch (e) {
+    setStatus('login-status', String(e.message || e), 'error');
+  } finally {
+    $('btn-login').disabled = false;
+  }
+};
+
+// ---------- 2. register a passkey ----------
+$('btn-register').onclick = async () => {
+  if (!bearerToken) { setStatus('register-status', 'sign in first', 'error'); return; }
+  const name = $('passkey-name').value || 'Passkey';
+
+  $('btn-register').disabled = true;
+  clearStatus('register-status');
+  try {
+    // a. ask server for registration options
+    const optsRes = await fetch(`${KS_BASE}/auth/passkey/register-options`, {
+      headers: { Authorization: `Bearer ${bearerToken}` },
+    });
+    if (!optsRes.ok) throw new Error('register-options: ' + await optsRes.text());
+    const opts = await optsRes.json();
+
+    // b. convert b64url -> ArrayBuffer for the WebAuthn API
+    const publicKey = {
+      ...opts,
+      challenge: b64uToBuf(opts.challenge),
+      user: {
+        ...opts.user,
+        id: b64uToBuf(opts.user.id),
+      },
+      excludeCredentials: (opts.excludeCredentials || []).map(c => ({
+        ...c, id: b64uToBuf(c.id),
+      })),
+    };
+
+    // c. trigger Touch ID
+    const cred = await navigator.credentials.create({ publicKey });
+    if (!cred) throw new Error('no credential returned');
+
+    // d. send the attestation back
+    const r = cred.response;
+    const credentialJson = {
+      id: cred.id,
+      rawId: bufToB64u(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON:    bufToB64u(r.clientDataJSON),
+        attestationObject: bufToB64u(r.attestationObject),
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+
+    const verifyRes = await fetch(`${KS_BASE}/auth/passkey/register-verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${bearerToken}`,
+      },
+      body: JSON.stringify({ credential: credentialJson, name }),
+    });
+    if (!verifyRes.ok) throw new Error('register-verify: ' + await verifyRes.text());
+    const result = await verifyRes.json();
+    setStatus('register-status', 'registered: ' + (result.credentialId || 'ok'), 'success');
+  } catch (e) {
+    setStatus('register-status', String(e.message || e), 'error');
+  } finally {
+    $('btn-register').disabled = false;
+  }
+};
+
+// ---------- 3. login with passkey ----------
+$('btn-passkey-login').onclick = async () => {
+  const userId = $('user-id').value.trim();
+  const pass   = $('passphrase').value; // server still wraps vault with passphrase
+  if (!userId) { setStatus('passkey-status', 'fill user ID above', 'error'); return; }
+
+  $('btn-passkey-login').disabled = true;
+  clearStatus('passkey-status');
+  try {
+    const optsRes = await fetch(
+      `${KS_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`
+    );
+    if (!optsRes.ok) throw new Error('auth-options: ' + await optsRes.text());
+    const opts = await optsRes.json();
+
+    const publicKey = {
+      ...opts,
+      challenge: b64uToBuf(opts.challenge),
+      allowCredentials: (opts.allowCredentials || []).map(c => ({
+        ...c, id: b64uToBuf(c.id),
+      })),
+    };
+
+    const cred = await navigator.credentials.get({ publicKey });
+    if (!cred) throw new Error('no credential');
+
+    const r = cred.response;
+    const credentialJson = {
+      id: cred.id,
+      rawId: bufToB64u(cred.rawId),
+      type: cred.type,
+      response: {
+        clientDataJSON:    bufToB64u(r.clientDataJSON),
+        authenticatorData: bufToB64u(r.authenticatorData),
+        signature:         bufToB64u(r.signature),
+        userHandle: r.userHandle ? bufToB64u(r.userHandle) : null,
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+
+    const url = `${KS_BASE}/auth/passkey/auth-verify`
+      + `?user_id=${encodeURIComponent(userId)}`
+      + `&passphrase=${encodeURIComponent(pass)}`;
+    const verifyRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: credentialJson }),
+    });
+    if (!verifyRes.ok) throw new Error('auth-verify: ' + await verifyRes.text());
+    const data = await verifyRes.json();
+    bearerToken = data.token || data.access_token;
+    setStatus('passkey-status',
+      'signed in with passkey. token: ' + (bearerToken || '').slice(0, 24) + '...',
+      'success'
+    );
+  } catch (e) {
+    setStatus('passkey-status', String(e.message || e), 'error');
+  } finally {
+    $('btn-passkey-login').disabled = false;
+  }
+};
+</script>
+</body>
+</html>

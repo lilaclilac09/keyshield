@@ -1,0 +1,22 @@
+[package]
+name = "keyshield"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "KeyShield - Private API Vault on Solana with ZK proofs, MPC, and Lit Protocol"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+std = []
+
+[dependencies]
+pinocchio = { workspace = true }
+pinocchio-token = { workspace = true }
+pinocchio-system = { workspace = true }
+
+[dev-dependencies]
+mollusk-svm = "0.0.12"
+solana-sdk = "2.1"

@@ -1,75 +1,67 @@
-# Rust build artifacts
-target/
-**/*.rs.bk
-Cargo.lock
+# =============================================================================
+# KeyShield .gitignore — SOTA Architecture
+# =============================================================================
 
-# OS files
+# --- Dependencies -----------------------------------------------------------
+/node_modules
+/src/web-frontend/node_modules
+/src/mobile-app/node_modules
+/src/api-server/node_modules
+/src/sdk/*/node_modules
+
+# --- Build outputs -----------------------------------------------------------
+/dist
+/build
+/out
+/.next/
+/src/web-frontend/.next/
+/src/rust-proxy/target/
+/src/python-legacy/build*/
+/src/python-legacy/*.egg-info/
+/src/python-legacy/TurboQuant/
+
+# --- IDE & OS ---------------------------------------------------------------
 .DS_Store
 *.swp
 *.swo
-*~
-
-# Environment files
-.env
-.env.*
-.env.local
-.env*.local
-
-# Solana keypairs (NEVER commit — contains 64-byte ed25519 secret)
-*-keypair.json
-mpp-settler.json
-*.keypair.json
-keyshield.db
-sessions.db
-**/data/*.db
-
-# IDE
 .vscode/
 .idea/
-*.iml
+*.pem
+*.log
 
-# Tooling state (always-untracked, never want to commit)
-.claude/
-.cursor/
-.dropped-*/
+# --- Environment & Secrets -----------------------------------------------
+.env*
+!.env.example
+.keyshield-vault.json
+*.json.key
 
-# Node modules (if not already ignored)
-node_modules/
-**/node_modules/
-frontend/node_modules/
-extension/node_modules/
-
-# Next.js build outputs
-.next/
-**/.next/
-frontend/.next/
-frontend/.next/cache/
-
-# Build outputs
-dist/
-build/
+# --- Python cache -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
 *.so
 
-# 测试数据库和日志文件（自动忽略大文件）
-test-ledger/
-*.log
-rocksdb/
-0000*.log
-**/*.log
-.gstack/
+# --- Rust artifacts ----------------------------------------------------------
+**/*.rs.bk
+Cargo.lock.lock
+*.pdb
 
-# Python build artifacts (stops `pytest` from leaving untracked files)
-__pycache__/
-**/__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# --- Model files (too large for git) ---------------------------------------
+*.gguf
+*.bin
+*.safetensors
+/models/
+
+# --- GitNexus ---------------------------------------------------------------
+.gitnexus/
+
+# --- Temporary -----------------------------------------------------------------
+*.rar
+*.zip
+disk.txt
+sizes.txt
+debug.log
+
+# --- Test artifacts ---------------------------------------------------------
+coverage/
 .pytest_cache/
-**/.pytest_cache/
-.venv/
-**/.venv/
-*.egg-info/
-
-# Playwright test artifacts (traces, screenshots, network logs)
-test-results/
-playwright-report/

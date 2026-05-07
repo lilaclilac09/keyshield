@@ -1,0 +1,53 @@
+[
+  {
+    "provider": "helius",
+    "key": "getBalance",
+    "payload": [
+      "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+    ],
+    "expected_sha1": "cd7caa2b3086344af449c5d946f8d196f8d2bfa9",
+    "raw_string": "helius:getBalance:[\"9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM\"]"
+  },
+  {
+    "provider": "helius",
+    "key": "getAsset",
+    "payload": [
+      "mint_address"
+    ],
+    "expected_sha1": "ea247d809bad6edd39fbf36415f3f5354feb70e6",
+    "raw_string": "helius:getAsset:[\"mint_address\"]"
+  },
+  {
+    "provider": "openai",
+    "key": "POST /v1/chat/completions",
+    "payload": {
+      "model": "gpt-4",
+      "messages": []
+    },
+    "expected_sha1": "c666c1af1a4a8e50b6f3467d5eaf8d77d29e2b30",
+    "raw_string": "openai:POST /v1/chat/completions:{\"messages\": [], \"model\": \"gpt-4\"}"
+  },
+  {
+    "provider": "anthropic",
+    "key": "GET /v1/models",
+    "payload": "",
+    "expected_sha1": "7551d2119cd20049c6c13e91a103ab6ae7268842",
+    "raw_string": "anthropic:GET /v1/models:\"\""
+  },
+  {
+    "provider": "helius",
+    "key": "getMultipleAccounts",
+    "payload": [
+      [
+        "a",
+        "b",
+        "c"
+      ],
+      {
+        "encoding": "base64"
+      }
+    ],
+    "expected_sha1": "6155db41001b8028a40368f66db99722b39c7461",
+    "raw_string": "helius:getMultipleAccounts:[[\"a\", \"b\", \"c\"], {\"encoding\": \"base64\"}]"
+  }
+]
