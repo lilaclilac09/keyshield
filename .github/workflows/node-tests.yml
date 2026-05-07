@@ -1,7 +1,7 @@
 # Runs the TypeScript test suite across:
-#   - npm workspaces (packages/agent-sdk, packages/cli, packages/goat-wallet,
+#   - npm workspaces (src/sdk/packages/agent-sdk, src/sdk/packages/cli, src/sdk/packages/goat-wallet,
 #     infra/sync-worker, mobile)
-#   - frontend/ (NOT a workspace — separate Vite app + Chrome extension build)
+#   - src/web-frontend/ (NOT a workspace ??separate Vite app + Chrome extension build)
 #
 # Complements `test.yml` (Rust/Solana program + proxy-rs) and
 # `sync-worker-deploy.yml` (Cloudflare Worker deploy).
