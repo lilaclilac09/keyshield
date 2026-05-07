@@ -48,6 +48,17 @@ def delete(user_id: str, upstream: str) -> None:
     file_path.unlink(missing_ok=True)
 
 
+def list_keys(user_id: str) -> list[str]:
+    """
+    Return upstream slugs for every encrypted key stored under this user.
+    Used by /auth/delete-account to enumerate before cascade-deletion.
+    """
+    user_dir = VAULT_DIR / user_id
+    if not user_dir.exists():
+        return []
+    return [f.stem for f in user_dir.glob("*.enc")]
+
+
 def load(user_id: str, upstream: str, password: str) -> str:
     file_path = VAULT_DIR / user_id / f"{upstream}.enc"
     try:

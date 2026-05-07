@@ -496,7 +496,10 @@ class LoginBody(BaseModel):
 
 @app.post("/auth/login")
 async def login(body: LoginBody):
-    token = session.create(body.userId, body.password)
+    try:
+        token = session.create(body.userId, body.password)
+    except session.UserDeleted:
+        raise HTTPException(410, "this account was deleted")
     return {"token": token}
 
 
@@ -504,6 +507,221 @@ async def login(body: LoginBody):
 async def logout(token: str = Depends(_bearer)):
     session.delete(token)
     return {"ok": True}
+
+
+# ── /auth/delete-account: cascade wipe + soft-delete tombstone ───────────────
+#
+# What gets wiped on success:
+#   1. Vault entries (.enc files under VAULT_DIR/<user_id>)
+#   2. Agent registrations (agent_keys WHERE owner_wallet = user_id)
+#   3. All sessions for the user
+#   4. Usage history + balance + topup_tx rows
+#   5. x402_claims rows for the user (best-effort — only if module is loaded)
+#   6. Sharing rows owned by the user (vault_shares WHERE owner_id = user_id)
+#   7. Passkey credentials (passkey_credentials WHERE user_id = ?)
+#
+# Then the user_id gets a tombstone row in deleted_users so:
+#   - any token that survived the session wipe still fails (session.get()
+#     cross-checks deleted_users)
+#   - the same wallet re-registering can't impersonate the prior identity;
+#     session.create() raises UserDeleted → 410 Gone.
+#
+# For wallet-login users, we require a fresh ed25519 signature over a
+# DELETE-specific challenge string. This is the anti-account-takeover
+# mitigation: an attacker who steals a session token still can't permanently
+# delete the account without also having the wallet's private key.
+
+CONFIRMATION_PHRASE = "DELETE my account"
+
+
+class DeleteAccountBody(BaseModel):
+    confirmation: str
+    # Wallet-login users must supply these. Same shape as /auth/wallet-login,
+    # except the challenge string starts with "KeyShield Delete Account" so a
+    # signature obtained from the login flow can't be replayed against
+    # /auth/delete-account.
+    walletAddress: str | None = None
+    signature:     str | None = None
+    challenge:     str | None = None
+
+
+@app.get("/auth/delete-account-challenge")
+async def delete_account_challenge(sess: dict = Depends(_session)):
+    """
+    Issue a one-time challenge for the destructive /auth/delete-account
+    flow. Distinct prefix ('KeyShield Delete Account') so a wallet-login
+    signature can't be replayed here, and vice versa.
+    """
+    _purge_expired_nonces()
+    nonce = secrets.token_hex(16)
+    challenge = (
+        f"KeyShield Delete Account\n"
+        f"User: {sess['user_id']}\n"
+        f"Nonce: {nonce}\n"
+        f"Timestamp: {int(time.time())}"
+    )
+    _record_nonce(nonce, challenge)
+    return {"challenge": challenge, "nonce": nonce}
+
+
+def _looks_like_solana_wallet(user_id: str) -> bool:
+    """
+    Heuristic: a Solana wallet address is base58-encoded 32 bytes, which
+    in practice means 43-44 chars from the base58 alphabet. Used to decide
+    whether to require a fresh signature on /auth/delete-account.
+
+    False positives are fine (we just demand an extra signature the user
+    can't produce — they'd hit a clean 400 telling them to skip the
+    walletAddress fields). False negatives are the dangerous case: a real
+    wallet user who skips the signature requirement. The length + alphabet
+    gate together rule that out for any address that successfully logged
+    in via /auth/wallet-login.
+    """
+    if not (32 <= len(user_id) <= 44):
+        return False
+    return all(c in _B58_ALPHABET for c in user_id)
+
+
+@app.post("/auth/delete-account")
+async def delete_account(
+    body: DeleteAccountBody,
+    sess: dict = Depends(_session),
+):
+    """
+    Permanently delete the authenticated user's account and all associated
+    data. Wallet-login users must additionally sign a DELETE-specific
+    challenge from /auth/delete-account-challenge to defeat session-token
+    theft.
+
+    Body:
+      {
+        "confirmation": "DELETE my account",   // must match exactly
+        "walletAddress": "<base58>",           // wallet users only
+        "signature":     "<base64 ed25519>",   // wallet users only
+        "challenge":     "<challenge text>"    // wallet users only
+      }
+
+    Idempotent at the cascade level — a partial cascade can be retried
+    safely. The tombstone is set last so any concurrent in-flight requests
+    on the same user can still complete cleanly before being locked out.
+    """
+    if body.confirmation != CONFIRMATION_PHRASE:
+        raise HTTPException(
+            400,
+            f"confirmation must be exactly {CONFIRMATION_PHRASE!r}",
+        )
+
+    user_id = sess["user_id"]
+
+    # ── Wallet-login defense in depth: require a fresh signed message ─────
+    if _looks_like_solana_wallet(user_id):
+        if not (body.walletAddress and body.signature and body.challenge):
+            raise HTTPException(
+                400,
+                "wallet-login users must include walletAddress, signature, "
+                "and challenge (from /auth/delete-account-challenge)",
+            )
+        if body.walletAddress != user_id:
+            raise HTTPException(
+                403,
+                "walletAddress does not match the authenticated user",
+            )
+        if not body.challenge.startswith("KeyShield Delete Account"):
+            # Reject a wallet-login challenge being smuggled in as the
+            # delete challenge — they have different prefixes for exactly
+            # this reason.
+            raise HTTPException(
+                400,
+                "challenge must be issued by /auth/delete-account-challenge",
+            )
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+
+        nonce = _validate_challenge(body.challenge)
+        pub_key_bytes = _decode_b58_pubkey(body.walletAddress, label="wallet address")
+        sig_bytes = _decode_b64_signature(body.signature)
+        msg_bytes = body.challenge.encode("utf-8")
+        try:
+            Ed25519PublicKey.from_public_bytes(pub_key_bytes).verify(sig_bytes, msg_bytes)
+        except InvalidSignature:
+            raise HTTPException(401, "invalid wallet signature")
+        _consume_nonce(nonce)
+
+    loop = asyncio.get_event_loop()
+
+    def _cascade() -> dict:
+        report: dict[str, Any] = {}
+
+        # 1. Vault entries
+        keys = vault.list_keys(user_id)
+        for upstream in keys:
+            vault.delete(user_id, upstream)
+        report["vault_keys"] = len(keys)
+
+        # 2. Agent registrations — list + revoke loop
+        agent_rows = agents.list_agents(user_id)
+        for agent in agent_rows:
+            agents.revoke(user_id, agent["id"])
+        report["agents"] = len(agent_rows)
+
+        # 3. Usage history, balance, topup_tx
+        report["usage"] = usage.purge_user(user_id)
+
+        # 4. Passkey credentials — best-effort (lazy import: optional dep)
+        try:
+            from . import passkey as passkey_mod
+            with passkey_mod._db() as pk_conn:
+                cur = pk_conn.execute(
+                    "DELETE FROM passkey_credentials WHERE user_id = ?",
+                    (user_id,),
+                )
+                report["passkeys"] = cur.rowcount or 0
+        except Exception:
+            report["passkeys"] = "skipped"
+
+        # 5. x402_claims — only if x402_verify module exists in this build
+        try:
+            from . import x402_verify  # type: ignore[attr-defined]
+            x402_verify._db().execute(
+                "DELETE FROM x402_claims WHERE user_id=?", (user_id,),
+            )
+            report["x402_claims"] = "purged"
+        except (ImportError, AttributeError):
+            # Module not present in this build — fine; nothing to purge.
+            report["x402_claims"] = "skipped"
+        except Exception as exc:
+            report["x402_claims"] = f"error: {exc}"
+
+        # 6. Sharing rows — best-effort, only if sharing module loaded
+        try:
+            from . import sharing  # type: ignore[attr-defined]
+            report["shares"] = sharing.purge_user(user_id)
+        except (ImportError, AttributeError):
+            report["shares"] = "skipped"
+        except Exception as exc:
+            report["shares"] = f"error: {exc}"
+
+        # 7. Sessions (do this LAST so we don't lock ourselves out of the
+        #    cleanup mid-cascade by accidentally invalidating our own token
+        #    via a side-effect).
+        report["sessions"] = session.delete_all_for_user(user_id)
+
+        # 8. Tombstone — ABSOLUTE last step. After this, any surviving
+        #    session row would still fail session.get() because of the
+        #    deleted_users cross-check.
+        session.mark_deleted(user_id)
+
+        return report
+
+    try:
+        report = await loop.run_in_executor(None, _cascade)
+    except Exception as exc:
+        # Best-effort partial cleanup — the tombstone might not have been
+        # set, so the user can retry. Surface the error for diagnosis.
+        raise HTTPException(500, f"cascade failed: {exc}")
+
+    return {"ok": True, "report": report}
 
 
 # ── Wallet auth ───────────────────────────────────────────────────────────────
@@ -559,7 +777,10 @@ async def wallet_login(body: WalletLoginBody):
         raise HTTPException(401, "invalid wallet signature")
 
     _consume_nonce(nonce)
-    token = session.create(body.walletAddress, body.passphrase)
+    try:
+        token = session.create(body.walletAddress, body.passphrase)
+    except session.UserDeleted:
+        raise HTTPException(410, "this account was deleted")
     return {"token": token, "userId": body.walletAddress}
 
 
@@ -755,6 +976,116 @@ async def store_key(body: StoreBody, sess: dict = Depends(_session)):
 async def delete_key(upstream: str, sess: dict = Depends(_session)):
     """Delete a stored API key from the vault."""
     vault.delete(sess["user_id"], upstream)
+    return {"ok": True}
+
+
+# ─── vault sharing (read-only DEK delegation) ───────────────────────────────
+#
+# A "share" lets a vault owner grant another user read access to a specific
+# key without disclosing the underlying API key in plaintext. The recipient
+# decrypts the DEK with their own key material; the server never sees
+# either side's plaintext.
+#
+# v1 status (this branch): the table, list/revoke endpoints, and tenant
+# isolation are wired up; /share/grant returns 501 because the AES-GCM
+# file vault on this branch does not carry the recipient's public key
+# needed to re-wrap the DEK. See sharing.CRYPTO_REWRAP_AVAILABLE for the
+# single-flag flip when the passkey-vault upgrade lands.
+
+from . import sharing  # noqa: E402
+
+
+class ShareGrantBody(BaseModel):
+    key_name:          str
+    recipient_user_id: str
+    expires_at:        int | None = None
+
+
+@app.post("/share/grant")
+async def share_grant(body: ShareGrantBody, sess: dict = Depends(_session)):
+    """
+    Grant another user read access to a key in your vault.
+
+    On builds that do not yet support passkey-derived DEK re-wrapping,
+    this returns 501 with a clear explanation. The 501 path is the
+    contract for v1 (per spec C3); flipping
+    sharing.CRYPTO_REWRAP_AVAILABLE without also implementing the
+    re-wrap step would silently store NULL DEKs, which is worse than
+    a hard 501.
+    """
+    owner_id = sess["user_id"]
+
+    # Sanity: you cannot share a key you don't own.
+    if body.key_name not in vault.list_keys(owner_id):
+        raise HTTPException(404, f"no such key in your vault: {body.key_name}")
+
+    # Self-share is meaningless and a frequent UI mistake.
+    if body.recipient_user_id == owner_id:
+        raise HTTPException(400, "cannot share a key with yourself")
+
+    if not sharing.CRYPTO_REWRAP_AVAILABLE:
+        raise HTTPException(
+            501,
+            "Sharing requires a passkey-based vault so the DEK can be "
+            "re-wrapped to the recipient's public key. The current AES-GCM "
+            "file vault doesn't carry that material — coming in v2.",
+        )
+
+    # When the upgrade lands, the route layer will:
+    #   1. fetch recipient's wrap pubkey from passkey_credentials
+    #   2. read the DEK from owner's wrapped-vault entry
+    #   3. re-wrap to recipient's pubkey
+    #   4. call sharing.grant(..., encrypted_dek=wrapped) below
+    # For now, this code path is unreachable.
+    try:
+        loop = asyncio.get_event_loop()
+        share_id = await loop.run_in_executor(
+            None, sharing.grant,
+            owner_id, body.recipient_user_id, body.key_name, None, body.expires_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+    return {
+        "ok": True,
+        "share": {
+            "id":           share_id,
+            "owner_id":     owner_id,
+            "recipient_id": body.recipient_user_id,
+            "key_name":     body.key_name,
+            "expires_at":   body.expires_at,
+        },
+    }
+
+
+@app.get("/share/incoming")
+async def share_incoming(sess: dict = Depends(_session)):
+    """List shares granted TO the current user."""
+    loop = asyncio.get_event_loop()
+    shares = await loop.run_in_executor(None, sharing.list_incoming, sess["user_id"])
+    return {"shares": shares}
+
+
+@app.get("/share/outgoing")
+async def share_outgoing(sess: dict = Depends(_session)):
+    """List shares the current user has granted."""
+    loop = asyncio.get_event_loop()
+    shares = await loop.run_in_executor(None, sharing.list_outgoing, sess["user_id"])
+    return {"shares": shares}
+
+
+@app.delete("/share/{share_id}")
+async def share_revoke(share_id: int, sess: dict = Depends(_session)):
+    """
+    Revoke a share. Owner-only — recipients cannot delete shares granted
+    to them (they can stop using the share, but the canonical row is the
+    owner's). Returns 404 when the share is not owned by the caller, to
+    avoid leaking the existence of other users' shares.
+    """
+    loop = asyncio.get_event_loop()
+    removed = await loop.run_in_executor(None, sharing.revoke, sess["user_id"], share_id)
+    if not removed:
+        raise HTTPException(404, "share not found")
     return {"ok": True}
 
 
@@ -1084,6 +1415,13 @@ async def billing_balance(sess: dict = Depends(_session)):
     }
 
 
+import logging  # noqa: E402
+
+from . import x402_verify  # noqa: E402
+
+logger = logging.getLogger("keyshield.server")
+
+
 class TopupBody(BaseModel):
     amount_usd: float
     payment_proof: str = ""   # x402 payment proof (tx hash / receipt)
@@ -1092,29 +1430,94 @@ class TopupBody(BaseModel):
 @app.post("/billing/topup")
 async def billing_topup(body: TopupBody, sess: dict = Depends(_session)):
     """
-    Add prepaid credit. In production this verifies an x402 / MPP payment proof
-    on-chain before crediting. For demo: accepts any amount up to $10.
+    Add prepaid credit. Verifies an x402 payment proof (Base USDC tx
+    hash) on-chain before crediting, and refuses duplicate claims via
+    the x402_claims idempotency table — see v2-mvp/src/x402_verify.py
+    for the threat model.
 
     x402 flow:
       1. Client receives 402 from /proxy/{upstream}/...
-      2. Client pays USDC to PAYMENT_ADDRESS on Base
-      3. Client retries the request with X-Payment-Proof: {tx_hash}
-      4. This endpoint verifies the tx and tops up the balance
+      2. Client pays USDC to KS_X402_RECEIVER_ADDRESS on Base
+      3. Client retries with X-Payment-Proof: {tx_hash} (or POSTs here
+         directly with payment_proof in the body)
+      4. We verify the tx on-chain via Base RPC + check idempotency
+      5. If both pass, credit the balance
+
+    Behavior matrix:
+      - payment_proof empty + KS_X402_VERIFY_REQUIRED!=1 → demo credit
+        (preserves the legacy dev path; rejected in prod)
+      - payment_proof empty + KS_X402_VERIFY_REQUIRED=1   → 400
+      - payment_proof set, env unset → stub-fallback verify, idempotency
+        still applied (prevents replay even in dev)
+      - payment_proof set, env set   → real on-chain verify
+      - payment_proof already claimed → 409 Conflict
     """
     if body.amount_usd <= 0 or body.amount_usd > MAX_TOPUP_USD:
         raise HTTPException(
             400, f"amount must be between $0 and ${MAX_TOPUP_USD:g}",
         )
 
-    # TODO: verify body.payment_proof on-chain before crediting
     loop = asyncio.get_event_loop()
+    proof = (body.payment_proof or "").strip()
+    cfg = x402_verify.load_x402_config()
+
+    # Allow empty payment_proof in dev (preserves legacy demo flow).
+    # In prod (KS_X402_VERIFY_REQUIRED=1) refuse it.
+    if not proof:
+        if cfg is not None and cfg.verify_required:
+            raise HTTPException(
+                400,
+                "payment_proof is required when KS_X402_VERIFY_REQUIRED=1",
+            )
+        new_balance = await loop.run_in_executor(
+            None, usage.topup, sess["user_id"], body.amount_usd,
+        )
+        return {
+            "ok":            True,
+            "new_balance":   new_balance,
+            "payment_proof": "(demo — no on-chain verification)",
+            "verified_mode": "demo",
+        }
+
+    # Verify on-chain (or stub-fallback if env unset).
+    try:
+        verified, mode = await x402_verify.verify_on_chain(
+            cfg, proof, body.amount_usd,
+        )
+    except x402_verify.VerifyError as e:
+        raise HTTPException(400, f"x402 verification failed: {e}")
+    except Exception as e:  # noqa: BLE001 — network errors → 502
+        logger.exception("x402 RPC error")
+        raise HTTPException(502, f"x402 RPC error: {e}")
+
+    if not verified:
+        raise HTTPException(400, "x402 verification returned negative")
+
+    # Refuse stub-fallback when env requires real verification.
+    if mode == "stub-fallback" and cfg is not None and cfg.verify_required:
+        raise HTTPException(
+            503,
+            "stub-fallback unavailable when KS_X402_VERIFY_REQUIRED=1; "
+            "fix KS_X402_BASE_RPC_URL / KS_X402_RECEIVER_ADDRESS",
+        )
+
+    # Record claim — UNIQUE on payment_proof catches duplicates.
+    try:
+        await loop.run_in_executor(
+            None, x402_verify.record_claim,
+            proof, sess["user_id"], body.amount_usd, mode,
+        )
+    except x402_verify.DuplicateClaim:
+        raise HTTPException(409, "payment_proof already claimed")
+
     new_balance = await loop.run_in_executor(
-        None, usage.topup, sess["user_id"], body.amount_usd
+        None, usage.topup, sess["user_id"], body.amount_usd,
     )
     return {
-        "ok":          True,
-        "new_balance": new_balance,
-        "payment_proof": body.payment_proof or "(demo — no on-chain verification)",
+        "ok":            True,
+        "new_balance":   new_balance,
+        "payment_proof": proof,
+        "verified_mode": mode,
     }
 
 
@@ -1412,6 +1815,8 @@ class MppRecordBody(BaseModel):
 async def mpp_open_stream(body: MppOpenStreamBody, sess: dict = Depends(_session)):
     if not body.agentPubkey.strip():
         raise HTTPException(400, "agentPubkey required")
+    if body.upstream.strip() not in UPSTREAMS:
+        raise HTTPException(400, f"unknown upstream: {body.upstream}")
     if body.ratePerTokenMicroUsdc <= 0 and body.ratePerCallMicroUsdc <= 0:
         raise HTTPException(400, "rate must be > 0")
     if body.settlementIntervalSecs < 5 or body.settlementIntervalSecs > 3600:
@@ -1454,50 +1859,301 @@ async def mpp_record(
 ):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None,
             mpp.record_usage,
             sess["user_id"],
             int(stream_id),
-            int(body.tokens),
             int(body.calls),
+            int(body.tokens),
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
 
 
 @app.post("/mpp/streams/{stream_id}/settle")
 async def mpp_settle(stream_id: int, sess: dict = Depends(_session)):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None, mpp.settle_stream, sess["user_id"], int(stream_id)
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
 
 
 @app.post("/mpp/streams/{stream_id}/close")
 async def mpp_close(stream_id: int, sess: dict = Depends(_session)):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None, mpp.close_stream, sess["user_id"], int(stream_id)
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
+
+
+# ─── MPP Phase 10.5: build-tx endpoints (owner-signed, frontend submits) ────
+#
+# `open_payment_stream` (#24) and `withdraw_agent_wallet` (#27) both
+# require an OWNER signature (see programs/keyshield/src/instructions/
+# open_stream.rs:85 + withdraw.rs:72). The server cannot submit them
+# directly — instead it returns the byte-perfect ix payload here, the
+# frontend wraps it in a Transaction the wallet adapter signs in-browser.
+#
+# Response shape (`BuildTxResponse`) mirrors what @solana/web3.js
+# `TransactionInstruction` constructor wants — `programId` string,
+# `keys` array of `{pubkey, isSigner, isWritable}`, and the base64
+# `data`. Frontend code looks like:
+#
+#   const tx = new Transaction().add(new TransactionInstruction({
+#     programId: new PublicKey(resp.programId),
+#     keys: resp.keys.map(k => ({
+#       pubkey: new PublicKey(k.pubkey),
+#       isSigner: k.isSigner, isWritable: k.isWritable,
+#     })),
+#     data: Buffer.from(resp.data, "base64"),
+#   }));
+
+from . import mpp_onchain  # noqa: E402
+
+
+class _AccountMetaJson(BaseModel):
+    pubkey:     str
+    isSigner:   bool
+    isWritable: bool
+
+
+class BuildTxResponse(BaseModel):
+    programId: str
+    keys:      list[_AccountMetaJson]
+    data:      str  # base64-encoded ix payload (discriminator + body)
+
+
+def _ix_to_response(ix: "mpp_onchain._SimpleInstruction") -> BuildTxResponse:
+    """Serialise a _SimpleInstruction into the JSON shape the frontend
+    needs. Kept tiny so unit tests can call it without HTTP."""
+    import base64
+    return BuildTxResponse(
+        programId=ix.program_id,
+        keys=[
+            _AccountMetaJson(
+                pubkey=a.pubkey,
+                isSigner=a.is_signer,
+                isWritable=a.is_writable,
+            )
+            for a in ix.accounts
+        ],
+        data=base64.b64encode(ix.data).decode("ascii"),
+    )
+
+
+class BuildOpenTxBody(BaseModel):
+    """Body for /mpp/streams/{id}/build-open-tx.
+
+    The frontend computes the PDA + bump itself via @solana/web3.js
+    (`PublicKey.findProgramAddress(["agent_payment_stream", agent,
+    owner], programId)`), creates the USDC ATA in the same tx, and
+    passes everything here so the server can byte-pack the ix data."""
+
+    ownerPubkey:                str
+    streamPda:                  str   # frontend-derived
+    bump:                       int   # frontend-derived bump
+    usdcAta:                    str   # frontend-created ATA pubkey
+    maxTotalMicroUsdc:          int   # cap for the whole stream lifetime
+    costPerUnitMicroUsdc:       int = 1
+    maxRateUsdPerMinBits:       int = 0   # f64::to_bits portable encoding
+    settlementIntervalSecsOverride: int = 0  # 0 → use the stream's stored value
+
+
+class BuildWithdrawTxBody(BaseModel):
+    """Body for /mpp/streams/{id}/build-withdraw-tx.
+
+    Owner must have already revoked the agent grant (see
+    withdraw.rs:9-13). The withdraw_amount is what the caller claims
+    is currently in the source ATA; SPL transfer will reject if the
+    ATA balance is smaller, so a wrong value is safe — it just causes
+    the ix to fail."""
+
+    ownerPubkey:                str
+    streamPda:                  str
+    streamAta:                  str
+    ownerAta:                   str
+    withdrawAmountMicroUsdc:    int
+
+
+@app.post(
+    "/mpp/streams/{stream_id}/build-open-tx",
+    response_model=BuildTxResponse,
+)
+async def mpp_build_open_tx(
+    stream_id: int,
+    body: BuildOpenTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build the unsigned `open_payment_stream` ix (#24) for an
+    existing off-chain stream row. Returns the ix bytes for the
+    frontend wallet adapter to sign in-browser.
+
+    503 if KS_VAULT_PDA / KS_KEYSHIELD_PROGRAM_ID env aren't set
+    (server can't pin which on-chain program to target).
+    """
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "MPP on-chain config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA on the server",
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _lookup_and_build():
+        # Verify the off-chain stream row exists + belongs to this user.
+        # _get_owned_stream raises StreamNotFound otherwise (caught below).
+        conn = mpp._db()
+        try:
+            row = mpp._get_owned_stream(conn, sess["user_id"], stream_id)
+        finally:
+            conn.close()
+
+        interval = (
+            int(body.settlementIntervalSecsOverride)
+            if body.settlementIntervalSecsOverride > 0
+            else int(row["settlement_interval_secs"])
+        )
+        return mpp_onchain.build_open_payment_stream_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            agent_pubkey=row["agent_pubkey"],
+            stream_pda=body.streamPda.strip(),
+            usdc_ata=body.usdcAta.strip(),
+            bump=int(body.bump),
+            max_total_micro_usdc=int(body.maxTotalMicroUsdc),
+            cost_per_unit_micro_usdc=int(body.costPerUnitMicroUsdc),
+            max_rate_usd_per_min_bits=int(body.maxRateUsdPerMinBits),
+            settlement_interval_secs=interval,
+        )
+
+    try:
+        ix = await loop.run_in_executor(None, _lookup_and_build)
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
+
+
+@app.post(
+    "/mpp/streams/{stream_id}/build-withdraw-tx",
+    response_model=BuildTxResponse,
+)
+async def mpp_build_withdraw_tx(
+    stream_id: int,
+    body: BuildWithdrawTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build the unsigned `withdraw_agent_wallet` ix (#27) for an
+    existing off-chain stream row. Frontend wraps + signs in-browser.
+
+    503 if MPP env config incomplete (see build-open-tx)."""
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "MPP on-chain config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA on the server",
+        )
+
+    loop = asyncio.get_event_loop()
+
+    def _lookup_and_build():
+        conn = mpp._db()
+        try:
+            mpp._get_owned_stream(conn, sess["user_id"], stream_id)
+        finally:
+            conn.close()
+        return mpp_onchain.build_withdraw_agent_wallet_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            stream_pda=body.streamPda.strip(),
+            stream_ata=body.streamAta.strip(),
+            owner_ata=body.ownerAta.strip(),
+            withdraw_amount_micro_usdc=int(body.withdrawAmountMicroUsdc),
+        )
+
+    try:
+        ix = await loop.run_in_executor(None, _lookup_and_build)
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
+
+
+# ─── MPP Phase 10.5: record-tx (post-sign callback) ─────────────────────────
+#
+# After the frontend wallet adapter signs+sends the `open_payment_stream`
+# (or `withdraw_agent_wallet`) ix returned by /build-*-tx, the wallet
+# returns a base58 tx signature. The frontend POSTs it here so the row
+# can flip from "Open on-chain stream" CTA to a green explorer link.
+#
+# We don't re-verify the signature on Solana RPC — the frontend already
+# awaited `confirmTransaction(..., 'confirmed')` before calling this
+# endpoint. Same trust model as `/billing/topup-solana` BEFORE its
+# verify step (which exists because top-ups debit USD; here the
+# signature is purely informational + UI-state).
+
+
+class MppRecordTxBody(BaseModel):
+    tx_signature: str  # base58 Solana tx signature, opaque to the server
+
+
+@app.post("/mpp/streams/{stream_id}/record-tx")
+async def mpp_record_tx(
+    stream_id: int,
+    body: MppRecordTxBody,
+    sess: dict = Depends(_session),
+):
+    """Persist the on-chain tx signature returned by the frontend wallet
+    adapter. Idempotent: re-posting the same signature is a no-op.
+
+    Returns the updated stream row so the UI can re-render in one round
+    trip without a follow-up `GET /mpp/streams`.
+    """
+    sig = (body.tx_signature or "").strip()
+    if not sig:
+        raise HTTPException(400, "tx_signature is required")
+    # Bound the signature length so we don't accept arbitrary blobs —
+    # base58-encoded ed25519 sigs are ~88 chars, leave headroom.
+    if len(sig) > 128:
+        raise HTTPException(400, "tx_signature too long")
+
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None, mpp.record_tx_signature,
+            sess["user_id"], stream_id, sig,
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"stream": stream}
 
 
 # ─── internal bridge (Rust hot path → Python control plane) ──────────────────
@@ -1558,6 +2214,72 @@ async def health():
         "router": api_router.cache_stats(),
     }
 
+
+
+# ─── Ephemeral Signer (Agent Embedded Wallet) build-tx ─────────────────────
+#
+# Wraps ix #23 CreateEphemeralSigner — the differentiator vs Coinbase
+# Agentic. Owner-signed (frontend wallet adapter); server only assembles
+# the ix payload. Top-up + balance read are follow-ups.
+#
+# See v2-mvp/src/agent_wallet.py for the byte-layout contract.
+
+from . import agent_wallet  # noqa: E402
+
+
+class BuildEphemeralSignerTxBody(BaseModel):
+    """Frontend computes the ephemeral signer PDA itself (so it can
+    show the address before sign), passes it back. Allowed actions
+    default to PAY_AND_PROXY (0x05) — agent can pay + run proxy calls
+    but cannot decrypt raw vault keys."""
+
+    ownerPubkey:        str
+    agentPubkey:        str
+    ephemeralSignerPda: str
+    allowedActions:     int = 0x05  # PAY_X402 | PROXY_CALL
+    expirySeconds:      int = 0     # 0 = no expiry
+
+
+@app.post(
+    "/agents/{agent_id}/wallet/create-tx",
+    response_model=BuildTxResponse,
+)
+async def agents_build_ephemeral_signer_tx(
+    agent_id: str,
+    body: BuildEphemeralSignerTxBody,
+    sess: dict = Depends(_session),
+):
+    """Build unsigned `create_ephemeral_signer` ix (#23) for an
+    existing agent grant. Frontend wallet adapter signs in-browser.
+
+    503 if KS_VAULT_PDA / KS_KEYSHIELD_PROGRAM_ID env aren't set.
+    404 if the agent isn't registered to this user.
+    """
+    cfg = mpp_onchain.load_mpp_config()
+    if cfg is None or cfg.vault_pda is None:
+        raise HTTPException(
+            503,
+            "Ephemeral signer config incomplete — set KS_KEYSHIELD_PROGRAM_ID, "
+            "KS_PLATFORM_USDC_ATA, KS_MPP_SETTLER_KEY, KS_VAULT_PDA",
+        )
+
+    user_agents = agents.list_for_user(sess["user_id"])
+    if not any(a.get("id") == agent_id for a in user_agents):
+        raise HTTPException(404, "agent not found")
+
+    try:
+        ix = agent_wallet.build_create_ephemeral_signer_ix(
+            config=cfg,
+            owner_pubkey=body.ownerPubkey.strip(),
+            agent_pubkey=body.agentPubkey.strip(),
+            ephemeral_signer_pda=body.ephemeralSignerPda.strip(),
+            allowed_actions=int(body.allowedActions),
+            expiry_seconds=int(body.expirySeconds),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return _ix_to_response(ix)
 
 
 if __name__ == "__main__":

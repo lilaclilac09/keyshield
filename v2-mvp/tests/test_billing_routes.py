@@ -14,11 +14,16 @@ def isolate_dbs(tmp_path, monkeypatch):
     from src import session as session_mod
     from src import agents as agents_mod
     from src import usage as usage_mod
+    from src import x402_verify as x402_mod
 
     monkeypatch.setattr(vault_mod, "VAULT_DIR", Path(tmp_path / "vault"))
     monkeypatch.setattr(session_mod, "DB_PATH", Path(tmp_path / "sessions.db"))
     monkeypatch.setattr(agents_mod, "DB_PATH", Path(tmp_path / "data" / "agents.db"))
     monkeypatch.setattr(usage_mod, "DB_PATH", Path(tmp_path / "data" / "usage.db"))
+    monkeypatch.setattr(x402_mod, "DB_PATH", Path(tmp_path / "data" / "x402.db"))
+    # x402_verify caches a "warned about missing env" flag; reset
+    # so each test starts fresh.
+    x402_mod._WARNED_ENV_MISSING = False
     yield
 
 

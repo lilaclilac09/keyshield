@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Shield, DollarSign, CreditCard, TrendingUp, Activity, RefreshCw, Loader2, Zap,
-  Radio, Plus, X, Power,
+  Radio, Plus, X, Power, ExternalLink, Send,
 } from 'lucide-react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import {
@@ -12,6 +12,20 @@ import {
 } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { API_BASE, apiFetch, getToken } from '../../lib/auth';
+import {
+  buildOpenStreamTx,
+  buildWithdrawTx,
+  recordMppTxSignature,
+} from '../../lib/api';
+import {
+  buildTxFromResponse,
+  deriveAta,
+  deriveStreamPda,
+  explorerTxUrl,
+  getKeyshieldProgramId,
+  getUsdcMint,
+  signAndConfirmTx,
+} from '../../lib/solana';
 import { relTime } from '../../lib/time';
 
 const MEMO_PROGRAM_ID = new PublicKey(
@@ -60,11 +74,12 @@ interface MppStream {
   status:                      string;          // 'open' | 'closed'
   opened_at:                   number;
   last_settled_at:             number;
-  closed_at:                   number | null;
+  closed_at:                   number | null;   // also doubles as `revoked_at` for the withdraw CTA
   total_calls:                 number;
   total_tokens:                number;
   pending_micro_usdc:          number;
   settled_micro_usdc:          number;
+  on_chain_signature:          string | null;   // populated after wallet sign-off (Phase 10.5)
 }
 
 interface MppSummary {
@@ -268,6 +283,141 @@ export const ActivitySection: React.FC = () => {
     finally { setMppBusyId(null); }
   };
 
+  // ── On-chain stream open (Phase 10.5 wallet sign-off) ────────────────────
+  //
+  // Flow: derive PDA from APS_SEED + agent + owner → POST build-open-tx with
+  // PDA + bump + USDC ATA + caps → wallet adapter signs the returned ix
+  // payload → record the resulting signature so the row flips to a green
+  // explorer badge. The owner's USDC ATA is computed via the SPL Associated
+  // Token Account derivation rule; we look it up off-chain rather than
+  // creating it here (the on-chain ix only RECORDS the ATA pubkey — see
+  // open_stream.rs:49-51 for the comment that makes this explicit).
+  const handleMppOpenOnChain = async (s: MppStream) => {
+    setMppBusyId(s.id);
+    setMppMsg('');
+    if (!publicKey || !sendTransaction) {
+      setMppMsg('Connect your Solana wallet first');
+      setMppBusyId(null);
+      return;
+    }
+    const programId = getKeyshieldProgramId();
+    if (!programId) {
+      setMppMsg('KEYSHIELD_PROGRAM_ID not configured in frontend env');
+      setMppBusyId(null);
+      return;
+    }
+    try {
+      // 1. Derive the AgentPaymentStream PDA — server cannot do this for
+      //    us because the bump must be checked against the SIGNER's seed
+      //    set. See programs/keyshield/src/instructions/open_stream.rs:155.
+      const agentPk = new PublicKey(s.agent_pubkey);
+      const [pda, bump] = deriveStreamPda(agentPk, publicKey, programId);
+
+      // 2. Compute the owner's USDC ATA (recorded into the stream — the
+      //    ATA itself is created by a separate ix flow, see open_stream.rs
+      //    line 49-51). ATA derivation is canonical SPL math — we do it
+      //    off-chain to avoid a round-trip.
+      const usdcMint = getUsdcMint();
+      const usdcAta  = deriveAta(publicKey, usdcMint).toBase58();
+
+      setMppMsg(`Stream #${s.id} · requesting wallet signature…`);
+
+      // 3. Ask server for the byte-perfect ix payload. Server uses the
+      //    stream's stored settlement_interval_secs when override = 0,
+      //    so the on-chain ix matches what we already committed off-chain.
+      //
+      //    `maxTotalMicroUsdc` is the lifetime cap — for this beta we
+      //    use a generous default (1_000_000_000 µUSDC = $1000) so the
+      //    demo stream doesn't trip the cap. Production would surface a
+      //    field in the open-stream form.
+      const resp = await buildOpenStreamTx(s.id, {
+        ownerPubkey:                    publicKey.toBase58(),
+        streamPda:                      pda.toBase58(),
+        bump,
+        usdcAta,
+        maxTotalMicroUsdc:              1_000_000_000,
+        costPerUnitMicroUsdc:           1,
+        maxRateUsdPerMinBits:           0,
+        settlementIntervalSecsOverride: 0,
+      });
+
+      // 4. Wrap → sign → confirm.
+      const tx  = buildTxFromResponse(resp);
+      const sig = await signAndConfirmTx(tx, connection, sendTransaction);
+
+      // 5. Persist the signature so subsequent loads show the explorer link.
+      await recordMppTxSignature(s.id, sig);
+      setMppMsg(`Stream #${s.id} on-chain · ${sig.slice(0, 8)}…`);
+      load();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Open on-chain failed';
+      setMppMsg(msg);
+    } finally {
+      setMppBusyId(null);
+    }
+  };
+
+  // ── On-chain withdraw remaining (Phase 10.5 wallet sign-off) ─────────────
+  //
+  // Withdrawal requires the agent grant to already be revoked (see
+  // programs/keyshield/src/instructions/withdraw.rs:9-13). We surface the
+  // CTA only on streams where `closed_at != null && on_chain_signature !=
+  // null` — closing the stream off-chain happens via the existing Close
+  // button, and we use closed_at as the proxy for "agent revoked" since
+  // the off-chain stream model does not carry a separate revoked_at field.
+  const handleMppWithdrawOnChain = async (s: MppStream) => {
+    setMppBusyId(s.id);
+    setMppMsg('');
+    if (!publicKey || !sendTransaction) {
+      setMppMsg('Connect your Solana wallet first');
+      setMppBusyId(null);
+      return;
+    }
+    const programId = getKeyshieldProgramId();
+    if (!programId) {
+      setMppMsg('KEYSHIELD_PROGRAM_ID not configured in frontend env');
+      setMppBusyId(null);
+      return;
+    }
+    try {
+      const agentPk    = new PublicKey(s.agent_pubkey);
+      const [pda]      = deriveStreamPda(agentPk, publicKey, programId);
+      const usdcMint   = getUsdcMint();
+      const ownerAta   = deriveAta(publicKey, usdcMint).toBase58();
+      // The stream's source ATA — same address pattern but owned by the
+      // PDA. Mismatches make the on-chain SPL transfer reject (safe
+      // failure mode: tx reverts cleanly).
+      const streamAta  = deriveAta(pda, usdcMint).toBase58();
+
+      setMppMsg(`Stream #${s.id} · requesting wallet signature…`);
+
+      // For withdraw, the server doesn't know what's currently in the
+      // ATA — we pass the `pending + settled` upper bound from the row
+      // and let the on-chain SPL transfer reject if it's stale (safe
+      // failure: reverts cleanly).
+      const claimed = (s.pending_micro_usdc | 0) + (s.settled_micro_usdc | 0);
+      const resp = await buildWithdrawTx(s.id, {
+        ownerPubkey:             publicKey.toBase58(),
+        streamPda:               pda.toBase58(),
+        streamAta,
+        ownerAta,
+        withdrawAmountMicroUsdc: Math.max(claimed, 1),
+      });
+
+      const tx  = buildTxFromResponse(resp);
+      const sig = await signAndConfirmTx(tx, connection, sendTransaction);
+
+      await recordMppTxSignature(s.id, sig);
+      setMppMsg(`Stream #${s.id} withdrawn · ${sig.slice(0, 8)}…`);
+      load();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Withdraw failed';
+      setMppMsg(msg);
+    } finally {
+      setMppBusyId(null);
+    }
+  };
+
   const handleTopup = async () => {
     const amount = parseFloat(topupAmt);
     if (!amount || amount <= 0) return;
@@ -436,15 +586,35 @@ export const ActivitySection: React.FC = () => {
 
       {/* ── MPP — Metered Payment streams ────────────────────────────────── */}
       <div className="rounded-2xl border border-[#1c2238] bg-[#0a0d1a]/60 overflow-hidden">
-        {/* Under-construction banner: backend /mpp/* endpoints not yet built.
-            See proxy-rs/specs/10-embedded-wallet.md Phase 10.4 + ROADMAP P0. */}
-        <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2 text-[11px] text-amber-300">
-          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 font-bold">!</span>
-          <span>
-            <strong className="text-amber-200">Under construction</strong>
-            <span className="text-amber-300/70"> — Python <code className="text-amber-200">/mpp/*</code> endpoints in development (spec 10 Phase 10.4). UI is wired; clicking actions will fail until the backend lands.</span>
-          </span>
-        </div>
+        {/* Phase 10.4 stub-on-chain banner. Off-chain CRUD works end-to-end
+            (open / record / settle / close persist in SQLite). On-chain ix
+            submission is partial: `mpp_settle` (#26) is wired through
+            v2-mvp/src/mpp_onchain.py + falls back to stub when env unset.
+            `open_payment_stream` (#24) and `withdraw_agent_wallet` (#27)
+            have server-side ix builders + /mpp/streams/{id}/build-{open,
+            withdraw}-tx endpoints; remaining work is the wallet-adapter
+            sign+submit UI. See ROADMAP P0a + spec 10. */}
+        {/* Wallet sign-off banner — flips amber → emerald once at least
+            one stream has been opened on-chain. Per-row green explorer
+            badges replace the row-level "Open on-chain" CTA after the
+            wallet adapter signs the ix and /record-tx persists the sig. */}
+        {mppStreams.some(s => s.on_chain_signature) ? (
+          <div className="px-5 py-2.5 bg-emerald-500/10 border-b border-emerald-500/20 flex items-center gap-2 text-[11px] text-emerald-300">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">✓</span>
+            <span>
+              <strong className="text-emerald-200">Live · wallet sign-off active</strong>
+              <span className="text-emerald-300/70"> · Streams below with the green explorer badge are anchored on-chain (devnet). <code className="text-emerald-200">open_payment_stream</code> / <code className="text-emerald-200">withdraw_agent_wallet</code> sign with your connected wallet; <code className="text-emerald-200">mpp_settle</code> auto-debits via the server settler key.</span>
+            </span>
+          </div>
+        ) : (
+          <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2 text-[11px] text-amber-300">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 font-bold">!</span>
+            <span>
+              <strong className="text-amber-200">Beta — wallet sign-off ready</strong>
+              <span className="text-amber-300/70"> · Off-chain CRUD live. Click <code className="text-amber-200">Open on-chain stream</code> on a row to sign <code className="text-amber-200">open_payment_stream</code> with your wallet (devnet); <code className="text-amber-200">mpp_settle</code> auto-debits via <code className="text-amber-200">KS_MPP_SETTLER_KEY</code>.</span>
+            </span>
+          </div>
+        )}
         <div className="px-5 py-3.5 border-b border-[#141a2e] flex items-center justify-between">
           <div>
             <h3 className="text-[13px] font-medium text-white flex items-center gap-2">
@@ -600,6 +770,22 @@ export const ActivitySection: React.FC = () => {
                         {shortPub(s.agent_pubkey)}
                       </div>
                     </div>
+                    {/* On-chain badge — green explorer link once
+                        /record-tx has persisted the wallet-signed tx
+                        signature. Renders next to the status pill so
+                        the row tells the on-chain story at a glance. */}
+                    {s.on_chain_signature && (
+                      <a
+                        href={explorerTxUrl(s.on_chain_signature)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`On-chain: ${s.on_chain_signature}`}
+                        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/50 border border-emerald-900/50 text-emerald-400 shrink-0 hover:bg-emerald-900/40 transition-colors font-mono"
+                      >
+                        <ExternalLink size={8} />
+                        ON-CHAIN
+                      </a>
+                    )}
                     <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
                       isOpen
                         ? 'bg-emerald-950/50 border border-emerald-900/50 text-emerald-400'
@@ -642,8 +828,8 @@ export const ActivitySection: React.FC = () => {
                   </div>
 
                   {isOpen && (
-                    <div className="pl-7 flex items-center gap-3">
-                      <div className="flex-1">
+                    <div className="pl-7 flex items-center gap-3 flex-wrap">
+                      <div className="flex-1 min-w-[120px]">
                         <div className="flex items-center justify-between text-[10px] text-zinc-600 mb-1">
                           <span>Next auto-settle</span>
                           <span className="font-mono">
@@ -657,6 +843,25 @@ export const ActivitySection: React.FC = () => {
                           />
                         </div>
                       </div>
+                      {/* Open on-chain CTA — only shown when the row
+                          hasn't been anchored on-chain yet. The handler
+                          uses the connected wallet to sign the
+                          open_payment_stream ix returned by /build-open-tx. */}
+                      {!s.on_chain_signature && (
+                        <button
+                          onClick={() => handleMppOpenOnChain(s)}
+                          disabled={mppBusyId === s.id || !publicKey}
+                          title={publicKey
+                            ? 'Sign open_payment_stream ix with your wallet'
+                            : 'Connect wallet to open on-chain'}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-[#1c2550] bg-[#0e1430] text-[#5b8cff] hover:bg-[#11183a] disabled:opacity-50"
+                        >
+                          {mppBusyId === s.id
+                            ? <Loader2 size={10} className="animate-spin inline" />
+                            : <Send size={9} />}
+                          Open on-chain stream
+                        </button>
+                      )}
                       <button
                         onClick={() => handleMppRecord(s.id, 100)}
                         disabled={mppBusyId === s.id}
@@ -683,8 +888,30 @@ export const ActivitySection: React.FC = () => {
                   )}
 
                   {!isOpen && s.closed_at && (
-                    <div className="pl-7 text-[10px] text-zinc-600">
-                      Closed {relTime(s.closed_at)}
+                    <div className="pl-7 flex items-center gap-3 flex-wrap">
+                      <div className="text-[10px] text-zinc-600">
+                        Closed {relTime(s.closed_at)}
+                      </div>
+                      {/* Withdraw CTA — closed_at doubles as revoked_at
+                          here. Only shows on streams that were opened
+                          on-chain (so there's actually USDC in the PDA
+                          ATA to recover); otherwise the on-chain
+                          withdraw_agent_wallet ix would no-op. */}
+                      {s.on_chain_signature && (
+                        <button
+                          onClick={() => handleMppWithdrawOnChain(s)}
+                          disabled={mppBusyId === s.id || !publicKey}
+                          title={publicKey
+                            ? 'Sign withdraw_agent_wallet ix to recover remaining USDC'
+                            : 'Connect wallet to withdraw'}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-amber-900/50 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40 disabled:opacity-50"
+                        >
+                          {mppBusyId === s.id
+                            ? <Loader2 size={10} className="animate-spin inline" />
+                            : <Send size={9} />}
+                          Withdraw remaining
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

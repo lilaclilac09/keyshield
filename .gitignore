@@ -15,6 +15,14 @@ Cargo.lock
 .env.local
 .env*.local
 
+# Solana keypairs (NEVER commit — contains 64-byte ed25519 secret)
+*-keypair.json
+mpp-settler.json
+*.keypair.json
+keyshield.db
+sessions.db
+**/data/*.db
+
 # IDE
 .vscode/
 .idea/

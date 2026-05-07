@@ -270,7 +270,7 @@ const MainContent: React.FC = () => {
             )}
             {section === 'activity'  && <ActivitySection />}
             {section === 'agents'    && <AgentsSection />}
-            {section === 'sharing'   && <SharingSection />}
+            {section === 'sharing'   && <SharingSection addr={fullAddr} />}
             {section === 'sessions'  && <SessionsSection onLogout={handleLogout} />}
             {section === 'settings'  && <SettingsSection addr={fullAddr} />}
             {section === 'developer' && <DeveloperSection />}

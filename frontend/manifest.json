@@ -12,7 +12,9 @@
 
   "host_permissions": [
     "http://localhost:8000/*",
-    "http://localhost:3000/*"
+    "http://localhost:3000/*",
+    "https://api.keyshield.dev/*",
+    "https://*.keyshield.dev/*"
   ],
 
   "action": {
@@ -34,6 +36,7 @@
     "matches": [
       "http://localhost:3000/*",
       "http://localhost:3001/*",
+      "https://keyshield.dev/*",
       "https://*.keyshield.dev/*"
     ]
   }

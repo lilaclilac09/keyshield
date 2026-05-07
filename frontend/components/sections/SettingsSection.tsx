@@ -10,8 +10,11 @@ import {
   pingExtension, pushTokenToExtension, getToken, apiFetch,
   clearAuth, notifyAuthChanged,
 } from '../../lib/auth';
+import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
 import { VAULT_KEY_MESSAGE } from '../../lib/vault-key';
 import { getPrefs, setPrefs, VaultPreferences } from '../../lib/preferences';
+
+const DELETE_CONFIRMATION = 'DELETE my account';
 
 // ─── ExtensionPanel (collapsed when paired) ──────────────────────────────────
 
@@ -246,8 +249,7 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
       'This logs out of THIS browser only. The following are NOT deleted:\n' +
       '  • Your encrypted vault items on the server\n' +
       '  • Your registered passkeys\n' +
-      '  • Your registered agents\n\n' +
-      'For full account deletion, contact support (coming soon) or rotate your wallet keypair.'
+      '  • Your registered agents'
     )) return;
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
     try { await disconnect(); } catch {}
@@ -255,6 +257,55 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
     clearPasskeyTrust();
     notifyAuthChanged();
     location.reload();
+  };
+
+  // ── Account deletion modal state ────────────────────────────────────────
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePhrase, setDeletePhrase] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState('');
+
+  const phraseValid = deletePhrase === DELETE_CONFIRMATION;
+
+  const handleDeleteAccount = async () => {
+    if (!phraseValid) return;
+    setDeleteErr('');
+    setDeleting(true);
+    try {
+      // If we have an attached wallet, sign the destructive challenge.
+      let walletAddress: string | undefined;
+      let signature:     string | undefined;
+      let challenge:     string | undefined;
+
+      const adapter = wallet?.adapter as { signMessage?: (m: Uint8Array) => Promise<Uint8Array> } | undefined;
+      const signFn = adapter?.signMessage?.bind(wallet?.adapter) ?? signMessage;
+
+      if (addr && signFn) {
+        const ch = await fetchDeleteAccountChallenge();
+        const sigBytes = await signFn(new TextEncoder().encode(ch.challenge));
+        walletAddress = addr;
+        signature     = btoa(String.fromCharCode(...sigBytes));
+        challenge     = ch.challenge;
+      }
+
+      await deleteAccount({
+        confirmation: DELETE_CONFIRMATION,
+        walletAddress,
+        signature,
+        challenge,
+      });
+
+      // Cascade succeeded — clear local state and redirect home.
+      try { await disconnect(); } catch {}
+      clearAuth();
+      clearPasskeyTrust();
+      notifyAuthChanged();
+      location.assign('/');
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : 'Account deletion failed');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -457,6 +508,94 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
           To revoke <button onClick={() => window.dispatchEvent(new CustomEvent('ks-nav', { detail: 'sessions' }))} className="text-[#5b8cff] hover:underline">other devices, manage Sessions →</button>
         </p>
       </div>
+
+      {/* ── Danger zone: permanent account deletion ─────────────── */}
+      <div className="rounded-2xl border border-rose-900/40 bg-rose-950/10 p-5 space-y-3">
+        <div>
+          <h3 className="text-[14px] font-medium text-rose-300 flex items-center gap-2">
+            <AlertCircle size={14} /> Danger zone
+          </h3>
+          <p className="text-[12px] text-rose-400/80 mt-0.5">
+            Permanently delete your account, vault items, agents, and all usage history. This cannot be undone.
+          </p>
+        </div>
+        <button
+          onClick={() => { setDeletePhrase(''); setDeleteErr(''); setDeleteOpen(true); }}
+          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-rose-700/60 bg-rose-950/40 text-[12px] text-rose-300 hover:bg-rose-900/50 transition-colors"
+        >
+          <Trash2 size={12} /> Delete account permanently
+        </button>
+      </div>
+
+      {deleteOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => { if (!deleting) setDeleteOpen(false); }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-rose-700/60 bg-[#0a0d1a] p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <h3 className="text-[15px] font-semibold text-rose-300 flex items-center gap-2">
+                <AlertCircle size={16} /> Delete account permanently?
+              </h3>
+              <p className="text-[12px] text-zinc-400 leading-relaxed">
+                This will wipe every vault entry, every registered agent, all usage history,
+                and your account record on the server. Your wallet keypair survives, but it
+                cannot be re-registered with KeyShield afterwards (anti-replay).
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-rose-900/40 bg-rose-950/20 p-3 space-y-2">
+              <label className="block text-[11px] uppercase tracking-wider text-rose-300/80">
+                Type <code className="text-rose-200 font-mono">{DELETE_CONFIRMATION}</code> to confirm
+              </label>
+              <input
+                type="text"
+                autoFocus
+                value={deletePhrase}
+                onChange={e => setDeletePhrase(e.target.value)}
+                placeholder={DELETE_CONFIRMATION}
+                className="w-full bg-[#070912] border border-rose-900/40 rounded-md px-3 py-2 text-[13px] font-mono text-rose-200 placeholder:text-rose-900/60 focus:outline-none focus:border-rose-500/60"
+                disabled={deleting}
+              />
+            </div>
+
+            {deleteErr && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-950/40 border border-rose-700/60">
+                <AlertCircle size={13} className="text-rose-400 shrink-0" />
+                <p className="text-[12px] text-rose-300">{deleteErr}</p>
+              </div>
+            )}
+
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              {addr
+                ? 'Your wallet will be asked to sign a destructive challenge. The signed message is single-use.'
+                : 'Confirmation phrase only — no wallet signature required for this account type.'}
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleting}
+                className="flex-1 px-3 py-2 rounded-lg bg-[#070912] border border-[#1c2238] text-[13px] text-zinc-300 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={!phraseValid || deleting}
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-rose-700 hover:bg-rose-600 disabled:bg-rose-950/40 disabled:text-rose-700 disabled:cursor-not-allowed text-white text-[13px] font-medium transition-colors"
+              >
+                {deleting
+                  ? <><Loader2 size={13} className="animate-spin" /> Deleting…</>
+                  : <><Trash2 size={13} /> Delete account</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── How KeyShield differs from 1Password ─────────────────── */}
       <ComparisonPanel />
