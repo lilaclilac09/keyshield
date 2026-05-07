@@ -125,9 +125,21 @@ cd src/python-legacy && pytest
 cd tests && npm test
 ```
 
-## Roadmap
+## Documentation
 
-See [ROADMAP.md](ROADMAP.md) for current progress.
+- [Architecture Overview](docs/architecture/README.md) — System architecture, components, security
+- [System Design](docs/architecture/system-design.md) — Detailed technical specification
+- [API Reference](docs/API.md) — Endpoint documentation
+- [Development Guide](DEVELOPMENT.md) — Local setup, testing
+- [Operator Guide](docs/OPERATOR.md) — Deployment, monitoring
+- [Roadmap](ROADMAP.md) — Current progress and future plans
+
+### Architecture Decision Records
+
+- [ADR-001: Divergence decisions](src/rust-proxy/ADR-001-divergences.md)
+- [ADR-002: Why fallthrough, not full port](src/rust-proxy/ADR-002-architecture.md)
+- [ADR-003: Firewall rules](src/rust-proxy/ADR-003-firewall.md)
+- [ADR-007: TLS and stealth mode](src/rust-proxy/ADR-007-tls-and-stealth.md)
 
 ## License
 
