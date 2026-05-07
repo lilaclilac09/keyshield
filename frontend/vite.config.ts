@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        'process.env.KEYSHIELD_API_URL': JSON.stringify(env.KEYSHIELD_API_URL ?? 'http://localhost:8000'),
+        'process.env.KEYSHIELD_API_URL':    JSON.stringify(env.KEYSHIELD_API_URL ?? 'http://localhost:8000'),
+        'process.env.KEYSHIELD_PROGRAM_ID': JSON.stringify(env.KEYSHIELD_PROGRAM_ID ?? ''),
       },
       resolve: {
         alias: {

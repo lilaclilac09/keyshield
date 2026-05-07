@@ -1815,6 +1815,8 @@ class MppRecordBody(BaseModel):
 async def mpp_open_stream(body: MppOpenStreamBody, sess: dict = Depends(_session)):
     if not body.agentPubkey.strip():
         raise HTTPException(400, "agentPubkey required")
+    if body.upstream.strip() not in UPSTREAMS:
+        raise HTTPException(400, f"unknown upstream: {body.upstream}")
     if body.ratePerTokenMicroUsdc <= 0 and body.ratePerCallMicroUsdc <= 0:
         raise HTTPException(400, "rate must be > 0")
     if body.settlementIntervalSecs < 5 or body.settlementIntervalSecs > 3600:
@@ -1857,50 +1859,50 @@ async def mpp_record(
 ):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None,
             mpp.record_usage,
             sess["user_id"],
             int(stream_id),
-            int(body.tokens),
             int(body.calls),
+            int(body.tokens),
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
 
 
 @app.post("/mpp/streams/{stream_id}/settle")
 async def mpp_settle(stream_id: int, sess: dict = Depends(_session)):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None, mpp.settle_stream, sess["user_id"], int(stream_id)
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
 
 
 @app.post("/mpp/streams/{stream_id}/close")
 async def mpp_close(stream_id: int, sess: dict = Depends(_session)):
     loop = asyncio.get_event_loop()
     try:
-        stream, just_settled = await loop.run_in_executor(
+        stream = await loop.run_in_executor(
             None, mpp.close_stream, sess["user_id"], int(stream_id)
         )
     except mpp.StreamNotFound:
         raise HTTPException(404, "stream not found")
     except mpp.StreamClosed:
-        raise HTTPException(409, "stream is closed")
+        raise HTTPException(400, "stream is closed")
 
-    return {"stream": {**stream, "just_settled_micro_usdc": just_settled}}
+    return {"stream": stream}
 
 
 # ─── MPP Phase 10.5: build-tx endpoints (owner-signed, frontend submits) ────
@@ -2101,6 +2103,57 @@ async def mpp_build_withdraw_tx(
         raise HTTPException(400, str(e))
 
     return _ix_to_response(ix)
+
+
+# ─── MPP Phase 10.5: record-tx (post-sign callback) ─────────────────────────
+#
+# After the frontend wallet adapter signs+sends the `open_payment_stream`
+# (or `withdraw_agent_wallet`) ix returned by /build-*-tx, the wallet
+# returns a base58 tx signature. The frontend POSTs it here so the row
+# can flip from "Open on-chain stream" CTA to a green explorer link.
+#
+# We don't re-verify the signature on Solana RPC — the frontend already
+# awaited `confirmTransaction(..., 'confirmed')` before calling this
+# endpoint. Same trust model as `/billing/topup-solana` BEFORE its
+# verify step (which exists because top-ups debit USD; here the
+# signature is purely informational + UI-state).
+
+
+class MppRecordTxBody(BaseModel):
+    tx_signature: str  # base58 Solana tx signature, opaque to the server
+
+
+@app.post("/mpp/streams/{stream_id}/record-tx")
+async def mpp_record_tx(
+    stream_id: int,
+    body: MppRecordTxBody,
+    sess: dict = Depends(_session),
+):
+    """Persist the on-chain tx signature returned by the frontend wallet
+    adapter. Idempotent: re-posting the same signature is a no-op.
+
+    Returns the updated stream row so the UI can re-render in one round
+    trip without a follow-up `GET /mpp/streams`.
+    """
+    sig = (body.tx_signature or "").strip()
+    if not sig:
+        raise HTTPException(400, "tx_signature is required")
+    # Bound the signature length so we don't accept arbitrary blobs —
+    # base58-encoded ed25519 sigs are ~88 chars, leave headroom.
+    if len(sig) > 128:
+        raise HTTPException(400, "tx_signature too long")
+
+    loop = asyncio.get_event_loop()
+    try:
+        stream = await loop.run_in_executor(
+            None, mpp.record_tx_signature,
+            sess["user_id"], stream_id, sig,
+        )
+    except mpp.StreamNotFound:
+        raise HTTPException(404, "stream not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"stream": stream}
 
 
 # ─── internal bridge (Rust hot path → Python control plane) ──────────────────

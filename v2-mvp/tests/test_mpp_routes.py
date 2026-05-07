@@ -705,3 +705,167 @@ class TestBuildTxEndpoints:
         assert r.status_code == 200, r.text
         raw = base64.b64decode(r.json()["data"])
         assert int.from_bytes(raw[26:30], "little") == 300
+
+
+# ─── Spec 10 Phase 10.5: /record-tx (post-sign callback) ──────────────────
+#
+# After the frontend wallet adapter signs+sends an open_payment_stream
+# (or withdraw_agent_wallet) ix, the resulting base58 tx signature is
+# POSTed here so the row's `on_chain_signature` field flips from null
+# to the signature string. The UI keys off that field to render the
+# green "ON-CHAIN" explorer badge.
+
+
+class TestRecordTx:
+    """POST /mpp/streams/{id}/record-tx — wallet sign-off callback."""
+
+    def _open_stream(self, client, login) -> int:
+        r = client.post("/mpp/streams", json=_open_payload(), headers=_auth(login))
+        assert r.status_code == 200, r.text
+        return r.json()["stream"]["id"]
+
+    # — auth gate —
+
+    def test_record_tx_requires_bearer(self, client):
+        r = client.post(
+            "/mpp/streams/1/record-tx",
+            json={"tx_signature": "abc"},
+        )
+        assert r.status_code == 401
+
+    # — happy path —
+
+    def test_record_tx_persists_signature(self, client, login):
+        """The signature posted here surfaces back via GET /mpp/streams
+        as `on_chain_signature` — that's the contract the frontend
+        green-badge logic depends on."""
+        sid = self._open_stream(client, login)
+
+        # Before sign-off, the row reports null.
+        body = client.get("/mpp/streams", headers=_auth(login)).json()
+        assert body["streams"][0]["on_chain_signature"] is None
+
+        sig = "5KJp7zHj1nQYQEi8mXdPyx" * 4  # mimic 88-char base58 sig
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": sig},
+            headers=_auth(login),
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["stream"]["on_chain_signature"] == sig
+
+        # Survives a GET round-trip (column is persisted).
+        body = client.get("/mpp/streams", headers=_auth(login)).json()
+        assert body["streams"][0]["on_chain_signature"] == sig
+
+    def test_record_tx_idempotent_same_signature(self, client, login):
+        """Re-posting the same signature is a no-op — the UI may retry
+        on transient network errors and shouldn't get a 4xx for it."""
+        sid = self._open_stream(client, login)
+        sig = "abc" * 30
+        client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": sig},
+            headers=_auth(login),
+        )
+        # Re-post.
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": sig},
+            headers=_auth(login),
+        )
+        assert r.status_code == 200
+        assert r.json()["stream"]["on_chain_signature"] == sig
+
+    def test_record_tx_overwrites_with_new_signature(self, client, login):
+        """A second call (e.g. withdraw after open) overwrites — withdraw
+        is terminal and we don't carry both. The open-sig is preserved
+        in mpp_events for audit purposes (open emits an 'open' event)."""
+        sid = self._open_stream(client, login)
+        client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": "open_sig_xxxxxxxxxxxxxxxxxxxx"},
+            headers=_auth(login),
+        )
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": "withdraw_sig_yyyyyyyyyyyyyyyy"},
+            headers=_auth(login),
+        )
+        assert r.status_code == 200
+        assert r.json()["stream"]["on_chain_signature"] == "withdraw_sig_yyyyyyyyyyyyyyyy"
+
+    # — validation —
+
+    def test_record_tx_empty_signature_400(self, client, login):
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": ""},
+            headers=_auth(login),
+        )
+        assert r.status_code == 400
+
+    def test_record_tx_whitespace_only_400(self, client, login):
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": "   "},
+            headers=_auth(login),
+        )
+        assert r.status_code == 400
+
+    def test_record_tx_oversize_signature_400(self, client, login):
+        """Bound payload to keep the column from growing unboundedly —
+        base58-encoded ed25519 sigs are ~88 chars; 129+ is junk."""
+        sid = self._open_stream(client, login)
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": "x" * 129},
+            headers=_auth(login),
+        )
+        assert r.status_code == 400
+
+    # — error paths —
+
+    def test_record_tx_unknown_stream_404(self, client, login):
+        r = client.post(
+            "/mpp/streams/99999/record-tx",
+            json={"tx_signature": "abc" * 20},
+            headers=_auth(login),
+        )
+        assert r.status_code == 404
+
+    def test_record_tx_tenant_isolation(self, client):
+        """Bob cannot record-tx against alice's stream — owner-scoped
+        lookup should 404 even if bob guesses the id."""
+        a = client.post("/auth/login", json={"userId": "alice", "password": "p"}).json()["token"]
+        b = client.post("/auth/login", json={"userId": "bob",   "password": "p"}).json()["token"]
+
+        r = client.post("/mpp/streams", json=_open_payload(), headers=_auth(a))
+        sid = r.json()["stream"]["id"]
+
+        r = client.post(
+            f"/mpp/streams/{sid}/record-tx",
+            json={"tx_signature": "abc" * 20},
+            headers=_auth(b),
+        )
+        assert r.status_code == 404
+
+
+class TestStreamFieldShape:
+    """Stream rows expose `on_chain_signature` (null until /record-tx)
+    so the frontend banner + green badge can key off it."""
+
+    def test_open_stream_response_includes_on_chain_signature_null(
+        self, client, login,
+    ):
+        r = client.post("/mpp/streams", json=_open_payload(), headers=_auth(login))
+        s = r.json()["stream"]
+        assert "on_chain_signature" in s
+        assert s["on_chain_signature"] is None
+
+    def test_list_streams_includes_on_chain_signature(self, client, login):
+        client.post("/mpp/streams", json=_open_payload(), headers=_auth(login))
+        body = client.get("/mpp/streams", headers=_auth(login)).json()
+        assert all("on_chain_signature" in s for s in body["streams"])

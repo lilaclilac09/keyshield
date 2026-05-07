@@ -8,6 +8,7 @@
  */
 
 import { apiFetch } from './auth';
+import type { BuildTxResponse } from './solana';
 
 // ─── Account deletion ──────────────────────────────────────────────────────
 
@@ -111,6 +112,80 @@ export async function revokeShare(shareId: number): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Revoke failed' }));
     throw new Error((err as { detail: string }).detail ?? 'Revoke failed');
+  }
+}
+
+// ─── MPP wallet sign-off (Phase 10.5) ──────────────────────────────────────
+//
+// The server returns ix payloads but cannot sign — the wallet does.
+// Round-trip is:
+//   1. POST /mpp/streams/{id}/build-{open,withdraw}-tx with frontend-derived
+//      PDA + bump + ATAs + caps → server returns BuildTxResponse.
+//   2. Frontend wraps in Transaction, wallet adapter signs + sends, awaits
+//      confirmation.
+//   3. POST /mpp/streams/{id}/record-tx with the resulting base58 signature
+//      so the UI can flip from "Open on-chain" CTA to a green explorer link.
+
+export interface BuildOpenTxBody {
+  ownerPubkey:                    string;
+  streamPda:                      string;
+  bump:                           number;
+  usdcAta:                        string;
+  maxTotalMicroUsdc:              number;
+  costPerUnitMicroUsdc?:          number;
+  maxRateUsdPerMinBits?:          number;
+  settlementIntervalSecsOverride?: number;
+}
+
+export async function buildOpenStreamTx(
+  streamId: number,
+  body:     BuildOpenTxBody,
+): Promise<BuildTxResponse> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/build-open-tx`, {
+    method: 'POST',
+    body:   JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-open-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-open-tx failed');
+  }
+  return r.json();
+}
+
+export interface BuildWithdrawTxBody {
+  ownerPubkey:             string;
+  streamPda:               string;
+  streamAta:               string;
+  ownerAta:                string;
+  withdrawAmountMicroUsdc: number;
+}
+
+export async function buildWithdrawTx(
+  streamId: number,
+  body:     BuildWithdrawTxBody,
+): Promise<BuildTxResponse> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/build-withdraw-tx`, {
+    method: 'POST',
+    body:   JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-withdraw-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-withdraw-tx failed');
+  }
+  return r.json();
+}
+
+export async function recordMppTxSignature(
+  streamId:    number,
+  txSignature: string,
+): Promise<void> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/record-tx`, {
+    method: 'POST',
+    body:   JSON.stringify({ tx_signature: txSignature }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'record-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'record-tx failed');
   }
 }
 
