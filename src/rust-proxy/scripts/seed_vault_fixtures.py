@@ -34,7 +34,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-REPO_ROOT = PROXY_RS.parent
+# Post-SOTA refactor: rust-proxy lives at src/rust-proxy/, so repo
+# root is two levels above PROXY_RS, not one. Pre-SOTA path was
+# proxy-rs/ (one level deep), where the now-wrong `.parent` worked.
+REPO_ROOT = PROXY_RS.parent.parent
 V2_VAULT_PY = REPO_ROOT / "v2-mvp" / "src" / "vault.py"
 
 

@@ -42,12 +42,14 @@ fn python_bin() -> String {
 }
 
 fn repo_root() -> PathBuf {
+    // Post-SOTA: src/rust-proxy/crates/ks-proxy is four levels deep.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
         .map(Path::to_path_buf)
-        .expect("ks-proxy crate must live three levels under repo root")
+        .expect("ks-proxy crate must live four levels under repo root")
 }
 
 fn proxy_rs_dir() -> PathBuf {

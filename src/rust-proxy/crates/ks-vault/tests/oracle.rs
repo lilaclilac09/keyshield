@@ -50,14 +50,15 @@ fn python_bin() -> String {
 }
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` is `proxy-rs/crates/ks-vault`. Repo root is two
-    // levels up from there.
+    // `CARGO_MANIFEST_DIR` is `src/rust-proxy/crates/ks-vault` (post-SOTA
+    // refactor). Repo root is four levels up from there.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
         .map(Path::to_path_buf)
-        .expect("ks-vault crate must live three levels under repo root")
+        .expect("ks-vault crate must live four levels under repo root")
 }
 
 fn proxy_rs_dir() -> PathBuf {
