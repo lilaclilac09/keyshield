@@ -21,6 +21,18 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python cryptography (oracle tests need it)
+        # ks-vault / ks-session oracle tests shell out to v2-mvp/src/vault.py
+        # via seed_vault_fixtures.py to byte-diff against the Python writer.
+        # vault.py imports `cryptography.hazmat.primitives` for AES-256-GCM,
+        # which isn't preinstalled on ubuntu-latest's bare python3.
+        run: pip install cryptography
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -32,6 +44,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
       - name: Test proxy-rs (78 tests across 6 crates)
+        env:
+          # Force tests to use the just-set-up python3 instead of falling
+          # back to repo_root()/v2-mvp/.venv (which doesn't exist in CI).
+          KS_PYTHON: python3
         run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml
 
   integration-tests:
