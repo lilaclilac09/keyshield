@@ -1,5 +1,9 @@
 # KeyShield
 
+[![Test](https://github.com/lilaclilac09/keyshield/actions/workflows/test.yml/badge.svg)](https://github.com/lilaclilac09/keyshield/actions/workflows/test.yml) [![node-tests](https://github.com/lilaclilac09/keyshield/actions/workflows/node-tests.yml/badge.svg)](https://github.com/lilaclilac09/keyshield/actions/workflows/node-tests.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license) [![Solana](https://img.shields.io/badge/Solana-on--chain-9945ff?logo=solana&logoColor=white)](https://solana.com) [![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/) [![Python](https://img.shields.io/badge/Python-3.12-3776ab?logo=python&logoColor=white)](https://www.python.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Specs](https://img.shields.io/badge/specs-14-5b8cff)](src/rust-proxy/specs/) [![Tests](https://img.shields.io/badge/Rust%20oracle%20tests-78-success)](src/rust-proxy/)
+
+> **Live demo:** _coming soon — see `landing/index.html` for the project page_
+
 Zero-trust API key proxy with vault encryption and Solana wallet authentication.
 
 ## Architecture
