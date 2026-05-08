@@ -1,25 +1,24 @@
-# CI/CD for KeyShield v2-MVP (Python)
+# Python legacy CI (renamed from v2-python.yml on 2026-05-08).
 #
-# DISABLED on auto-trigger 2026-05-08.
+# Renamed to force GitHub Actions to re-register from a clean parse —
+# the old `v2-python.yml` registration was cached in a broken state
+# from its initial creation on 2026-05-07 (workflow.name resolved to
+# the file path instead of the YAML's `name:` field; `on:` triggers
+# and `paths:` filter were both ignored, so it ran on every push and
+# emitted 0-job instant failures for 18+ consecutive commits).
 #
-# Why: this workflow targets `v2-mvp/` paths from the pre-SOTA-refactor
-# layout. The live Python code now lives under `src/python-legacy/src/`
-# (server.py, agents.py, billing_solana.py, …). `v2-mvp/` itself still
-# exists as a legacy snapshot but its `tests/`, `trading/`, etc. don't
-# reflect current source — every run failed for 18+ consecutive commits.
+# DISABLED on auto-trigger. Reasons:
+#   1. cd targets (cd v2-mvp && ruff check src/ tests/ trading/) are
+#      stale — live Python now lives under `src/python-legacy/src/`.
+#   2. v2-mvp/tests/ and v2-mvp/trading/ no longer reflect active source.
 #
-# Also: GitHub's parser cached a broken initial registration of this
-# file (see workflow.name showing path instead of `KeyShield v2 CI/CD`),
-# so even with valid YAML the runs come back as 0-job instant failures.
-#
-# Action items before re-enabling:
-#   1. Rewrite the cd targets to point at src/python-legacy/
-#   2. Update `paths:` filter to src/python-legacy/**
-#   3. Either rename this file to force re-registration, or delete +
-#      re-add it in one commit so GH parses it fresh.
+# Re-enable when:
+#   1. cd targets rewritten to src/python-legacy/
+#   2. `on.push.paths` filter added back, scoped to src/python-legacy/**
+#   3. Job steps exercised manually via Actions UI to confirm green
 #
 # Until then, run manually via the Actions UI when needed.
-name: KeyShield v2 CI/CD
+name: Python legacy tests (manual)
 
 on:
   workflow_dispatch:  # manual trigger only — see disabled note above
