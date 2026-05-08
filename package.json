@@ -5,8 +5,7 @@
      "src/sdk/packages/agent-sdk",
      "src/sdk/packages/cli",
      "src/sdk/packages/goat-wallet",
-     "infra/sync-worker",
-     "src/mobile-app"
+     "infra/sync-worker"
    ],
   "scripts": {
     "dev": "cd \"frontend\" && npm run dev",
