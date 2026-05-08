@@ -402,16 +402,22 @@ async def passkey_page():
         raise HTTPException(404, "passkey page missing")
     return FileResponse(p, media_type="text/html")
 
+_cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    ",".join(
+        f"http://localhost:{p}" for p in (
+            3000, 3001, 3002, 3003, 3004, 3005, 4000, 5173, 5174, 5175,
+        )
+    ),
+).split(",")
+# Allow Vercel metrics dashboard (set KS_METRICS_CORS_ORIGIN to your Vercel URL)
+_metrics_cors_origin = os.getenv("KS_METRICS_CORS_ORIGIN", "")
+if _metrics_cors_origin and _metrics_cors_origin not in _cors_origins:
+    _cors_origins.append(_metrics_cors_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv(
-        "CORS_ORIGINS",
-        ",".join(
-            f"http://localhost:{p}" for p in (
-                3000, 3001, 3002, 3003, 3004, 3005, 4000, 5173, 5174, 5175,
-            )
-        ),
-    ).split(","),
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
