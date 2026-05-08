@@ -1,18 +1,28 @@
 # CI/CD for KeyShield v2-MVP (Python)
+#
+# DISABLED on auto-trigger 2026-05-08.
+#
+# Why: this workflow targets `v2-mvp/` paths from the pre-SOTA-refactor
+# layout. The live Python code now lives under `src/python-legacy/src/`
+# (server.py, agents.py, billing_solana.py, …). `v2-mvp/` itself still
+# exists as a legacy snapshot but its `tests/`, `trading/`, etc. don't
+# reflect current source — every run failed for 18+ consecutive commits.
+#
+# Also: GitHub's parser cached a broken initial registration of this
+# file (see workflow.name showing path instead of `KeyShield v2 CI/CD`),
+# so even with valid YAML the runs come back as 0-job instant failures.
+#
+# Action items before re-enabling:
+#   1. Rewrite the cd targets to point at src/python-legacy/
+#   2. Update `paths:` filter to src/python-legacy/**
+#   3. Either rename this file to force re-registration, or delete +
+#      re-add it in one commit so GH parses it fresh.
+#
+# Until then, run manually via the Actions UI when needed.
 name: KeyShield v2 CI/CD
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - "v2-mvp/**"
-      - ".github/workflows/v2-python.yml"
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - "v2-mvp/**"
-      - ".github/workflows/v2-python.yml"
-  workflow_dispatch:  # manual trigger
+  workflow_dispatch:  # manual trigger only — see disabled note above
 
 env:
   SERVER_SECRET: CHANGE-ME-IN-PROD-32-BYTES-MIN
