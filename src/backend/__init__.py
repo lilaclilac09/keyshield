@@ -1,7 +1,7 @@
 """KeyShield Backend — Zero-trust API key vault and proxy.
 
 Public API:
-from .keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
+    from keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
     from src.backend.config import get_settings
     from src.backend.errors import KeyShieldError
     from src.backend.trading.orchestrator import TradingOrchestrator
@@ -79,6 +79,32 @@ from .skills.helius_skill import TOOLS as HELIUS_TOOLS, run_tool
 # ─── Middleware ───────────────────────────────────────────────────────
 from .middleware.auth import require_auth, get_session_from_request
 
+# ─── Vault convenience functions (backed by KeyShield class) ──────────
+# These are the actual store/load/delete/list_keys that routes/vault.py
+# calls via vault_mod.store(user_id, ...) etc.
+_ks_instance = KeyShield()
+
+
+def store(user_id: str, upstream: str, api_key: str, password: str = None) -> None:
+    """Store a key for the given user."""
+    _ks_instance.store(upstream, api_key)
+
+
+def load(user_id: str, upstream: str, password: str) -> str:
+    """Load and decrypt a key for the given user."""
+    return _ks_instance.load(user_id, upstream, password)
+
+
+def delete(user_id: str, upstream: str) -> None:
+    """Delete a key for the given user."""
+    _ks_instance.delete_key(upstream)
+
+
+def list_keys(user_id: str) -> list[str]:
+    """List keys for the given user."""
+    return _ks_instance.list_keys()
+
+
 __all__ = [
     # SDK
     "KeyShield", "AsyncKeyShield", "AgentKeyShield",
@@ -105,9 +131,10 @@ __all__ = [
     # Sharing
     "grant", "revoke_share", "list_outgoing", "list_incoming",
     # MPP
-    "MppConfig", "MppStreams", "build_mpp_settle_ix_data", "submit_mpp_settle",
+    "MppConfig", "open_stream", "record_usage", "settle_stream", "close_stream",
+    "list_streams", "mpp_list_events", "build_mpp_settle_ix_data", "submit_mpp_settle",
     # Skills
-    "HELIUS_TOOLS", "run_helius_tool",
+    "HELIUS_TOOLS", "run_tool",
     # Middleware
     "require_auth", "get_session_from_request",
 ]

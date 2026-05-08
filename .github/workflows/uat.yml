@@ -1,0 +1,116 @@
+# KeyShield — User Acceptance Tests (UAT)
+# Runs on every push to main or manual trigger.
+
+name: UAT
+
+on:
+  push:
+    paths:
+      - "src/backend/**"
+      - "docker-compose.yml"
+      - "Dockerfile.python"
+      - ".github/workflows/uat.yml"
+  pull_request:
+    paths:
+      - "src/backend/**"
+      - "docker-compose.yml"
+      - "Dockerfile.python"
+  schedule:
+    # Run daily at midnight UTC to catch flaky tests
+    - cron: "0 0 * * *"
+
+env:
+  SERVER_SECRET: "UAT-CHANGE-ME-32-BYTES-MIN"
+  KS_INTERNAL_SECRET: "test-secret-key"
+
+jobs:
+  uat:
+    name: UAT Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: keyshield
+          POSTGRES_PASSWORD: keyshield
+          POSTGRES_DB: keyshield
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keyshield"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest httpx cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn
+
+      - name: Start Python API server
+        working-directory: src/backend
+        run: |
+          SERVER_SECRET=${{ env.SERVER_SECRET }} \
+            KS_INTERNAL_SECRET=${{ env.KS_INTERNAL_SECRET }} \
+            DATABASE_URL=postgresql://keyshield:keyshield@localhost:5432/keyshield \
+            python -m uvicorn app:app --host 0.0.0.0 --port 8001 &
+          # Wait for server to be ready
+          for i in $(seq 1 30); do
+            curl -s http://localhost:8001/health >/dev/null && break
+            sleep 1
+          done
+
+      - name: Run UAT tests against live server
+        working-directory: src/backend
+        run: |
+          KS_API_URL=http://localhost:8001 \
+          pytest tests/uat.py \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./src/backend/coverage.xml
+          fail_ci_if_error: false
+
+  smoke-test:
+    name: Smoke Test (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start full stack via compose
+        run: |
+          docker compose up -d --build
+          sleep 15
+
+      - name: Verify services are healthy
+        run: |
+          curl -sf http://localhost:8001/health || (docker compose logs && exit 1)
+          curl -sf http://localhost:3000 || true  # frontend may need more time
+
+      - name: Run quick API check
+        run: |
+          docker compose exec python python -c "
+            import httpx
+            r = httpx.get('http://python:8001/health')
+            assert r.status_code == 200
+            print('API health OK')
+          "
+
+      - name: Clean up
+        if: always()
+        run: docker compose down --volumes

@@ -1,0 +1,108 @@
+# Python CI — live source under src/backend/
+#
+# Lints and tests the control-plane Python code that runs the KeyShield API.
+
+name: Python (live)
+
+on:
+  push:
+    paths:
+      - "src/backend/**"
+      - "conftest.py"
+      - "pyproject.toml"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "src/backend/**"
+      - "conftest.py"
+      - "pyproject.toml"
+
+env:
+  SERVER_SECRET: "CHANGE-ME-IN-PROD-32-BYTES-MIN"
+  KS_INTERNAL_SECRET: "test-secret-key"
+  KS_X402_BASE_RPC_URL: "https://mainnet.base.org"
+  KS_X402_RECEIVER_ADDRESS: "0x1234567890abcdef1234567890abcdef12345678"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy fastapi httpx cryptography pynacl base58 pydantic
+
+      - name: Ruff check
+        working-directory: src/backend
+        run: ruff check .
+
+      - name: Ruff format
+        working-directory: src/backend
+        run: ruff format --check .
+
+  test:
+    name: Test (Python ${{ matrix.python }})
+    needs: [lint]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-cov httpx cryptography pynacl base58 fastapi pydantic
+
+      - name: Run tests
+        working-directory: src/backend
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./src/backend/coverage.xml
+          fail_ci_if_error: false
+
+  uat:
+    name: User Acceptance Tests
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --upgrade pip && pip install pytest httpx cryptography pynacl base58 fastapi pydantic
+
+      - name: Run UAT suite
+        working-directory: src/backend
+        run: |
+          pytest tests/ -v --tb=short \
+            -m "uat" \
+            --cov=. \
+            --cov-report=xml:coverage.xml
