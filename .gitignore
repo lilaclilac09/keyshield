@@ -3,11 +3,12 @@
 # =============================================================================
 
 # --- Dependencies -----------------------------------------------------------
-/node_modules
-/src/web-frontend/node_modules
-/src/mobile-app/node_modules
-/src/api-server/node_modules
-/src/sdk/*/node_modules
+# Universal: ignore node_modules anywhere in the tree, regardless of layout.
+# Replaces the per-path enumeration (web-frontend / mobile-app / api-server /
+# sdk/*) that missed legacy locations (mobile/, packages/cli/, frontend/,
+# server/, extension-sync/, infra/sync-worker/, .dropped-*/) and tracked
+# 189k node_modules files in git as a result.
+node_modules/
 
 # --- Build outputs -----------------------------------------------------------
 /dist
