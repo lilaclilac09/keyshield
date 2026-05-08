@@ -177,3 +177,30 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[KeyShield] v1.1 installed — auto-detect + direct-store enabled');
 });
+
+// ── x402 Trust Store helpers (mirrors lib/x402-trust.ts) ────────────────────
+const X402_STORAGE_KEY = 'ks_x402_trust_list';
+async function x402LoadList() { const r = await chrome.storage.local.get(X402_STORAGE_KEY); return r[X402_STORAGE_KEY] ?? {}; }
+async function x402SaveList(list) { await chrome.storage.local.set({ [X402_STORAGE_KEY]: list }); }
+async function x402IsTrusted(h) { const l = await x402LoadList(); const e = l[h]; return !!e && e.enabled; }
+async function x402GetThreshold(h) { const l = await x402LoadList(); const e = l[h]; if (!e || !e.enabled) return Infinity; return e.threshold_usd; }
+async function x402AddDomain(h, t) { const l = await x402LoadList(); l[h] = { threshold_usd: t, enabled: l[h]?.enabled ?? true, added_at: l[h]?.added_at ?? Date.now() }; await x402SaveList(l); }
+async function x402RemoveDomain(h) { const l = await x402LoadList(); delete l[h]; await x402SaveList(l); }
+async function x402ToggleDomain(h, enabled) { const l = await x402LoadList(); if (!l[h]) return; l[h] = { ...l[h], enabled }; await x402SaveList(l); }
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'X402_CHECK_TRUST') {
+    (async () => { const { hostname, amount_usd } = message; const trusted = await x402IsTrusted(hostname); const threshold = await x402GetThreshold(hostname); sendResponse({ autoPayApproved: trusted && typeof amount_usd === 'number' && amount_usd < threshold }); })();
+    return true;
+  }
+  if (message.type === 'INITIATE_X402_PAYMENT') {
+    (async () => { const { amount_usd, hostname, payTo, network, resource } = message; await chrome.storage.session.set({ ks_x402_pending: { amount_usd, hostname, payTo, network, resource, initiated_at: Date.now() } }); try { await chrome.action.openPopup(); } catch {} sendResponse({ initiated: true }); })();
+    return true;
+  }
+  if (message.type === 'GET_X402_TRUST') { (async () => { sendResponse({ list: await x402LoadList() }); })(); return true; }
+  if (message.type === 'UPDATE_X402_TRUST') {
+    (async () => { const { action, hostname, threshold_usd, enabled } = message; if (action === 'add') await x402AddDomain(hostname, threshold_usd); if (action === 'remove') await x402RemoveDomain(hostname); if (action === 'toggle') await x402ToggleDomain(hostname, enabled); sendResponse({ ok: true }); })();
+    return true;
+  }
+  return false;
+});
