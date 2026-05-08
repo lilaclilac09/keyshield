@@ -3,7 +3,7 @@ Shared pytest fixtures for KeyShield v2-MVP.
 Loads v2-mvp/src/ so that `from src import ...` resolves to the migrated code.
 """
 
-import os, sys, pytest, tempfile, asyncio
+import os, sys, pytest, tempfile, asyncio, shutil
 from pathlib import Path
 from typing import Generator
 
@@ -13,7 +13,13 @@ if _src_parent not in sys.path:
     sys.path.insert(0, _src_parent)
 
 # Import migrated modules (after path setup)
-from src import vault, session, agents, usage  # noqa: E402
+from src.vault import vault, vault_new as _vault_new  # noqa: E402
+from src.auth import session  # noqa: E402
+from src.agents import agents  # noqa: E402
+from src.billing import usage  # noqa: E402
+
+# Expose at the module level for tests that expect `import src.vault` etc.
+vault_new = _vault_new
 
 
 def _auth(token):
@@ -22,19 +28,36 @@ def _auth(token):
 
 def _clean_agent_db() -> None:
     """Remove test agent data between runs."""
-    db_path = Path(__file__).parent.parent / "data" / "agents.db"
+    db_path = Path(__file__).parent.parent / "src" / "data" / "agents.db"
+    if not db_path.exists():
+        db_path = Path(__file__).parent.parent / "data" / "agents.db"
     if db_path.exists():
-        import sqlite3
-        conn = sqlite3.connect(str(db_path))
+        conn = __import__('sqlite3').connect(str(db_path))
         conn.execute("DELETE FROM agent_keys")
         conn.execute("DELETE FROM agent_revocations")
         conn.commit()
         conn.close()
 
 
+def _clean_vault_data() -> None:
+    """Remove test vault data between runs."""
+    vault_dir = Path(__file__).parent.parent / "vault"
+    if vault_dir.exists():
+        for user_dir in vault_dir.iterdir():
+            if user_dir.is_dir():
+                shutil.rmtree(str(user_dir))
+
+
+def _clean_all_test_data() -> None:
+    """Clean all test data (called before session-scoped fixture)."""
+    _clean_agent_db()
+    _clean_vault_data()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _init_dbs():
     """Ensure databases exist before any tests run."""
+    _clean_all_test_data()
     vault.VAULT_DIR.mkdir(parents=True, exist_ok=True)
     Path("data").mkdir(exist_ok=True)
     yield
@@ -103,7 +126,7 @@ def client() -> Generator:
     """FastAPI test client for auth/route endpoints."""
     from starlette.responses import JSONResponse
     from starlette.requests import Request
-    from src import session as sess
+    from src.auth import session as sess
 
     async def login_route(request: Request):
         body = await request.json()
@@ -118,7 +141,8 @@ def client() -> Generator:
         sess_info = sess.get(auth.replace("Bearer ", ""))
         if not sess_info:
             return JSONResponse({"error": "not authenticated"}, status_code=401)
-        vault.store(sess_info["user_id"], body["upstream"], body["apiKey"], password=sess_info["password"])
+        from src.vault import store as vault_store
+        vault_store(sess_info["user_id"], body["upstream"], body["apiKey"], password=sess_info["password"])
         return JSONResponse({"ok": True})
 
     async def list_keys_route(request: Request):
@@ -126,7 +150,8 @@ def client() -> Generator:
         sess_info = sess.get(auth.replace("Bearer ", ""))
         if not sess_info:
             return JSONResponse({"error": "not authenticated"}, status_code=401)
-        keys = vault.list_keys(sess_info["user_id"])
+        from src.vault import list_keys as vault_list
+        keys = vault_list(sess_info["user_id"])
         return JSONResponse({"keys": keys})
 
     async def agent_register_route(request: Request):
@@ -134,14 +159,16 @@ def client() -> Generator:
         body = await request.json()
         sess_info = sess.get(auth.replace("Bearer ", ""))
         owner = sess_info["user_id"] if sess_info else body.get("owner_wallet", "test")
-        agents.register(owner, body["pubkeyB58"], name=body.get("name", "agent"))
+        from src.agents import register as agent_register
+        agent_register(owner, body["pubkeyB58"], name=body.get("name", "agent"))
         return JSONResponse({"ok": True})
 
     async def agent_list_route(request: Request):
         auth = request.headers.get("Authorization", "")
         sess_info = sess.get(auth.replace("Bearer ", ""))
         owner = sess_info["user_id"] if sess_info else "test"
-        ag_list = agents.list_agents(owner)
+        from src.agents import list_agents as agent_list
+        ag_list = agent_list(owner)
         return JSONResponse({"agents": ag_list})
 
     async def proxy_openai(request: Request):

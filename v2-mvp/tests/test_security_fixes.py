@@ -64,7 +64,7 @@ class TestSession:
     """Tests for session.py."""
 
     def test_create_and_get(self, client):
-        from src.session import create_token, get
+        from src.auth.session import create_token, get
 
         token = create_token("alice", "pw")
 
@@ -76,14 +76,14 @@ class TestSession:
 
 
     def test_expired_token(self):
-        from src.session import create_token, get
+        from src.auth.session import create_token, get
 
         token = create_token("alice", "pw", ttl=1)
         time.sleep(1.1)
         assert get(token) is None
 
     def test_verify_token(self):
-        from src.session import create_token, verify_token
+        from src.auth.session import create_token, verify_token
 
         token = create_token("alice", "pw")
 
@@ -94,13 +94,13 @@ class TestSession:
 
 
     def test_tampered_token(self):
-        from src.session import verify_token
+        from src.auth.session import verify_token
 
         valid, err = verify_token("payload_part.tampered_sig")
         assert valid is False
 
     def test_delete_all_for_user(self):
-        from src.session import create_token, delete_all_for_user, get
+        from src.auth.session import create_token, delete_all_for_user, get
 
         t1 = create_token("alice", "pw")
         t2 = create_token("alice", "pw")
@@ -140,7 +140,7 @@ class TestX402:
     """Tests for x402_verify.py."""
 
     def test_stub_fallback(self):
-        from src.x402_verify import verify_on_chain
+        from src.proxy.x402_verify import verify_on_chain
         import asyncio
 
         ok, mode = asyncio.run(verify_on_chain(None, "anything", 1.0))
@@ -148,7 +148,7 @@ class TestX402:
         assert mode == "stub-fallback"
 
     def test_empty_proof_raises(self):
-        from src.x402_verify import verify_on_chain
+        from src.proxy.x402_verify import verify_on_chain
         import asyncio
 
         with pytest.raises(Exception, match="empty"):

@@ -56,7 +56,7 @@ from typing import Optional
 
 # Re-use mpp_onchain's _SimpleInstruction / _SimpleAccountMeta + base58 helpers
 # so this module's surface mirrors the same wallet-adapter contract.
-from . import mpp_onchain
+from ..mpp import mpp_onchain
 
 logger = logging.getLogger(__name__)
 
