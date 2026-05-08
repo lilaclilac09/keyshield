@@ -1,7 +1,7 @@
 # Runs the TypeScript test suite across:
 #   - npm workspaces (src/sdk/packages/agent-sdk, src/sdk/packages/cli, src/sdk/packages/goat-wallet,
 #     infra/sync-worker, mobile)
-#   - src/web-frontend/ (NOT a workspace ??separate Vite app + Chrome extension build)
+#   - src/web-v2/ (Vite app + Chrome extension build)
 #
 # Complements `test.yml` (Rust/Solana program + proxy-rs) and
 # `sync-worker-deploy.yml` (Cloudflare Worker deploy).
@@ -45,16 +45,16 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: src/web-frontend/package-lock.json
+          cache-dependency-path: src/web-v2/package-lock.json
 
-      - name: Install (frontend/)
-        working-directory: src/web-frontend
+      - name: Install (web-v2/)
+        working-directory: src/web-v2
         run: npm ci
 
       - name: Typecheck
-        working-directory: src/web-frontend
+        working-directory: src/web-v2
         run: npx tsc --noEmit
 
       - name: Build (Vite + Chrome extension)
-        working-directory: src/web-frontend
+        working-directory: src/web-v2
         run: npm run build

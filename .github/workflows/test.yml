@@ -41,7 +41,7 @@ jobs:
           python3 --version
           python3 -c "import cryptography; print('cryptography ok:', cryptography.__version__)"
           python3 -c "import sys; print('sys.path:', sys.path)"
-          ls -la v2-mvp/src/vault.py
+          ls -la src/backend/routes/vault.py
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -50,7 +50,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            src/rust-proxy/target
+            src/proxy/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
       - name: Test proxy-rs (78 tests across 6 crates)
@@ -59,7 +59,7 @@ jobs:
           RUST_BACKTRACE: "1"
         run: |
           set +e
-          cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml -- --nocapture 2>&1 | tee /tmp/cargo-test.log
+          cargo test --workspace --manifest-path src/proxy/Cargo.toml -- --nocapture 2>&1 | tee /tmp/cargo-test.log
           EXIT=${PIPESTATUS[0]}
           # Step summary (rendered on the run page)
           {

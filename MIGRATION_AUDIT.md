@@ -1,4 +1,4 @@
-# Migration Audit — python-legacy → v2-mvp
+# Migration Audit — python-legacy → src/backend
 
 ## Status: Core migration complete (2026-05-08)
 
@@ -85,7 +85,7 @@
 
 ## Test Status
 
-**File:** `v2-mvp/tests/test_security_fixes.py`
+**File:** `src/backend/tests/test_security_fixes.py`
 **Passing:** 19/21 tests
 **Failing:** 2/21 tests (pre-existing bugs)
 
@@ -134,7 +134,7 @@
 
 | Module | Size | Status |
 |--------|------|--------|
-| api_router.py | 10.5KB / ~300 lines | Import exists in server.py but file not copied to v2-mvp/src/ |
+| api_router.py | 10.5KB / ~300 lines | Import exists in server.py but file not copied to src/backend/ |
 | helius_router.py | 5.6KB | Standalone legacy module, may be redundant with api_router |
 | metrics.py | 2.7KB / 67 lines | Prometheus metric definitions, standalone |
 
@@ -142,10 +142,10 @@
 
 ## Next Actions
 
-1. Copy `api_router.py` to `v2-mvp/src/` (imported but file missing)
+1. Copy `api_router.py` to `src/backend/` (imported but file missing)
 2. Fix `test_revoke_agent` — placeholder agent_id on line ~130 of `test_security_fixes.py`
 3. Fix `test_agent_list` — owner mismatch between registration and query
-4. Copy `metrics.py` to `v2-mvp/src/` if Prometheus metrics needed
+4. Copy `metrics.py` to `src/backend/` if Prometheus metrics needed
 5. Decide on `helius_router.py` — redundant with api_router, can be removed or kept as legacy
 6. Delete fully migrated files from `src/python-legacy/src/` (after verification)
 7. Update AGENTS.md and MIGRATION_CHECKLIST.md with final state

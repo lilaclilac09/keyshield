@@ -42,25 +42,25 @@ keyshield/
 
 ### ✅ Files MIGRATED AND DELETED from python-legacy/src/
 
-| File | Lines | v2-mvp Location | Status |
+| File | Lines | Current Location | Status |
 |------|-------|-----------------|--------|
-| vault.py | 218 | `v2-mvp/src/vault.py` | ✅ Migrated, deleted from legacy |
-| session.py | 274 | `v2-mvp/src/session.py` | ✅ Migrated, deleted from legacy |
-| agents.py | 318 | `v2-mvp/src/agents.py` | ✅ Migrated, deleted from legacy |
-| usage.py | 386 | `v2-mvp/src/usage.py` | ✅ Migrated, deleted from legacy |
-| passkey.py | 234 | `v2-mvp/src/passkey.py` | ✅ Migrated, deleted from legacy |
-| sharing.py | 187 | `v2-mvp/src/sharing.py` | ✅ Migrated, deleted from legacy |
-| x402_verify.py | 396 | `v2-mvp/src/x402_verify.py` | ✅ Migrated, deleted from legacy |
-| billing_solana.py | 381 | `v2-mvp/src/billing_solana.py` | ✅ Migrated, deleted from legacy |
-| server.py | 2378 | `v2-mvp/src/server.py` | ✅ Migrated, deleted from legacy |
-| keyshield_sdk.py | 933 | `v2-mvp/src/keyshield_sdk.py` | ✅ Created (new) |
-| api_router.py | 245 | `v2-mvp/src/api_router.py` | ✅ Migrated, deleted from legacy |
-| metrics.py | 67 | `v2-mvp/src/metrics.py` | ✅ Migrated, deleted from legacy |
-| vault_new.py | 218 | `v2-mvp/src/vault_new.py` | ✅ Copied, deleted from legacy |
-| mpp_onchain.py | ~700 | `v2-mvp/src/mpp_onchain.py` | ✅ Copied, deleted from legacy |
-| mpp_streams.py | ~800 | `v2-mvp/src/mpp_streams.py` | ✅ Copied, deleted from legacy |
-| agent_wallet.py | ~300 | `v2-mvp/src/agent_wallet.py` | ✅ Copied, deleted from legacy |
-| skills/helius_skill.py | 357 | `v2-mvp/src/skills/helius_skill.py` | ✅ Copied, deleted from legacy |
+| vault.py | 218 | `src/backend/routes/vault.py` | ✅ Migrated, deleted from legacy |
+| session.py | 274 | `src/backend/auth/session.py` | ✅ Migrated, deleted from legacy |
+| agents.py | 318 | `src/backend/agents/agents.py` | ✅ Migrated, deleted from legacy |
+| usage.py | 386 | `src/backend/billing/usage.py` | ✅ Migrated, deleted from legacy |
+| passkey.py | 234 | `src/backend/auth/passkey.py` | ✅ Migrated, deleted from legacy |
+| sharing.py | 187 | `src/backend/sharing/sharing.py` | ✅ Migrated, deleted from legacy |
+| x402_verify.py | 396 | `src/backend/proxy/x402_verify.py` | ✅ Migrated, deleted from legacy |
+| billing_solana.py | 381 | `src/backend/billing/billing_solana.py` | ✅ Migrated, deleted from legacy |
+| server.py | 2378 | `src/backend/app.py` | ✅ Migrated, deleted from legacy |
+| keyshield_sdk.py | 933 | `src/backend/keyshield_sdk.py` | ✅ Created (new) |
+| api_router.py | 245 | `src/backend/proxy/api_router.py` | ✅ Migrated, deleted from legacy |
+| metrics.py | 67 | `src/backend/proxy/metrics.py` | ✅ Migrated, deleted from legacy |
+| vault_new.py | 218 | `src/backend/vault/vault.py` | ✅ Copied, deleted from legacy |
+| mpp_onchain.py | ~700 | `src/backend/mpp/mpp_onchain.py` | ✅ Copied, deleted from legacy |
+| mpp_streams.py | ~800 | `src/backend/mpp/mpp_streams.py` | ✅ Copied, deleted from legacy |
+| agent_wallet.py | ~300 | `src/backend/agents/agent_wallet.py` | ✅ Copied, deleted from legacy |
+| skills/helius_skill.py | 357 | `src/backend/skills/helius_skill.py` | ✅ Copied, deleted from legacy |
 
 ### ℹ️ Files KEPT in python-legacy/src/ (not migrated)
 
@@ -111,12 +111,12 @@ keyshield/
 
 ## Migration Summary
 
-### All modules migrated from python-legacy → v2-mvp:
+### All modules migrated from python-legacy → src/backend/:
 
 | Category | Count | Details |
 |----------|-------|---------|
 | Python modules deleted from legacy | 17 | All core files removed |
-| Python modules in v2-mvp/src/ | 16 | Full feature parity |
+| Python modules in src/backend/ | 16 | Full feature parity |
 | Trading module files | 5 | New in v2-mvp (not in legacy) |
 | Total lines migrated | ~6,800+ | Across all files |
 
@@ -267,51 +267,48 @@ keyshield/
 
 ---
 
-## Git Commands
+## Git Commands (current paths)
 
 ```bash
-git add v2-mvp/src/api_router.py \
-        v2-mvp/src/metrics.py \
-        v2-mvp/src/server.py \
-        v2-mvp/src/keyshield_sdk.py \
-        v2-mvp/src/vault.py \
-        v2-mvp/src/vault_new.py \
-        v2-mvp/src/session.py \
-        v2-mvp/src/agents.py \
-        v2-mvp/src/agent_wallet.py \
-        v2-mvp/src/billing_solana.py \
-        v2-mvp/src/passkey.py \
-        v2-mvp/src/sharing.py \
-        v2-mvp/src/usage.py \
-        v2-mvp/src/x402_verify.py \
-        v2-mvp/src/mpp_onchain.py \
-        v2-mvp/src/mpp_streams.py \
-        v2-mvp/src/skills/helius_skill.py \
-        v2-mvp/trading/ \
-        v2-mvp/tests/conftest.py \
-        v2-mvp/tests/test_security_fixes.py \
+# Add all Python backend files
+git add src/backend/app.py \
+        src/backend/config.py \
+        src/backend/errors.py \
+        src/backend/keyshield_sdk.py \
+        src/backend/auth/ \
+        src/backend/routes/ \
+        src/backend/proxy/ \
+        src/backend/billing/ \
+        src/backend/agents/ \
+        src/backend/sharing/ \
+        src/backend/mpp/ \
+        src/backend/trading/ \
+        src/backend/skills/ \
+        src/backend/middleware/ \
+        src/backend/tests/ \
         MIGRATION_CHECKLIST.md \
-        MIGRATION_AUDIT.md
+        MIGRATION_AUDIT.md \
+        integration-log.md
 
-git commit -m "Complete migration: python-legacy → v2-mvp (17 files migrated, 0 functions lost)
+git commit -m "Update Python backend paths after SOTA restructure
 
-All core Python modules migrated and verified:
-- server.py (2378 lines) — all 37+ routes, 20+ models
+All core modules now under src/backend/:
+- app.py (FastAPI factory) — 37+ routes, 20+ Pydantic models
 - keyshield_sdk.py (933 lines) — KeyShield, AsyncKeyShield, AgentKeyShield
-- agents.py, vault.py, session.py, usage.py, passkey.py
-- sharing.py, billing_solana.py, x402_verify.py, api_router.py, metrics.py
-- mpp_onchain.py, mpp_streams.py, agent_wallet.py, vault_new.py
-- skills/helius_skill.py (9 Helius tools)
+- auth/ — session management, WebAuthn passkeys
+- routes/ — vault, agents, billing, sharing route handlers
+- proxy/ — api_router, metrics, x402_verify
+- billing/ — usage tracking, Solana topup
+- agents/ — agent CRUD, embedded wallet
+- mpp/ — payment streams
+- trading/ — orchestration (6 modules)
+- skills/ — Helius tools (9 tools)
 
-New modules:
-- trading/agent.py, execution.py, feeds.py, models.py (~2000 lines)
-- conftest.py fixed (httpx 0.28.x ASGI compatibility)
-
-Tests: 21/21 PASSING ✅
+Tests: 21 tests collected ✅
 
 Legacy cleanup:
 - Deleted 17 migrated .py files from python-legacy/src/
-- Kept helius_router.py (standalone, not imported anywhere)
+- Kept helius_router.py (standalone, legacy-only)
 - Kept __init__.py (empty placeholder)"
 
 git push origin main
