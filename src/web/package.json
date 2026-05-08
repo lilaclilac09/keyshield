@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node check-platform.cjs",
+    "prebuild": "node check-platform.cjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -28,7 +30,16 @@
     "vite": "^6.2.0"
   },
   "optionalDependencies": {
-    "@esbuild/linux-x64": "^0.28.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.60.3"
+    "@esbuild/win32-x64": "*",
+    "@esbuild/darwin-x64": "*",
+    "@esbuild/darwin-arm64": "*",
+    "@esbuild/linux-x64": "*",
+    "@esbuild/linux-arm64": "*",
+    "@rollup/rollup-win32-x64-msvc": "*",
+    "@rollup/rollup-darwin-x64": "*",
+    "@rollup/rollup-darwin-arm64": "*",
+    "@rollup/rollup-linux-x64-gnu": "*",
+    "@rollup/rollup-linux-arm64-gnu": "*",
+    "@rollup/rollup-linux-arm64-musl": "*"
   }
 }

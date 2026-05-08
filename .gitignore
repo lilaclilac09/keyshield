@@ -1,21 +1,26 @@
 # =============================================================================
-# KeyShield .gitignore — SOTA Architecture
+# KeyShield .gitignore — Cross-platform SOTA Architecture
 # =============================================================================
 
 # --- Dependencies -----------------------------------------------------------
 node_modules/
+**/node_modules/
 
 # --- Build outputs -----------------------------------------------------------
-/dist
-/build
-/out
-/.next/
-/src/web-frontend/.next/
-/src/rust-proxy/target/
-/target/
-/src/python-legacy/build*/
-/src/python-legacy/*.egg-info/
-/src/python-legacy/TurboQuant/
+/dist/
+/build/
+/out/
+.next/
+src/web/dist/
+src/proxy/target/
+src/programs/*/target/
+src/mobile/dist/
+src/infra/metrics-ui/dist/
+*.egg-info/
+*.dll
+*.exe
+*.so
+*.dylib
 
 # --- IDE & OS ---------------------------------------------------------------
 .DS_Store
@@ -32,30 +37,17 @@ node_modules/
 .keyshield-vault.json
 *.json.key
 
-# --- Python -----------------------------------------------------------------
+# --- Python cache -----------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.pytest_cache/
-.venv/
-.venv/
-v2-mvp/.pytest_cache/
-src/python-legacy/.pytest_cache/
-v2-mvp/src/__pycache__/
-src/python-legacy/src/__pycache__/
-v2-mvp/sessions.db
-v2-mvp/keyshield.db
-v2-mvp/src/sessions.db
-v2-mvp/src/keyshield.db
 
-# --- Rust -------------------------------------------------------------------
-*.rs.bk
-*.rs.orig
-*.d
-*.o
+# --- Rust artifacts ----------------------------------------------------------
+**/*.rs.bk
+Cargo.lock.lock
+*.pdb
 target/
-proxy-rs/target/
 
 # --- Model files (too large for git) ---------------------------------------
 *.gguf
@@ -66,25 +58,7 @@ proxy-rs/target/
 # --- GitNexus ---------------------------------------------------------------
 .gitnexus/
 
-# --- Compiled data files ----------------------------------------------------
-*.enc
-*.db
-*.sqlite
-*/data/*.db
-*/vault/dt/
-*/wallet/*.json
-src/api-server/src/vault/test-vault-user/
-v2-mvp/vault/bench_user/
-v2-mvp/vault/user_*/
-
-# --- Generated data ---------------------------------------------------------
-src/api-server/src/data/
-src/api-server/src/wallet/
-v2-mvp/data/
-src/python-legacy/data/*.db
-src/python-legacy/sessions.db
-
-# --- Temporary ----------------------------------------------------------------
+# --- Temporary -----------------------------------------------------------------
 *.rar
 *.zip
 disk.txt
@@ -93,8 +67,18 @@ debug.log
 
 # --- Test artifacts ---------------------------------------------------------
 coverage/
-.coverage
+.pytest_cache/
+test-results/
+test-ledger/
 
 # --- Claude Code ------------------------------------------------------------
 .claude/worktrees/
 .dropped-*/
+
+# --- Runtime data (DBs, vaults, etc) ---------------------------------------
+src/backend/data/*.db
+src/backend/sessions.db
+src/backend/vault/
+*.enc
+.keyshield-demo/
+keyshield.db
