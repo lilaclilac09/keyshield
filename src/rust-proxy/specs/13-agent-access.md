@@ -1,4 +1,4 @@
-# 12 — Agent Access: How an autonomous agent calls the proxy
+# 13 — Agent Access: How an autonomous agent calls the proxy
 
 > **Status: spec v1.** Written 2026-05-06.
 >
