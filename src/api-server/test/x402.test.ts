@@ -1,7 +1,3 @@
-/**
- * Tests for the x402 payment protocol.
- */
-
 import { describe, it, expect } from 'vitest';
 import {
   loadX402Config,
@@ -10,6 +6,7 @@ import {
   generateStubPaymentProof,
   verifyOnChain,
   ERC20_TRANSFER_TOPIC,
+  clearClaims,
 } from '../src/x402/index';
 
 describe('x402 / config', () => {
@@ -33,14 +30,15 @@ describe('x402 / config', () => {
   });
 
   it('should record and check claims', () => {
+    clearClaims();
     const proof = '0x' + 'ab'.repeat(32);
     recordClaim(proof, 'user1', 10.0, 'stub-fallback');
     expect(hasClaim(proof)).toBe(true);
   });
 
-  it('should reject duplicate claims', () => {
+  it('should reject duplicate claims', async () => {
+    clearClaims();
     const proof = '0x' + 'cd'.repeat(32);
-    recordClaim(proof, 'user1', 5.0, 'real');
     const first = recordClaim(proof, 'user1', 5.0, 'real');
     const second = recordClaim(proof, 'user1', 5.0, 'real');
     expect(first).toBe(true);   // first claim succeeds
@@ -50,6 +48,7 @@ describe('x402 / config', () => {
 
 describe('x402 / on-chain verify', () => {
   it('should return stub-fallback when config is null', async () => {
+    clearClaims();
     const result = await verifyOnChain(null, '0x' + 'ab'.repeat(32), 10.0);
     expect(result.verified).toBe(true);
     expect(result.mode).toBe('stub-fallback');
@@ -60,6 +59,7 @@ describe('x402 / on-chain verify', () => {
   });
 
   it('should accept valid stub proofs', async () => {
+    clearClaims();
     const proof = '0x' + 'ef'.repeat(32);
     const result = await verifyOnChain(null, proof, 10.0);
     expect(result.verified).toBe(true);
@@ -67,7 +67,15 @@ describe('x402 / on-chain verify', () => {
   });
 
   it('should reject malformed tx hashes', async () => {
+    clearClaims();
     await expect(verifyOnChain(null, 'short', 10.0)).rejects.toThrow();
+  });
+
+  it('should return payment result with amount', async () => {
+    clearClaims();
+    const result = await verifyOnChain(null, '0x' + 'ef'.repeat(32), 5.0);
+    expect(result).toHaveProperty('verified');
+    expect(result.amountUsd).toBe(5.0);
   });
 });
 

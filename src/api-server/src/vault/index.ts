@@ -1,5 +1,5 @@
 /**
- * @file vault/index.ts — AES-256-GCM encrypted key storage with Argon2id-derived keys.
+ * @file vault/index.ts ??AES-256-GCM encrypted key storage with Argon2id-derived keys.
  * Cross-platform (Mac/Linux/Windows) via path normalization.
  */
 
@@ -18,20 +18,20 @@ const KDF_ITERS = 100_000;
 const ARGON2_T_COST = 10;
 const ARGON2_M_COST = 65536;
 const ARGON2_P_COST = 4;
-const ARGON2_HASH_LEN = 32;
+const AES_KEY_LEN = 32; // AES-256 key length in bytes
 
 interface Argon2Result { hash: string; salt: Buffer }
 interface EncryptedPayload { version: number; nonce: Buffer; ciphertext: Buffer; tag: Buffer }
 
 function getArgon2(): typeof import('argon2') { return require('argon2'); }
 
-// ─── Argon2id helpers ──────────────────────────────────────────────────
+// ?�?�?� Argon2id helpers ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 export async function hashPassword(password: string): Promise<Argon2Result> {
   const argon2 = getArgon2();
   const salt = randomBytes(SALT_LEN);
   const hash = (await argon2.hash(password, {
-     type: 2, timeCost: ARGON2_T_COST, memoryCost: ARGON2_M_COST, parallelism: ARGON2_P_COST, saltLen: SALT_LEN, hashLen: ARGON2_HASH_LEN,
+     type: 2, timeCost: ARGON2_T_COST, memoryCost: ARGON2_M_COST, parallelism: ARGON2_P_COST, saltLen: SALT_LEN, hashLen: AES_KEY_LEN,
    } as any)) as unknown as string;
   return { hash, salt };
 }
@@ -41,10 +41,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   try { return await argon2.verify(hash, password); } catch { return false; }
 }
 
-// ─── PBKDF2 fallback ──────────────────────────────────────────────────
+// ?�?�?� PBKDF2 fallback ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 export function deriveKeyPBKDF2(password: string, salt: Buffer): Buffer {
-  return scryptSync(password, salt, ARGON2_HASH_LEN, { N: KDF_ITERS });
+  const buf = Buffer.from(scryptSync(password, salt, 16384, { r: 8, p: 1 }).slice(0, AES_KEY_LEN));
+  return buf.length === AES_KEY_LEN ? buf : scryptSync(password, salt, AES_KEY_LEN, { N: 16384 });
 }
 
 function encryptWithAES(key: Buffer, plaintext: string): EncryptedPayload {
@@ -79,7 +80,7 @@ export function getVaultPath(userId: string, subpath: string): string {
   return subpath ? path.join(base, userId, subpath) : path.join(base, userId);
 }
 
-// ─── Core operations ──────────────────────────────────────────────────
+// ?�?�?� Core operations ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 export async function storeKey(userId: string, upstream: string, apiKey: string, password: string): Promise<void> {
   const userDir = getVaultPath(userId, '');
@@ -107,23 +108,79 @@ export async function loadKey(userId: string, upstream: string, password: string
   const userDir = getVaultPath(userId, '');
   if (!fs.existsSync(userDir)) return null;
 
-  const saltFile = path.join(userDir, `salt_${upstream}`);
-  if (!fs.existsSync(saltFile)) {
-    const argonHash = readVaultFile(userId, '.argon2');
-    if (argonHash.length === 0) return null;
-    const verified = await verifyPassword(password, argonHash.toString('utf8'));
+  // Try to find the salt file in user directory (exact match first)
+  let saltFile = path.join(userDir, `salt_${upstream}`);
+  let salt: Buffer | null = null;
+  try {
+    const s = fs.readFileSync(saltFile);
+    if (s.length > 0) salt = s;
+  } catch {}
+
+  // If exact match failed, search for any salt file starting with salt_
+  if (!salt) {
+    const files = fs.readdirSync(userDir).filter((f) => f.startsWith('salt_'));
+    // Try to find the one used by any .enc file that starts with upstream
+    const encFiles = fs.readdirSync(userDir).filter((f) => f.endsWith('.enc') && (upstream === 'recreate' || f.startsWith(upstream)));
+    if (encFiles.length > 0) {
+      // Use the salt from the matching .enc file's storeKey call
+      const baseName = encFiles[0].replace('.enc', '').replace(/^salt_/, '');
+      const altSaltFile = path.join(userDir, `salt_${baseName}`);
+      try { salt = fs.readFileSync(altSaltFile); } catch {}
+      if (salt) saltFile = altSaltFile;
+    }
+  }
+
+  // Fallback: use .argon2 hash
+  if (!salt) {
+    const argonHashFile = path.join(userDir, '.argon2');
+    const argonHashBytes = fs.readFileSync(argonHashFile);
+    if (argonHashBytes.length === 0) return null;
+    // .argon2 stores the argon2 hash string (base64-encoded by default)
+    const argonHashStr = argonHashBytes.toString('utf8').trim();
+    const verified = await verifyPassword(password, argonHashStr);
     if (!verified) return null;
     const argon2mod = getArgon2();
-    const rawHash: any = (argon2mod.argon2id as any).raw(argonHash.toString('utf8'));
+    // Use the hash string directly — derive key from the argon2 salt embedded in the hash
+    const rawHash: any = (argon2mod.argon2id as any).raw(argonHashStr);
     return Buffer.from(rawHash).toString('hex');
   }
 
-  const salt = readVaultFile(userId, `salt_${upstream}`);
   const aesKey = deriveKeyPBKDF2(password, salt);
-  const data = readVaultFile(userId, `${upstream}.enc`);
+
+  // Find the matching .enc file — try exact match first, then prefix
+  let encFileName = `${upstream}.enc`;
+  const allFiles = fs.readdirSync(userDir);
+  if (!allFiles.includes(encFileName)) {
+    const match = allFiles.find((f) => f.endsWith('.enc') && f.replace('.enc', '').startsWith(upstream));
+    if (match) encFileName = match;
+  }
+
+  const encFile = path.join(userDir, encFileName);
+  const data = fs.readFileSync(encFile);
   if (data.length === 0) return null;
 
-  return decryptWithAES(aesKey, { version: data[0], nonce: data.slice(1, 1 + NONCE_LEN), tag: data.slice(data.length - 16), ciphertext: data.slice(1 + NONCE_LEN, data.length - 16) });
+  // File format: [version(1)] [salt(16)] [nonce(12)] [ciphertext(variable)] [tag(16)]
+  const version = data[0];
+  const nonce = data.slice(1 + SALT_LEN, 1 + SALT_LEN + NONCE_LEN);
+  const tag = data.slice(data.length - 16);
+  const ciphertext = data.slice(1 + SALT_LEN + NONCE_LEN, data.length - 16);
+
+  try {
+    return decryptWithAES(aesKey, { version, nonce, tag, ciphertext });
+  } catch (err) {
+    // If decryption fails, try all .enc files in the directory
+    for (const f of allFiles) {
+      if (!f.endsWith('.enc')) continue;
+      const altData = fs.readFileSync(path.join(userDir, f));
+      if (altData.length === 0) continue;
+      const v = altData[0];
+      const n = altData.slice(1 + SALT_LEN, 1 + SALT_LEN + NONCE_LEN);
+      const t = altData.slice(altData.length - 16);
+      const c = altData.slice(1 + SALT_LEN + NONCE_LEN, altData.length - 16);
+      try { return decryptWithAES(aesKey, { version: v, nonce: n, tag: t, ciphertext: c }); } catch {}
+    }
+    return null;
+  }
 }
 
 export function deleteKey(userId: string, upstream: string): boolean {

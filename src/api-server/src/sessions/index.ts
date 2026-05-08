@@ -6,26 +6,21 @@
 import { createHmac, randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SessionPayload, SessionInfo, RevocationEntry } from '../types/index';
+import type { SessionPayload, SessionInfo, RevocationEntry } from '../types/index';
 
 const SESSION_TTL = 24 * 3600;
 const DB_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = process.env.KS_SESSION_DB || path.join(DB_DIR, 'sessions.db');
-const SERVER_SECRET = Buffer.from(process.env.SERVER_SECRET || 'CHANGE-ME-IN-PROD-32-BYTES-MIN!!');
 
 function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-// File-based DB fallback
-const FILE_DB = path.join(DB_DIR, 'sessions.json');
-
 function _readJson<T>(file: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
-    fs.writeFileSync(file, JSON.stringify(typeof fallback === 'function' ? fallback() : fallback));
-    return typeof fallback === 'function' ? fallback() : fallback;
+    fs.writeFileSync(file, JSON.stringify(typeof fallback === 'function' ? (fallback as () => any)() : fallback));
+    return typeof fallback === 'function' ? (fallback as () => any)() : fallback;
   }
 }
 
@@ -34,34 +29,35 @@ function _writeJson<T>(file: string, data: T): void {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-function getSessions(): Array<{ token: string; user_id: string; enc_pass: string; expires_at: number }> {
-  return _readJson(FILE_DB, []);
-}
+// --- Password encryption (AES-256-GCM) ---
 
-interface SessionEntry { token: string; user_id: string; enc_pass: string; expires_at: number }
-function saveSessions(entries: SessionEntry[]): void {
-  _writeJson(FILE_DB, entries);
-}
-
-// Password encryption
 const { createCipheriv, createDecipheriv } = require('crypto');
 
+function _serverSecret(): Buffer {
+  return Buffer.from(process.env.SERVER_SECRET || 'CHANGE-ME-IN-PROD-32-BYTES-MIN!!');
+}
+
 function encryptPassword(password: string): string {
-  const key = createHmac('sha256', SERVER_SECRET).digest();
+  const key = createHmac('sha256', _serverSecret()).digest();
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
   const encrypted = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]);
-  return Buffer.from(Buffer.concat([nonce, encrypted])).toString('base64url');
+  // Include auth tag in the stored data
+  return Buffer.from(Buffer.concat([nonce, encrypted, cipher.getAuthTag()])).toString('base64url');
 }
 
 function decryptPassword(data: string): string {
   const buf = Buffer.from(data, 'base64url');
-  const key = createHmac('sha256', SERVER_SECRET).digest();
+  const key = createHmac('sha256', _serverSecret()).digest();
   const nonce = buf.slice(0, 12);
-  const ciphertext = buf.slice(12);
+  const authTag = buf.slice(-16);
+  const ciphertext = buf.slice(12, -16);
   const decipher = createDecipheriv('aes-256-gcm', key, nonce);
+  decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
 }
+
+// --- Token helpers ---
 
 function b64encode(data: Buffer): string {
   return data.toString('base64url');
@@ -82,11 +78,23 @@ function makePayload(userId: string, expiresAt: number): string {
 }
 
 function signToken(payload: string): string {
-  const sig = createHmac('sha256', SERVER_SECRET).update(payload).digest();
+  const sig = createHmac('sha256', _serverSecret()).update(payload).digest();
   return b64encode(sig);
 }
 
-// ─── Session operations ──────────────────────────────────────────────
+// --- Session operations ---
+
+const FILE_DB = path.join(DB_DIR, 'sessions.json');
+
+interface SessionEntry { token: string; user_id: string; enc_pass: string; expires_at: number }
+
+function getSessions(): SessionEntry[] {
+  return _readJson(FILE_DB, []);
+}
+
+function saveSessions(entries: SessionEntry[]): void {
+  _writeJson(FILE_DB, entries);
+}
 
 export function createToken(userId: string, password: string, ttl = SESSION_TTL): string {
   const expiresAt = Math.floor(Date.now() / 1000) + ttl;
@@ -95,8 +103,10 @@ export function createToken(userId: string, password: string, ttl = SESSION_TTL)
   const token = `${payloadStr}.${sig}`;
 
   const entries = getSessions();
-  entries.push({ token, user_id: userId, enc_pass: encryptPassword(password), expires_at: expiresAt });
-  saveSessions(entries);
+  // Replace existing entry for same userId to avoid duplicates
+  const filtered = entries.filter((e) => !(e.user_id === userId && e.expires_at <= expiresAt));
+  filtered.push({ token, user_id: userId, enc_pass: encryptPassword(password), expires_at: expiresAt });
+  saveSessions(filtered);
 
   return token;
 }
@@ -122,7 +132,7 @@ export function getToken(token: string): SessionInfo | null {
   if (now > data.exp) return null;
   if (now < data.nbf) return null;
 
-  // Check soft-delete
+  // Check soft-delete — also reject if user was deleted after token creation
   const deletedFile = path.join(DB_DIR, 'deleted_users.json');
   let deletedUsers: string[] = [];
   if (fs.existsSync(deletedFile)) {
@@ -131,15 +141,20 @@ export function getToken(token: string): SessionInfo | null {
   if (deletedUsers.includes(data.uid)) return null;
 
   const entries = getSessions();
-  const entry = entries.find((e) => e.token === token && e.expires_at > now);
+  // Find the first matching entry with valid expiry
+  const entry = entries.find((e) => e.token === token && e.expires_at >= now);
   if (!entry) return null;
 
-  return {
-    userId: data.uid,
-    password: decryptPassword(entry.enc_pass),
-    valid: true,
-    expiresAt: data.exp,
-  };
+  try {
+    return {
+      userId: data.uid,
+      password: decryptPassword(entry.enc_pass),
+      valid: true,
+      expiresAt: data.exp,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function verifyToken(token: string): { valid: boolean; error?: string } {
@@ -162,6 +177,7 @@ export function verifyToken(token: string): { valid: boolean; error?: string } {
   const now = Math.floor(Date.now() / 1000);
   if (now > data.exp) return { valid: false, error: 'expired' };
   if (now < data.nbf) return { valid: false, error: 'not_yet_valid' };
+  if (now < data.nbf) return { valid: false, error: 'not_yet_valid' };
 
   return { valid: true };
 }
@@ -183,7 +199,9 @@ export function deleteAllForUser(userId: string): number {
 export function markDeleted(userId: string): void {
   const deletedFile = path.join(DB_DIR, 'deleted_users.json');
   let users: string[] = [];
-  if (fs.existsSync(deletedFile)) users = JSON.parse(fs.readFileSync(deletedFile, 'utf8'));
+  if (fs.existsSync(deletedFile)) {
+    try { users = JSON.parse(fs.readFileSync(deletedFile, 'utf8')); } catch {}
+  }
   if (!users.includes(userId)) {
     users.push(userId);
     fs.writeFileSync(deletedFile, JSON.stringify(users));
@@ -193,16 +211,20 @@ export function markDeleted(userId: string): void {
 export function isDeleted(userId: string): boolean {
   const deletedFile = path.join(DB_DIR, 'deleted_users.json');
   if (!fs.existsSync(deletedFile)) return false;
-  return JSON.parse(fs.readFileSync(deletedFile, 'utf8')).includes(userId);
+  try {
+    return JSON.parse(fs.readFileSync(deletedFile, 'utf8')).includes(userId);
+  } catch {
+    return false;
+  }
 }
 
-// ─── Agent management ────────────────────────────────────────────────
+// --- Agent management ---
 
 const AGENTS_FILE = path.join(DB_DIR, 'agents.json');
 
 function getAgents(): { agents: Array<{ id: number; owner_wallet: string; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null }>; revocations: Array<{ owner_wallet: string; pubkey_b58: string; revoked_at: number; reason: string }> } {
-  const data = _readJson(AGENTS_FILE, { agents: [], revocations: [] });
-  return data as any;
+  const data = _readJson(AGENTS_FILE, { agents: [], revocations: [] }) as any;
+  return data;
 }
 
 function saveAgents(data: ReturnType<typeof getAgents>): void {
@@ -306,7 +328,7 @@ export function purgeAgents(userId: string): { agents: number; revocations: numb
   return { agents: agentN, revocations: revokedN };
 }
 
-// ─── Usage tracking ─────────────────────────────────────────────────
+// --- Usage tracking ---
 
 const USAGE_FILE = path.join(DB_DIR, 'usage.json');
 

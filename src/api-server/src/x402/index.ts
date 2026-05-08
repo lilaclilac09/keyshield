@@ -91,6 +91,11 @@ interface ClaimRecord {
 const _CLAIMS = new Map<string, ClaimRecord>();
 const _CLAIMS_FILE = path.join(__dirname, '..', 'data', 'x402_claims.json');
 
+// Unique claim key (paymentProof + userId) for idempotency
+function _claimKey(paymentProof: string, userId?: string): string {
+  return paymentProof + (userId ? `:${userId}` : '');
+}
+
 function loadClaims(): void {
   if (fs.existsSync(_CLAIMS_FILE)) {
     try {
@@ -126,8 +131,9 @@ export function recordClaim(
   amountUsd: number,
   verifiedMode: 'real' | 'stub-fallback',
 ): boolean {
-  if (_CLAIMS.has(paymentProof)) return false;
-  _CLAIMS.set(paymentProof, { paymentProof, userId, amountUsd, verifiedMode, timestamp: Date.now() / 1000 });
+  const key = _claimKey(paymentProof, userId);
+  if (_CLAIMS.has(key)) return false;
+  _CLAIMS.set(key, { paymentProof, userId, amountUsd, verifiedMode, timestamp: Date.now() / 1000 });
   saveClaims();
   return true;
 }
@@ -136,7 +142,17 @@ export function recordClaim(
  * Check if a payment proof has already been claimed.
  */
 export function hasClaim(paymentProof: string): boolean {
-  return _CLAIMS.has(paymentProof);
+  for (const key of _CLAIMS.keys()) {
+    if (key.startsWith(paymentProof + ':') || key === paymentProof) return true;
+  }
+  return false;
+}
+
+/**
+ * Clear claims (for testing).
+ */
+export function clearClaims(): void {
+  _CLAIMS.clear();
 }
 
 // ─── On-chain verification ──────────────────────────────────────────────
@@ -200,8 +216,11 @@ export async function verifyOnChain(
     throw new Error('payment_proof must not be empty');
   }
 
-  // Stub fallback
+  // Stub fallback (but still validate format for consistency)
   if (config === null) {
+    if (!paymentProof.startsWith('0x') || paymentProof.length !== 66) {
+      throw new Error('payment_proof must be a 0x-prefixed 66-char tx hash');
+    }
     return { verified: true, mode: 'stub-fallback', amountUsd: expectedAmountUsd };
   }
 
