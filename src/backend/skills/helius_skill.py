@@ -28,7 +28,7 @@ from typing import Any
 
 import httpx
 
-from .. import api_router
+from ..proxy import api_router
 
 
 # ─── Webhook client (Enhanced API, different auth style) ─────────────────────

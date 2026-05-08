@@ -1,3 +1,6 @@
+/**
+ * CopyButton — Clipboard copy with feedback
+ */
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 
@@ -12,18 +15,19 @@ export function useCopyable(text: string, ms = 1500) {
   return { copied, copy };
 }
 
-export const CopyButton: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => {
+export const CopyButton: React.FC<{ text: string; className?: string; size?: number }> = ({
+  text,
+  className = '',
+  size = 12,
+}) => {
   const { copied, copy } = useCopyable(text);
   return (
     <button
       onClick={copy}
-      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
-        copied
-          ? 'border-emerald-800 bg-emerald-950/40 text-emerald-400'
-          : 'border-[#1c2238] bg-[#070912] text-zinc-400 hover:text-white hover:border-[#2a3358]'
-      } ${className}`}
+      className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-[2px] border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600 transition-colors ${className}`}
+      title="Copy to clipboard"
     >
-      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? <Check size={size} className="text-emerald-400" /> : <Copy size={size} />}
       {copied ? 'Copied' : 'Copy'}
     </button>
   );

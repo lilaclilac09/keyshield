@@ -1,28 +1,31 @@
+/**
+ * ConfirmButton — Two-step destructive action
+ *
+ * First click arms, second click within window commits.
+ * Institutional styling with sharp corners.
+ */
 import React, { useEffect, useRef, useState } from 'react';
+import { Button } from './Button';
 
-interface Props {
+interface ConfirmButtonProps {
   onConfirm: () => void | Promise<void>;
   children: React.ReactNode;
-  variant?: 'destructive' | 'default';
   confirmLabel?: string;
+  variant?: 'primary' | 'secondary' | 'destructive';
+  size?: 'sm' | 'md' | 'lg';
   className?: string;
-  armedClassName?: string;
   disabled?: boolean;
   title?: string;
   armWindowMs?: number;
 }
 
-/**
- * Two-step button: first click arms, second click within `armWindowMs` (default 5s) commits.
- * Auto-disarms after the window. Use for destructive actions (delete vault item, revoke agent, etc).
- */
-export const ConfirmButton: React.FC<Props> = ({
+export const ConfirmButton: React.FC<ConfirmButtonProps> = ({
   onConfirm,
   children,
-  variant = 'default',
-  confirmLabel = 'Click again to confirm',
+  confirmLabel = 'CONFIRM',
+  variant = 'destructive',
+  size = 'sm',
   className = '',
-  armedClassName = '',
   disabled = false,
   title,
   armWindowMs = 5000,
@@ -31,7 +34,7 @@ export const ConfirmButton: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
   const timer = useRef<number | null>(null);
 
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const onClick = async () => {
     if (disabled || busy) return;
@@ -40,30 +43,21 @@ export const ConfirmButton: React.FC<Props> = ({
       timer.current = window.setTimeout(() => setArmed(false), armWindowMs);
       return;
     }
-    if (timer.current) window.clearTimeout(timer.current);
+    if (timer.current) clearTimeout(timer.current);
     setBusy(true);
     try { await onConfirm(); } finally { setBusy(false); setArmed(false); }
   };
 
-  const baseDestructive = 'border border-rose-900/60 bg-rose-950/30 text-rose-400 hover:bg-rose-950/60';
-  const armedDestructive = 'border border-rose-500 bg-rose-600/30 text-rose-200 ring-2 ring-rose-500/40 animate-pulse';
-  const baseDefault = 'border border-[#1c2238] bg-[#070912] text-zinc-400 hover:text-white';
-  const armedDefault = 'border border-[#5b8cff] bg-[#0e1430] text-white ring-2 ring-[#5b8cff]/40';
-
-  const stateClass = armed
-    ? (variant === 'destructive' ? armedDestructive : armedDefault)
-    : (variant === 'destructive' ? baseDestructive : baseDefault);
-
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Button
+      variant={armed ? 'destructive' : variant}
+      size={size}
       disabled={disabled || busy}
       title={title}
-      aria-pressed={armed}
-      className={`${stateClass} ${armed ? armedClassName : ''} ${className} disabled:opacity-50 transition-colors`}
+      className={className}
+      onClick={onClick}
     >
       {armed ? confirmLabel : children}
-    </button>
+    </Button>
   );
 };

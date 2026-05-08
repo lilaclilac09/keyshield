@@ -1,7 +1,7 @@
 """KeyShield Backend — Zero-trust API key vault and proxy.
 
 Public API:
-    from keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
+from .keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
     from src.backend.config import get_settings
     from src.backend.errors import KeyShieldError
     from src.backend.trading.orchestrator import TradingOrchestrator
@@ -33,10 +33,22 @@ from .trading.market_data import MarketDataAgent, PriceFeed, PriceSignal
 from .trading.risk import RiskAgent
 from .trading.analysis import AnalysisAgent, ModelRouter, TaskType
 from .trading.execution import ExecutionAgent, ZeroXRouter, TitanExecutor
-from .trading.models import TradingState, RiskPolicy, PriceFeedConfig
+from .trading.models import TradingState, RiskPolicy
+from .trading.market_data import PriceFeedConfig
 
-# ─── Vault ────────────────────────────────────────────────────────────
-from .vault.vault import store, load, delete, list_keys
+# ─── Vault (routes/vault.py) ──────────────────────────────────────────
+import sys as _sys
+import types as _types
+from .routes.vault import router as _vault_router
+from .routes.vault import vault_list, vault_store, vault_delete, vault_decrypt
+_vault_mod = _types.ModuleType("backend.vault")
+_vault_mod.router = _vault_router
+_vault_mod.vault_list = vault_list
+_vault_mod.vault_store = vault_store
+_vault_mod.vault_delete = vault_delete
+_vault_mod.vault_decrypt = vault_decrypt
+_vault_mod._auth = vault_list  # placeholder for _auth
+_sys.modules["backend.vault"] = _vault_mod
 
 # ─── Auth ─────────────────────────────────────────────────────────────
 from .auth.session import create_token, get as get_session, verify_token
@@ -52,17 +64,17 @@ from .billing import billing_solana
 
 # ─── Proxy ────────────────────────────────────────────────────────────
 from .proxy.api_router import call_helius, call_rest, batch_helius, batch_rest, cache_stats
-from .proxy.x402_verify import verify_payment_proof
+from .proxy.x402_verify import _verify_transfer_log as verify_payment_proof, has_claim
 
 # ─── Sharing ──────────────────────────────────────────────────────────
 from .sharing.sharing import grant, revoke as revoke_share, list_outgoing, list_incoming
 
 # ─── MPP ──────────────────────────────────────────────────────────────
 from .mpp.mpp_onchain import MppConfig, build_mpp_settle_ix_data, submit_mpp_settle
-from .mpp.mpp_streams import MppStreams
+from .mpp.mpp_streams import open_stream, record_usage, settle_stream, close_stream, list_streams, list_events as mpp_list_events
 
 # ─── Skills ───────────────────────────────────────────────────────────
-from .skills.helius_skill import HELIUS_TOOLS, run_helius_tool
+from .skills.helius_skill import TOOLS as HELIUS_TOOLS, run_tool
 
 # ─── Middleware ───────────────────────────────────────────────────────
 from .middleware.auth import require_auth, get_session_from_request
