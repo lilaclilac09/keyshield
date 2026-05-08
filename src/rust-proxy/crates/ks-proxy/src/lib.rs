@@ -10,6 +10,7 @@ use ks_cache::TtlCache;
 use ks_session::SessionStore;
 use ks_upstream::UpstreamClients;
 use ks_vault::VaultPath;
+use tower_http::cors::{Any, CorsLayer};
 
 pub mod acme;
 pub mod bridge;
@@ -41,6 +42,13 @@ pub struct AppState {
 /// (Rust-as-mirror) — see oracle-diff harness.
 pub fn router(state: AppState) -> axum::Router {
     use axum::routing::{any, get, post};
+    // CORS for browser clients (frontend on localhost:5173 → proxy on :8000).
+    // Origin Any is acceptable here because the proxy enforces auth via
+    // Bearer tokens, not cookies; CORS is not the security boundary.
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
     axum::Router::new()
         .route("/health", get(handlers::health))
         .route("/proxy/:upstream", any(handlers::proxy_no_path))
@@ -48,5 +56,6 @@ pub fn router(state: AppState) -> axum::Router {
         .route("/proxy/:upstream/*path", any(handlers::proxy))
         .route("/manage/batch", post(handlers::batch))
         .fallback(handlers::fallthrough)
+        .layer(cors)
         .with_state(state)
 }
