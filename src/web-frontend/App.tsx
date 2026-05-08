@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Search, X, Shield, LogOut, Plus, Key, Activity, Share2, Users,
   Settings as SettingsIcon, Bot, Copy, Check, Terminal, BookOpen,
+  ScanLine, FileText,
 } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -19,16 +20,20 @@ import {
 
 import { VaultSection }     from './components/sections/VaultSection';
 import { ActivitySection }  from './components/sections/ActivitySection';
-import { AgentsSection }    from './components/sections/AgentsSection';
-import { SharingSection }   from './components/sections/SharingSection';
+import { AgentsSection }          from './components/sections/AgentsSection';
+import { EphemeralWalletsSection } from './components/sections/EphemeralWalletsSection';
+import { SharingSection }         from './components/sections/SharingSection';
 import { SessionsSection }  from './components/sections/SessionsSection';
 import { SettingsSection }  from './components/sections/SettingsSection';
 import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection }      from './components/sections/DocsSection';
-import { BetaBanner }       from './components/BetaBanner';
-import { HealthBadge }      from './components/HealthBadge';
+import { BetaBanner }        from './components/BetaBanner';
+import { HealthBadge }       from './components/HealthBadge';
+import { OcrScanner }        from './components/OcrScanner';
+import { ReportPage }        from './components/ReportPage';
+import { X402TrustManager }  from './components/X402TrustManager';
 
-type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs';
+type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'security' | 'report';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'vault',     label: 'Vault',     icon: <Key size={16} strokeWidth={1.75} /> },
@@ -36,6 +41,8 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'agents',    label: 'Agents',    icon: <Bot size={16} strokeWidth={1.75} /> },
   { id: 'sharing',   label: 'Sharing',   icon: <Share2 size={16} strokeWidth={1.75} /> },
   { id: 'sessions',  label: 'Sessions',  icon: <Users size={16} strokeWidth={1.75} /> },
+  { id: 'security',  label: 'Security',  icon: <ScanLine size={16} strokeWidth={1.75} /> },
+  { id: 'report',    label: 'Report',    icon: <FileText size={16} strokeWidth={1.75} /> },
   { id: 'settings',  label: 'Settings',  icon: <SettingsIcon size={16} strokeWidth={1.75} /> },
   { id: 'developer', label: 'Developer', icon: <Terminal size={16} strokeWidth={1.75} /> },
   { id: 'docs',      label: 'Docs',      icon: <BookOpen size={16} strokeWidth={1.75} /> },
@@ -47,6 +54,8 @@ const SECTION_SUBTITLE: Record<Section, string> = {
   agents:    "Agents you've granted scoped access to",
   sharing:   'Secrets shared with teammates',
   sessions:  'Active sessions across devices',
+  security:  'OCR screen scanner — detect keys in screenshots',
+  report:    'Vault audit log — detection and autofill history',
   settings:  'Account, security, and preferences',
   developer: 'API token, CLI commands, SDK snippets',
   docs:      'Quickstart, agent setup, and full reference',
@@ -269,10 +278,27 @@ const MainContent: React.FC = () => {
               />
             )}
             {section === 'activity'  && <ActivitySection />}
-            {section === 'agents'    && <AgentsSection />}
+            {section === 'agents'    && (
+              <>
+                <AgentsSection />
+                <EphemeralWalletsSection />
+              </>
+            )}
             {section === 'sharing'   && <SharingSection addr={fullAddr} />}
             {section === 'sessions'  && <SessionsSection onLogout={handleLogout} />}
-            {section === 'settings'  && <SettingsSection addr={fullAddr} />}
+            {section === 'security'  && (
+              <OcrScanner
+                currentDomain={typeof window !== 'undefined' ? window.location.hostname : ''}
+                onSaveKey={(dk: any) => {}}
+              />
+            )}
+            {section === 'report'    && <ReportPage />}
+            {section === 'settings'  && (
+              <>
+                <SettingsSection addr={fullAddr} />
+                <X402TrustManager />
+              </>
+            )}
             {section === 'developer' && <DeveloperSection />}
             {section === 'docs'      && <DocsSection />}
           </div>

@@ -400,3 +400,175 @@ document.addEventListener('copy', () => setTimeout(scan, 300));
 
 // User typed/pasted in a field — likely revealing a key.
 document.addEventListener('input', () => setTimeout(scan, 300), { capture: true });
+
+// ── x402 payment interceptor ────────────────────────────────────────────────
+// Wraps window.fetch to detect 402 + x402 headers and show a payment prompt.
+// Does NOT interfere with any other fetch — only intercepts 402 responses that
+// carry the X-Payment-Required: x402 header.
+
+(function () {
+  const _origFetch = window.fetch.bind(window);
+
+  window.fetch = async function (...args) {
+    const response = await _origFetch(...args);
+
+    if (
+      response.status === 402 &&
+      response.headers.get('X-Payment-Required') === 'x402'
+    ) {
+      // Clone so the caller still gets the original 402 body
+      const clone = response.clone();
+
+      (async () => {
+        let amount_usd = 0;
+        let payTo      = '';
+        let network    = '';
+        let resource   = '';
+
+        try {
+          const body = await clone.json();
+          const first = body?.accepts?.[0] ?? {};
+          const raw   = parseFloat(first.maxAmountRequired ?? '0');
+          amount_usd  = raw / 1_000_000;   // USDC 6 decimals → USD
+          payTo       = first.payTo    ?? '';
+          network     = first.network  ?? '';
+          resource    = first.resource ?? (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
+        } catch {
+          // malformed body — still show a prompt with $0.00
+        }
+
+        const hostname = location.hostname;
+
+        // Ask background if this domain is trusted + below threshold
+        let autoPayApproved = false;
+        try {
+          const reply = await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              { type: 'X402_CHECK_TRUST', hostname, amount_usd },
+              resolve,
+            );
+          });
+          autoPayApproved = !!reply?.autoPayApproved;
+        } catch { /* extension context gone — treat as not trusted */ }
+
+        // Ensure our CSS is injected (reuse existing ks-style if present)
+        if (!document.getElementById('keyshield-style')) {
+          const style = document.createElement('style');
+          style.id    = 'keyshield-style';
+          style.textContent = `
+            @keyframes keyshield-slide {
+              from { transform: translateY(-12px); opacity: 0; }
+              to   { transform: translateY(0);    opacity: 1; }
+            }
+            .ks-btn{cursor:pointer;border:1px solid transparent;border-radius:8px;
+              padding:9px 12px;font-size:12px;font-weight:500;transition:all .15s}
+            .ks-btn-primary{background:#5b8cff;color:white;border-color:#5b8cff}
+            .ks-btn-primary:hover{background:#7aa1ff}
+            .ks-btn-ghost{background:transparent;color:#71717a;border-color:#27272a}
+            .ks-btn-ghost:hover{color:#fafafa;border-color:#3f3f46}
+          `;
+          document.head.appendChild(style);
+        }
+
+        const amountStr = `$${amount_usd.toFixed(2)}`;
+        const toast = document.createElement('div');
+        toast.id = 'keyshield-x402-notice';
+        Object.assign(toast.style, {
+          position:        'fixed',
+          top:             '20px',
+          right:           '20px',
+          zIndex:          '999999',
+          backgroundColor: '#0a0d1a',
+          border:          '1px solid #1c2238',
+          borderRadius:    '12px',
+          padding:         '16px',
+          width:           '320px',
+          boxShadow:       '0 20px 40px -10px rgba(0,0,0,0.6)',
+          color:           '#e4e4e7',
+          fontFamily:      '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+          display:         'flex',
+          flexDirection:   'column',
+          gap:             '12px',
+          animation:       'keyshield-slide 0.18s ease-out',
+        });
+
+        if (autoPayApproved) {
+          let secsLeft = 3;
+          toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="background:#0e1430;padding:6px 8px;border-radius:6px;
+                          font-size:10px;font-weight:700;color:#5b8cff;
+                          border:1px solid #1c2550;letter-spacing:.05em">402</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600">Auto-paying ${amountStr} to ${hostname}…</div>
+                <div style="color:#a1a1aa;font-size:11px;margin-top:2px">Sending in <span id="ks-cd">${secsLeft}</span>s</div>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(toast);
+
+          const interval = setInterval(() => {
+            secsLeft--;
+            const cd = toast.querySelector('#ks-cd');
+            if (cd) cd.textContent = String(secsLeft);
+            if (secsLeft <= 0) {
+              clearInterval(interval);
+              chrome.runtime.sendMessage({
+                type: 'INITIATE_X402_PAYMENT',
+                amount_usd,
+                hostname,
+                payTo,
+                network,
+                resource,
+              });
+              toast.remove();
+            }
+          }, 1000);
+
+          // Allow cancellation before countdown ends
+          toast.addEventListener('click', () => {
+            clearInterval(interval);
+            toast.remove();
+          }, { once: true });
+
+        } else {
+          toast.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="background:#0e1430;padding:6px 8px;border-radius:6px;
+                          font-size:10px;font-weight:700;color:#5b8cff;
+                          border:1px solid #1c2550;letter-spacing:.05em">402</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600">x402 payment required — ${amountStr}</div>
+                <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${hostname}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button id="ks-x402-pay"     class="ks-btn ks-btn-primary" style="flex:1">Pay now</button>
+              <button id="ks-x402-dismiss" class="ks-btn ks-btn-ghost">Dismiss</button>
+            </div>
+          `;
+          document.body.appendChild(toast);
+
+          toast.querySelector('#ks-x402-pay').onclick = () => {
+            chrome.runtime.sendMessage({
+              type: 'INITIATE_X402_PAYMENT',
+              amount_usd,
+              hostname,
+              payTo,
+              network,
+              resource,
+            });
+            toast.remove();
+          };
+
+          toast.querySelector('#ks-x402-dismiss').onclick = () => toast.remove();
+
+          // Auto-dismiss after 20s
+          setTimeout(() => { if (toast.parentNode) toast.remove(); }, 20000);
+        }
+      })();
+    }
+
+    return response;
+  };
+})();
