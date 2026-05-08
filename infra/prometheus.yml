@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    app: keyshield
+    env: development
+
+scrape_configs:
+  # Python control plane — FastAPI on :8001
+  - job_name: keyshield-python
+    static_configs:
+      - targets: ['host.docker.internal:8001']
+    metrics_path: /metrics
+    # If KS_METRICS_TOKEN is set, add:
+    # authorization:
+    #   credentials: <your-token>
+
+  # Rust hot-path proxy — axum on :8000
+  - job_name: keyshield-rust
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: /metrics
