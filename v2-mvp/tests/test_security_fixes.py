@@ -122,13 +122,10 @@ class TestAgentRevocation:
         assert result["name"] == "bot1"
 
     def test_revoke_agent(self):
-
-
         from src.agents import register, lookup_owner, revoke_agent
 
-        register("owner1", "9WzDX...", name="bot1")
-        agent_id = [a["id"] for a in []][0]  # placeholder
-        result = revoke_agent("owner1", "9WzDX...")
+        agent_id = register("owner1", "9WzDX...", name="bot1")
+        result = revoke_agent("owner1", agent_id)
         assert result is True
 
     def test_re_revoke_is_idempotent(self):

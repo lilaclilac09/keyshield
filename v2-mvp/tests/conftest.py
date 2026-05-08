@@ -130,8 +130,11 @@ def client() -> Generator:
         return JSONResponse({"keys": keys})
 
     async def agent_register_route(request: Request):
+        auth = request.headers.get("Authorization", "")
         body = await request.json()
-        agents.register(body.get("owner_wallet", "test"), body["pubkeyB58"], name=body.get("name", "agent"))
+        sess_info = sess.get(auth.replace("Bearer ", ""))
+        owner = sess_info["user_id"] if sess_info else body.get("owner_wallet", "test")
+        agents.register(owner, body["pubkeyB58"], name=body.get("name", "agent"))
         return JSONResponse({"ok": True})
 
     async def agent_list_route(request: Request):
