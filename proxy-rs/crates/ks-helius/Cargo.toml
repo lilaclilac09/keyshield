@@ -1,0 +1,23 @@
+[package]
+name = "ks-helius"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Typed Helius client with 2-tier cache and x402 retry for KeyShield"
+
+[dependencies]
+bytes      = { workspace = true }
+ks-cache   = { path = "../ks-cache" }
+redb       = "2"
+reqwest    = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tokio      = { workspace = true }
+tracing    = { workspace = true }
+
+[dev-dependencies]
+tokio      = { workspace = true }
+wiremock   = { workspace = true }
+serde_json = { workspace = true }
+tempfile   = "3"
