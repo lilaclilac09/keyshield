@@ -29,10 +29,10 @@ jobs:
             ~/.cargo/git
             target
             src/rust-proxy/target
-         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
-       - name: Test proxy-rs (78 tests across 6 crates)
-         run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml
+      - name: Test proxy-rs (78 tests across 6 crates)
+        run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml
 
   integration-tests:
     name: Integration (Surfpool)
