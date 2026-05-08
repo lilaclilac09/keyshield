@@ -66,3 +66,7 @@ debug.log
 # --- Test artifacts ---------------------------------------------------------
 coverage/
 .pytest_cache/
+
+# --- Claude Code ------------------------------------------------------------
+.claude/worktrees/
+.dropped-*/
