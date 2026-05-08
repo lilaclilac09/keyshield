@@ -22,7 +22,6 @@ import {
   TransactionInstruction,
   type Connection,
 } from '@solana/web3.js';
-import { Buffer } from 'buffer';
 
 /** Seed prefix for `open_payment_stream` PDAs.
  *  Matches `APS_SEED` in programs/keyshield/src/instructions/open_stream.rs:38. */
@@ -31,6 +30,14 @@ export const APS_SEED = 'agent_payment_stream';
 /** Solana cluster the demo targets — devnet for now per ROADMAP §6a. */
 export type Cluster = 'devnet' | 'mainnet-beta';
 const DEFAULT_CLUSTER: Cluster = 'devnet';
+
+/** Base64 decode → Uint8Array (browser-safe, no `buffer` dep needed). */
+function b64decode(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 
 /** KeyShield on-chain program id.
  *
@@ -93,7 +100,7 @@ export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
       isSigner:   k.isSigner,
       isWritable: k.isWritable,
     })),
-    data: Buffer.from(resp.data, 'base64'),
+    data: b64decode(resp.data),
   });
   return new Transaction().add(ix);
 }
