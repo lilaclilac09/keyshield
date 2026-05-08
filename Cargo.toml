@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["src/solana-programs/keyshield"]
-exclude = ["src/rust-proxy"]
+members = ["src/programs/keyshield", "src/proxy"]
+exclude = []
 
 [workspace.dependencies]
 pinocchio = "0.9"

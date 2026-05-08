@@ -3,11 +3,6 @@
 # =============================================================================
 
 # --- Dependencies -----------------------------------------------------------
-# Universal: ignore node_modules anywhere in the tree, regardless of layout.
-# Replaces the per-path enumeration (web-frontend / mobile-app / api-server /
-# sdk/*) that missed legacy locations (mobile/, packages/cli/, frontend/,
-# server/, extension-sync/, infra/sync-worker/, .dropped-*/) and tracked
-# 189k node_modules files in git as a result.
 node_modules/
 
 # --- Build outputs -----------------------------------------------------------
@@ -17,6 +12,7 @@ node_modules/
 /.next/
 /src/web-frontend/.next/
 /src/rust-proxy/target/
+/target/
 /src/python-legacy/build*/
 /src/python-legacy/*.egg-info/
 /src/python-legacy/TurboQuant/
@@ -36,16 +32,30 @@ node_modules/
 .keyshield-vault.json
 *.json.key
 
-# --- Python cache -----------------------------------------------------------
+# --- Python -----------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
+.venv/
+.venv/
+v2-mvp/.pytest_cache/
+src/python-legacy/.pytest_cache/
+v2-mvp/src/__pycache__/
+src/python-legacy/src/__pycache__/
+v2-mvp/sessions.db
+v2-mvp/keyshield.db
+v2-mvp/src/sessions.db
+v2-mvp/src/keyshield.db
 
-# --- Rust artifacts ----------------------------------------------------------
-**/*.rs.bk
-Cargo.lock.lock
-*.pdb
+# --- Rust -------------------------------------------------------------------
+*.rs.bk
+*.rs.orig
+*.d
+*.o
+target/
+proxy-rs/target/
 
 # --- Model files (too large for git) ---------------------------------------
 *.gguf
@@ -56,7 +66,25 @@ Cargo.lock.lock
 # --- GitNexus ---------------------------------------------------------------
 .gitnexus/
 
-# --- Temporary -----------------------------------------------------------------
+# --- Compiled data files ----------------------------------------------------
+*.enc
+*.db
+*.sqlite
+*/data/*.db
+*/vault/dt/
+*/wallet/*.json
+src/api-server/src/vault/test-vault-user/
+v2-mvp/vault/bench_user/
+v2-mvp/vault/user_*/
+
+# --- Generated data ---------------------------------------------------------
+src/api-server/src/data/
+src/api-server/src/wallet/
+v2-mvp/data/
+src/python-legacy/data/*.db
+src/python-legacy/sessions.db
+
+# --- Temporary ----------------------------------------------------------------
 *.rar
 *.zip
 disk.txt
@@ -65,7 +93,7 @@ debug.log
 
 # --- Test artifacts ---------------------------------------------------------
 coverage/
-.pytest_cache/
+.coverage
 
 # --- Claude Code ------------------------------------------------------------
 .claude/worktrees/
