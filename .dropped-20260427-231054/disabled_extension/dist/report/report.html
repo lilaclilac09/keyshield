@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KeyShield – Vault Audit Report</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f4f5;
+      color: #18181b;
+      min-height: 100vh;
+    }
+    .toolbar {
+      padding: 16px 24px;
+      background: #fff;
+      border-bottom: 1px solid #e4e4e7;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .toolbar label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .toolbar input[type="checkbox"] { width: 18px; height: 18px; }
+    .toolbar input[type="date"] { padding: 6px 10px; border: 1px solid #e4e4e7; border-radius: 6px; }
+    .toolbar button {
+      padding: 8px 16px;
+      background: #ea580c;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .toolbar button:hover { background: #c2410c; }
+    .toolbar button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .report-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      background: #fff;
+    }
+    .report-container h1 { text-align: center; font-size: 24px; margin-bottom: 8px; }
+    .report-container .generated { text-align: center; font-size: 13px; color: #71717a; margin-bottom: 32px; }
+    .report-container section { margin-bottom: 32px; }
+    .report-container h2 {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #52525b;
+      margin-bottom: 12px;
+    }
+    .report-container table { width: 100%; border-collapse: collapse; }
+    .report-container th, .report-container td {
+      border: 1px solid #e4e4e7;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 14px;
+    }
+    .report-container th { background: #f4f4f5; font-weight: 600; }
+    .report-container .overview { border: 1px solid #e4e4e7; border-radius: 8px; padding: 16px; background: #fafafa; }
+    .report-container .overview ul { list-style: none; }
+    .report-container .overview li { margin-bottom: 6px; font-size: 14px; }
+    .report-container .empty { color: #71717a; font-style: italic; font-size: 14px; }
+    .report-container .no-print { display: block; }
+    .export-row { padding: 16px 24px; border-top: 1px solid #e4e4e7; background: #fff; text-align: right; }
+    @media print {
+      body * { visibility: hidden; }
+      .report-container, .report-container * { visibility: visible; }
+      .report-container { position: absolute; left: 0; top: 0; width: 100%; }
+      .toolbar, .no-print, .export-row { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print">
+    <label>
+      <input type="checkbox" id="include-logs" checked> Include detection & auto-fill logs
+    </label>
+    <label>From <input type="date" id="date-from"></label>
+    <label>To <input type="date" id="date-to"></label>
+    <button type="button" id="generate-btn">Generate Report</button>
+  </div>
+  <div class="report-container" id="report-root">
+    <p id="status">Loading…</p>
+  </div>
+  <div class="export-row no-print">
+    <button type="button" id="export-pdf">Print / Save as PDF</button>
+  </div>
+  <script src="report.js"></script>
+</body>
+</html>

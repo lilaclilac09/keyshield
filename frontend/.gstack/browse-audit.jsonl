@@ -1,0 +1,230 @@
+{"ts":"2026-04-14T07:11:00.019Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":617,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:00.176Z","cmd":"screenshot","args":"/tmp/ks-home.png","origin":"http://localhost:3000/","durationMs":115,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:07.604Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":27,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:10.394Z","cmd":"click","args":"@e3","origin":"http://localhost:3000/","durationMs":49,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:10.539Z","cmd":"screenshot","args":"/tmp/ks-wallet-modal.png","origin":"http://localhost:3000/","durationMs":109,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:19.411Z","cmd":"snapshot","args":"-i -a -o /tmp/ks-wallet-ann.png","origin":"about:blank","durationMs":19,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:23.738Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":527,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:23.788Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":11,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:26.714Z","cmd":"click","args":"@e3","origin":"http://localhost:3000/","durationMs":31,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:26.757Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":5,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:11:31.975Z","cmd":"screenshot","args":"/tmp/ks-wallet-open.png","origin":"http://localhost:3000/","durationMs":41,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:17.888Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":589,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:17.928Z","cmd":"click","args":"@e3","origin":"http://localhost:3000/","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e3 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-14T07:12:17.982Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":19,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:21.688Z","cmd":"click","args":"@e3","origin":"http://localhost:3000/","durationMs":44,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:21.840Z","cmd":"screenshot","args":"/tmp/ks-burner-modal.png","origin":"http://localhost:3000/","durationMs":112,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:21.879Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:26.300Z","cmd":"reload","args":"","origin":"http://localhost:3000/","durationMs":443,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:26.352Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":9,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:29.757Z","cmd":"click","args":"@e3","origin":"http://localhost:3000/","durationMs":37,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:29.803Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:29.935Z","cmd":"screenshot","args":"/tmp/ks-burner2.png","origin":"http://localhost:3000/","durationMs":86,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:49.443Z","cmd":"goto","args":"http://localhost:3001","origin":"http://localhost:3001/","durationMs":4603,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:50.534Z","cmd":"screenshot","args":"/tmp/ks-3001.png","origin":"http://localhost:3001/","durationMs":1021,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:12:59.071Z","cmd":"wait","args":"--networkidle","origin":"about:blank","durationMs":2782,"status":"error","hasCookies":false,"mode":"launched","error":"forLoadState: Target page, context or browser has been closed"}
+{"ts":"2026-04-14T07:13:01.891Z","cmd":"screenshot","args":"/tmp/ks-3001-loaded.png","origin":"about:blank","durationMs":35,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:01.937Z","cmd":"snapshot","args":"-i","origin":"about:blank","durationMs":8,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:06.026Z","cmd":"goto","args":"http://localhost:3001","origin":"http://localhost:3001/","durationMs":204,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:06.651Z","cmd":"wait","args":".wallet-adapter-button, button","origin":"http://localhost:3001/dashboard","durationMs":577,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:06.690Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3001/dashboard","durationMs":3,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:09.551Z","cmd":"screenshot","args":"/tmp/ks-dash.png","origin":"http://localhost:3001/dashboard","durationMs":47,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:09.591Z","cmd":"url","args":"","origin":"http://localhost:3001/dashboard","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:21.053Z","cmd":"snapshot","args":"-i -a -o /tmp/ks-dash-ann.png","origin":"about:blank","durationMs":27,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:23.948Z","cmd":"goto","args":"http://localhost:3001/dashboard","origin":"http://localhost:3001/dashboard","durationMs":77,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:24.051Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3001/dashboard","durationMs":8,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:26.864Z","cmd":"accessibility","args":"","origin":"http://localhost:3001/dashboard","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:29.822Z","cmd":"console","args":"","origin":"http://localhost:3001/dashboard","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:35.441Z","cmd":"snapshot","args":"-C","origin":"http://localhost:3001/dashboard","durationMs":15,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:41.513Z","cmd":"click","args":"@e27","origin":"about:blank","durationMs":3,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e27 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-14T07:13:41.610Z","cmd":"screenshot","args":"/tmp/ks-select-wallet.png","origin":"about:blank","durationMs":36,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:41.658Z","cmd":"snapshot","args":"-i","origin":"about:blank","durationMs":7,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:47.471Z","cmd":"goto","args":"http://localhost:3001/dashboard","origin":"http://localhost:3001/dashboard","durationMs":69,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:47.571Z","cmd":"snapshot","args":"-C -d 3 -s [data-testid='wallet-section'], nav, aside","origin":"http://localhost:3001/dashboard","durationMs":6,"status":"error","hasCookies":false,"mode":"launched","error":"Selector not found: [data-testid='wallet-section'], nav, aside"}
+{"ts":"2026-04-14T07:13:48.004Z","cmd":"snapshot","args":"-i -d 2","origin":"http://localhost:3001/dashboard","durationMs":301,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:48.059Z","cmd":"js","args":"document.querySelector('button.wallet-adapter-button')?.textContent","origin":"http://localhost:3001/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:51.266Z","cmd":"js","args":"document.querySelectorAll('button').length + ' buttons: ' + Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).slice(0,10).join('|')","origin":"http://localhost:3001/dashboard","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:13:54.478Z","cmd":"js","args":"document.body.innerHTML.length","origin":"http://localhost:3001/dashboard","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:14.915Z","cmd":"wait","args":"button","origin":"about:blank","durationMs":15008,"status":"error","hasCookies":false,"mode":"launched","error":"for: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator('button') to be visible\n"}
+{"ts":"2026-04-14T07:14:14.982Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).join('|')","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:18.448Z","cmd":"goto","args":"http://localhost:3001/dashboard","origin":"http://localhost:3001/dashboard","durationMs":82,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:19.026Z","cmd":"screenshot","args":"/tmp/ks-dash2.png","origin":"http://localhost:3001/dashboard","durationMs":493,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:29.479Z","cmd":"js","args":"new Promise(r => setTimeout(r, 3000))","origin":"about:blank","durationMs":2651,"status":"error","hasCookies":false,"mode":"launched","error":"evaluate: Target page, context or browser has been closed"}
+{"ts":"2026-04-14T07:14:32.293Z","cmd":"screenshot","args":"/tmp/ks-dash3.png","origin":"about:blank","durationMs":28,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:32.341Z","cmd":"snapshot","args":"-i","origin":"about:blank","durationMs":7,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:38.527Z","cmd":"goto","args":"http://localhost:3001","origin":"http://localhost:3001/","durationMs":40,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:39.077Z","cmd":"screenshot","args":"/tmp/ks-root2.png","origin":"http://localhost:3001/","durationMs":504,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:39.118Z","cmd":"url","args":"","origin":"http://localhost:3001/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T07:14:56.934Z","cmd":"handoff","args":"Testing wallet connection on KeyShield at http://localhost:3001","origin":"about:blank","durationMs":3860,"status":"ok","hasCookies":false,"mode":"headed"}
+{"ts":"2026-04-14T11:42:17.682Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":10359,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:42:17.801Z","cmd":"screenshot","args":"/tmp/ks-t2.png","origin":"http://localhost:3000/","durationMs":58,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:42:17.860Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":13,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:42:28.017Z","cmd":"js","args":"document.body.innerText.substring(0,200)","origin":"about:blank","durationMs":11,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:24.497Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":788,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:24.556Z","cmd":"url","args":"","origin":"http://localhost:3000/","durationMs":3,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:24.607Z","cmd":"console","args":"--errors","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:43.770Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:45.311Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1501,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:45.351Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:46.888Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1503,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:46.938Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:48.473Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1503,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:48.533Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:50.070Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1504,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:50.128Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:51.665Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1502,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:51.722Z","cmd":"js","args":"Array.from(document.querySelectorAll('button')).map(b=>b.textContent?.trim()).filter(Boolean).join('|')","origin":"about:blank","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:43:53.258Z","cmd":"js","args":"new Promise(r=>setTimeout(r,1500))","origin":"about:blank","durationMs":1501,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:51:45.555Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":855,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:51:45.629Z","cmd":"screenshot","args":"/tmp/ks-dash-now.png","origin":"http://localhost:3000/dashboard","durationMs":37,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:55:16.620Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":680,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:55:16.693Z","cmd":"screenshot","args":"/tmp/ks-nodash.png","origin":"http://localhost:3000/dashboard","durationMs":38,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T11:55:16.732Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/dashboard","durationMs":7,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:01.860Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":882,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:01.902Z","cmd":"console","args":"--errors","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:08.286Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/dashboard","durationMs":21,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:18.692Z","cmd":"screenshot","args":"/tmp/ks-dash-loaded.png","origin":"about:blank","durationMs":38,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:18.727Z","cmd":"click","args":"@e10","origin":"about:blank","durationMs":2,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e10 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-14T12:04:18.771Z","cmd":"screenshot","args":"/tmp/ks-wallet-modal2.png","origin":"about:blank","durationMs":12,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:04:18.811Z","cmd":"snapshot","args":"-i","origin":"about:blank","durationMs":7,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:55:40.593Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":545,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:55:40.647Z","cmd":"snapshot","args":"-i -d 2","origin":"http://localhost:3000/dashboard","durationMs":16,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T12:57:57.988Z","cmd":"js","args":"document.querySelectorAll('button').length","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:28:21.119Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":566,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:28:21.158Z","cmd":"js","args":"document.querySelectorAll('button').length","origin":"http://localhost:3000/dashboard","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:28:21.190Z","cmd":"js","args":"document.body.innerHTML.length","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:28:21.223Z","cmd":"console","args":"--errors","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:37:56.224Z","cmd":"html","args":"body","origin":"about:blank","durationMs":13,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:38:42.270Z","cmd":"js","args":"document.body.innerHTML.includes('Connect Wallet') || document.body.innerHTML.includes('wallet')","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:38:42.303Z","cmd":"js","args":"document.readyState","origin":"about:blank","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:50:32.197Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":578,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:50:34.241Z","cmd":"js","args":"new Promise(r => setTimeout(r, 2000)).then(() => document.querySelectorAll('button').length)","origin":"http://localhost:3000/dashboard","durationMs":2004,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T13:50:34.313Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/dashboard","durationMs":19,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:03:58.605Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":632,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:03:58.643Z","cmd":"network","args":"","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:13:59.173Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":594,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:13:59.210Z","cmd":"console","args":"","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:14:46.528Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":564,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-14T14:14:46.565Z","cmd":"network","args":"","origin":"http://localhost:3000/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:13:48.818Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":2317,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:17:10.944Z","cmd":"js","args":"localStorage.removeItem('keyshield_invite_accepted'); localStorage.getItem('keyshield_invite_accepted')","origin":"about:blank","durationMs":5,"status":"error","hasCookies":false,"mode":"launched","error":"evaluate: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.\n    at eval (<anonymous>)\n    at UtilityScript.evaluate (<anonymous>:290:30)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"}
+{"ts":"2026-04-16T09:17:20.083Z","cmd":"storage","args":"","origin":"about:blank","durationMs":1,"status":"error","hasCookies":false,"mode":"launched","error":"evaluate: SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"}
+{"ts":"2026-04-16T09:17:29.539Z","cmd":"url","args":"","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:17:29.580Z","cmd":"text","args":"","origin":"about:blank","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:19:16.892Z","cmd":"goto","args":"http://localhost:3000/dashboard","origin":"http://localhost:3000/dashboard","durationMs":10161,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:19:19.007Z","cmd":"screenshot","args":"/tmp/ks-invite-gate.png","origin":"http://localhost:3000/dashboard","durationMs":47,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:19:19.050Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/dashboard","durationMs":11,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:31:14.940Z","cmd":"goto","args":"http://localhost:9876/test-detection.html","origin":"http://localhost:9876/test-detection.html","durationMs":55,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:31:15.004Z","cmd":"snapshot","args":"-i -a -o /Users/aileen/Downloads/privacy_hack/keyshield/.gstack/qa-reports/screenshots/test-detection-initial.png","origin":"http://localhost:9876/test-detection.html","durationMs":30,"status":"error","hasCookies":false,"mode":"launched","error":"Path must be within: /private/tmp, /Users/aileen/Downloads/privacy_hack/keyshield/frontend"}
+{"ts":"2026-04-16T09:31:15.034Z","cmd":"console","args":"--errors","origin":"http://localhost:9876/test-detection.html","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:31:25.568Z","cmd":"screenshot","args":"/Users/aileen/Downloads/privacy_hack/keyshield/.gstack/qa-reports/screenshots/test-detection-initial.png","origin":"http://localhost:9876/test-detection.html","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Path must be within: /private/tmp, /Users/aileen/Downloads/privacy_hack/keyshield/frontend"}
+{"ts":"2026-04-16T09:31:25.603Z","cmd":"snapshot","args":"-i","origin":"http://localhost:9876/test-detection.html","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:34:37.346Z","cmd":"screenshot","args":"/tmp/ks-qa-screenshots/test-detection-initial.png","origin":"about:blank","durationMs":30,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:38.579Z","cmd":"goto","args":"http://localhost:9876/test-detection.html","origin":"http://localhost:9876/test-detection.html","durationMs":9,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:39.633Z","cmd":"js","args":"document.body.innerHTML.length","origin":"http://localhost:9876/test-detection.html","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:39.667Z","cmd":"js","args":"document.title","origin":"http://localhost:9876/test-detection.html","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:51.360Z","cmd":"js","args":"document.body.style.background = 'white'; document.documentElement.style.background = 'white';","origin":"http://localhost:9876/test-detection.html","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:51.394Z","cmd":"viewport","args":"1280x900","origin":"http://localhost:9876/test-detection.html","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:35:52.534Z","cmd":"screenshot","args":"/tmp/ks-qa-screenshots/test-detection-full.png","origin":"http://localhost:9876/test-detection.html","durationMs":76,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-16T09:37:40.928Z","cmd":"fill","args":"@e1 sk-proj_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefghijklmnopqrstuvwxyz","origin":"about:blank","durationMs":2,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e1 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-16T09:37:40.964Z","cmd":"console","args":"--errors","origin":"about:blank","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:24:56.803Z","cmd":"goto","args":"http://localhost:3001","origin":"http://localhost:3001/chat?session=main","durationMs":115,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:25:05.015Z","cmd":"screenshot","args":"/tmp/keyshield-home.png","origin":"http://localhost:3001/chat?session=main","durationMs":55,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:25:26.148Z","cmd":"goto","args":"http://localhost:3001","origin":"http://localhost:3001/chat?session=main","durationMs":25,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:25:26.243Z","cmd":"screenshot","args":"/tmp/keyshield-3001.png","origin":"http://localhost:3001/chat?session=main","durationMs":55,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:25:36.088Z","cmd":"url","args":"","origin":"http://localhost:3001/chat?session=main","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:29:00.654Z","cmd":"goto","args":"http://192.168.0.101:3001","origin":"http://192.168.0.101:3001/","durationMs":4100,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:29:00.740Z","cmd":"screenshot","args":"/tmp/keyshield-ip.png","origin":"http://192.168.0.101:3001/","durationMs":39,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T08:29:13.888Z","cmd":"screenshot","args":"/tmp/keyshield-loaded.png","origin":"http://192.168.0.101:3001/dashboard","durationMs":38,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:32:11.704Z","cmd":"goto","args":"http://192.168.0.101:3001","origin":"http://192.168.0.101:3001/","durationMs":2147,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:32:13.768Z","cmd":"fill","args":"@e1 KEYSHIELD2026","origin":"http://192.168.0.101:3001/dashboard","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e1 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-21T13:32:13.814Z","cmd":"click","args":"@e2","origin":"http://192.168.0.101:3001/dashboard","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e2 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-21T13:32:16.913Z","cmd":"screenshot","args":"/tmp/ks-dashboard2.png","origin":"http://192.168.0.101:3001/dashboard","durationMs":52,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:32:27.815Z","cmd":"snapshot","args":"-i","origin":"http://192.168.0.101:3001/dashboard","durationMs":20,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:33:09.176Z","cmd":"fill","args":"@e1 KEYSHIELD2026","origin":"http://192.168.0.101:3001/dashboard","durationMs":17,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:33:10.284Z","cmd":"click","args":"@e2","origin":"http://192.168.0.101:3001/dashboard","durationMs":40,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:33:13.433Z","cmd":"screenshot","args":"/tmp/ks-dash-final.png","origin":"http://192.168.0.101:3001/dashboard","durationMs":37,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:40:50.397Z","cmd":"screenshot","args":"/tmp/ks-after-verify.png","origin":"http://192.168.0.101:3001/dashboard","durationMs":23,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-21T13:40:50.430Z","cmd":"console","args":"--errors","origin":"http://192.168.0.101:3001/dashboard","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:29:17.491Z","cmd":"goto","args":"http://127.0.0.1:5173/","origin":"http://127.0.0.1:5173/","durationMs":1575,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:29:17.588Z","cmd":"screenshot","args":"/tmp/keyshield-mvp.png","origin":"http://127.0.0.1:5173/","durationMs":32,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:29:17.632Z","cmd":"console","args":"--errors","origin":"http://127.0.0.1:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:29:52.865Z","cmd":"console","args":"","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:30:27.767Z","cmd":"js","args":"document.body.innerHTML","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:32:43.410Z","cmd":"js","args":"document.getElementById('root').children.length","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:32:43.455Z","cmd":"network","args":"","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:33:22.975Z","cmd":"goto","args":"http://127.0.0.1:5173/","origin":"http://127.0.0.1:5173/","durationMs":94,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:33:25.102Z","cmd":"screenshot","args":"/tmp/keyshield-mvp2.png","origin":"http://127.0.0.1:5173/","durationMs":42,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:33:25.146Z","cmd":"console","args":"--errors","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:34:27.196Z","cmd":"goto","args":"http://127.0.0.1:5173/","origin":"http://127.0.0.1:5173/","durationMs":836,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:34:30.304Z","cmd":"screenshot","args":"/tmp/keyshield-mvp3.png","origin":"http://127.0.0.1:5173/","durationMs":26,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:34:30.348Z","cmd":"console","args":"--errors","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:57:07.371Z","cmd":"goto","args":"http://127.0.0.1:5173/","origin":"http://127.0.0.1:5173/","durationMs":100,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:57:11.466Z","cmd":"screenshot","args":"/tmp/ks-dark.png","origin":"http://127.0.0.1:5173/","durationMs":28,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:57:11.510Z","cmd":"console","args":"--errors","origin":"http://127.0.0.1:5173/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:57:19.266Z","cmd":"goto","args":"http://127.0.0.1:5173/","origin":"http://127.0.0.1:5173/","durationMs":45,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T04:57:22.384Z","cmd":"screenshot","args":"/tmp/ks-dark2.png","origin":"http://127.0.0.1:5173/","durationMs":39,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:28.899Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":5660,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:30.999Z","cmd":"js","args":"localStorage.clear()","origin":"http://localhost:3000/","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:31.131Z","cmd":"reload","args":"","origin":"http://localhost:3000/","durationMs":90,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:33.249Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":23,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:48.426Z","cmd":"click","args":"@e1","origin":"http://localhost:3000/","durationMs":43,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:49.490Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":5,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:49.590Z","cmd":"click","args":"@e5","origin":"http://localhost:3000/","durationMs":53,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:46:52.677Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:47:48.264Z","cmd":"click","args":"button:has-text(\"Settings\")","origin":"http://localhost:3000/","durationMs":51,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:47:49.324Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":4,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:48:58.764Z","cmd":"click","args":"@e15","origin":"http://localhost:3000/","durationMs":27,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:49:02.860Z","cmd":"network","args":"","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:49:02.906Z","cmd":"text","args":"","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:51:15.754Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:53:27.554Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:54:47.215Z","cmd":"click","args":"@e6","origin":"http://localhost:3000/","durationMs":57,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:54:47.261Z","cmd":"wait","args":"--networkidle","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:54:47.903Z","cmd":"screenshot","args":"/tmp/ks-settings.png","origin":"http://localhost:3000/","durationMs":62,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:56:45.302Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T14:59:51.769Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:03:32.056Z","cmd":"js","args":"localStorage.clear()","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:03:33.298Z","cmd":"reload","args":"","origin":"http://localhost:3000/","durationMs":1185,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:03:35.402Z","cmd":"click","args":"@e1","origin":"http://localhost:3000/","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Ref @e1 not found. Run 'snapshot' to get fresh refs."}
+{"ts":"2026-04-27T15:03:36.505Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":11,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:03:36.549Z","cmd":"click","args":"","origin":"http://localhost:3000/","durationMs":0,"status":"error","hasCookies":false,"mode":"launched","error":"Usage: browse click <selector>"}
+{"ts":"2026-04-27T15:03:39.622Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:04:15.687Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":3,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:04:48.131Z","cmd":"click","args":"@e1","origin":"http://localhost:3000/","durationMs":35,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:04:49.697Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":3,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:05:07.267Z","cmd":"click","args":"@e5","origin":"http://localhost:3000/","durationMs":47,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:05:11.371Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:05:41.144Z","cmd":"click","args":"button:has-text(\"Settings\")","origin":"http://localhost:3000/","durationMs":40,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:05:42.272Z","cmd":"screenshot","args":"/tmp/keyshield-settings-final.png","origin":"http://localhost:3000/","durationMs":49,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-27T15:05:42.326Z","cmd":"text","args":"","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:33:59.869Z","cmd":"reload","args":"","origin":"about:blank","durationMs":7,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:34:01.933Z","cmd":"console","args":"--errors","origin":"about:blank","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:34:01.997Z","cmd":"snapshot","args":"-i","origin":"about:blank","durationMs":19,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:35:49.626Z","cmd":"goto","args":"http://localhost:3000","origin":"http://localhost:3000/","durationMs":1592,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:35:51.728Z","cmd":"console","args":"--errors","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:35:51.782Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":9,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:10.359Z","cmd":"click","args":"@e1","origin":"http://localhost:3000/","durationMs":68,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:11.425Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":5,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:11.536Z","cmd":"click","args":"@e5","origin":"http://localhost:3000/","durationMs":60,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:14.601Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":5,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:14.675Z","cmd":"click","args":"button:has-text(\"Vault\")","origin":"http://localhost:3000/","durationMs":19,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:15.300Z","cmd":"click","args":"button:has-text(\"Activity\")","origin":"http://localhost:3000/","durationMs":24,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:15.937Z","cmd":"click","args":"button:has-text(\"Agents\")","origin":"http://localhost:3000/","durationMs":38,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:16.532Z","cmd":"click","args":"button:has-text(\"Sharing\")","origin":"http://localhost:3000/","durationMs":33,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:17.153Z","cmd":"click","args":"button:has-text(\"Sessions\")","origin":"http://localhost:3000/","durationMs":30,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:17.774Z","cmd":"click","args":"button:has-text(\"Settings\")","origin":"http://localhost:3000/","durationMs":60,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:18.407Z","cmd":"click","args":"button:has-text(\"Developer\")","origin":"http://localhost:3000/","durationMs":41,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:19.022Z","cmd":"click","args":"button:has-text(\"Docs\")","origin":"http://localhost:3000/","durationMs":57,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:19.616Z","cmd":"console","args":"--errors","origin":"http://localhost:3000/","durationMs":0,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:19.695Z","cmd":"click","args":"button:has-text(\"Vault\")","origin":"http://localhost:3000/","durationMs":28,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:36:20.273Z","cmd":"screenshot","args":"/tmp/refactored-vault.png","origin":"http://localhost:3000/","durationMs":22,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:55:40.154Z","cmd":"click","args":"button:has-text(\"Settings\")","origin":"http://localhost:3000/","durationMs":64,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T03:55:41.848Z","cmd":"screenshot","args":"/tmp/settings-new.png","origin":"http://localhost:3000/","durationMs":94,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:06:09.907Z","cmd":"js","args":"localStorage.getItem('ks_token')","origin":"http://localhost:3000/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:07:10.198Z","cmd":"reload","args":"","origin":"http://localhost:3000/","durationMs":1253,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:07:12.302Z","cmd":"click","args":"button:has-text(\"Vault\")","origin":"http://localhost:3000/","durationMs":43,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:07:13.448Z","cmd":"screenshot","args":"/tmp/vault-multitype.png","origin":"http://localhost:3000/","durationMs":78,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:07:51.658Z","cmd":"snapshot","args":"-i","origin":"http://localhost:3000/","durationMs":8,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:11:33.435Z","cmd":"click","args":"@e18","origin":"http://localhost:3000/","durationMs":63,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-28T04:11:35.062Z","cmd":"screenshot","args":"/tmp/password-revealed.png","origin":"http://localhost:3000/","durationMs":56,"status":"ok","hasCookies":false,"mode":"launched"}
