@@ -55,12 +55,26 @@ jobs:
 
       - name: Test proxy-rs (78 tests across 6 crates)
         env:
-          # Force tests to use the just-set-up python3 instead of falling
-          # back to repo_root()/v2-mvp/.venv (which doesn't exist in CI).
           KS_PYTHON: python3
-          # Verbose so failed-target output is visible in the run log.
           RUST_BACKTRACE: "1"
-        run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml -- --nocapture
+        run: |
+          set +e
+          cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml -- --nocapture 2>&1 | tee /tmp/cargo-test.log
+          EXIT=${PIPESTATUS[0]}
+          {
+            echo "## Cargo test (exit=$EXIT)"
+            echo ''
+            echo '### Failed targets'
+            echo '```'
+            grep -E "^(error|FAILED$|test result: FAILED|---- |thread .* panicked)" /tmp/cargo-test.log | head -40 || echo '(no error lines matched)'
+            echo '```'
+            echo ''
+            echo '### Last 80 lines of cargo output'
+            echo '```'
+            tail -80 /tmp/cargo-test.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $EXIT
 
   integration-tests:
     name: Integration (Surfpool)

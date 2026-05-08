@@ -21,6 +21,7 @@
     "@sentry/browser": "^8.0.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.270",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
