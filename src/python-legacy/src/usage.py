@@ -14,8 +14,10 @@ key_type: 'self_custodian' | 'platform'
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent.parent / "data" / "usage.db"
@@ -44,6 +46,10 @@ FLAT_COST_PER_CALL: dict[str, float] = {
 
 # Free credit for new users
 FREE_CREDIT_USD = 0.10
+
+# ── Retention policy (env-configurable) ──────────────────────────────────────
+_LOG_RETENTION_DAYS = int(os.getenv("KS_LOG_RETENTION_DAYS", "90"))
+_LOG_RETENTION_MAX_ROWS = int(os.getenv("KS_LOG_RETENTION_MAX_ROWS", "100000"))
 
 
 # ── DB setup ──────────────────────────────────────────────────────────────────
@@ -382,5 +388,62 @@ def list_topups(user_id: str, limit: int = 20) -> list[dict]:
             }
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+# ── Retention policy ──────────────────────────────────────────────────────────
+
+def purge_old_logs(
+    *,
+    retention_days: int = _LOG_RETENTION_DAYS,
+    max_rows: int = _LOG_RETENTION_MAX_ROWS,
+) -> dict:
+    """
+    Delete usage_log rows older than retention_days AND trim to max_rows
+    (keeping the most recent). Returns {"deleted_by_age": N, "deleted_by_cap": M}.
+    Run periodically — called from the FastAPI lifespan background task.
+    """
+    conn = _db()
+    try:
+        cutoff_ts = int(time.time()) - retention_days * 86400
+        age_result = conn.execute(
+            "DELETE FROM usage_log WHERE ts < ?", (cutoff_ts,)
+        )
+        deleted_by_age = age_result.rowcount or 0
+        conn.commit()
+
+        cap_result = conn.execute("""
+            DELETE FROM usage_log
+            WHERE id NOT IN (
+                SELECT id FROM usage_log ORDER BY ts DESC LIMIT ?
+            )
+        """, (max_rows,))
+        deleted_by_cap = cap_result.rowcount or 0
+        conn.commit()
+
+        return {"deleted_by_age": deleted_by_age, "deleted_by_cap": deleted_by_cap}
+    finally:
+        conn.close()
+
+
+def get_retention_stats() -> dict:
+    """Return {"total_rows": N, "oldest_entry": ISO8601 | None, "retention_days": N, "max_rows": N}"""
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), MIN(ts) FROM usage_log"
+        ).fetchone()
+        total_rows = row[0] or 0
+        min_ts = row[1]
+        oldest_entry: str | None = None
+        if min_ts is not None:
+            oldest_entry = datetime.fromtimestamp(min_ts, tz=timezone.utc).isoformat()
+        return {
+            "total_rows":    total_rows,
+            "oldest_entry":  oldest_entry,
+            "retention_days": _LOG_RETENTION_DAYS,
+            "max_rows":      _LOG_RETENTION_MAX_ROWS,
+        }
     finally:
         conn.close()

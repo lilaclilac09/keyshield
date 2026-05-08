@@ -176,7 +176,39 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[KeyShield] v1.1 installed — auto-detect + direct-store enabled');
+  // Enforce audit log retention on install/update (inline — no TS imports in background.js)
+  _purgeAuditLogInline().then((result) => {
+    const total = result.deletedByAge + result.deletedByCap;
+    if (total > 0) console.log('[KeyShield] onInstalled audit purge:', result);
+  }).catch((e) => console.warn('[KeyShield] onInstalled audit purge failed:', e));
 });
+
+// ── Audit log retention (inline JS, mirrors lib/audit-retention.ts) ──────────
+
+async function _purgeAuditLogInline() {
+  const AUDIT_LOG_KEY = 'ks_audit_log';
+  const RETENTION_POLICY_KEY = 'ks_audit_retention';
+  const DEFAULT_MAX_AGE_DAYS = 30;
+  const DEFAULT_MAX_ENTRIES = 500;
+
+  const stored = await chrome.storage.local.get([AUDIT_LOG_KEY, RETENTION_POLICY_KEY]);
+  const policy = stored[RETENTION_POLICY_KEY] || {};
+  const maxAgeDays = typeof policy.maxAgeDays === 'number' ? policy.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
+  const maxEntries = typeof policy.maxEntries === 'number' ? policy.maxEntries : DEFAULT_MAX_ENTRIES;
+
+  const rawLogs = stored[AUDIT_LOG_KEY] || [];
+  const cutoff = Date.now() - maxAgeDays * 86400000;
+
+  const afterAge = rawLogs.filter((e) => typeof e?.timestamp === 'number' && e.timestamp >= cutoff);
+  const deletedByAge = rawLogs.length - afterAge.length;
+
+  const sorted = afterAge.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const afterCap = sorted.slice(0, maxEntries);
+  const deletedByCap = afterAge.length - afterCap.length;
+
+  await chrome.storage.local.set({ [AUDIT_LOG_KEY]: afterCap });
+  return { deletedByAge, deletedByCap };
+}
 
 // ── x402 Trust Store helpers (mirrors lib/x402-trust.ts) ────────────────────
 const X402_STORAGE_KEY = 'ks_x402_trust_list';

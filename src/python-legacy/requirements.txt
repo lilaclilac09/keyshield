@@ -4,6 +4,7 @@ httpx>=0.27.0
 cryptography>=44.0.0
 pydantic>=2.11.0
 python-dotenv>=1.0.0
+sentry-sdk[fastapi]>=2.19.0
 
 # Security — Argon2id for vault encryption
 argon2-cffi>=23.1.0

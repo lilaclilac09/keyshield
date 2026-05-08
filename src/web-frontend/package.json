@@ -17,7 +17,8 @@
     "@solana/wallet-adapter-react": "0.15.35",
     "@solana/wallet-adapter-react-ui": "0.9.35",
     "@solana/wallet-adapter-wallets": "0.19.32",
-    "tesseract.js": "^5.1.1"
+    "tesseract.js": "^5.1.1",
+    "@sentry/browser": "^8.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

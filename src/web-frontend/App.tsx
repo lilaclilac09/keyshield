@@ -32,6 +32,7 @@ import { HealthBadge }       from './components/HealthBadge';
 import { OcrScanner }        from './components/OcrScanner';
 import { ReportPage }        from './components/ReportPage';
 import { X402TrustManager }  from './components/X402TrustManager';
+import { AuditRetentionSettings } from './components/AuditRetentionSettings';
 
 type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'security' | 'report';
 
@@ -297,6 +298,7 @@ const MainContent: React.FC = () => {
               <>
                 <SettingsSection addr={fullAddr} />
                 <X402TrustManager />
+                <AuditRetentionSettings />
               </>
             )}
             {section === 'developer' && <DeveloperSection />}

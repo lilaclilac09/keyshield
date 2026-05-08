@@ -24,6 +24,8 @@ ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }
 ks-vault = { path = "../ks-vault" }
 instant-acme = { version = "0.8", features = ["rcgen"] }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 rcgen = "0.13"
 reqwest = { workspace = true }
 # rustls 0.23 made CryptoProvider selection explicit. We pin `ring`

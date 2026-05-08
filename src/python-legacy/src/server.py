@@ -32,7 +32,53 @@ from pydantic import BaseModel
 
 from . import vault, session, passkey, usage, agents, mpp_streams as mpp
 from . import api_router
+from . import metrics as ks_metrics
 from .skills import helius_skill
+
+# ─── Sentry error tracking (opt-in via SENTRY_DSN env var) ───────────────────
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.httpx import HttpxIntegration
+
+_PII_FIELDS = {"password", "api_key", "passphrase", "token", "secret", "key_value"}
+
+
+def _sentry_before_send(event: dict, hint: dict) -> dict | None:
+    """Strip PII fields from request data and drop non-5xx HTTP exceptions."""
+    # Drop client-error HTTPExceptions (4xx) — not actionable server errors
+    exc_info = hint.get("exc_info")
+    if exc_info is not None:
+        exc = exc_info[1]
+        if isinstance(exc, HTTPException) and exc.status_code < 500:
+            return None
+
+    # Scrub sensitive fields from request body captured by Sentry
+    try:
+        req_data = event.get("request", {}).get("data")
+        if isinstance(req_data, dict):
+            for field in _PII_FIELDS:
+                if field in req_data:
+                    req_data[field] = "[Filtered]"
+    except Exception:
+        pass  # Never let the filter itself crash
+
+    return event
+
+
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        integrations=[FastApiIntegration(), HttpxIntegration()],
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        environment=os.getenv("KS_ENV", "development"),
+        release=os.getenv("KS_VERSION", "dev"),
+        # Never capture PII — vault keys, passwords, API keys
+        send_default_pii=False,
+        before_send=_sentry_before_send,
+    )
+
+print(f"[KeyShield] Sentry {'enabled' if _SENTRY_DSN else 'disabled'}")
 
 # Payment wallet — set this to your real address in production
 PAYMENT_ADDRESS = os.getenv("PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000")
@@ -473,6 +519,7 @@ async def _log_usage_bg(
             user_id, upstream, key_type, method, path,
             tok_in, tok_out, cost, latency_ms, status_code,
         )
+        ks_metrics.record_proxy(upstream, status_code, latency_ms / 1000.0)
     except Exception:
         pass  # Logging must never crash the proxy
 
@@ -2243,6 +2290,20 @@ async def health():
         "generic_cache": len(_CACHE),
         "router": api_router.cache_stats(),
     }
+
+
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+_METRICS_TOKEN = os.getenv("KS_METRICS_TOKEN", "")
+
+@app.get("/metrics")
+async def prometheus_metrics(request: Request):
+    """Expose Prometheus metrics. Guard with KS_METRICS_TOKEN if set."""
+    if _METRICS_TOKEN:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {_METRICS_TOKEN}":
+            raise HTTPException(401, "metrics endpoint requires Bearer token")
+    body, content_type = ks_metrics.metrics_response()
+    return PlainTextResponse(content=body, media_type=content_type)
 
 
 

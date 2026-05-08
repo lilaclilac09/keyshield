@@ -9,6 +9,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Download, RefreshCw, Loader2, ShieldCheck, ScanLine, KeyRound, Zap,
 } from 'lucide-react';
+import { purgeAuditLog } from '../lib/audit-retention';
 
 // ---------------------------------------------------------------------------
 // Storage schema (mirrors what background.js writes)
@@ -179,7 +180,16 @@ export const ReportPage: React.FC = () => {
   }, [includeLogs, dateFrom, dateTo]);
 
   useEffect(() => {
-    generate();
+    // Enforce retention policy before loading data so stale entries are pruned first.
+    purgeAuditLog()
+      .then((result) => {
+        const total = result.deletedByAge + result.deletedByCap;
+        if (total > 0) {
+          console.log(`[KeyShield] Audit log purge: removed ${total} entries`, result);
+        }
+      })
+      .catch((err) => console.warn('[KeyShield] Audit log purge failed:', err))
+      .finally(() => generate());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

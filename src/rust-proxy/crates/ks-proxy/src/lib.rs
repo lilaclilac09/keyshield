@@ -15,6 +15,7 @@ use tower_http::cors::{Any, CorsLayer};
 pub mod acme;
 pub mod bridge;
 pub mod handlers;
+pub mod metrics;
 pub mod stealth;
 pub mod tls;
 pub mod usage;
@@ -40,7 +41,7 @@ pub struct AppState {
 /// dispatch by JSON-RPC body). Without that branch, `POST /proxy/helius/`
 /// falls through to Python and the byte-diff oracle silently passes
 /// (Rust-as-mirror) — see oracle-diff harness.
-pub fn router(state: AppState) -> axum::Router {
+pub fn router(state: AppState, prometheus: metrics_exporter_prometheus::PrometheusHandle) -> axum::Router {
     use axum::routing::{any, get, post};
     // CORS for browser clients (frontend on localhost:5173 → proxy on :8000).
     // Origin Any is acceptable here because the proxy enforces auth via
@@ -51,6 +52,7 @@ pub fn router(state: AppState) -> axum::Router {
         .allow_headers(Any);
     axum::Router::new()
         .route("/health", get(handlers::health))
+        .route("/metrics", get(metrics::metrics_handler).with_state(prometheus))
         .route("/proxy/:upstream", any(handlers::proxy_no_path))
         .route("/proxy/:upstream/", any(handlers::proxy_no_path))
         .route("/proxy/:upstream/*path", any(handlers::proxy))
