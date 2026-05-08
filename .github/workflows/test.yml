@@ -33,6 +33,16 @@ jobs:
         # which isn't preinstalled on ubuntu-latest's bare python3.
         run: pip install cryptography
 
+      - name: Diagnostic — Python availability
+        # If oracle tests fail, this step shows whether the Rust harness
+        # is calling the right Python and whether `cryptography` resolves.
+        run: |
+          which python3
+          python3 --version
+          python3 -c "import cryptography; print('cryptography ok:', cryptography.__version__)"
+          python3 -c "import sys; print('sys.path:', sys.path)"
+          ls -la v2-mvp/src/vault.py
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -48,7 +58,9 @@ jobs:
           # Force tests to use the just-set-up python3 instead of falling
           # back to repo_root()/v2-mvp/.venv (which doesn't exist in CI).
           KS_PYTHON: python3
-        run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml
+          # Verbose so failed-target output is visible in the run log.
+          RUST_BACKTRACE: "1"
+        run: cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml -- --nocapture
 
   integration-tests:
     name: Integration (Surfpool)
