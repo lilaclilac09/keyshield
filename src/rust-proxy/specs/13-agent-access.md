@@ -33,7 +33,7 @@ keyshield store openai "sk-proj-xxx"
 keyshield run -- python bot.py
 ```
 
-**What runs:** `packages/cli/src/commands/run.ts` → reads vault file
+**What runs:** `src/sdk/packages/cli/src/commands/run.ts` → reads vault file
 locally → `execSync` with env overlay. No proxy involved.
 
 **Limitation:** requires vault file on disk + CLI installed. Not usable
@@ -56,7 +56,8 @@ Authorization: Bearer <owner_token>
 → 200 { "ok": true, "agentId": 3 }
 ```
 
-Stored in `v2-mvp/agents/{owner_wallet}/agents.json`.
+Stored in the agents table — see `src/python-legacy/src/agents.py` for
+the current schema (post-SOTA refactor).
 
 #### Step 2 — Agent fetches a session token (every restart)
 
@@ -104,11 +105,11 @@ Content-Type: application/json
 
 | Layer | Code | What it does |
 |---|---|---|
-| Python | `server.py:585` `/auth/agent-challenge` | issues one-time challenge |
-| Python | `server.py:599` `/auth/agent-login` | verifies sig + delegation → session |
-| Rust | `ks-session` | validates bearer token on every request |
-| Rust | `ks-vault` | decrypts raw API key (PBKDF2 + AES-256-GCM) |
-| Rust | `ks-upstream` | injects key into upstream Authorization header |
+| Python | `src/python-legacy/src/server.py` `/auth/agent-challenge` | issues one-time challenge |
+| Python | `src/python-legacy/src/server.py` `/auth/agent-login` | verifies sig + delegation → session |
+| Rust | `src/rust-proxy/crates/ks-session` | validates bearer token on every request |
+| Rust | `src/rust-proxy/crates/ks-vault` | decrypts raw API key (Argon2id + AES-256-GCM) |
+| Rust | `src/rust-proxy/crates/ks-upstream` | injects key into upstream Authorization header |
 
 **⚠️ Security gap:** `agent-login` requires `passphrase` in the
 request body. The agent must hold the vault decryption password. If the
@@ -230,8 +231,9 @@ Agent → POST /proxy/openai/v1/... X-Payment-Proof: <tx_sig>
       ← 200 (key injected, request forwarded)
 ```
 
-See spec 10 for full design. Server-side verify at `server.py:1067` is
-the TODO that unblocks this.
+See spec 10 for full design. Server-side verify lives in
+`src/python-legacy/src/server.py` (`/billing/topup` x402 path);
+on-chain proof verification was added in commit `6c3fec10`.
 
 ---
 
@@ -246,10 +248,10 @@ the TODO that unblocks this.
 
 ## What `agent-sdk` actually works today
 
-`packages/agent-sdk/src/index.ts:KeyShieldAgent.getApiKey()` calls
+`src/sdk/packages/agent-sdk/src/index.ts:KeyShieldAgent.getApiKey()` calls
 `bonsol.ts` + `lit.ts` — **both are empty placeholders.** Do not use.
 
-Working SDK path: use `packages/agent-sdk/src/session.ts:SessionManager`
+Working SDK path: use `src/sdk/packages/agent-sdk/src/session.ts:SessionManager`
 for on-chain grant instructions, then call the HTTP endpoints directly
 (Pattern B or C above). The `SessionManager` builds
 `GrantAgentAccess` (ix #20) and `RevokeAgentAccess` (ix #21)
