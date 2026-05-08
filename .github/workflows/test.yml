@@ -61,6 +61,7 @@ jobs:
           set +e
           cargo test --workspace --manifest-path src/rust-proxy/Cargo.toml -- --nocapture 2>&1 | tee /tmp/cargo-test.log
           EXIT=${PIPESTATUS[0]}
+          # Step summary (rendered on the run page)
           {
             echo "## Cargo test (exit=$EXIT)"
             echo ''
@@ -69,11 +70,21 @@ jobs:
             grep -E "^(error|FAILED$|test result: FAILED|---- |thread .* panicked)" /tmp/cargo-test.log | head -40 || echo '(no error lines matched)'
             echo '```'
             echo ''
-            echo '### Last 80 lines of cargo output'
+            echo '### Last 120 lines of cargo output'
             echo '```'
-            tail -80 /tmp/cargo-test.log
+            tail -120 /tmp/cargo-test.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # Workflow annotations — surfaced via the check-runs API so
+          # external clients (no admin token) can see them. One annotation
+          # per failed test target so the API caps don't truncate.
+          if [ "$EXIT" != "0" ]; then
+            grep -E "^(error|---- |thread .* panicked|FileNotFoundError|FAILED$)" /tmp/cargo-test.log | head -20 | while IFS= read -r line; do
+              # GitHub workflow command — strip control chars + escape % \r \n
+              clean=$(echo "$line" | tr -d '\r' | sed 's/%/%25/g' | tr '\n' ' ')
+              echo "::error::cargo test: $clean"
+            done
+          fi
           exit $EXIT
 
   integration-tests:
