@@ -14,6 +14,8 @@ All code consolidated under `src/` with clean domain boundaries:
 | Old Path | New Path | Status |
 |----------|----------|--------|
 | `v2-mvp/src/` | `src/backend/` | ✅ Migrated |
+| `.dropped-20260427-231054/extension/` | `_archive/dropped-extension/` | ✅ Migrated (agentic extension) |
+| `.dropped-20260427-231054/disabled_extension/` | `_archive/disabled-extension/` | ✅ Migrated (disabled extension) |
 | `src/rust-proxy/` | `src/proxy/` | ✅ Migrated |
 | `src/solana-programs/` | `src/programs/` | ✅ Migrated |
 | `src/web-frontend/` | `src/web/` | ✅ Migrated |
@@ -21,6 +23,12 @@ All code consolidated under `src/` with clean domain boundaries:
 | `src/mobile-app/` | `src/mobile/` | ✅ Migrated |
 | `infra/` | `src/infra/` | ✅ Migrated |
 | `scripts/` | `src/scripts/` | ✅ Migrated |
+
+### Archived (Not Tracked — Preserved)
+| Path | Content |
+|------|---------|
+| `_archive/dropped-extension/` | Agentic extension (X402, Lit, Cloud) — TypeScript + webpack |
+| `_archive/disabled-extension/` | Disabled extension (multi-browser: Chrome/Firefox/Safari) |
 
 ### Removed (Redundant/Dead)
 | Path | Reason |
@@ -50,6 +58,9 @@ All code consolidated under `src/` with clean domain boundaries:
 keyshield/
 ├── docs/                          # Documentation
 ├── landing/                       # Landing page
+├── _archive/                      # Archived artifacts (not tracked in git)
+│   ├── dropped-extension/         # Agentic extension (X402, Lit, Cloud)
+│   └── disabled-extension/        # Disabled extension (multi-browser)
 ├── tests/                         # E2E tests (Playwright)
 │   └── e2e/
 ├── src/

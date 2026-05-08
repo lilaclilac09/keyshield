@@ -1,7 +1,40 @@
 # KeyShield Migration Checklist
 
-> Migrating from `src/python-legacy/` (old codebase) → `v2-mvp/` (new clean architecture)
-> Last updated: 2026-05-08 — Full audit complete, legacy cleanup done
+> Migrating from `src/python-legacy/` (old codebase) → `v2-mvp/` (new clean architecture) → `src/backend/` (current)
+> Last updated: 2026-05-09 — Phase 6: Landing page + _dropped restructure
+
+---
+
+## Phase 6: Landing + Archived Extensions (2026-05-09)
+
+### `landing/` — Demo Landing Page
+**Purpose:** Standalone product demo (no build step required). Used for hackathon judging, Twitter, and README showcases.
+
+| File | Purpose |
+|------|---------|
+| `index.html` | Full single-page demo with Cut A (silent autoplay) and Cut B (voiced deep cut) |
+| `DEMO-SCRIPT.md` | Demo video scripts with timestamps |
+
+### `_archive/` — Archived Artifacts
+**Purpose:** Preserved but no longer tracked in git. These are historical extension implementations.
+
+| Directory | Content |
+|-----------|---------|
+| `dropped-extension/` | Agentic extension (X402, Lit, Cloud) — TypeScript source + webpack build |
+| `disabled-extension/` | Disabled Vite-based extension — multi-browser builds (Chrome/Firefox/Safari) |
+
+### Current Git-Tracked Layout
+
+```
+keyshield/
+├── landing/             # Demo page (tracked — lightweight)
+├── _archive/            # Archived extensions (not tracked)
+├── src/
+│   ├── backend/         # Python control plane
+│   ├── web/extension/   # Active Chrome extension
+│   └── web-v2/          # Web v2 source
+└── tests/               # E2E tests
+```
 
 ---
 
@@ -59,6 +92,20 @@
 
 ### ✅ SDK Packages — PORTED
 - agent-sdk, cli, goat-wallet, openclaw-skill
+
+### ✅ Landing Page (Demo)
+- `landing/` — Standalone demo page (index.html + DEMO-SCRIPT.md)
+- Cut A: 60s silent autoplay loop for hackathon judging page
+- Cut B: Voiced deep cut for README + Twitter
+- Core trust message: the agent never holds the API key
+
+### ✅ Archived Extensions (_archive/)
+- `_archive/dropped-extension/` — Agentic extension (X402, Lit, Cloud)
+  - Source: `.dropped-20260427-231054/extension/` → `src/web-v2/extension/`
+  - TypeScript source + webpack build
+- `_archive/disabled-extension/` — Disabled extension (Vite-based)
+  - Source: `.dropped-20260427-231054/disabled_extension/`
+  - Multi-browser builds (Chrome, Firefox, Safari)
 
 ---
 
