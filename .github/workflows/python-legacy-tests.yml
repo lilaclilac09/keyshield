@@ -1,33 +1,27 @@
 # Python legacy CI (renamed from v2-python.yml on 2026-05-08).
 #
-# Renamed to force GitHub Actions to re-register from a clean parse —
-# the old `v2-python.yml` registration was cached in a broken state
-# from its initial creation on 2026-05-07 (workflow.name resolved to
-# the file path instead of the YAML's `name:` field; `on:` triggers
-# and `paths:` filter were both ignored, so it ran on every push and
-# emitted 0-job instant failures for 18+ consecutive commits).
-#
 # DISABLED on auto-trigger. Reasons:
-#   1. cd targets (cd v2-mvp && ruff check src/ tests/ trading/) are
-#      stale — live Python now lives under `src/python-legacy/src/`.
-#   2. v2-mvp/tests/ and v2-mvp/trading/ no longer reflect active source.
+#   1. cd targets (cd v2-mvp/ ruff check src/ tests/ trading/) are
+#      stale - live Python now lives under src/python-legacy/src/.
+#   2. v2-mvp/tests/ and v2-mvp/trading/ no longer reflect active
+#      source after the SOTA refactor.
 #
 # Re-enable when:
 #   1. cd targets rewritten to src/python-legacy/
-#   2. `on.push.paths` filter added back, scoped to src/python-legacy/**
+#   2. on.push.paths filter added back, scoped to src/python-legacy
 #   3. Job steps exercised manually via Actions UI to confirm green
 #
 # Until then, run manually via the Actions UI when needed.
+
 name: Python legacy tests (manual)
 
-on:
-  workflow_dispatch:  # manual trigger only — see disabled note above
+on: workflow_dispatch
 
 env:
-  SERVER_SECRET: CHANGE-ME-IN-PROD-32-BYTES-MIN
-  KS_INTERNAL_SECRET: test-secret-key
-  KS_X402_BASE_RPC_URL: https://mainnet.base.org
-  KS_X402_RECEIVER_ADDRESS: 0x1234567890abcdef1234567890abcdef12345678
+  SERVER_SECRET: "CHANGE-ME-IN-PROD-32-BYTES-MIN"
+  KS_INTERNAL_SECRET: "test-secret-key"
+  KS_X402_BASE_RPC_URL: "https://mainnet.base.org"
+  KS_X402_RECEIVER_ADDRESS: "0x1234567890abcdef1234567890abcdef12345678"
 
 jobs:
   lint:
@@ -140,7 +134,7 @@ jobs:
       - name: Verify server starts
         run: |
           cd v2-mvp
-          timeout 10 python -c "from src.server import app; print('✓ Server app loaded')" || true
+          timeout 10 python -c "from src.server import app; print('Server app loaded')" || true
 
       - name: Verify SDK loads
         run: |
@@ -155,8 +149,8 @@ jobs:
       - name: Verify trading module loads
         run: |
           cd v2-mvp
-          python -c "from trading.agent import TradingOrchestrator; print('✓ Trading agent OK')"
+          python -c "from trading.agent import TradingOrchestrator; print('Trading agent OK')"
 
       - name: Final status
         run: |
-          echo "✓ Build & Test passed for $(git rev-parse --short HEAD)"
+          echo "Build and Test passed for $(git rev-parse --short HEAD)"
