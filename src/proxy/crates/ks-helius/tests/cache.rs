@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ks_helius::{CacheKey, HeliusClient, HeliusConfig, HeliusError};
+use ks_helius::{CacheKey, HeliusClient, HeliusConfig, HeliusError, PaymentInterceptor};
 use serde_json::json;
 use wiremock::matchers::{any, method as method_matcher, path as path_matcher};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -643,3 +643,149 @@ impl Respond for MethodAwareResponder {
     }
 }
 
+
+// ─── 17. PaymentInterceptor: 402 → pay → retry → success ────────────────────
+
+/// Counts how many times `pay` was called and what envelopes it saw.
+/// Returns a fixed proof: `{signature, network}` — the canonical Coinbase
+/// x402 shape that the client should map to `X-Payment-Proof` +
+/// `X-Payment-Network`.
+struct CountingInterceptor {
+    calls: AtomicUsize,
+    proof_sig: String,
+}
+
+#[async_trait::async_trait]
+impl PaymentInterceptor for CountingInterceptor {
+    async fn pay(&self, _envelope: &serde_json::Value) -> Result<serde_json::Value, HeliusError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(json!({"signature": self.proof_sig, "network": "solana-mainnet"}))
+    }
+}
+
+/// Responder that returns 402 on the first request and 200 on the second
+/// — only IF the second request carries the expected `X-Payment-Proof`
+/// header. Counts calls + records the last header it saw.
+struct PaywallThenAccept {
+    calls: AtomicUsize,
+    expected_sig: String,
+    last_proof_seen: Mutex<Option<String>>,
+}
+
+use std::sync::Mutex;
+
+impl Respond for PaywallThenAccept {
+    fn respond(&self, req: &Request) -> ResponseTemplate {
+        let n = self.calls.fetch_add(1, Ordering::SeqCst);
+        let proof = req
+            .headers
+            .get("X-Payment-Proof")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        *self.last_proof_seen.lock().unwrap() = proof.clone();
+        if n == 0 {
+            // First call: 402 with envelope.
+            ResponseTemplate::new(402)
+                .set_body_json(json!({
+                    "x402Version": 1,
+                    "accepts": [{
+                        "scheme": "exact",
+                        "network": "solana-mainnet",
+                        "asset": "USDC",
+                        "maxAmountRequired": "1000",
+                        "payTo": "PayToWallet111",
+                    }],
+                    "error": "Payment required",
+                }))
+                .insert_header("content-type", "application/json")
+        } else if proof.as_deref() == Some(self.expected_sig.as_str()) {
+            // Second call with the right proof header: succeed.
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"context": {"slot": 1}, "value": 100u64},
+                }))
+                .insert_header("content-type", "application/json")
+        } else {
+            // Wrong proof header: still 402.
+            ResponseTemplate::new(402)
+                .set_body_json(json!({"x402Version": 1, "accepts": []}))
+                .insert_header("content-type", "application/json")
+        }
+    }
+}
+
+#[tokio::test]
+async fn payment_interceptor_retries_on_402_with_proof_header() {
+    let mock = MockServer::start().await;
+    let responder = Arc::new(PaywallThenAccept {
+        calls: AtomicUsize::new(0),
+        expected_sig: "PROOF_SIGNATURE_BASE58".to_string(),
+        last_proof_seen: Mutex::new(None),
+    });
+    let r2 = Arc::clone(&responder);
+    Mock::given(any())
+        .respond_with(move |req: &Request| r2.respond(req))
+        .mount(&mock)
+        .await;
+
+    let interceptor = Arc::new(CountingInterceptor {
+        calls: AtomicUsize::new(0),
+        proof_sig: "PROOF_SIGNATURE_BASE58".to_string(),
+    });
+    let i2: Arc<dyn PaymentInterceptor> = interceptor.clone();
+    let client = client_for_mock(&mock.uri(), HeliusConfig::default()).with_interceptor(i2);
+
+    let balance = client
+        .get_balance("PaywallAddr")
+        .await
+        .expect("interceptor retry should succeed");
+    assert_eq!(balance, 100);
+    assert_eq!(interceptor.calls.load(Ordering::SeqCst), 1, "interceptor called exactly once");
+    assert_eq!(responder.calls.load(Ordering::SeqCst), 2, "upstream fired exactly twice (402, then 200)");
+    assert_eq!(
+        responder.last_proof_seen.lock().unwrap().as_deref(),
+        Some("PROOF_SIGNATURE_BASE58"),
+        "second call must carry X-Payment-Proof header from interceptor"
+    );
+}
+
+#[tokio::test]
+async fn payment_interceptor_failure_surfaces_to_caller() {
+    // If the interceptor itself errors, the original 402 (before retry)
+    // becomes the bubbled error path — the caller sees the failure
+    // emitted by `pay`, not a stale `PaymentRequired`.
+    struct Failing;
+
+    #[async_trait::async_trait]
+    impl PaymentInterceptor for Failing {
+        async fn pay(&self, _envelope: &serde_json::Value) -> Result<serde_json::Value, HeliusError> {
+            Err(HeliusError::Unpaid)
+        }
+    }
+
+    let mock = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(
+            ResponseTemplate::new(402)
+                .set_body_json(json!({
+                    "x402Version": 1,
+                    "accepts": [{
+                        "scheme": "exact",
+                        "network": "solana-mainnet",
+                        "asset": "USDC",
+                        "maxAmountRequired": "1000",
+                        "payTo": "PayToWallet111",
+                    }],
+                }))
+                .insert_header("content-type", "application/json"),
+        )
+        .mount(&mock)
+        .await;
+
+    let i: Arc<dyn PaymentInterceptor> = Arc::new(Failing);
+    let client = client_for_mock(&mock.uri(), HeliusConfig::default()).with_interceptor(i);
+    let err = client.get_balance("PaywallAddr").await.expect_err("interceptor failure must surface");
+    matches!(err, HeliusError::Unpaid);
+}

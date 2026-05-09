@@ -20,6 +20,7 @@ Real scenario tools:
   watch_wallet(wallet, url, types) create webhook for wallet activity
   list_webhooks()                list all webhooks for this API key
   delete_webhook(id)             remove a webhook
+  priority_fee(accounts, level)  per-write-account priority fee estimate (lamports/CU)
 """
 
 import asyncio
@@ -217,6 +218,51 @@ async def analyze_tx(signature: str, api_key: str) -> dict:
     }
 
 
+# ─── Tool: priority_fee ───────────────────────────────────────────────────────
+
+_PRIORITY_LEVELS = {"Min", "Low", "Medium", "High", "VeryHigh", "UnsafeMax"}
+
+
+async def priority_fee(
+    api_key: str,
+    accounts: list[str] | None = None,
+    transaction: str | None = None,
+    priority_level: str = "Medium",
+    include_all_levels: bool = False,
+    lookback_slots: int | None = None,
+) -> dict:
+    """
+    Per-write-account priority fee estimate via Helius `getPriorityFeeEstimate`.
+
+    Pass `accounts` (list of write-locked pubkeys) OR a base64 `transaction`.
+    `priority_level` ∈ Min|Low|Medium|High|VeryHigh|UnsafeMax (default Medium).
+    Set `include_all_levels=True` to get all six levels in one call.
+    """
+    if priority_level not in _PRIORITY_LEVELS:
+        raise ValueError(f"priority_level must be one of {_PRIORITY_LEVELS}")
+    if not accounts and not transaction:
+        raise ValueError("provide either accounts=[...] or transaction=<b64>")
+
+    options: dict = {}
+    if include_all_levels:
+        options["includeAllPriorityFeeLevels"] = True
+    else:
+        options["priorityLevel"] = priority_level
+    if lookback_slots is not None:
+        options["lookbackSlots"] = int(lookback_slots)
+
+    request: dict = {"options": options}
+    if accounts:
+        request["accountKeys"] = accounts
+    if transaction:
+        request["transaction"] = transaction
+
+    result, _ = await api_router.call_helius(
+        "getPriorityFeeEstimate", [request], api_key
+    )
+    return result.get("result", {})
+
+
 # ─── Tool: watch_wallet ───────────────────────────────────────────────────────
 
 async def watch_wallet(
@@ -267,6 +313,7 @@ TOOLS = {
     "watch_wallet":   watch_wallet,
     "list_webhooks":  list_webhooks,
     "delete_webhook": delete_webhook,
+    "priority_fee":   priority_fee,
 }
 
 # Anthropic tool_use definitions (also compatible with OpenAI function calling schema)
@@ -372,6 +419,28 @@ TOOL_SCHEMAS = [
                 "webhook_id": {"type": "string"},
             },
             "required": ["webhook_id"],
+        },
+    },
+    {
+        "name": "priority_fee",
+        "description": (
+            "Estimate Solana priority fee (lamports per CU) via Helius "
+            "getPriorityFeeEstimate. Pass write-locked accounts OR a "
+            "base64 transaction."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "accounts":       {"type": "array", "items": {"type": "string"}},
+                "transaction":    {"type": "string", "description": "base64-encoded tx"},
+                "priority_level": {
+                    "type": "string",
+                    "enum": ["Min", "Low", "Medium", "High", "VeryHigh", "UnsafeMax"],
+                    "default": "Medium",
+                },
+                "include_all_levels": {"type": "boolean", "default": False},
+                "lookback_slots":     {"type": "integer", "minimum": 1, "maximum": 150},
+            },
         },
     },
 ]
