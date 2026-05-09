@@ -35,6 +35,14 @@ on:
         default: "false"
         type: choice
         options: [ "false", "true" ]
+  # Also fire on tags matching devnet-deploy-*. Pushing a tag like
+  # `git tag devnet-deploy-1 && git push origin devnet-deploy-1`
+  # triggers a build + deploy with the same effect as manually
+  # selecting deploy=true in the Actions UI. e2e is still off (it
+  # needs a running backend, not a CI artifact).
+  push:
+    tags:
+      - "devnet-deploy-*"
 
 jobs:
   build-and-maybe-deploy:
@@ -91,7 +99,9 @@ jobs:
           echo "size=$BYTES sha256=$SHA"
 
       - name: Deploy to devnet (optional)
-        if: ${{ github.event.inputs.deploy == 'true' }}
+        # Two trigger paths: workflow_dispatch with deploy=true, OR
+        # a push to a devnet-deploy-* tag.
+        if: ${{ github.event.inputs.deploy == 'true' || startsWith(github.ref, 'refs/tags/devnet-deploy-') }}
         env:
           SOLANA_DEVNET_KEYPAIR: ${{ secrets.SOLANA_DEVNET_KEYPAIR }}
         run: |
