@@ -32,8 +32,25 @@ use ks_proxy::{router, AppState};
 use ks_session::SessionStore;
 use ks_upstream::{UpstreamClients, UpstreamId};
 use ks_vault::VaultPath;
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use serde::Deserialize;
 use serde_json::Value;
+
+/// Per-binary install of the Prometheus recorder for `router(state, ph)`.
+/// `install_recorder()` panics if called twice, so we guard with OnceLock.
+/// Each integration test target runs in its own process, so this is
+/// scoped to this binary's lifetime.
+fn test_prometheus() -> PrometheusHandle {
+    use std::sync::OnceLock;
+    static HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
+    HANDLE
+        .get_or_init(|| {
+            PrometheusBuilder::new()
+                .install_recorder()
+                .expect("install prometheus recorder for tests")
+        })
+        .clone()
+}
 use tower::ServiceExt;
 use wiremock::matchers::{any, header, method, path as path_matcher, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -276,7 +293,7 @@ fn nginx_server_header(headers: &axum::http::HeaderMap) -> Option<&str> {
 #[tokio::test]
 async fn stealth_no_token_proxy_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -310,7 +327,7 @@ async fn stealth_no_token_proxy_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_no_token_root_returns_nginx_index() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -335,7 +352,7 @@ async fn stealth_no_token_root_returns_nginx_index() {
 #[tokio::test]
 async fn stealth_no_token_favicon_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -356,7 +373,7 @@ async fn stealth_no_token_favicon_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_valid_token_proxy_works_normally() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .method("POST")
@@ -388,7 +405,7 @@ async fn stealth_valid_token_proxy_works_normally() {
 #[tokio::test]
 async fn stealth_off_no_token_returns_401() {
     let h = Harness::build(false).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .method("POST")
@@ -412,7 +429,7 @@ async fn stealth_off_no_token_returns_401() {
 #[tokio::test]
 async fn stealth_no_token_health_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .uri("/health")
@@ -434,7 +451,7 @@ async fn stealth_no_token_health_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_valid_token_health_returns_ok_json() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), test_prometheus());
 
     let req = Request::builder()
         .uri("/health")

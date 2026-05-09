@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use ks_cache::TtlCache;
-use ks_proxy::{acme, bridge, router, stealth, tls, AppState};
+use ks_proxy::{acme, bridge, metrics, router, stealth, tls, AppState};
 use ks_session::SessionStore;
 use ks_upstream::{UpstreamClients, UpstreamId};
 use ks_vault::VaultPath;
@@ -80,7 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         stealth: stealth_on,
     };
 
-    let app = router(state);
+    // Install the global Prometheus recorder once and pass the render
+    // handle into the router so `GET /metrics` can serve it.
+    let prometheus = metrics::init_prometheus();
+
+    let app = router(state, prometheus);
 
     match tls_mode {
         tls::TlsMode::Off => {
