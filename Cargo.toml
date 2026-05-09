@@ -1,7 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["src/programs/keyshield", "src/proxy"]
-exclude = []
+# Root workspace owns ONLY the on-chain Solana program. The Rust hot-path
+# proxy at src/proxy/ has its OWN [workspace] with 6 crates and its own
+# dep tree (axum, reqwest, rustls, ...), so we exclude it here to avoid
+# the "multiple workspace roots" error from cargo metadata / cargo
+# build-sbf. To run proxy tests: `cargo test --manifest-path src/proxy/Cargo.toml`.
+members = ["src/programs/keyshield"]
+exclude = ["src/proxy"]
 
 [workspace.dependencies]
 pinocchio = "0.9"
