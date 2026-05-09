@@ -112,18 +112,25 @@ jobs:
     name: Integration (Surfpool)
     runs-on: ubuntu-latest
     needs: unit-tests
-    # `cargo build-sbf` requires the Solana CLI toolchain which isn't
-    # preinstalled on ubuntu-latest. Setting up Anza/agave-install adds
-    # ~3min to CI for a job that's exploratory (continue-on-error on the
-    # actual integration script anyway). Until we either install the
-    # toolchain or move surfpool integration to a nightly cron, allow
-    # this job to fail without blocking the workflow.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana CLI (Anza/agave)
+        # Adds ~3 min to CI but is required for `cargo build-sbf` and
+        # `solana` itself. The official installer drops binaries at
+        # ~/.local/share/solana/install/active_release/bin which we add
+        # to GITHUB_PATH so subsequent steps see them.
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Verify Solana toolchain
+        run: |
+          solana --version
+          cargo build-sbf --version
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -132,9 +139,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-sbf-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
-      - name: Build program
+      - name: Build program (cargo build-sbf)
         run: cargo build-sbf
 
       - name: Install Surfpool
@@ -146,7 +153,9 @@ jobs:
           sleep 10
 
       - name: Run integration script
+        # Path moved post-Phase-6: scripts/integration-surfpool.sh now
+        # lives at src/scripts/integration-surfpool.sh.
         run: |
           solana config set --url http://localhost:8899
-          ./scripts/integration-surfpool.sh || true
+          bash src/scripts/integration-surfpool.sh
         continue-on-error: true

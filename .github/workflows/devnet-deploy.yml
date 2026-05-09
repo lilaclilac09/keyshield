@@ -1,0 +1,131 @@
+# KeyShield devnet pipeline — manual trigger only.
+#
+# What this workflow does (in order, all opt-in):
+#   1. Install Solana CLI (Anza/agave) + cargo build-sbf toolchain
+#   2. Build the on-chain program: programs/keyshield via cargo build-sbf
+#   3. Show the program .so size and a sha256 (audit / change tracking)
+#   4. Optionally deploy to devnet IF the secret SOLANA_DEVNET_KEYPAIR is set
+#      (a base58-encoded JSON keypair file's contents — paste the contents
+#      of ~/.config/solana/id.json into the secret value).
+#   5. Optionally run src/scripts/devnet-e2e.sh IF the deploy succeeded
+#      and a funded settler keypair is available.
+#
+# Why workflow_dispatch only (and not push):
+#   - cargo build-sbf is ~3min cold, ~30s cached — too slow for every push.
+#   - Devnet airdrops are rate-limited per-IP per-hour; running on every
+#     push would saturate the quota.
+#   - Real on-chain deployment is a deliberate action, not a side-effect.
+#
+# To run: Actions tab → "Devnet pipeline" → "Run workflow" → Branch: main.
+
+name: Devnet pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to devnet (requires SOLANA_DEVNET_KEYPAIR secret)"
+        required: false
+        default: "false"
+        type: choice
+        options: [ "false", "true" ]
+      run_e2e:
+        description: "Run devnet-e2e.sh after deploy (requires devnet USDC on settler wallet)"
+        required: false
+        default: "false"
+        type: choice
+        options: [ "false", "true" ]
+
+jobs:
+  build-and-maybe-deploy:
+    name: Build program + optional devnet deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana CLI (Anza/agave)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Verify Solana toolchain
+        run: |
+          solana --version
+          cargo build-sbf --version
+
+      - name: Cache cargo (sbf-aware key)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-sbf-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+
+      - name: Build program (cargo build-sbf)
+        run: cargo build-sbf
+
+      - name: Program info
+        run: |
+          set -e
+          SO=target/deploy/keyshield.so
+          if [ ! -f "$SO" ]; then
+            echo "::error::expected $SO after cargo build-sbf — not found"
+            ls -la target/deploy/ || true
+            exit 1
+          fi
+          BYTES=$(stat -c %s "$SO" 2>/dev/null || stat -f %z "$SO")
+          SHA=$(sha256sum "$SO" | awk '{print $1}')
+          {
+            echo "## Program build"
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| .so path | \`$SO\` |"
+            echo "| Size | $BYTES bytes |"
+            echo "| sha256 | \`$SHA\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "size=$BYTES sha256=$SHA"
+
+      - name: Deploy to devnet (optional)
+        if: ${{ github.event.inputs.deploy == 'true' }}
+        env:
+          SOLANA_DEVNET_KEYPAIR: ${{ secrets.SOLANA_DEVNET_KEYPAIR }}
+        run: |
+          if [ -z "${SOLANA_DEVNET_KEYPAIR:-}" ]; then
+            echo "::error::SOLANA_DEVNET_KEYPAIR secret is empty — set it in repo settings before re-running with deploy=true"
+            exit 1
+          fi
+          mkdir -p ~/.config/solana
+          echo "$SOLANA_DEVNET_KEYPAIR" > ~/.config/solana/id.json
+          chmod 600 ~/.config/solana/id.json
+          solana config set --url https://api.devnet.solana.com
+          solana config set --keypair ~/.config/solana/id.json
+          solana config get
+          # Airdrop is rate-limited; run if balance < 1 SOL.
+          BAL=$(solana balance --output json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('lamports',0))" || echo 0)
+          if [ "$BAL" -lt "1000000000" ]; then
+            solana airdrop 2 || echo "::warning::airdrop failed (rate limit?) — proceeding with current balance $BAL lamports"
+          fi
+          echo "## Devnet deploy" >> "$GITHUB_STEP_SUMMARY"
+          solana program deploy target/deploy/keyshield.so 2>&1 | tee /tmp/deploy.log
+          PID=$(grep -E "^Program Id:" /tmp/deploy.log | awk '{print $3}')
+          {
+            echo "| Program ID | \`$PID\` |"
+            echo "| Explorer | https://explorer.solana.com/address/$PID?cluster=devnet |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run devnet e2e (optional)
+        if: ${{ github.event.inputs.run_e2e == 'true' && github.event.inputs.deploy == 'true' }}
+        run: |
+          # devnet-e2e.sh expects pay.sh + various env vars. Source the
+          # quiet output of devnet-setup.sh first so PROGRAM_ID etc. flow
+          # into this step.
+          if [ -f src/scripts/devnet-setup.sh ]; then
+            eval "$(bash src/scripts/devnet-setup.sh --quiet || true)"
+          fi
+          bash src/scripts/devnet-e2e.sh || echo "::warning::devnet-e2e.sh failed — likely missing devnet USDC on settler wallet"
+        continue-on-error: true
