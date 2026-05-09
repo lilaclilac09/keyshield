@@ -14,9 +14,5 @@
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
-  ],
-  "env": {
-    "KEYSHIELD_API_URL": "@keyshield_api_url",
-    "KEYSHIELD_PROGRAM_ID": "@keyshield_program_id"
-  }
+  ]
 }
