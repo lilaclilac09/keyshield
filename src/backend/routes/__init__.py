@@ -17,6 +17,7 @@ def register_routes(app: FastAPI) -> None:
     from . import proxy
     from . import sharing
     from . import billing
+    from . import mpp
 
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -25,3 +26,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(proxy.router)
     app.include_router(sharing.router)
     app.include_router(billing.router)
+    app.include_router(mpp.router)
