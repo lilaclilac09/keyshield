@@ -17,7 +17,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: `npm --prefix frontend run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
+          command: `npm --prefix src/web run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
           url: `http://127.0.0.1:${port}`,
           reuseExistingServer: !process.env.CI,
           stdout: 'pipe',

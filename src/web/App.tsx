@@ -69,6 +69,22 @@ const MainContent: React.FC = () => {
 
   const { items, allItems, addItem, deleteItem, decryptItem } = useVaults(searchQuery, 'All Items');
 
+  // Stat-card metrics derived from allItems. Cheap O(n) recomputation —
+  // the vault is small enough that memoising is overkill. "Recently used"
+  // counts items touched in the last 7 days; "expiring soon" counts items
+  // with an explicit expiryDate within the next 30 days.
+  const now = Date.now();
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const recentlyUsed = allItems.filter(i =>
+    typeof i.lastUsedAt === 'number' && now - i.lastUsedAt < SEVEN_DAYS_MS
+  ).length;
+  const expiringSoon = allItems.filter(i => {
+    if (!i.expiryDate) return false;
+    const t = Date.parse(i.expiryDate);
+    return Number.isFinite(t) && t - now < THIRTY_DAYS_MS && t > now;
+  }).length;
+
   // Handle ?action=add deep-link from the browser extension
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -144,7 +160,7 @@ const MainContent: React.FC = () => {
         <Sidebar
           items={NAV}
           active={section}
-          onNavigate={setSection}
+          onNavigate={(id) => setSection(id as Section)}
           walletAddress={fullAddr}
           connected={!!fullAddr}
           onCopyAddress={() => navigator.clipboard.writeText(fullAddr)}
@@ -170,6 +186,8 @@ const MainContent: React.FC = () => {
                 <VaultSection
                   items={items}
                   total={allItems.length}
+                  expiringSoon={expiringSoon}
+                  recentlyUsed={recentlyUsed}
                   searchQuery={searchQuery}
                   onAdd={() => setIsAddModalOpen(true)}
                   onDelete={deleteItem}

@@ -100,7 +100,10 @@ export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
       isSigner:   k.isSigner,
       isWritable: k.isWritable,
     })),
-    data: b64decode(resp.data),
+    // Cast: web3.js types nominally require Buffer, but at runtime any
+    // Uint8Array works. We avoid pulling in the Buffer polyfill to keep
+    // the bundle slim — see commit 05433cf6a.
+    data: b64decode(resp.data) as unknown as Buffer,
   });
   return new Transaction().add(ix);
 }

@@ -10,7 +10,7 @@
  */
 
 import React from "react"
-import App from "../frontend/App"
+import App from "../App"
 
 // Pull in the Solana wallet adapter styles so they're available in the popup.
 import "@solana/wallet-adapter-react-ui/styles.css"
