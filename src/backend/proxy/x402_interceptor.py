@@ -28,7 +28,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
 
@@ -37,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 # ─── envelope / proof types ────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class X402Envelope:
     """
@@ -44,10 +44,11 @@ class X402Envelope:
     server's 402 response body (`accepts[0]`). See spec 10 §Q2 for the
     full wire shape we adopt verbatim.
     """
+
     network: str
-    amount_required: int        # integer micro-units of `asset`
-    pay_to: str                 # base58 pubkey (Solana) or hex (EVM)
-    asset: str                  # USDC mint or contract
+    amount_required: int  # integer micro-units of `asset`
+    pay_to: str  # base58 pubkey (Solana) or hex (EVM)
+    asset: str  # USDC mint or contract
     resource: str
     max_timeout_seconds: int = 300
     extra: dict[str, Any] | None = None
@@ -71,8 +72,8 @@ class X402Envelope:
 
 @dataclass(frozen=True)
 class PaymentProof:
-    signature: str          # tx hash / signature (base58 for Solana)
-    network: str            # "solana-mainnet" | "base-mainnet" | ...
+    signature: str  # tx hash / signature (base58 for Solana)
+    network: str  # "solana-mainnet" | "base-mainnet" | ...
 
     def as_headers(self) -> dict[str, str]:
         return {"X-Payment-Proof": self.signature, "X-Payment-Network": self.network}
@@ -80,13 +81,17 @@ class PaymentProof:
 
 class PaymentRequired(Exception):
     """Raised when no interceptor is configured or retry still 402s."""
+
     def __init__(self, envelope: X402Envelope, raw: dict):
         self.envelope = envelope
         self.raw = raw
-        super().__init__(f"402 from {envelope.resource} requires {envelope.amount_required} of {envelope.asset}")
+        super().__init__(
+            f"402 from {envelope.resource} requires {envelope.amount_required} of {envelope.asset}"
+        )
 
 
 # ─── interceptor protocol ──────────────────────────────────────────────────
+
 
 @runtime_checkable
 class PaymentInterceptor(Protocol):
@@ -95,8 +100,10 @@ class PaymentInterceptor(Protocol):
 
 # ─── shipped implementations ───────────────────────────────────────────────
 
+
 class CallableInterceptor:
     """Wraps any `async (envelope) -> PaymentProof` callable."""
+
     def __init__(self, fn: Callable[[X402Envelope], Awaitable[PaymentProof]]):
         self._fn = fn
 
@@ -125,8 +132,8 @@ class ManualKeypairInterceptor:
         keypair_b58: str,
         helius_api_key: str,
         *,
-        max_micro_per_call: int = 100_000,      # 0.10 USDC default
-        max_total_micro: int = 10_000_000,      # 10.00 USDC lifetime cap
+        max_micro_per_call: int = 100_000,  # 0.10 USDC default
+        max_total_micro: int = 10_000_000,  # 10.00 USDC lifetime cap
         rpc_url: str | None = None,
     ):
         try:
@@ -143,13 +150,17 @@ class ManualKeypairInterceptor:
         self._max_total = max_total_micro
         self._spent_total = 0
         self._lock = asyncio.Lock()
-        self._rpc_url = rpc_url or f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
+        self._rpc_url = (
+            rpc_url or f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
+        )
 
     @classmethod
     def from_env(cls, helius_api_key: str | None = None) -> "ManualKeypairInterceptor":
         kp = os.getenv("KS_X402_HOT_KEYPAIR_B58")
         if not kp:
-            raise RuntimeError("Set KS_X402_HOT_KEYPAIR_B58 (base58 64-byte secret key)")
+            raise RuntimeError(
+                "Set KS_X402_HOT_KEYPAIR_B58 (base58 64-byte secret key)"
+            )
         helius_api_key = helius_api_key or os.getenv("HELIUS_API_KEY")
         if not helius_api_key:
             raise RuntimeError("Set HELIUS_API_KEY for x402 retry submission")
@@ -157,29 +168,52 @@ class ManualKeypairInterceptor:
 
     async def pay(self, envelope: X402Envelope) -> PaymentProof:
         if not envelope.network.startswith("solana"):
-            raise PaymentRequired(envelope, {"error": f"network {envelope.network!r} not supported by ManualKeypairInterceptor"})
+            raise PaymentRequired(
+                envelope,
+                {
+                    "error": f"network {envelope.network!r} not supported by ManualKeypairInterceptor"
+                },
+            )
         if envelope.amount_required > self._max_per_call:
-            raise PaymentRequired(envelope, {"error": f"amount {envelope.amount_required} exceeds per-call cap {self._max_per_call}"})
+            raise PaymentRequired(
+                envelope,
+                {
+                    "error": f"amount {envelope.amount_required} exceeds per-call cap {self._max_per_call}"
+                },
+            )
 
         async with self._lock:
             if self._spent_total + envelope.amount_required > self._max_total:
-                raise PaymentRequired(envelope, {"error": f"would exceed lifetime cap {self._max_total}"})
-            sig = await self._submit_usdc_transfer(envelope.pay_to, envelope.amount_required, envelope.asset)
+                raise PaymentRequired(
+                    envelope, {"error": f"would exceed lifetime cap {self._max_total}"}
+                )
+            sig = await self._submit_usdc_transfer(
+                envelope.pay_to, envelope.amount_required, envelope.asset
+            )
             self._spent_total += envelope.amount_required
 
-        logger.info("x402 paid %d to %s, sig=%s, lifetime=%d", envelope.amount_required, envelope.pay_to, sig, self._spent_total)
+        logger.info(
+            "x402 paid %d to %s, sig=%s, lifetime=%d",
+            envelope.amount_required,
+            envelope.pay_to,
+            sig,
+            self._spent_total,
+        )
         return PaymentProof(signature=sig, network=envelope.network)
 
-    async def _submit_usdc_transfer(self, recipient: str, micro_amount: int, mint: str) -> str:
+    async def _submit_usdc_transfer(
+        self, recipient: str, micro_amount: int, mint: str
+    ) -> str:
         """Build + send SPL Token transfer_checked. Returns base58 tx signature."""
         from solders.pubkey import Pubkey  # type: ignore
         from solders.transaction import Transaction  # type: ignore
         from solders.message import Message  # type: ignore
         from solana.rpc.async_api import AsyncClient  # type: ignore
-        from spl.token.async_client import AsyncToken  # type: ignore
         from spl.token.constants import TOKEN_PROGRAM_ID  # type: ignore
         from spl.token.instructions import (  # type: ignore
-            get_associated_token_address, transfer_checked, TransferCheckedParams,
+            get_associated_token_address,
+            transfer_checked,
+            TransferCheckedParams,
         )
 
         mint_pk = Pubkey.from_string(mint)
@@ -222,6 +256,7 @@ class EmbeddedWalletInterceptor:
 
     async def pay(self, envelope: X402Envelope) -> PaymentProof:
         import httpx
+
         url = f"{self._base_url}/agents/{self._agent_id}/wallet/pay_x402"
         async with httpx.AsyncClient(timeout=envelope.max_timeout_seconds) as c:
             resp = await c.post(
@@ -239,13 +274,19 @@ class EmbeddedWalletInterceptor:
                 },
             )
             if resp.status_code == 404:
-                raise PaymentRequired(envelope, {"error": "agent_wallet endpoint not yet deployed (spec 10 Phase 10.7 pending)"})
+                raise PaymentRequired(
+                    envelope,
+                    {
+                        "error": "agent_wallet endpoint not yet deployed (spec 10 Phase 10.7 pending)"
+                    },
+                )
             resp.raise_for_status()
             body = resp.json()
             return PaymentProof(signature=body["signature"], network=envelope.network)
 
 
 # ─── 402 detection helper ──────────────────────────────────────────────────
+
 
 def parse_402(status_code: int, body: bytes | str | dict) -> X402Envelope | None:
     """Return an X402Envelope if the response is an x402 challenge, else None."""
@@ -263,6 +304,7 @@ def parse_402(status_code: int, body: bytes | str | dict) -> X402Envelope | None
 
 
 # ─── retry-with-interceptor helper ─────────────────────────────────────────
+
 
 async def with_x402_retry(
     do_call: Callable[[dict[str, str]], Awaitable[tuple[int, bytes, dict]]],

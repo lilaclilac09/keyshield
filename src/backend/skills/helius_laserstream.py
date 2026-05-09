@@ -25,9 +25,7 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -44,6 +42,7 @@ class LaserStreamProtoMissing(ImportError):
 def _import_stubs():
     try:
         from ._laserstream_proto import geyser_pb2, geyser_pb2_grpc  # type: ignore
+
         return geyser_pb2, geyser_pb2_grpc
     except ImportError as exc:
         raise LaserStreamProtoMissing(
@@ -56,6 +55,7 @@ def _import_grpc():
     try:
         import grpc  # type: ignore
         import grpc.aio  # type: ignore
+
         return grpc
     except ImportError as exc:
         raise ImportError(
@@ -64,7 +64,9 @@ def _import_grpc():
 
 
 class LaserStream:
-    def __init__(self, api_key: str, *, network: str = "mainnet", endpoint: str | None = None):
+    def __init__(
+        self, api_key: str, *, network: str = "mainnet", endpoint: str | None = None
+    ):
         self.api_key = api_key
         if endpoint:
             self.endpoint = endpoint
@@ -120,9 +122,11 @@ class LaserStream:
         """
         if self._stub is None:
             raise RuntimeError("LaserStream not connected; use `async with`")
+
         # Send a single SubscribeRequest then read updates.
         async def _req_iter() -> AsyncIterator[Any]:
             yield request
+
         call = self._stub.Subscribe(_req_iter(), metadata=self._md())
         async for update in call:
             yield update
@@ -138,8 +142,10 @@ class LaserStream:
         pb, _ = _import_stubs()
         req = pb.SubscribeRequest()
         f = pb.SubscribeRequestFilterAccounts()
-        if owner: f.owner.extend(owner)
-        if account: f.account.extend(account)
+        if owner:
+            f.owner.extend(owner)
+        if account:
+            f.account.extend(account)
         req.accounts["client"].CopyFrom(f)
         req.commitment = _commitment_to_pb(pb, commitment)
         return self.subscribe(req)
@@ -157,8 +163,10 @@ class LaserStream:
         pb, _ = _import_stubs()
         req = pb.SubscribeRequest()
         f = pb.SubscribeRequestFilterTransactions()
-        if account_include: f.account_include.extend(account_include)
-        if account_required: f.account_required.extend(account_required)
+        if account_include:
+            f.account_include.extend(account_include)
+        if account_required:
+            f.account_required.extend(account_required)
         f.vote = vote
         f.failed = failed
         req.transactions["client"].CopyFrom(f)
@@ -182,7 +190,8 @@ class LaserStream:
         pb, _ = _import_stubs()
         req = pb.SubscribeRequest()
         f = pb.SubscribeRequestFilterBlocks()
-        if account_include: f.account_include.extend(account_include)
+        if account_include:
+            f.account_include.extend(account_include)
         f.include_transactions = include_transactions
         req.blocks["client"].CopyFrom(f)
         req.commitment = _commitment_to_pb(pb, commitment)
@@ -190,7 +199,11 @@ class LaserStream:
 
 
 def _commitment_to_pb(pb, c: str) -> int:
-    m = {"processed": pb.PROCESSED, "confirmed": pb.CONFIRMED, "finalized": pb.FINALIZED}
+    m = {
+        "processed": pb.PROCESSED,
+        "confirmed": pb.CONFIRMED,
+        "finalized": pb.FINALIZED,
+    }
     if c not in m:
         raise ValueError(f"commitment must be one of {list(m)}, got {c!r}")
     return m[c]

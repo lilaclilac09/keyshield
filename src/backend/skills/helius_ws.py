@@ -36,7 +36,9 @@ _ATLAS_WS = "wss://atlas-mainnet.helius-rpc.com"
 
 
 class HeliusWS:
-    def __init__(self, api_key: str, *, atlas: bool = False, ping_interval: float = 20.0):
+    def __init__(
+        self, api_key: str, *, atlas: bool = False, ping_interval: float = 20.0
+    ):
         base = _ATLAS_WS if atlas else _RPC_WS
         self._url = f"{base}/?api-key={api_key}"
         self._ping_interval = ping_interval
@@ -102,7 +104,9 @@ class HeliusWS:
             except Exception as exc:  # noqa: BLE001
                 if self._closed:
                     return
-                logger.warning("helius_ws disconnected: %s; reconnecting in %.1fs", exc, backoff)
+                logger.warning(
+                    "helius_ws disconnected: %s; reconnecting in %.1fs", exc, backoff
+                )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
                 try:
@@ -121,7 +125,11 @@ class HeliusWS:
         # update _subs/_sub_handle accordingly.
         old = list(self._resub.items())
         self._resub.clear()
-        old_handle_to_queue = {h: self._subs.pop(h) for cid, h in self._sub_handle.items() if h in self._subs}
+        old_handle_to_queue = {
+            h: self._subs.pop(h)
+            for cid, h in self._sub_handle.items()
+            if h in self._subs
+        }
         self._sub_handle.clear()
         for cid, (method, params) in old:
             new_sub_id = await self._call(method, params)
@@ -138,11 +146,17 @@ class HeliusWS:
         loop = asyncio.get_event_loop()
         fut: asyncio.Future = loop.create_future()
         self._pending[rid] = fut
-        await self._ws.send(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}))
+        await self._ws.send(
+            json.dumps(
+                {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
+            )
+        )
         return await fut
 
     # ─── subscription primitive ────────────────────────────────────────────
-    async def _subscribe(self, sub_method: str, unsub_method: str, params: list) -> AsyncIterator[dict]:
+    async def _subscribe(
+        self, sub_method: str, unsub_method: str, params: list
+    ) -> AsyncIterator[dict]:
         cid = self._next_id  # we'll use the *first* request id as our client handle
         sub_id: int = await self._call(sub_method, params)
         self._sub_handle[cid] = sub_id
@@ -168,54 +182,97 @@ class HeliusWS:
         return _iter()
 
     # ─── high-level wrappers ───────────────────────────────────────────────
-    async def account_subscribe(self, address: str, *, encoding: str = "jsonParsed", commitment: str = "confirmed") -> AsyncIterator[dict]:
+    async def account_subscribe(
+        self,
+        address: str,
+        *,
+        encoding: str = "jsonParsed",
+        commitment: str = "confirmed",
+    ) -> AsyncIterator[dict]:
         return await self._subscribe(
-            "accountSubscribe", "accountUnsubscribe",
+            "accountSubscribe",
+            "accountUnsubscribe",
             [address, {"encoding": encoding, "commitment": commitment}],
         )
 
-    async def signature_subscribe(self, signature: str, *, commitment: str = "confirmed") -> AsyncIterator[dict]:
+    async def signature_subscribe(
+        self, signature: str, *, commitment: str = "confirmed"
+    ) -> AsyncIterator[dict]:
         return await self._subscribe(
-            "signatureSubscribe", "signatureUnsubscribe",
-            [signature, {"commitment": commitment, "enableReceivedNotification": False}],
+            "signatureSubscribe",
+            "signatureUnsubscribe",
+            [
+                signature,
+                {"commitment": commitment, "enableReceivedNotification": False},
+            ],
         )
 
-    async def program_subscribe(self, program_id: str, *, encoding: str = "jsonParsed", commitment: str = "confirmed", filters: list | None = None) -> AsyncIterator[dict]:
+    async def program_subscribe(
+        self,
+        program_id: str,
+        *,
+        encoding: str = "jsonParsed",
+        commitment: str = "confirmed",
+        filters: list | None = None,
+    ) -> AsyncIterator[dict]:
         opts: dict = {"encoding": encoding, "commitment": commitment}
         if filters:
             opts["filters"] = filters
         return await self._subscribe(
-            "programSubscribe", "programUnsubscribe",
+            "programSubscribe",
+            "programUnsubscribe",
             [program_id, opts],
         )
 
-    async def logs_subscribe(self, mentions: list[str] | str = "all", *, commitment: str = "confirmed") -> AsyncIterator[dict]:
+    async def logs_subscribe(
+        self, mentions: list[str] | str = "all", *, commitment: str = "confirmed"
+    ) -> AsyncIterator[dict]:
         # mentions: "all" | "allWithVotes" | {"mentions": [pubkey, ...]}
         filt: Any = mentions if isinstance(mentions, str) else {"mentions": mentions}
         return await self._subscribe(
-            "logsSubscribe", "logsUnsubscribe",
+            "logsSubscribe",
+            "logsUnsubscribe",
             [filt, {"commitment": commitment}],
         )
 
     async def slot_subscribe(self) -> AsyncIterator[dict]:
         return await self._subscribe("slotSubscribe", "slotUnsubscribe", [])
 
-    async def transaction_subscribe(self, *, account_include: list[str] | None = None, account_required: list[str] | None = None, vote: bool = False, failed: bool = False, commitment: str = "confirmed", encoding: str = "jsonParsed") -> AsyncIterator[dict]:
+    async def transaction_subscribe(
+        self,
+        *,
+        account_include: list[str] | None = None,
+        account_required: list[str] | None = None,
+        vote: bool = False,
+        failed: bool = False,
+        commitment: str = "confirmed",
+        encoding: str = "jsonParsed",
+    ) -> AsyncIterator[dict]:
         """
         Helius Atlas-only: full enriched transaction stream filtered by accounts.
         Construct HeliusWS(..., atlas=True) for this method.
         """
         filt: dict = {"vote": vote, "failed": failed}
-        if account_include: filt["accountInclude"] = account_include
-        if account_required: filt["accountRequired"] = account_required
-        opts: dict = {"commitment": commitment, "encoding": encoding, "transactionDetails": "full", "showRewards": False, "maxSupportedTransactionVersion": 0}
+        if account_include:
+            filt["accountInclude"] = account_include
+        if account_required:
+            filt["accountRequired"] = account_required
+        opts: dict = {
+            "commitment": commitment,
+            "encoding": encoding,
+            "transactionDetails": "full",
+            "showRewards": False,
+            "maxSupportedTransactionVersion": 0,
+        }
         return await self._subscribe(
-            "transactionSubscribe", "transactionUnsubscribe",
+            "transactionSubscribe",
+            "transactionUnsubscribe",
             [filt, opts],
         )
 
 
 # ─── convenience: one-shot helpers ─────────────────────────────────────────
+
 
 @asynccontextmanager
 async def open_ws(api_key: str, *, atlas: bool = False) -> AsyncIterator[HeliusWS]:
@@ -224,7 +281,13 @@ async def open_ws(api_key: str, *, atlas: bool = False) -> AsyncIterator[HeliusW
         yield ws
 
 
-async def watch_account(api_key: str, address: str, on_update: Callable[[dict], Any], *, max_events: int | None = None) -> None:
+async def watch_account(
+    api_key: str,
+    address: str,
+    on_update: Callable[[dict], Any],
+    *,
+    max_events: int | None = None,
+) -> None:
     """Convenience: stream account updates and dispatch to `on_update`."""
     n = 0
     async with HeliusWS(api_key) as ws:
