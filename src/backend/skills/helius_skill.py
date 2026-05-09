@@ -20,10 +20,9 @@ Real scenario tools:
   watch_wallet(wallet, url, types) create webhook for wallet activity
   list_webhooks()                list all webhooks for this API key
   delete_webhook(id)             remove a webhook
+  priority_fee(accounts, level)  per-write-account priority fee estimate (lamports/CU)
 """
 
-import asyncio
-import json
 from typing import Any
 
 import httpx
@@ -52,20 +51,28 @@ async def _webhook_req(method: str, path: str, api_key: str, body: Any = None) -
 
 # ─── Tool: portfolio ──────────────────────────────────────────────────────────
 
+
 async def portfolio(wallet: str, api_key: str) -> dict:
     """
     Full wallet snapshot: SOL balance + SPL token balances + NFT count.
     Fires three Helius calls in parallel (Oliver move #2).
     """
-    results = await api_router.batch_helius([
-        {"method": "getBalance",        "params": [wallet],            "id": 1},
-        {"method": "getTokenBalances",  "params": [wallet],            "id": 2},
-        {"method": "getAssetsByOwner",  "params": [wallet, {"page": 1, "limit": 10}], "id": 3},
-    ], api_key)
+    results = await api_router.batch_helius(
+        [
+            {"method": "getBalance", "params": [wallet], "id": 1},
+            {"method": "getTokenBalances", "params": [wallet], "id": 2},
+            {
+                "method": "getAssetsByOwner",
+                "params": [wallet, {"page": 1, "limit": 10}],
+                "id": 3,
+            },
+        ],
+        api_key,
+    )
 
     balance_resp = results[0]
-    tokens_resp  = results[1]
-    nfts_resp    = results[2]
+    tokens_resp = results[1]
+    nfts_resp = results[2]
 
     sol_lamports = balance_resp.get("result", 0)
     tokens = tokens_resp.get("result", {}).get("tokens", [])
@@ -76,15 +83,15 @@ async def portfolio(wallet: str, api_key: str) -> dict:
         "sol": round(sol_lamports / 1_000_000_000, 6),
         "tokens": [
             {
-                "mint":    t.get("mint"),
-                "symbol":  t.get("tokenData", {}).get("symbol", "?"),
+                "mint": t.get("mint"),
+                "symbol": t.get("tokenData", {}).get("symbol", "?"),
                 "balance": t.get("amount", 0) / (10 ** t.get("decimals", 0)),
             }
             for t in tokens[:20]
         ],
         "nfts": [
             {
-                "id":   a.get("id"),
+                "id": a.get("id"),
                 "name": a.get("content", {}).get("metadata", {}).get("name", ""),
             }
             for a in nft_items[:10]
@@ -95,29 +102,35 @@ async def portfolio(wallet: str, api_key: str) -> dict:
 
 # ─── Tool: transactions ───────────────────────────────────────────────────────
 
+
 async def transactions(wallet: str, api_key: str, limit: int = 10) -> list[dict]:
     """
     Decoded transaction history via Helius Enhanced API.
     Returns up to `limit` transactions with type, source, and amount info.
     """
-    result, _ = await api_router.call_helius("getTransactions", [wallet, {"limit": limit}], api_key)
+    result, _ = await api_router.call_helius(
+        "getTransactions", [wallet, {"limit": limit}], api_key
+    )
     raw_txs = result.get("result", [])
     out = []
     for tx in raw_txs:
-        out.append({
-            "signature":   tx.get("signature"),
-            "timestamp":   tx.get("timestamp"),
-            "type":        tx.get("type", "UNKNOWN"),
-            "source":      tx.get("source", ""),
-            "fee":         tx.get("fee", 0),
-            "native_transfers": tx.get("nativeTransfers", []),
-            "token_transfers":  tx.get("tokenTransfers", []),
-            "description": tx.get("description", ""),
-        })
+        out.append(
+            {
+                "signature": tx.get("signature"),
+                "timestamp": tx.get("timestamp"),
+                "type": tx.get("type", "UNKNOWN"),
+                "source": tx.get("source", ""),
+                "fee": tx.get("fee", 0),
+                "native_transfers": tx.get("nativeTransfers", []),
+                "token_transfers": tx.get("tokenTransfers", []),
+                "description": tx.get("description", ""),
+            }
+        )
     return out
 
 
 # ─── Tool: nfts ──────────────────────────────────────────────────────────────
+
 
 async def nfts(wallet: str, api_key: str, limit: int = 20, page: int = 1) -> dict:
     """
@@ -134,23 +147,28 @@ async def nfts(wallet: str, api_key: str, limit: int = 20, page: int = 1) -> dic
     for a in data.get("items", []):
         meta = a.get("content", {}).get("metadata", {})
         links = a.get("content", {}).get("links", {})
-        items.append({
-            "id":         a.get("id"),
-            "name":       meta.get("name", ""),
-            "symbol":     meta.get("symbol", ""),
-            "image":      links.get("image", ""),
-            "collection": a.get("grouping", [{}])[0].get("group_value", "") if a.get("grouping") else "",
-            "floor_price": a.get("floorPrice"),
-        })
+        items.append(
+            {
+                "id": a.get("id"),
+                "name": meta.get("name", ""),
+                "symbol": meta.get("symbol", ""),
+                "image": links.get("image", ""),
+                "collection": a.get("grouping", [{}])[0].get("group_value", "")
+                if a.get("grouping")
+                else "",
+                "floor_price": a.get("floorPrice"),
+            }
+        )
     return {
-        "wallet":  wallet,
-        "total":   data.get("total", 0),
-        "page":    page,
-        "items":   items,
+        "wallet": wallet,
+        "total": data.get("total", 0),
+        "page": page,
+        "items": items,
     }
 
 
 # ─── Tool: search_nfts ───────────────────────────────────────────────────────
+
 
 async def search_nfts(query: str, api_key: str, limit: int = 10) -> list[dict]:
     """
@@ -164,7 +182,7 @@ async def search_nfts(query: str, api_key: str, limit: int = 10) -> list[dict]:
     items = result.get("result", {}).get("items", [])
     return [
         {
-            "id":   a.get("id"),
+            "id": a.get("id"),
             "name": a.get("content", {}).get("metadata", {}).get("name", ""),
             "image": a.get("content", {}).get("links", {}).get("image", ""),
         }
@@ -174,6 +192,7 @@ async def search_nfts(query: str, api_key: str, limit: int = 10) -> list[dict]:
 
 # ─── Tool: token_info ────────────────────────────────────────────────────────
 
+
 async def token_info(mint: str, api_key: str) -> dict:
     """
     Token metadata + supply via getAsset (DAS) + getAccountInfo (RPC).
@@ -182,16 +201,17 @@ async def token_info(mint: str, api_key: str) -> dict:
     asset = asset_result.get("result", {})
     meta = asset.get("content", {}).get("metadata", {})
     return {
-        "mint":     mint,
-        "name":     meta.get("name", ""),
-        "symbol":   meta.get("symbol", ""),
+        "mint": mint,
+        "name": meta.get("name", ""),
+        "symbol": meta.get("symbol", ""),
         "decimals": asset.get("token_info", {}).get("decimals"),
-        "supply":   asset.get("token_info", {}).get("supply"),
-        "image":    asset.get("content", {}).get("links", {}).get("image", ""),
+        "supply": asset.get("token_info", {}).get("supply"),
+        "image": asset.get("content", {}).get("links", {}).get("image", ""),
     }
 
 
 # ─── Tool: analyze_tx ────────────────────────────────────────────────────────
+
 
 async def analyze_tx(signature: str, api_key: str) -> dict:
     """
@@ -204,20 +224,66 @@ async def analyze_tx(signature: str, api_key: str) -> dict:
         return {"error": "transaction not found", "signature": signature}
     tx = txs[0]
     return {
-        "signature":        tx.get("signature"),
-        "timestamp":        tx.get("timestamp"),
-        "type":             tx.get("type", "UNKNOWN"),
-        "source":           tx.get("source", ""),
-        "fee_sol":          round(tx.get("fee", 0) / 1_000_000_000, 9),
-        "accounts":         tx.get("accountData", []),
+        "signature": tx.get("signature"),
+        "timestamp": tx.get("timestamp"),
+        "type": tx.get("type", "UNKNOWN"),
+        "source": tx.get("source", ""),
+        "fee_sol": round(tx.get("fee", 0) / 1_000_000_000, 9),
+        "accounts": tx.get("accountData", []),
         "native_transfers": tx.get("nativeTransfers", []),
-        "token_transfers":  tx.get("tokenTransfers", []),
-        "description":      tx.get("description", ""),
-        "events":           tx.get("events", {}),
+        "token_transfers": tx.get("tokenTransfers", []),
+        "description": tx.get("description", ""),
+        "events": tx.get("events", {}),
     }
 
 
+# ─── Tool: priority_fee ───────────────────────────────────────────────────────
+
+_PRIORITY_LEVELS = {"Min", "Low", "Medium", "High", "VeryHigh", "UnsafeMax"}
+
+
+async def priority_fee(
+    api_key: str,
+    accounts: list[str] | None = None,
+    transaction: str | None = None,
+    priority_level: str = "Medium",
+    include_all_levels: bool = False,
+    lookback_slots: int | None = None,
+) -> dict:
+    """
+    Per-write-account priority fee estimate via Helius `getPriorityFeeEstimate`.
+
+    Pass `accounts` (list of write-locked pubkeys) OR a base64 `transaction`.
+    `priority_level` ∈ Min|Low|Medium|High|VeryHigh|UnsafeMax (default Medium).
+    Set `include_all_levels=True` to get all six levels in one call.
+    """
+    if priority_level not in _PRIORITY_LEVELS:
+        raise ValueError(f"priority_level must be one of {_PRIORITY_LEVELS}")
+    if not accounts and not transaction:
+        raise ValueError("provide either accounts=[...] or transaction=<b64>")
+
+    options: dict = {}
+    if include_all_levels:
+        options["includeAllPriorityFeeLevels"] = True
+    else:
+        options["priorityLevel"] = priority_level
+    if lookback_slots is not None:
+        options["lookbackSlots"] = int(lookback_slots)
+
+    request: dict = {"options": options}
+    if accounts:
+        request["accountKeys"] = accounts
+    if transaction:
+        request["transaction"] = transaction
+
+    result, _ = await api_router.call_helius(
+        "getPriorityFeeEstimate", [request], api_key
+    )
+    return result.get("result", {})
+
+
 # ─── Tool: watch_wallet ───────────────────────────────────────────────────────
+
 
 async def watch_wallet(
     wallet: str,
@@ -230,15 +296,16 @@ async def watch_wallet(
     event_types: e.g. ["SWAP", "NFT_SALE", "TRANSFER"] — defaults to all.
     """
     payload = {
-        "webhookURL":    webhook_url,
+        "webhookURL": webhook_url,
         "transactionTypes": event_types or ["ANY"],
         "accountAddresses": [wallet],
-        "webhookType":   "enhanced",
+        "webhookType": "enhanced",
     }
     return await _webhook_req("POST", "/v0/webhooks", api_key, payload)
 
 
 # ─── Tool: list_webhooks ──────────────────────────────────────────────────────
+
 
 async def list_webhooks(api_key: str) -> list[dict]:
     """List all webhooks registered for this Helius API key."""
@@ -250,6 +317,7 @@ async def list_webhooks(api_key: str) -> list[dict]:
 
 # ─── Tool: delete_webhook ─────────────────────────────────────────────────────
 
+
 async def delete_webhook(webhook_id: str, api_key: str) -> dict:
     """Remove a Helius webhook by ID."""
     return await _webhook_req("DELETE", f"/v0/webhooks/{webhook_id}", api_key)
@@ -258,15 +326,16 @@ async def delete_webhook(webhook_id: str, api_key: str) -> dict:
 # ─── Tool registry (for LLM agent tool-use) ──────────────────────────────────
 
 TOOLS = {
-    "portfolio":      portfolio,
-    "transactions":   transactions,
-    "nfts":           nfts,
-    "search_nfts":    search_nfts,
-    "token_info":     token_info,
-    "analyze_tx":     analyze_tx,
-    "watch_wallet":   watch_wallet,
-    "list_webhooks":  list_webhooks,
+    "portfolio": portfolio,
+    "transactions": transactions,
+    "nfts": nfts,
+    "search_nfts": search_nfts,
+    "token_info": token_info,
+    "analyze_tx": analyze_tx,
+    "watch_wallet": watch_wallet,
+    "list_webhooks": list_webhooks,
     "delete_webhook": delete_webhook,
+    "priority_fee": priority_fee,
 }
 
 # Anthropic tool_use definitions (also compatible with OpenAI function calling schema)
@@ -277,7 +346,10 @@ TOOL_SCHEMAS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "wallet": {"type": "string", "description": "Solana wallet address (base58)"},
+                "wallet": {
+                    "type": "string",
+                    "description": "Solana wallet address (base58)",
+                },
             },
             "required": ["wallet"],
         },
@@ -289,7 +361,7 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "wallet": {"type": "string"},
-                "limit":  {"type": "integer", "default": 10, "maximum": 100},
+                "limit": {"type": "integer", "default": 10, "maximum": 100},
             },
             "required": ["wallet"],
         },
@@ -301,8 +373,8 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "wallet": {"type": "string"},
-                "limit":  {"type": "integer", "default": 20, "maximum": 100},
-                "page":   {"type": "integer", "default": 1},
+                "limit": {"type": "integer", "default": 20, "maximum": 100},
+                "page": {"type": "integer", "default": 1},
             },
             "required": ["wallet"],
         },
@@ -347,8 +419,11 @@ TOOL_SCHEMAS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "wallet":      {"type": "string"},
-                "webhook_url": {"type": "string", "description": "HTTPS URL to POST events to"},
+                "wallet": {"type": "string"},
+                "webhook_url": {
+                    "type": "string",
+                    "description": "HTTPS URL to POST events to",
+                },
                 "event_types": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -372,6 +447,28 @@ TOOL_SCHEMAS = [
                 "webhook_id": {"type": "string"},
             },
             "required": ["webhook_id"],
+        },
+    },
+    {
+        "name": "priority_fee",
+        "description": (
+            "Estimate Solana priority fee (lamports per CU) via Helius "
+            "getPriorityFeeEstimate. Pass write-locked accounts OR a "
+            "base64 transaction."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "accounts": {"type": "array", "items": {"type": "string"}},
+                "transaction": {"type": "string", "description": "base64-encoded tx"},
+                "priority_level": {
+                    "type": "string",
+                    "enum": ["Min", "Low", "Medium", "High", "VeryHigh", "UnsafeMax"],
+                    "default": "Medium",
+                },
+                "include_all_levels": {"type": "boolean", "default": False},
+                "lookback_slots": {"type": "integer", "minimum": 1, "maximum": 150},
+            },
         },
     },
 ]

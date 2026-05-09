@@ -672,11 +672,37 @@ impl HeliusClient {
     /// method belongs to and POSTs / GETs accordingly. Returns the raw
     /// JSON response bytes (just the `result` payload for RPC, or the
     /// full body for Enhanced REST).
+    ///
+    /// On HTTP 402, if a `PaymentInterceptor` is wired we await its
+    /// `pay(envelope)` callback and retry the request exactly once with
+    /// the returned proof attached as `X-Payment-Proof`. This is the
+    /// Phase 4 hook that spec 09 left as a stub — the trait was already
+    /// in place, it just wasn't called. With spec 10's `EmbeddedWallet`
+    /// pluggable here, an agent gets transparent x402 retry; owner-tools
+    /// callers without a wallet still get `HeliusError::PaymentRequired`.
     async fn fire(&self, method: &str, params: &Value) -> Result<Bytes, HeliusError> {
+        match self.fire_once(method, params, None).await {
+            Err(HeliusError::PaymentRequired(env)) => {
+                let Some(interceptor) = self.inner.interceptor.as_ref() else {
+                    return Err(HeliusError::PaymentRequired(env));
+                };
+                let proof = interceptor.pay(&env).await?;
+                self.fire_once(method, params, Some(&proof)).await
+            }
+            other => other,
+        }
+    }
+
+    async fn fire_once(
+        &self,
+        method: &str,
+        params: &Value,
+        proof: Option<&Value>,
+    ) -> Result<Bytes, HeliusError> {
         let bucket = helius_bucket(method);
         match bucket {
-            HeliusBucket::Rpc | HeliusBucket::Das => self.fire_rpc(method, params).await,
-            HeliusBucket::Enhanced => self.fire_enhanced(method, params).await,
+            HeliusBucket::Rpc | HeliusBucket::Das => self.fire_rpc(method, params, proof).await,
+            HeliusBucket::Enhanced => self.fire_enhanced(method, params, proof).await,
         }
     }
 
@@ -684,7 +710,12 @@ impl HeliusClient {
     /// method, params}` envelope and unwraps `result` from the
     /// response. 402 surfaces as `HeliusError::PaymentRequired`; non-
     /// 200 surfaces as `HeliusError::Upstream`.
-    async fn fire_rpc(&self, method: &str, params: &Value) -> Result<Bytes, HeliusError> {
+    async fn fire_rpc(
+        &self,
+        method: &str,
+        params: &Value,
+        proof: Option<&Value>,
+    ) -> Result<Bytes, HeliusError> {
         let bucket = helius_bucket(method);
         let base = match bucket {
             HeliusBucket::Rpc => &self.inner.rpc_base,
@@ -700,14 +731,18 @@ impl HeliusClient {
             "params": params,
         });
         let body = serde_json::to_vec(&envelope)?;
-        let resp = self
+        let mut req = self
             .inner
             .http
             .post(&url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .await?;
+            .body(body);
+        if let Some(p) = proof {
+            for (k, v) in proof_to_headers(p) {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req.send().await?;
 
         let status = resp.status();
         let bytes = resp.bytes().await?;
@@ -747,7 +782,12 @@ impl HeliusClient {
     /// Enhanced REST fire — POST to `/v0/transactions` with
     /// `{transactions: [...]}`. Today only `parseTransactions` uses
     /// this path; Phase 3b adds the rest of the Enhanced surface.
-    async fn fire_enhanced(&self, method: &str, params: &Value) -> Result<Bytes, HeliusError> {
+    async fn fire_enhanced(
+        &self,
+        method: &str,
+        params: &Value,
+        proof: Option<&Value>,
+    ) -> Result<Bytes, HeliusError> {
         let path = match method {
             "parseTransactions" => "/v0/transactions",
             "getTransactions" => "/v0/addresses/-/transactions",
@@ -764,14 +804,18 @@ impl HeliusClient {
             self.inner.enhanced_base, path, &*self.inner.api_key,
         );
         let body = serde_json::to_vec(params)?;
-        let resp = self
+        let mut req = self
             .inner
             .http
             .post(&url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .await?;
+            .body(body);
+        if let Some(p) = proof {
+            for (k, v) in proof_to_headers(p) {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req.send().await?;
         let status = resp.status();
         let bytes = resp.bytes().await?;
 
@@ -800,6 +844,38 @@ impl HeliusClient {
         self.inner.mem_cache.run_pending_tasks().await;
         self.inner.mem_cache.entry_count()
     }
+}
+
+/// Translate the JSON proof returned by [`PaymentInterceptor::pay`] into
+/// HTTP headers that the upstream verifier expects. Two shapes accepted:
+///
+/// - `{"signature": "...", "network": "..."}` — canonical Coinbase x402
+///   proof. Maps to `X-Payment-Proof` + `X-Payment-Network`.
+/// - `{"<header>": "<value>", ...}` — opaque object; every string entry
+///   becomes an `X-Payment-<key>` header. Lets bespoke interceptors
+///   pass non-standard fields through without changing the trait.
+///
+/// Non-string values are skipped silently — if a future proof type
+/// needs structured fields, encode them as JSON strings on the
+/// interceptor side.
+fn proof_to_headers(proof: &Value) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(obj) = proof.as_object() {
+        if let (Some(sig), Some(net)) = (
+            obj.get("signature").and_then(|v| v.as_str()),
+            obj.get("network").and_then(|v| v.as_str()),
+        ) {
+            out.push(("X-Payment-Proof".to_string(), sig.to_string()));
+            out.push(("X-Payment-Network".to_string(), net.to_string()));
+            return out;
+        }
+        for (k, v) in obj {
+            if let Some(s) = v.as_str() {
+                out.push((format!("X-Payment-{k}"), s.to_string()));
+            }
+        }
+    }
+    out
 }
 
 // Compile-time check that the public types are `Send + Sync`. Required

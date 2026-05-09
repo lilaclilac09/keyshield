@@ -16,13 +16,15 @@ from typing import Any
 
 import httpx
 
+from .x402_interceptor import PaymentInterceptor, with_x402_retry
+
 # ─── Provider config ──────────────────────────────────────────────────────────
 
 PROVIDERS: dict[str, dict] = {
     # Helius: three surfaces, one provider entry each
     "helius-rpc": {
         "base": "https://mainnet.helius-rpc.com",
-        "auth": "query",       # api-key goes in query string
+        "auth": "query",  # api-key goes in query string
         "auth_param": "api-key",
     },
     "helius-das": {
@@ -108,6 +110,8 @@ _HELIUS_TTL: dict[str, float] = {
     "getEpochInfo": 10,
     "getRecentBlockhash": 2,
     "getLatestBlockhash": 2,
+    "getPriorityFeeEstimate": 5,
+    "getRecentPrioritizationFees": 5,
 }
 
 # Never cache these Helius methods (writes / simulatation)
@@ -117,7 +121,7 @@ _HELIUS_WRITES = {"sendTransaction", "sendRawTransaction", "simulateTransaction"
 _OPENAI_TTL: dict[str, float] = {
     "GET /v1/models": 3600,
     "GET /v1/models/": 3600,
-    "POST /v1/embeddings": 86400,   # same text = same vector
+    "POST /v1/embeddings": 86400,  # same text = same vector
 }
 
 # Anthropic: cache GET /v1/models
@@ -128,9 +132,11 @@ _ANTHROPIC_TTL: dict[str, float] = {
 # ─── Cache store ──────────────────────────────────────────────────────────────
 _CACHE: dict[str, tuple[Any, float]] = {}
 
+
 def _ck(provider: str, key: str, payload: Any) -> str:
     raw = f"{provider}:{key}:{json.dumps(payload, sort_keys=True)}"
     return hashlib.sha1(raw.encode()).hexdigest()
+
 
 def _cache_get(ck: str) -> Any | None:
     entry = _CACHE.get(ck)
@@ -140,12 +146,16 @@ def _cache_get(ck: str) -> Any | None:
         del _CACHE[ck]
     return None
 
+
 def _cache_set(ck: str, data: Any, ttl: float) -> None:
     if ttl > 0:
         _CACHE[ck] = (data, time.monotonic() + ttl)
 
+
 # ─── Auth header builder ──────────────────────────────────────────────────────
-def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple[str, dict]:
+def _build_url_and_headers(
+    provider_name: str, path: str, api_key: str
+) -> tuple[str, dict]:
     cfg = PROVIDERS[provider_name]
     headers: dict[str, str] = dict(cfg.get("extra_headers", {}))
 
@@ -163,27 +173,51 @@ def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple
 
     return url, headers
 
+
 # ─── Route Helius JSON-RPC ────────────────────────────────────────────────────
 def _helius_provider(method: str) -> str:
     _DAS = {
-        "getAsset", "getAssetBatch", "getAssetProof", "getAssetProofBatch",
-        "getAssetsByOwner", "getAssetsByGroup", "getAssetsByCreator",
-        "getAssetsByAuthority", "searchAssets", "getTokenAccounts", "getNftEditions",
+        "getAsset",
+        "getAssetBatch",
+        "getAssetProof",
+        "getAssetProofBatch",
+        "getAssetsByOwner",
+        "getAssetsByGroup",
+        "getAssetsByCreator",
+        "getAssetsByAuthority",
+        "searchAssets",
+        "getTokenAccounts",
+        "getNftEditions",
     }
     _ENHANCED = {"getTransactions", "getTokenBalances"}
-    if method in _DAS:      return "helius-das"
-    if method in _ENHANCED: return "helius-enhanced"
+    if method in _DAS:
+        return "helius-das"
+    if method in _ENHANCED:
+        return "helius-enhanced"
     return "helius-rpc"
 
-async def call_helius(method: str, params: Any, api_key: str, rpc_id: Any = 1) -> tuple[Any, str]:
-    if method in _HELIUS_WRITES:
-        provider = _helius_provider(method)
-        url, headers = _build_url_and_headers(provider, "/", api_key)
+
+async def call_helius(
+    method: str,
+    params: Any,
+    api_key: str,
+    rpc_id: Any = 1,
+    *,
+    interceptor: PaymentInterceptor | None = None,
+) -> tuple[Any, str]:
+    provider = _helius_provider(method)
+    body = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params}
+    url, headers = _build_url_and_headers(provider, "/", api_key)
+
+    async def _fire(extra_headers: dict[str, str]) -> tuple[int, bytes, dict]:
         resp = await _CLIENTS[provider].post(
-            url, json={"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params},
-            headers=headers,
+            url, json=body, headers={**headers, **extra_headers}
         )
-        return resp.json(), "MISS"
+        return resp.status_code, resp.content, dict(resp.headers)
+
+    if method in _HELIUS_WRITES:
+        status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
+        return json.loads(content), "MISS"
 
     ttl = _HELIUS_TTL.get(method, 0)
     ck = _ck("helius", method, params)
@@ -191,16 +225,12 @@ async def call_helius(method: str, params: Any, api_key: str, rpc_id: Any = 1) -
     if cached is not None:
         return cached, "HIT"
 
-    provider = _helius_provider(method)
-    url, headers = _build_url_and_headers(provider, "/", api_key)
-    resp = await _CLIENTS[provider].post(
-        url, json={"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params},
-        headers=headers,
-    )
-    result = resp.json()
+    status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
+    result = json.loads(content)
     if ttl and "result" in result:
         _cache_set(ck, result, ttl)
     return result, "MISS"
+
 
 # ─── Route generic REST (OpenAI, Anthropic, etc.) ────────────────────────────
 async def call_rest(
@@ -210,13 +240,17 @@ async def call_rest(
     body: bytes,
     api_key: str,
     extra_headers: dict | None = None,
+    *,
+    interceptor: PaymentInterceptor | None = None,
 ) -> tuple[bytes, int, str]:
     if provider_name not in PROVIDERS:
         raise ValueError(f"unknown provider: {provider_name}")
 
     ttl_map = (
-        _OPENAI_TTL if provider_name == "openai"
-        else _ANTHROPIC_TTL if provider_name == "anthropic"
+        _OPENAI_TTL
+        if provider_name == "openai"
+        else _ANTHROPIC_TTL
+        if provider_name == "anthropic"
         else {}
     )
     route_key = f"{method} {path}"
@@ -233,16 +267,22 @@ async def call_rest(
         headers.update(extra_headers)
     headers["content-type"] = "application/json"
 
-    resp = await _CLIENTS[provider_name].request(method=method, url=url, headers=headers, content=body)
+    async def _fire(extra: dict[str, str]) -> tuple[int, bytes, dict]:
+        resp = await _CLIENTS[provider_name].request(
+            method=method, url=url, headers={**headers, **extra}, content=body
+        )
+        return resp.status_code, resp.content, dict(resp.headers)
 
-    if ttl and ck and resp.status_code == 200:
-        _cache_set(ck, resp.content, ttl)
+    status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
+    if ttl and ck and status == 200:
+        _cache_set(ck, content, ttl)
+    return content, status, "MISS"
 
-    return resp.content, resp.status_code, "MISS"
 
 # ─── Oliver move #2: parallel batch ──────────────────────────────────────────
 async def batch_helius(requests: list[dict], api_key: str) -> list[dict]:
     """Fire all Helius RPC calls in parallel, return in order."""
+
     async def one(req: dict) -> dict:
         result, cache_status = await call_helius(
             req["method"], req.get("params", []), api_key, req.get("id", 1)
@@ -251,12 +291,14 @@ async def batch_helius(requests: list[dict], api_key: str) -> list[dict]:
 
     return list(await asyncio.gather(*[one(r) for r in requests]))
 
+
 async def batch_rest(
     provider_name: str,
     requests: list[dict],  # [{method, path, body}]
     api_key: str,
 ) -> list[dict]:
     """Fire all REST calls to a provider in parallel."""
+
     async def one(req: dict) -> dict:
         content, status, cache_status = await call_rest(
             provider_name,
@@ -272,6 +314,7 @@ async def batch_rest(
         return {"status": status, "data": data, "x-ks-cache": cache_status}
 
     return list(await asyncio.gather(*[one(r) for r in requests]))
+
 
 # ─── Stats ────────────────────────────────────────────────────────────────────
 def cache_stats() -> dict:
