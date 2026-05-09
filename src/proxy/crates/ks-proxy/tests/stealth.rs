@@ -276,7 +276,7 @@ fn nginx_server_header(headers: &axum::http::HeaderMap) -> Option<&str> {
 #[tokio::test]
 async fn stealth_no_token_proxy_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -310,7 +310,7 @@ async fn stealth_no_token_proxy_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_no_token_root_returns_nginx_index() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -335,7 +335,7 @@ async fn stealth_no_token_root_returns_nginx_index() {
 #[tokio::test]
 async fn stealth_no_token_favicon_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -356,7 +356,7 @@ async fn stealth_no_token_favicon_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_valid_token_proxy_works_normally() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("POST")
@@ -388,7 +388,7 @@ async fn stealth_valid_token_proxy_works_normally() {
 #[tokio::test]
 async fn stealth_off_no_token_returns_401() {
     let h = Harness::build(false).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("POST")
@@ -412,7 +412,7 @@ async fn stealth_off_no_token_returns_401() {
 #[tokio::test]
 async fn stealth_no_token_health_returns_nginx_404() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .uri("/health")
@@ -434,7 +434,7 @@ async fn stealth_no_token_health_returns_nginx_404() {
 #[tokio::test]
 async fn stealth_valid_token_health_returns_ok_json() {
     let h = Harness::build(true).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .uri("/health")

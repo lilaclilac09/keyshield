@@ -258,7 +258,7 @@ async fn body_to_string(resp: axum::response::Response) -> (StatusCode, axum::ht
 #[tokio::test]
 async fn self_custodian_happy_path() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("POST")
@@ -310,7 +310,7 @@ async fn platform_key_with_balance_succeeds() {
     // bob has no vault entry → platform fallback.
     env::set_var("OPENAI_API_KEY", "platform-test-key");
 
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let req = Request::builder()
         .method("POST")
         .uri("/proxy/openai/v1/chat/completions")
@@ -358,7 +358,7 @@ async fn platform_key_zero_balance_returns_402() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
     env::set_var("OPENAI_API_KEY", "platform-test-key");
 
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let req = Request::builder()
         .method("POST")
         .uri("/proxy/openai/v1/chat/completions")
@@ -397,7 +397,7 @@ async fn platform_key_zero_balance_returns_402() {
 #[tokio::test]
 async fn unknown_token_returns_401() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let req = Request::builder()
         .method("POST")
         .uri("/proxy/openai/v1/chat/completions")
@@ -413,7 +413,7 @@ async fn unknown_token_returns_401() {
 #[tokio::test]
 async fn missing_bearer_returns_401() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let req = Request::builder()
         .method("POST")
         .uri("/proxy/openai/v1/chat/completions")
@@ -427,7 +427,7 @@ async fn missing_bearer_returns_401() {
 #[tokio::test]
 async fn unknown_upstream_returns_404() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let req = Request::builder()
         .method("POST")
         .uri("/proxy/notreal/v1/x")
@@ -446,7 +446,7 @@ async fn batch_5_parallel_items_succeed() {
     // Use mistral as the test upstream too, but only override openai for
     // this batch test — items below all target openai for simplicity.
     let h = Harness::build(UpstreamId::Openai, 5.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let body = serde_json::json!({
         "requests": [
@@ -483,7 +483,7 @@ async fn batch_5_parallel_items_succeed() {
 #[tokio::test]
 async fn batch_21_items_returns_400() {
     let h = Harness::build(UpstreamId::Openai, 5.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let mut requests = Vec::with_capacity(21);
     for i in 0..21 {
@@ -513,7 +513,7 @@ async fn batch_21_items_returns_400() {
 #[tokio::test]
 async fn batch_with_one_unknown_upstream_returns_per_item_error() {
     let h = Harness::build(UpstreamId::Openai, 5.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let body = serde_json::json!({
         "requests": [
@@ -547,7 +547,7 @@ async fn batch_with_one_unknown_upstream_returns_per_item_error() {
 #[tokio::test]
 async fn fallthrough_is_reverse_proxied_to_python() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .method("GET")
@@ -590,7 +590,7 @@ async fn fallthrough_is_reverse_proxied_to_python() {
 #[tokio::test]
 async fn health_endpoint_works() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
 
     let req = Request::builder()
         .uri("/health")
@@ -608,7 +608,7 @@ async fn health_endpoint_works() {
 #[tokio::test]
 async fn payload_too_large_returns_413() {
     let h = Harness::build(UpstreamId::Openai, 5.0).await;
-    let app = router(h.state.clone());
+    let app = router(h.state.clone(), ks_proxy::metrics::init_prometheus());
     let big = vec![b'x'; 1_000_001];
 
     let req = Request::builder()
