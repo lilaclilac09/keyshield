@@ -112,6 +112,12 @@ jobs:
     name: Integration (Surfpool)
     runs-on: ubuntu-latest
     needs: unit-tests
+    # `cargo install surfpool --locked` is flaking on crates.io / dep
+    # resolution (exit 101). Until we either pin a known-good surfpool
+    # version, switch to a binary release, or move the integration to
+    # devnet-deploy.yml, allow this job to fail without blocking the
+    # workflow. Unit tests (in the must-pass job) are unaffected.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
