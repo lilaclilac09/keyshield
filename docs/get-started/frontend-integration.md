@@ -18,15 +18,35 @@ this page — point users at the deployed popup URL.
 
 ---
 
+## Two URLs, two contracts
+
+The merged architecture (Path A storage + Python usage) means a
+KeyShield-integrated frontend talks to **two backends**:
+
+| Backend | Variable | Use |
+|---|---|---|
+| Cloudflare sync-worker | `VITE_KEYSHIELD_SYNC_URL` | Vault **storage** — `/vault/:id`, `/auth/*` (Path A; zero-knowledge) |
+| Python FastAPI | `KEYSHIELD_API_URL` | Vault **usage** — `/proxy/*`, `/billing/*`, `/agents/*`, `/share/*`, `/usage/*`, `/mpp/*` |
+
+The client decrypts the requested key from the cipher pulled from
+the Worker, then forwards it to the Python API on the
+`X-Upstream-API-Key` header for the actual upstream call. The
+Python service is stateless with respect to upstream keys — it
+uses the header, calls the upstream, returns the response, and
+never persists the key.
+
+---
+
 ## What "integration" means here
 
 KeyShield ships as **TypeScript modules**, not a hosted SDK. You
 either:
 
-- **Embed the popup** as a route in your own SPA (recommended for
+- **Embed the dashboard** as a route in your own SPA (recommended for
   most apps), or
 - **Import the lib modules directly** (`vault.ts`, `auth.ts`,
-  `sync.ts`, `sync-auth.ts`) and build your own UI on top.
+  `sync.ts`, `sync-auth.ts` from `src/web-v2/lib/`) and build
+  your own UI on top.
 
 This page covers the embed path. Direct lib usage is documented
 in [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md).
@@ -37,14 +57,18 @@ in [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md).
 
 - **Your own deployed sync worker.** You need a URL like
   `https://keyshield-sync.<account>.workers.dev`. Get one by
-  following [self-host.md § Deploy the worker](./self-host.md#step-2--deploy-the-cloudflare-worker).
+  following [self-host.md § Deploy the worker](./self-host.md#step-2--deploy-the-cloudflare-worker-vault-storage).
+- **Your own deployed Python API.** You need a URL like
+  `https://api.ks.aileena.xyz` (or a Railway *.up.railway.app
+  domain). Get one by following [self-host.md § Deploy the Python
+  API](./self-host.md#step-3--deploy-the-python-api-vault-usage).
 - **A Solana RPC URL.** The popup hits Solana for session grants.
   - **Recommended:** Helius, Triton, or QuickNode — these are paid
     providers that won't rate-limit you.
   - Public `https://api.mainnet-beta.solana.com` works for
     development but throttles aggressively.
 - **A program ID.** Either deploy your own (see [self-host.md
-  § Deploy the program](./self-host.md#step-3--deploy-the-solana-program))
+  § Deploy the program](./self-host.md#step-4--deploy-the-solana-program))
   or use the shared devnet program ID
   `CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8` for testing.
 - **A frontend with Vite, Next.js, or any bundler that handles
@@ -54,39 +78,44 @@ in [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md).
 
 ## Step 1 — Add the workspace as a dependency
 
-If your app lives in this monorepo, `extension-sync` is already a
+If your app lives in this monorepo, `src/web-v2` is already a
 sibling workspace — just add it to your `package.json`:
 
 ```json
 {
   "dependencies": {
-    "@keyshield/extension-sync": "*"
+    "@keyshield/web-v2": "*"
   }
 }
 ```
 
 If your app lives **outside** the monorepo, vendor the lib by
-copying `extension-sync/src/lib/` into your app and adjusting the
+copying `src/web-v2/lib/` into your app and adjusting the
 imports. There's no published npm package yet.
 
 **Verify:**
 
 ```bash
 npm install
-node -e "console.log(Object.keys(require('@keyshield/extension-sync/src/lib/vault')))"
+node -e "console.log(Object.keys(require('@keyshield/web-v2/lib/vault')))"
 # ['LocalVault','VAULT_VERSION', ...]
 ```
 
 ---
 
-## Step 2 — Configure the three environment variables
+## Step 2 — Configure the environment variables
 
-Set these in your app's `.env.local` (Vite / Next) or however you
-inject runtime config:
+The merged architecture needs **both** the sync-worker (vault
+storage) and the Python API (vault usage). Set these in your
+app's `.env.local` (Vite / Next) or however you inject runtime
+config:
 
 ```bash
-# Where your Cloudflare Worker is deployed
+# Path A — Cloudflare Worker for vault storage (zero-knowledge)
 VITE_KEYSHIELD_SYNC_URL=https://keyshield-sync.your-account.workers.dev
+
+# Python FastAPI for vault usage (proxy, billing, agents, sharing)
+KEYSHIELD_API_URL=https://api.ks.aileena.xyz
 
 # Your Solana RPC. If you have a Helius API key:
 VITE_SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY
@@ -94,15 +123,20 @@ VITE_SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY
 # VITE_SOLANA_RPC_URL=https://api.devnet.solana.com
 
 # Solana program ID (deploy your own or use the shared one)
-VITE_KEYSHIELD_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8
+KEYSHIELD_PROGRAM_ID=CVbhbCGsAk4WikxpucSCJ7QUhDka96PcyQmSLj6FrQA8
 ```
+
+> Both `KEYSHIELD_*` and `VITE_KEYSHIELD_*` aliases are accepted
+> at build time; pick the one your bundler exposes to client
+> code.
 
 **Verify:**
 
 ```bash
 # In your app, before mounting the popup:
 console.log(import.meta.env.VITE_KEYSHIELD_SYNC_URL);
-// Should print your worker URL, NOT undefined.
+console.log(import.meta.env.KEYSHIELD_API_URL);
+// Both should print real URLs, NOT undefined.
 ```
 
 ---
@@ -113,19 +147,19 @@ In your route or component:
 
 ```tsx
 // app/vault/page.tsx (or wherever)
-import { App as KeyShieldPopup } from '@keyshield/extension-sync/src/popup/App';
+import { App as KeyShieldDashboard } from '@keyshield/web-v2/App';
 
 export default function VaultPage() {
   return (
     <div className="h-screen w-full">
-      <KeyShieldPopup />
+      <KeyShieldDashboard />
     </div>
   );
 }
 ```
 
-The popup is a self-contained React tree. It reads
-`import.meta.env.*` for the three variables above.
+The dashboard is a self-contained React tree. It reads
+`import.meta.env.*` for the variables above.
 
 **Verify:**
 
@@ -134,12 +168,15 @@ The popup is a self-contained React tree. It reads
 - Click **"Create vault with Face ID"**. Your platform's
   passkey prompt appears.
 - After completing it, you see the 24-word recovery phrase.
+- Network tab shows requests going to **both** your sync-worker
+  domain (vault storage) and your Python API domain (when you
+  exercise a `/proxy/*` upstream).
 
 ---
 
 ## Step 4 — (Optional) Read keys from your app
 
-The popup **never exposes the plaintext over postMessage or any
+The dashboard **never exposes the plaintext over postMessage or any
 other channel by design** — that would defeat the threat model.
 
 If your app needs to *consume* the stored keys, you have two
@@ -152,8 +189,8 @@ assertion, derives the same vault key and reads the cipher
 directly:
 
 ```ts
-import { LocalVault } from '@keyshield/extension-sync/src/lib/vault';
-import { AuthService } from '@keyshield/extension-sync/src/lib/auth';
+import { LocalVault } from '@keyshield/web-v2/lib/vault';
+import { AuthService } from '@keyshield/web-v2/lib/auth';
 
 const auth = new AuthService({
   credentials: navigator.credentials,
@@ -175,11 +212,20 @@ console.log(plain.apiKeys['openai-prod'].value); // sk-...
 
 This requires your app to use the **same RP ID** as the popup.
 
-### Option B — Treat the popup as a "key picker"
+### Option B — Treat the dashboard as a "key picker"
 
-Open the popup in a sub-frame or popup window, let the user reveal
+Open the dashboard in a sub-frame or popup window, let the user reveal
 the key, and have them paste it into your app. No code-level
 integration. Slow but bulletproof.
+
+### Option C — Forward decrypted keys via the Python proxy
+
+If your app already has a Python-side flow, decrypt the key on
+the client and call the Python API's `/proxy/<upstream>/...`
+endpoint with the key in the `X-Upstream-API-Key` header. The
+proxy handles the upstream call without ever persisting the key.
+This is what the SDKs do under the hood; see AGENTS.md §2 for
+the full contract.
 
 ---
 
@@ -188,7 +234,7 @@ integration. Slow but bulletproof.
 If your app has a "Revoke all my sessions" page, plumb it through:
 
 ```tsx
-import { useVaultFlow } from '@keyshield/extension-sync/src/popup/hooks/useVaultFlow';
+import { useVaultFlow } from '@keyshield/web-v2/popup/hooks/useVaultFlow';
 
 const flow = useVaultFlow(services);
 
@@ -211,13 +257,19 @@ authorization. Documented in
 
 - [ ] **Worker URL is HTTPS in production** — the popup refuses
       WebAuthn over plain HTTP except on `localhost`.
+- [ ] **Python API URL is HTTPS in production** — the
+      `X-Upstream-API-Key` header carries plaintext key material
+      for the duration of one request; HTTPS is non-negotiable.
 - [ ] **`RP_ID` and `RP_ORIGIN`** in the worker match your
       production domain. Changing them later breaks every
       existing passkey.
 - [ ] **`JWT_SECRET`** is set via `wrangler secret put`, never
       committed to `wrangler.toml`.
-- [ ] **You're not logging `prfSecret` or `state.seed`** in your
-      app's analytics. Both are root credentials.
+- [ ] **`KS_CORS_ORIGINS`** on the Python API includes only the
+      origins you operate.
+- [ ] **You're not logging `prfSecret`, `state.seed`, or
+      decrypted upstream keys** in your app's analytics. All
+      three are sensitive credentials.
 - [ ] **CORS** on your worker only allows the origins you operate.
       The default config accepts any origin — fine for dev,
       tighten for prod.
@@ -235,11 +287,15 @@ authorization. Documented in
   CORS preflight failing against your worker.
 - **`InvalidMnemonicError` on restore** → the 24 words don't pass
   the BIP-39 checksum. Likely a typo or autocorrect-mangled words.
+- **`/proxy/*` returns 401 / 400 from the Python API** →
+  `X-Upstream-API-Key` header is missing or malformed; verify
+  the client decrypted the entry locally before forwarding.
 
 ## Next steps
 
-- [Self-host](./self-host.md) — deploy your own worker + program.
+- [Self-host](./self-host.md) — deploy your own worker, Python
+  API, and Solana program.
 - [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md)
   — the full V1.1 design, threat model, and per-key crypto.
-- The 219 tests in `extension-sync/` are the canonical contract;
-  read them when in doubt.
+- The 219 tests in `src/web-v2/lib/` are the canonical contract
+  for the Path A client; read them when in doubt.

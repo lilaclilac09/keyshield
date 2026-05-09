@@ -41,17 +41,36 @@ ks = KeyShield(token=os.environ["KS_TOKEN"])
 client = ks.openai_client()   # same OpenAI SDK, zero raw keys
 ```
 
-The agent only ever holds the session token. The real API key lives in an AES-256-GCM encrypted file on the server, decrypted per-request, never in memory between calls.
+The agent only ever holds the session token. The real API key lives in
+an AES-256-GCM ciphertext that is **encrypted on the user's device**
+(WebAuthn-PRF → HKDF → AES-GCM, see Path A) and stored on a Cloudflare
+Worker that cannot decrypt it. At usage time, the SDK / web client
+decrypts the key locally and forwards it to the Python proxy in the
+`X-Upstream-API-Key` header — the proxy uses it once for the upstream
+call and **never persists it**.
 
 ---
 
 ## 2. How Keys Plug In
 
+### Architecture summary
+
+| Concern | Where | Contract |
+|---|---|---|
+| Vault **storage** (ciphertext sync) | Cloudflare Worker (`src/infra/sync-worker/`) | `PUT/GET/DELETE /vault/:id` over Bearer token; server is zero-knowledge |
+| Vault **usage** (per-request key injection) | Python FastAPI (`src/backend/`) | `POST /proxy/:upstream/...` with `X-Upstream-API-Key: <decrypted-key>` header — never persisted |
+
+`/manage/*` (server-side plaintext storage) is removed; storage is
+exclusively client-encrypted via Path A.
+
 ### Step 1 — Store your keys once
 
 ```bash
-# Option A: web UI
-# Go to http://localhost:3001 → Vault → New secret → select provider → paste key
+# Option A: web UI (web-v2 dashboard, Path A)
+# Go to https://app.ks.aileena.xyz → Vault → New secret → select provider → paste key
+# (locally: http://localhost:5173 once `cd src/web-v2 && npm run dev` is running)
+# The dashboard encrypts client-side via WebAuthn-PRF → HKDF → AES-GCM and
+# pushes ciphertext to the Cloudflare sync-worker.
 
 # Option B: CLI
 source keyshield-cli.sh
@@ -72,10 +91,18 @@ ks.store("0x",        "xxx")
 ks.store("groq",      "gsk_xxx")
 ```
 
+> **Note (2026-05):** Option A previously pointed at the old Path B
+> frontend on `http://localhost:3001`. The vault UI now lives in
+> `src/web-v2/` and writes ciphertext to the Cloudflare sync-worker
+> (Path A) — the Python backend never sees plaintext at storage time.
+> The CLI and Python SDK options retain the same surface; under the
+> hood they delegate vault writes through the same Path A modules
+> (`src/web-v2/lib/{vault,sync,sync-auth}.ts`).
+
 ### Step 2 — Login and get a token
 
 ```bash
-# Web UI: log in at http://localhost:3001, then Developer → copy token
+# Web UI: log in at https://app.ks.aileena.xyz, then Developer → copy token
 
 # Python
 token = ks.login("my_wallet", "my_passphrase")
@@ -95,10 +122,14 @@ import os, openai
 from keyshield_sdk import KeyShield
 
 ks     = KeyShield(token=os.environ["KS_TOKEN"])
-openai = ks.openai_client()   # uses proxy, key injected server-side
+openai = ks.openai_client()   # SDK decrypts the vault entry locally,
+                              # then sends it to /proxy/openai/...
+                              # in the X-Upstream-API-Key header.
 ```
 
-That's it. Your agent never has the raw key. Rotate keys from the dashboard without touching agent code.
+That's it. Your agent never has the raw key. Rotate keys from the
+dashboard without touching agent code; the next request picks up the
+new ciphertext from the sync-worker and decrypts it on the client.
 
 ---
 
@@ -494,7 +525,8 @@ sol_price = prices["SOL/USD"]
 ### Via KeyShield proxy
 
 ```python
-# Routes through /proxy/pyth/ — your Pyth API key injected
+# Routes through /proxy/pyth/ — your Pyth API key forwarded
+# in the X-Upstream-API-Key header (never persisted server-side)
 feed = PythFeed(
     symbols=["SOL/USD"],
     ks_token=your_token,
@@ -655,7 +687,7 @@ with open("state.pkl", "rb") as f:
 ### Quickstart
 
 ```bash
-# 1. Store your keys
+# 1. Store your keys (Path A — encrypted client-side, synced via CF Worker)
 source keyshield-cli.sh
 ks_login your_wallet your_passphrase
 ks_store openai    "sk-proj-xxx"
@@ -679,7 +711,7 @@ DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m trading.agent
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KS_TOKEN` | required | Session token from KeyShield dashboard |
-| `KS_BASE` | `http://localhost:8000` | KeyShield server URL |
+| `KS_BASE` | `http://localhost:8000` | KeyShield Python API base URL (e.g. `https://api.ks.aileena.xyz` in prod) |
 | `CHAIN` | `solana` | `solana` or `ethereum` |
 | `DRY_RUN` | `true` | `false` to enable real execution |
 | `MAX_POSITION_USD` | `500` | Per-trade size limit |
@@ -710,10 +742,12 @@ LOGLEVEL=DEBUG python3 -m trading.agent
 ### Using Helius via KeyShield
 
 ```python
-# Store your Helius key once
+# Store your Helius key once (web-v2 dashboard or CLI; both write Path A
+# ciphertext to the Cloudflare sync-worker)
 ks.store("helius", "your-helius-api-key")
 
-# Call via proxy — key injected automatically
+# Call via the Python proxy. The SDK decrypts the entry locally and
+# attaches it as X-Upstream-API-Key on the request.
 import httpx
 client = httpx.AsyncClient(
     base_url="http://localhost:8000/proxy/helius/",
@@ -762,6 +796,16 @@ results = ks.batch([
 
 ## 13. Architecture Decisions
 
+### Why split storage (CF Worker) from usage (Python proxy)?
+
+Two surfaces have different threat models. Storage benefits from
+zero-knowledge: the user's passkey-PRF derives the AES key on-device,
+the server only ever sees ciphertext. Usage benefits from a stateful
+billing/agents/sharing layer: rate limits, x402 payment receipts, and
+agent attribution all need a server. Splitting them lets the storage
+tier be inspectable + boring (it's just R2 + a Bearer-token check) and
+the usage tier be feature-rich without holding plaintext at rest.
+
 ### Why SSE over WebSocket for Pyth?
 
 Hermes SSE is simpler (HTTP, auto-reconnect, works behind proxies) and has the same latency as WebSocket for this use case. Pyth publishes every ~400ms, so sub-millisecond difference doesn't matter. Use SSE unless you need true bidirectional messaging.
@@ -784,7 +828,8 @@ Groq runs LLMs on custom LPU (Language Processing Unit) hardware. p50 latency fo
 - They appear in crash dumps, `ps aux` output, and process listings
 - CI/CD systems often log env vars in pipeline output
 - Rotation requires redeploying every agent that uses the key
-- KeyShield solves all of these: encrypt once, rotate from dashboard, agents never see the raw key
+- KeyShield solves all of these: encrypt once on-device, sync the
+  ciphertext, rotate from the dashboard, agents never see the raw key
 
 ### When to use an API aggregator (model router)
 

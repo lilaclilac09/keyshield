@@ -4,6 +4,21 @@ Items considered during /plan-ceo-review on 2026-04-15 and explicitly deferred.
 
 ---
 
+## ✅ DONE: Path A wiring + extension-sync consolidation (2026-05-09)
+
+**What:** The Path A vault client (formerly the standalone
+`extension-sync/` workspace) has been folded into
+`src/web-v2/lib/{vault,sync,sync-auth}.ts`. The HTTP contract
+between client and Cloudflare Worker is unchanged. The Python
+`/proxy/*` is now stateless w.r.t. upstream API keys (per-request
+`X-Upstream-API-Key` header), and the legacy `/manage/*`
+server-side plaintext storage routes are gone.
+
+Any TODO referencing `extension-sync/` should be re-pointed at
+`src/web-v2/lib/`.
+
+---
+
 ## P3: Consolidate frontend/ and extension/ into one codebase
 
 **What:** Migrate both the active `frontend/` browser extension and the new `extension/` 

@@ -1,10 +1,17 @@
 # KeyShield Path A — iCloud-Keychain-style Sync Vault (v1.1)
 
 > Adjunct to [`LOCAL_VAULT_ARCHITECTURE.md`](./LOCAL_VAULT_ARCHITECTURE.md).
-> This document describes the **`extension-sync/`** workspace and
-> its companion **`infra/sync-worker/`**, which together let a vault
-> follow the user across every device that has their passkey synced
-> via iCloud Keychain / Google Password Manager.
+> This document describes the Path A vault client (now hosted in
+> `src/web-v2/lib/{vault,sync,sync-auth}.ts`) and its companion
+> **`src/infra/sync-worker/`**, which together let a vault follow
+> the user across every device that has their passkey synced via
+> iCloud Keychain / Google Password Manager.
+>
+> **Note (2026-05):** the original `extension-sync/` workspace was
+> consolidated into `src/web-v2/lib/{vault,sync,sync-auth}.ts`. The
+> contract between client and Worker is unchanged; only the file
+> paths have moved. References to `extension-sync/src/lib/*` below
+> map 1:1 to `src/web-v2/lib/*`.
 >
 > **What changed since v0.1:** added a 24-word BIP-39 recovery
 > phrase as a true offline root-of-trust, dual-writes to a
@@ -43,7 +50,7 @@ What the threat model does **NOT** defend against:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                  Browser extension (extension-sync)                   │
+│             Browser / web-v2 client (src/web-v2/)                     │
 │                                                                        │
 │  src/lib/auth.ts        registerPasskey + authenticate (PRF, no       │
 │                         PBKDF2 fallback). Returns                      │
@@ -71,7 +78,7 @@ What the threat model does **NOT** defend against:
                                    │  PUT/GET/DELETE /vault/:id (Bearer)
                                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│                Cloudflare Worker (infra/sync-worker)                  │
+│            Cloudflare Worker (src/infra/sync-worker/)                 │
 │                                                                        │
 │  /vault/:id   Bearer JWT whose `sub` claim equals :id is required.   │
 │               PUT enforces CAS via updatedAt; equal/older → 409.      │
@@ -135,20 +142,25 @@ If null, encryptVault({}) and push it.
 
 | Order | Path | What it tells you |
 |---|---|---|
-| 1 | `infra/sync-worker/src/index.ts` | The HTTP contract the popup talks to |
-| 2 | `infra/sync-worker/src/cas.ts` + `registry.ts` | Storage shape inside R2 |
-| 3 | `extension-sync/src/lib/auth.ts` | PRF wiring + JSON serialisation |
-| 4 | `extension-sync/src/lib/vault.ts` | The two HKDF derivations |
-| 5 | `extension-sync/src/lib/sync.ts` | HttpSyncBackend + 401 retry |
-| 6 | `extension-sync/src/lib/sync-auth.ts` | JWT round-trip |
-| 7 | `extension-sync/src/popup/hooks/useVaultFlow.ts` | The state machine |
-| 8 | `extension-sync/src/lib/conflict.ts` | Per-key diff + merge math |
+| 1 | `src/infra/sync-worker/src/index.ts` | The HTTP contract the popup talks to |
+| 2 | `src/infra/sync-worker/src/cas.ts` + `registry.ts` | Storage shape inside R2 |
+| 3 | `src/web-v2/lib/auth.ts` | PRF wiring + JSON serialisation |
+| 4 | `src/web-v2/lib/vault.ts` | The two HKDF derivations |
+| 5 | `src/web-v2/lib/sync.ts` | HttpSyncBackend + 401 retry |
+| 6 | `src/web-v2/lib/sync-auth.ts` | JWT round-trip |
+| 7 | `src/web-v2/popup/hooks/useVaultFlow.ts` | The state machine |
+| 8 | `src/web-v2/lib/conflict.ts` | Per-key diff + merge math |
+
+> **Note (2026-05):** the table previously pointed at
+> `extension-sync/src/lib/*`; that workspace was consolidated into
+> `src/web-v2/lib/*`. The HTTP contract between client and Worker
+> (`/vault/:id` + `/auth/*`) is unchanged.
 
 ## 7. Tests
 
 ```
 sync-worker      40   (16 routes + 10 registry + 14 auth-routes)
-extension-sync  127   (~) — see workspace counts in `npm test`
+web-v2          127   (~) — lib/{vault,sync,sync-auth} test counts; see workspace
 extension        57   (V1, unchanged — still passes)
 goat-wallet       6
 agent-sdk        24
@@ -156,7 +168,7 @@ agent-sdk        24
 total           254
 ```
 
-`infra/sync-worker` runs against a real workerd via
+`src/infra/sync-worker` runs against a real workerd via
 `@cloudflare/vitest-pool-workers`, so the R2 binding behaves like
 production. Happy-path WebAuthn signature verification is covered by
 `@simplewebauthn/server`'s own suite + browser E2E (deferred).
@@ -165,11 +177,11 @@ production. Happy-path WebAuthn signature verification is covered by
 
 ```bash
 # Terminal 1 — sync worker
-cd infra/sync-worker
+cd src/infra/sync-worker
 npx wrangler dev          # starts on http://localhost:8787
 
-# Terminal 2 — extension popup
-cd extension-sync
+# Terminal 2 — web-v2 dashboard / vault popup
+cd src/web-v2
 VITE_KEYSHIELD_SYNC_URL=http://localhost:8787 npx vite dev
 # popup opens on http://localhost:5173
 ```
@@ -181,7 +193,7 @@ the vault won't survive a popup reload.
 ## 9. Production deploy
 
 ```bash
-cd infra/sync-worker
+cd src/infra/sync-worker
 
 # One-time: create R2 buckets
 wrangler r2 bucket create keyshield-vaults
@@ -191,8 +203,8 @@ wrangler r2 bucket create keyshield-registry
 echo -n "$(openssl rand -hex 32)" | wrangler secret put JWT_SECRET
 
 # One-time: tell the worker the relying-party origin
-wrangler secret put RP_ID            # e.g. "keyshield.dev"
-wrangler secret put RP_ORIGIN        # e.g. "https://keyshield.dev"
+wrangler secret put RP_ID            # e.g. "ks.aileena.xyz"
+wrangler secret put RP_ORIGIN        # e.g. "https://app.ks.aileena.xyz"
 
 # Deploy
 wrangler deploy
@@ -334,7 +346,7 @@ revocation credential. The user can drop every existing passkey
 registration server-side without holding any of those passkeys —
 useful when a device is genuinely lost (not just borrowed).
 
-Wire layout (see `extension-sync/src/lib/seed-revoke.ts` and the new
+Wire layout (see `src/web-v2/lib/seed-revoke.ts` and the new
 worker endpoints):
 
 ```
@@ -375,7 +387,7 @@ enabled while `state.seed` is in scope — i.e. between
 
 ### 11.6 The five end-to-end paths
 
-Each is exercised by `extension-sync/src/popup/hooks/useVaultFlow.test.tsx`:
+Each is exercised by `src/web-v2/popup/hooks/useVaultFlow.test.tsx`:
 
 | Path | Triggers | What's stored after |
 |---|---|---|

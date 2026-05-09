@@ -5,10 +5,16 @@ Public API:
     from src.backend.config import get_settings
     from src.backend.errors import KeyShieldError
     from src.backend.trading.orchestrator import TradingOrchestrator
+
+Path A: vault storage now lives outside Python (Cloudflare Worker +
+client-side AES-GCM). Module-level vault wrappers (store/load/delete/
+list_keys) and the legacy `_ks_instance = KeyShield()` self-calling SDK
+loop have been removed.
 """
 from __future__ import annotations
 
 # ─── SDK ──────────────────────────────────────────────────────────────
+# Kept for external callers; no longer used internally for storage.
 from .keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
 
 # ─── Config ───────────────────────────────────────────────────────────
@@ -35,20 +41,6 @@ from .trading.analysis import AnalysisAgent, ModelRouter, TaskType
 from .trading.execution import ExecutionAgent, ZeroXRouter, TitanExecutor
 from .trading.models import TradingState, RiskPolicy
 from .trading.market_data import PriceFeedConfig
-
-# ─── Vault (routes/vault.py) ──────────────────────────────────────────
-import sys as _sys
-import types as _types
-from .routes.vault import router as _vault_router
-from .routes.vault import vault_list, vault_store, vault_delete, vault_decrypt
-_vault_mod = _types.ModuleType("backend.vault")
-_vault_mod.router = _vault_router
-_vault_mod.vault_list = vault_list
-_vault_mod.vault_store = vault_store
-_vault_mod.vault_delete = vault_delete
-_vault_mod.vault_decrypt = vault_decrypt
-_vault_mod._auth = vault_list  # placeholder for _auth
-_sys.modules["backend.vault"] = _vault_mod
 
 # ─── Auth ─────────────────────────────────────────────────────────────
 from .auth.session import create_token, get as get_session, verify_token
@@ -79,31 +71,6 @@ from .skills.helius_skill import TOOLS as HELIUS_TOOLS, run_tool
 # ─── Middleware ───────────────────────────────────────────────────────
 from .middleware.auth import require_auth, get_session_from_request
 
-# ─── Vault convenience functions (backed by KeyShield class) ──────────
-# These are the actual store/load/delete/list_keys that routes/vault.py
-# calls via vault_mod.store(user_id, ...) etc.
-_ks_instance = KeyShield()
-
-
-def store(user_id: str, upstream: str, api_key: str, password: str = None) -> None:
-    """Store a key for the given user."""
-    _ks_instance.store(upstream, api_key)
-
-
-def load(user_id: str, upstream: str, password: str) -> str:
-    """Load and decrypt a key for the given user."""
-    return _ks_instance.load(user_id, upstream, password)
-
-
-def delete(user_id: str, upstream: str) -> None:
-    """Delete a key for the given user."""
-    _ks_instance.delete_key(upstream)
-
-
-def list_keys(user_id: str) -> list[str]:
-    """List keys for the given user."""
-    return _ks_instance.list_keys()
-
 
 __all__ = [
     # SDK
@@ -117,8 +84,6 @@ __all__ = [
     "TradingOrchestrator", "MarketDataAgent", "RiskAgent",
     "AnalysisAgent", "ExecutionAgent", "ModelRouter", "TaskType",
     "TradingState", "RiskPolicy", "PriceFeedConfig",
-    # Vault
-    "store", "load", "delete", "list_keys",
     # Auth
     "create_token", "get_session", "verify_token",
     "passkey_mod",

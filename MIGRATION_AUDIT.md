@@ -1,5 +1,25 @@
 # Migration Audit — python-legacy → src/backend
 
+## Status: Path A + Python merge (2026-05-09)
+
+**Change:** Merged Path A + Python — vault ops moved to the
+Cloudflare Worker + client-side crypto; Python `/proxy/*`
+refactored to **stateless** (the upstream key arrives on each
+request as `X-Upstream-API-Key` and is never persisted);
+`/manage/*` server-side plaintext storage routes removed; the
+former `extension-sync/` workspace was consolidated into
+`src/web-v2/lib/{vault,sync,sync-auth}.ts` (HTTP contract
+unchanged).
+
+Production hosts after the merge:
+
+- Landing — `https://ks.aileena.xyz` (Vercel `keyshield-landing`)
+- App — `https://app.ks.aileena.xyz` (Vercel building `src/web-v2/`)
+- Sync Worker — `https://keyshield-sync.<account>.workers.dev`
+- API — `https://api.ks.aileena.xyz` (Railway)
+
+---
+
 ## Status: Core migration complete (2026-05-08)
 
 **Commit:** `c73a4a5e6` — feat(migration): migrate core Python modules from python-legacy to v2-mvp
@@ -26,7 +46,7 @@
 
 | # | Module | Size Legacy → V2MVP | Description |
 |---|--------|---------------------|-------------|
-| 9 | server.py | 88.6KB / 2378 lines → 86.1KB / ~2340 lines | All 37+ route handlers, 20+ Pydantic models preserved. Routes: `/auth/*`, `/manage/*`, `/proxy/*`, `/agents/*`, `/share/*`, `/billing/*`, `/mpp/*`. Functions: `_cache_key`, `_cache_get`, `_cache_set`, `_rpc_ttl`, `_b58decode`, `_purge_expired_nonces`, `_record_nonce`, `_validate_challenge`, `_consume_nonce`, `_decode_b58_pubkey`, `_decode_b64_signature`, `_bearer`, `_session`, `_resolve_key`, `_x402_body`, `_looks_like_solana_wallet`, `_ix_to_response` |
+| 9 | server.py | 88.6KB / 2378 lines → 86.1KB / ~2340 lines | All 37+ route handlers, 20+ Pydantic models preserved. Routes: `/auth/*`, `/manage/*` (since removed in 2026-05-09 Path A merge), `/proxy/*`, `/agents/*`, `/share/*`, `/billing/*`, `/mpp/*`. Functions: `_cache_key`, `_cache_get`, `_cache_set`, `_rpc_ttl`, `_b58decode`, `_purge_expired_nonces`, `_record_nonce`, `_validate_challenge`, `_consume_nonce`, `_decode_b58_pubkey`, `_decode_b64_signature`, `_bearer`, `_session`, `_resolve_key`, `_x402_body`, `_looks_like_solana_wallet`, `_ix_to_response` |
 | 10 | billing_solana.py | 14.6KB / 387 lines → 9.0KB / ~260 lines | Classes: `PaymentVerificationError`, `SolUsdPrice`, `_ManualClient`. Functions: `_instructions()`, `_verify_tx_succeeded()`, `find_sol_transfer()`, `find_usdc_transfer()`, `find_memo()`, `_purge_expired_memos()`, `issue_topup_memo()`, `verify_topup_memo()`, `consume_topup_memo()` |
 | 11 | passkey.py | 9.1KB → 8.6KB | WebAuthn registration and authentication |
 | 12 | sharing.py | 6.7KB → 4.3KB | `_db()`, `grant()`, `revoke()`, `list_outgoing()`, `list_incoming()`, `purge_user()`, `_row_to_dict()` |
@@ -57,7 +77,13 @@
 
 ### server.py (37+ routes, 20+ Pydantic models)
 
-**Route handlers:** `/auth/login`, `/auth/logout`, `/auth/delete-account-challenge`, `/auth/delete-account`, `/auth/wallet-challenge`, `/auth/wallet-login`, `/auth/agent-challenge`, `/auth/agent-login`, `/agents/register`, `/agents/list`, `/agents/{agent_id}`, `/manage/list`, `/manage/decrypt/{upstream}`, `/manage/store`, `/manage/secret/{upstream}`, `/share/grant`, `/share/incoming`, `/share/outgoing`, `/share/{share_id}`, `/manage/batch`, passkey endpoints, billing endpoints, mpp endpoints, `/proxy/{upstream}/{path}`, `/health`
+**Route handlers:** `/auth/login`, `/auth/logout`, `/auth/delete-account-challenge`, `/auth/delete-account`, `/auth/wallet-challenge`, `/auth/wallet-login`, `/auth/agent-challenge`, `/auth/agent-login`, `/agents/register`, `/agents/list`, `/agents/{agent_id}`, ~~`/manage/list`~~, ~~`/manage/decrypt/{upstream}`~~, ~~`/manage/store`~~, ~~`/manage/secret/{upstream}`~~, `/share/grant`, `/share/incoming`, `/share/outgoing`, `/share/{share_id}`, ~~`/manage/batch`~~, passkey endpoints, billing endpoints, mpp endpoints, `/proxy/{upstream}/{path}`, `/health`
+
+> `/manage/*` routes removed 2026-05-09 (Path A merge). Vault
+> storage is now exclusively client-encrypted via the Cloudflare
+> sync-worker. The Python `/proxy/*` is stateless w.r.t. upstream
+> keys: clients send the decrypted key as the `X-Upstream-API-Key`
+> request header.
 
 **Pydantic models:** `LoginBody`, `DeleteAccountBody`, `WalletLoginBody`, `AgentLoginBody`, `AgentRegisterBody`, `StoreBody`, `ShareGrantBody`, `BatchItem`, `BatchBody`, `SkillRunBody`, `PasskeyRegVerifyBody`, `PasskeyAuthVerifyBody`, `TopupBody`, `SolQuoteBody`, `TopupSolanaBody`, `TopupUsdcBody`, `MppOpenStreamBody`, `MppRecordBody`, `BuildOpenTxBody`, `BuildWithdrawTxBody`, `MppRecordTxBody`, `BuildEphemeralSignerTxBody`, `_AccountMetaJson`, `BuildTxResponse`
 

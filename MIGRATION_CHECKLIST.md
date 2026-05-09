@@ -1,7 +1,35 @@
 # KeyShield Migration Checklist
 
 > Migrating from `src/python-legacy/` (old codebase) → `v2-mvp/` (new clean architecture) → `src/backend/` (current)
-> Last updated: 2026-05-09 — Phase 6: Landing page + _dropped restructure
+> Last updated: 2026-05-09 — Path A + Python merge
+
+---
+
+## Phase 7: Path A + Python merge (2026-05-09)
+
+**What changed:** Vault **storage** moved fully off the Python
+backend onto the Cloudflare sync-worker (Path A — client-side
+WebAuthn-PRF crypto, R2-backed ciphertext sync). The Python
+`/proxy/*` was refactored to be **stateless** with respect to
+upstream API keys: clients now send the decrypted key on each
+request via the `X-Upstream-API-Key` header, the proxy uses it
+once for the upstream call, and the key is **never persisted**.
+The legacy `/manage/*` server-side plaintext storage routes were
+removed.
+
+The former `extension-sync/` workspace was consolidated into
+`src/web-v2/lib/{vault,sync,sync-auth}.ts`. The HTTP contract
+between the client and the Cloudflare Worker is unchanged — only
+the file paths moved.
+
+**Production hosts after the merge:**
+
+| Tier | URL | Platform |
+|------|-----|----------|
+| Landing | `https://ks.aileena.xyz` | Vercel (`keyshield-landing`) |
+| App (web-v2 dashboard) | `https://app.ks.aileena.xyz` | Vercel (builds `src/web-v2/`) |
+| Sync Worker (vault storage) | `https://keyshield-sync.<account>.workers.dev` | Cloudflare |
+| API (Python business logic) | `https://api.ks.aileena.xyz` (or Railway domain) | Railway |
 
 ---
 
@@ -32,7 +60,7 @@ keyshield/
 ├── src/
 │   ├── backend/         # Python control plane
 │   ├── web/extension/   # Active Chrome extension
-│   └── web-v2/          # Web v2 source
+│   └── web-v2/          # Web v2 source (now hosts Path A vault client lib/)
 └── tests/               # E2E tests
 ```
 
@@ -92,6 +120,12 @@ keyshield/
 
 ### ✅ SDK Packages — PORTED
 - agent-sdk, cli, goat-wallet, openclaw-skill
+
+### ✅ Path A vault client (NEW location, 2026-05-09)
+- `src/web-v2/lib/vault.ts` — HKDF derivations, AES-256-GCM encrypt/decrypt
+- `src/web-v2/lib/sync.ts` — `HttpSyncBackend` to the Cloudflare Worker
+- `src/web-v2/lib/sync-auth.ts` — `/auth/register`, `/auth/challenge`, `/auth/exchange`
+- (Consolidated from the now-removed `extension-sync/` workspace; HTTP contract unchanged.)
 
 ### ✅ Landing Page (Demo)
 - `landing/` — Standalone demo page (index.html + DEMO-SCRIPT.md)
@@ -164,15 +198,15 @@ keyshield/
 - `/agents/register` — Register agent
 - `/agents/list` — List agents
 - `/agents/{agent_id}` — Delete agent
-- `/manage/list` — List secrets
-- `/manage/decrypt/{upstream}` — Decrypt secret
-- `/manage/store` — Store secret
-- `/manage/secret/{upstream}` — Delete secret
+- ~~`/manage/list`~~ — REMOVED 2026-05-09 (Path A merge)
+- ~~`/manage/decrypt/{upstream}`~~ — REMOVED 2026-05-09 (Path A merge)
+- ~~`/manage/store`~~ — REMOVED 2026-05-09 (Path A merge)
+- ~~`/manage/secret/{upstream}`~~ — REMOVED 2026-05-09 (Path A merge)
 - `/share/grant` — Share vault key
 - `/share/incoming` — Incoming shares
 - `/share/outgoing` — Outgoing shares
 - `/share/{share_id}` — Delete share
-- `/manage/batch` — Batch operations
+- ~~`/manage/batch`~~ — REMOVED 2026-05-09 (Path A merge)
 - `/auth/passkey/register-options` | `register-verify` | `auth-options` | `auth-verify` | `list` | `{cred_id}` — WebAuthn
 - `/billing/balance` — User balance
 - `/billing/topup` | `/billing/topup-solana` | `/billing/topup-solana-usdc` — Top-up
@@ -180,7 +214,7 @@ keyshield/
 - `/billing/topup-history` — History
 - `/mpp/streams` — Open/close streams
 - `/mpp/events` | `/{stream_id}/record` | `/{stream_id}/settle` | `/{stream_id}/close` | `/{stream_id}/record-tx` — MPP
-- `/proxy/{upstream}/{path}` — Universal proxy
+- `/proxy/{upstream}/{path}` — Stateless proxy (X-Upstream-API-Key per request)
 - `/health` — Health check
 
 **Pydantic models:**

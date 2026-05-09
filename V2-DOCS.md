@@ -5,6 +5,49 @@
 
 ---
 
+## Architecture (post Path A + Python merge, 2026-05-09)
+
+```
+┌─────────────── Browser / extension (client) ───────────────┐
+│  Vault crypto (Path A): WebAuthn PRF → HKDF → AES-256-GCM  │
+│  Encrypted client-side, server can't decrypt               │
+└────┬───────────────────────┬───────────────────────────────┘
+     │                       │
+     ▼ /vault/:id (CF Worker) ▼ /proxy/:upstream/...  + X-Upstream-API-Key header
+┌──────────────────┐         ┌────────────────────────────────┐
+│ Cloudflare Worker│         │ Python FastAPI (Railway)       │
+│ (sync-worker)    │         │  - /proxy/* (stateless, key in │
+│  R2: VAULTS,     │         │    header, never persisted)    │
+│       REGISTRY   │         │  - /auth/passkey/* (mobile)    │
+│  Zero-knowledge  │         │  - /agents/*, /billing/*,      │
+│                  │         │    /share/*, /usage/*, /mpp/*  │
+└──────────────────┘         └────────────────────────────────┘
+```
+
+### Two surfaces, two contracts
+
+| Concern | Where it runs | Endpoint | Key handling |
+|---|---|---|---|
+| **Vault STORAGE** (sync, CRUD ciphertext) | Cloudflare Worker (`src/infra/sync-worker/`) | `/vault/:id`, `/auth/*` | Server only sees ciphertext — zero-knowledge. Decryption keys derive from the user's passkey-PRF on the client. |
+| **Vault USAGE** (call upstream APIs) | Python FastAPI (`src/backend/`) | `/proxy/:upstream/...` | Stateless. Client decrypts the key locally and sends it on the request as `X-Upstream-API-Key`. The Python server uses the header to call the upstream and **never persists** the key. |
+| Billing / agents / sharing / x402 | Python FastAPI (`src/backend/`) | `/billing/*`, `/agents/*`, `/share/*`, `/mpp/*`, `/usage/*` | Standard authenticated session. |
+| Mobile passkey + session minting | Python FastAPI (`src/backend/`) | `/auth/passkey/*` | WebAuthn (alongside the Worker's WebAuthn for vault unlock). |
+
+The `/manage/*` "store the plaintext on the server" routes from earlier
+designs have been removed — vault storage is exclusively client-encrypted
+via the Worker. See `MIGRATION_AUDIT.md` for the cutover entry.
+
+### Production hosts
+
+| Tier | URL | Platform |
+|------|-----|----------|
+| Landing | `https://ks.aileena.xyz` | Vercel (`keyshield-landing`) |
+| App (web-v2 dashboard) | `https://app.ks.aileena.xyz` | Vercel (builds `src/web-v2/`) |
+| Sync Worker (vault storage) | `https://keyshield-sync.<account>.workers.dev` | Cloudflare |
+| API (Python business logic) | `https://api.ks.aileena.xyz` (or Railway domain) | Railway |
+
+---
+
 ## Current Layout (as of Phase 6, 2026-05-09)
 
 ```
@@ -34,7 +77,7 @@ keyshield/
 │   │   ├── keyshield_sdk.py     # KeyShield, AsyncKeyShield, AgentKeyShield
 │   │   ├── auth/                # Session + WebAuthn
 │   │   ├── routes/              # Route handlers (vault, agents, billing, etc.)
-│   │   ├── proxy/               # API router + x402 verify
+│   │   ├── proxy/               # Stateless /proxy (X-Upstream-API-Key) + x402 verify
 │   │   ├── billing/             # Usage tracking
 │   │   ├── agents/              # Agent CRUD
 │   │   ├── sharing/             # Vault shares
@@ -44,7 +87,8 @@ keyshield/
 │   │   ├── middleware/          # Auth middleware
 │   │   └── tests/               # Python unit tests
 │   ├── web/extension/           # Chrome extension (Plasmo)
-│   ├── web-v2/                  # Vite-based React app
+│   ├── web-v2/                  # Vite-based React app (Path A vault client + dashboard)
+│   │   └── lib/{vault,sync,sync-auth}.ts  # consolidated from extension-sync/
 │   ├── programs/keyshield/      # Solana program
 │   ├── proxy/                   # Rust hot-path proxy
 │   ├── mobile/                  # React Native
@@ -62,11 +106,12 @@ keyshield/
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Python control plane (`src/backend/`) | ✅ Active | 43 Python files, all imports working |
+| Python control plane (`src/backend/`) | ✅ Active | 43 Python files, all imports working. Stateless `/proxy/*` after Path A merge. |
 | Rust proxy (`src/proxy/`) | ✅ Active | 6 crates, ~78 tests |
 | Solana program (`src/programs/keyshield/`) | ✅ Active | Anchor program, 7 instructions |
 | Chrome extension (`src/web/extension/`) | ✅ Active | Plasmo-based MV3 |
-| Web V2 (`src/web-v2/`) | ✅ Active | Vite 6 + React 19 |
+| Web V2 (`src/web-v2/`) | ✅ Active | Vite 6 + React 19. Hosts `lib/{vault,sync,sync-auth}.ts` (formerly `extension-sync/`). |
+| Sync Worker (`src/infra/sync-worker/`) | ✅ Active | Cloudflare Worker — Path A vault storage (R2 + WebAuthn) |
 | SDK packages (`src/sdk/packages/`) | ✅ Active | agent-sdk, cli, goat-wallet |
 | E2E tests (`tests/e2e/`) | ✅ Active | Playwright |
 
@@ -93,6 +138,7 @@ keyshield/
 | `.dropped-20260427-231054/disabled_extension/` | `_archive/disabled-extension/` | Disabled Vite-based extension |
 | `landing/DEMO-SCRIPT.md` | `landing/DEMO-SCRIPT.md` | Unchanged (demo script) |
 | `landing/index.html` | `landing/index.html` | Unchanged (demo page) |
+| `extension-sync/src/lib/{auth,vault,sync,sync-auth}.ts` | `src/web-v2/lib/{vault,sync,sync-auth}.ts` | Path A client crypto + sync (consolidated 2026-05) |
 
 ---
 
@@ -114,3 +160,4 @@ keyshield/
 | `src/rust-proxy/` | `src/proxy/` |
 | `src/web-frontend/` | `src/web-v2/` (Vite app) |
 | `src/python-legacy/` | Merged into `src/backend/` |
+| `extension-sync/` | `src/web-v2/lib/{vault,sync,sync-auth}.ts` |
