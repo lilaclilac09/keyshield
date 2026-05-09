@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Terminal, Eye, EyeOff, RotateCw } from 'lucide-react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { RevealField } from './ui/RevealField';
-import { CodeBlock } from './ui/CodeBlock';
-import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../lib/auth';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { RevealField } from '../ui/RevealField';
+import { CodeBlock } from '../ui/CodeBlock';
+import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../../lib/auth';
 
 export const DeveloperSection: React.FC = () => {
   const token = getToken() ?? '';

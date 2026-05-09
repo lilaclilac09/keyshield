@@ -1,15 +1,16 @@
 import React from 'react';
 import { Key, Plus } from 'lucide-react';
-import { VaultItem } from '../../types';
+import type { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
   onAdd: () => void; onDelete: (id: string) => void; onDecrypt: (id: string) => Promise<string>;
+  isLoading?: boolean;
 }
 
-export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt }) => (
+export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, isLoading }) => (
   <div className="space-y-6">
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />

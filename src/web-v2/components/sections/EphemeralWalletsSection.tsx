@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { Input } from './ui/Input';
-import { apiFetch } from '../lib/auth';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { apiFetch } from '../../lib/auth';
 
 interface EphemeralWallet { agent_id: string; pubkey: string; }
 

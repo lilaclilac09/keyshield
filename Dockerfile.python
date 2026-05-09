@@ -1,28 +1,52 @@
-# KeyShield Python API — base image
+# KeyShield Python API — Multi-stage build for Docker
+# Base image: python 3.12-slim
+# Build context: repo root (.)
+# Dockerfile location: <repo-root>/Dockerfile.python
+
+# ─── Builder Stage ────────────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
-COPY pyproject.toml .
+
+# Install build dependencies for crypto libs (cryptography, solders, webauthn)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    libssl-dev \
+    pkg-config \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements for layer caching
 COPY src/backend/requirements.txt .
 
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Install deps into /install prefix (copied to runtime later)
+RUN pip install --no-cache-dir \
+    --prefix=/install \
+    --upgrade \
+    pip \
+    setuptools \
+    wheel \
+    -r requirements.txt
 
-# ─── Runtime ────────────────────────────────────────────────────────
+# ─── Runtime Stage ────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-# Copy installed deps
+# Copy installed deps from builder
 COPY --from=builder /install /usr/local
 
-# Copy source
+# Copy source code (relative to build context = repo root)
 COPY src/backend/ ./src/backend/
-COPY conftest.py ./
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD python -c "import httpx; r = httpx.get('http://localhost:8000/health'); exit(0 if r.status_code == 200 else 1)" || true
 
+# Expose FastAPI port
 EXPOSE 8000
 
+# Start uvicorn server
 CMD ["uvicorn", "src.backend.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, AlertCircle, Zap, Key, DollarSign, FileText, ArrowRight } from 'lucide-react';
-import { Card } from './ui/Card';
-import { CodeBlock } from './ui/CodeBlock';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
-import { API_BASE } from '../lib/auth';
-import { VERSION, BUILD_DATE, REPO_URL } from '../lib/version';
+import { Card } from '../ui/Card';
+import { CodeBlock } from '../ui/CodeBlock';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
+import { API_BASE } from '../../lib/auth';
+import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 
 export const DocsSection: React.FC = () => {
   const installCmd = `curl -fsSL ${API_BASE}/install.sh | bash`;
@@ -33,7 +33,7 @@ export const DocsSection: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card><div className="flex items-center gap-2 mb-2"><Key size={16} className="text-white" /><span className="text-[14px] font-medium text-white">Vault</span></div><p className="text-[12px] text-zinc-400 leading-relaxed">Your API keys, encrypted with AES-256-GCM. The decryption key never leaves your machine.</p></Card>
-        <Card><div className="flex items-center gap-2 mb-2"><Shield size={16} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Proxy</span></div><p className="text-[12px] text-zinc-400 leading-relaxed">A request hits /proxy/{upstream}/. The server decrypts your key in memory, injects it, and forwards. The agent never sees the plaintext.</p></Card>
+        <Card><div className="flex items-center gap-2 mb-2"><Shield size={16} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Proxy</span></div><p className="text-[12px] text-zinc-400 leading-relaxed">A request hits /proxy/{'{upstream}'}/. The server decrypts your key in memory, injects it, and forwards. The agent never sees the plaintext.</p></Card>
         <Card><div className="flex items-center gap-2 mb-2"><Bot size={16} className="text-zinc-400" /><span className="text-[14px] font-medium text-white">Agent</span></div><p className="text-[12px] text-zinc-400 leading-relaxed">A programmatic identity with its own ed25519 keypair. You register the pubkey once. The agent self-authenticates by signing a server challenge.</p></Card>
       </div>
 

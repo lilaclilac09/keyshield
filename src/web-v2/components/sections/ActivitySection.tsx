@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, StatCard } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { DataTable, Column } from '../ui/DataTable';
+import { DataTable, type Column } from '../ui/DataTable';
 import { apiFetch } from '../../lib/auth';
 
 interface UsageEntry {

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LogOut, RefreshCw } from 'lucide-react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { apiFetch, getToken, getWalletAddress, getPasskeyTrust } from '../lib/auth';
-import { relTime } from '../lib/time';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Badge } from '../ui/Badge';
+import { apiFetch, getToken, getWalletAddress, getPasskeyTrust } from '../../lib/auth';
+import { relTime } from '../../lib/time';
 
 interface SessionRow { token_id: string; device_label?: string | null; ip?: string | null; user_agent?: string | null; last_seen_at?: number | null; expires_at?: number | null; is_current: boolean; }
 

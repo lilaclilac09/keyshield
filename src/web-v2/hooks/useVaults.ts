@@ -1,74 +1,96 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { VaultItem, inferType } from '../types';
-import { apiFetch, isAuthenticated, API_BASE } from '../lib/auth';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { VaultItem, VaultItemType } from '../types';
 
-const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
-  openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
-  anthropic: { name: 'Anthropic Claude', domain: 'anthropic.com', tags: ['AI', 'CLAUDE'] },
-  helius: { name: 'Helius RPC', domain: 'helius.dev', tags: ['RPC', 'SOLANA'] },
-  mistral: { name: 'Mistral AI', domain: 'mistral.ai', tags: ['AI'] },
-  cohere: { name: 'Cohere', domain: 'cohere.ai', tags: ['AI'] },
-  groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
-};
+// --- Types ---
 
-function userSecretLabel(slug: string): string { const idx = slug.indexOf('__'); return idx >= 0 ? slug.slice(idx + 2).replace(/_/g, ' ') : slug; }
-
-function backendItemToVault(item: { upstream: string; createdAt: number; updatedAt: number }): VaultItem {
-  const type = inferType(item.upstream);
-  if (type === 'api_key') {
-    const meta = UPSTREAM_META[item.upstream] ?? { name: item.upstream, domain: '', tags: ['KEY'] };
-    return { id: item.upstream, name: meta.name, type: 'api_key', value: `${API_BASE}/proxy/${item.upstream}/`, domain: meta.domain, createdAt: item.createdAt * 1000, lastUsedAt: item.updatedAt * 1000, tags: [...meta.tags, 'VAULT'] };
-  }
-  return { id: item.upstream, name: userSecretLabel(item.upstream), type, value: '\u2022\u2022\u2022\u2022\u2022\u2022', createdAt: item.createdAt * 1000, lastUsedAt: item.updatedAt * 1000, tags: [type.replace('_', ' ')] };
+export interface VaultListResponse {
+  items: VaultItem[];
 }
 
-export const useVaults = (searchQuery: string, _activeFilter: string) => {
-  const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export interface VaultDeleteResponse {
+  success: boolean;
+}
 
-  const loadFromAPI = useCallback(async () => {
-    if (!isAuthenticated()) return;
-    setLoading(true); setError(null);
-    try {
-      const res = await apiFetch('/manage/list');
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const data: { items?: { upstream: string; createdAt: number; updatedAt: number }[]; keys?: string[] } = await res.json();
-      if (data.items && data.items.length > 0) setVaultItems(data.items.map(backendItemToVault));
-      else if (data.keys) { const now = Math.floor(Date.now() / 1000); setVaultItems(data.keys.map(k => backendItemToVault({ upstream: k, createdAt: now, updatedAt: now }))); }
-      else setVaultItems([]);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to load vault'); }
-    finally { setLoading(false); }
-  }, []);
+export interface VaultDecryptResponse {
+  value: string;
+}
 
-  useEffect(() => { loadFromAPI(); const handler = () => loadFromAPI(); window.addEventListener('ks-auth-changed', handler); return () => window.removeEventListener('ks-auth-changed', handler); }, [loadFromAPI]);
+// --- Key names ---
 
-  const filteredItems = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    if (!q) return vaultItems;
-    return vaultItems.filter(item => item.name.toLowerCase().includes(q) || item.domain?.toLowerCase().includes(q) || item.tags.some(t => t.toLowerCase().includes(q)));
-  }, [vaultItems, searchQuery]);
-
-  const addItem = useCallback(async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-    const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
-    const rawKey = data.rawKey ?? data.value ?? '';
-    if (!rawKey) return;
-    const res = await apiFetch('/manage/store', { method: 'POST', body: JSON.stringify({ upstream, apiKey: rawKey }) });
-    if (!res.ok) { const err = await res.json().catch(() => ({ detail: 'Store failed' })); throw new Error((err as { detail: string }).detail); }
-    await loadFromAPI();
-  }, [loadFromAPI]);
-
-  const deleteItem = useCallback(async (id: string) => {
-    setVaultItems(prev => prev.filter(i => i.id !== id));
-    try { const res = await apiFetch(`/manage/secret/${id}`, { method: 'DELETE' }); if (!res.ok) throw new Error('Delete failed'); }
-    catch { await loadFromAPI(); }
-  }, [loadFromAPI]);
-
-  const decryptItem = useCallback(async (id: string): Promise<string> => {
-    const res = await apiFetch(`/manage/decrypt/${id}`);
-    if (!res.ok) { const err = await res.json().catch(() => ({ detail: 'Decrypt failed' })); throw new Error((err as { detail: string }).detail ?? 'Decrypt failed'); }
-    const data = await res.json(); return data.key as string;
-  }, []);
-
-  return { items: filteredItems, allItems: vaultItems, loading, error, addItem, deleteItem, decryptItem, refresh: loadFromAPI };
+export const VAULT_KEYS = {
+  list: ['vault', 'list'] as const,
+  item: (id: string) => ['vault', 'item', id] as const,
+  allTypes: ['vault', 'types'] as const,
 };
+
+// --- Query hooks ---
+
+/** Fetch vault items with TanStack Query caching */
+export function useVaultList(searchQuery?: string, selectedType?: string) {
+  return useQuery({
+    queryKey: VAULT_KEYS.list,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.set('q', searchQuery);
+      if (selectedType && selectedType !== 'All Items') params.set('type', selectedType);
+      const res = await fetch(`/api/vault/list?${params}`, { credentials: 'include' });
+      const data = await res.json() as VaultItem[];
+      return data;
+    },
+    staleTime: 5_000,
+    gcTime: 300_000,
+  });
+}
+
+/** Fetch a single vault item (decrypted) */
+export function useVaultItem(id: string) {
+  return useQuery({
+    queryKey: VAULT_KEYS.item(id),
+    queryFn: async () => {
+      const res = await fetch(`/api/vault/${id}/decrypt`, { credentials: 'include' });
+      return res.json() as Promise<VaultDecryptResponse>;
+    },
+    enabled: !!id,
+    staleTime: 10_000,
+  });
+}
+
+/** Delete a vault item */
+export function useVaultDelete() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/vault/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to delete item');
+      return res.json() as Promise<VaultDeleteResponse>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: VAULT_KEYS.list });
+      queryClient.invalidateQueries({ queryKey: VAULT_KEYS.allTypes });
+    },
+  });
+}
+
+/** Add a new vault item */
+export function useVaultAdd() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (item: Omit<VaultItem, 'id'>) => {
+      const res = await fetch('/api/vault/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) throw new Error('Failed to add item');
+      return res.json() as Promise<VaultItem>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: VAULT_KEYS.list });
+      queryClient.invalidateQueries({ queryKey: VAULT_KEYS.allTypes });
+    },
+  });
+}

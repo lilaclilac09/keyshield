@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, ButtonProps } from './Button';
+import { Button, type ButtonProps } from './Button';
 
 interface ConfirmButtonProps extends Omit<ButtonProps, 'variant'> { onConfirm: () => void | Promise<void>; confirmLabel?: string; variant?: ButtonProps['variant']; armWindowMs?: number; }
 

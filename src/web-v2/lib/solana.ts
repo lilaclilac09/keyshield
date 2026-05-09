@@ -9,11 +9,11 @@ export const APS_SEED = 'agent_payment_stream';
 export type Cluster = 'devnet' | 'mainnet-beta';
 const DEFAULT_CLUSTER: Cluster = 'devnet';
 
-function b64decode(base64: string): Uint8Array {
+function b64decode(base64: string): Buffer {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return Buffer.from(bytes);
 }
 
 export const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');

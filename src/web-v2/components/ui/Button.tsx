@@ -8,6 +8,7 @@ const variants = {
   destructive: 'bg-transparent text-red-400 border border-red-900/60 hover:border-red-500 hover:text-red-300 active:bg-red-950/40',
   ghost: 'bg-transparent text-zinc-400 hover:text-white hover:bg-white/5 active:bg-white/10',
   success: 'bg-transparent text-emerald-400 border border-emerald-900/60 hover:border-emerald-500 hover:text-emerald-300 active:bg-emerald-950/40',
+  warning: 'bg-transparent text-amber-400 border border-amber-900/60 hover:border-amber-500 hover:text-amber-300 active:bg-amber-950/40',
 } as const;
 const sizes = { sm: 'text-[10px] px-3 py-1.5 rounded-[2px]', md: 'text-[11px] px-4 py-2 rounded-[3px]', lg: 'text-[12px] px-6 py-2.5 rounded-[4px]', xl: 'text-[13px] px-8 py-3 rounded-[4px]' } as const;
 

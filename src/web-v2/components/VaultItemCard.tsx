@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Key, Copy, Trash2, Check, Shield, Lock, FileText, Terminal, KeyRound } from 'lucide-react';
-import { VaultItem, PasswordPayload, NotePayload, EnvPayload, SSHKeyPayload } from '../types';
+import type { VaultItem, PasswordPayload, NotePayload, EnvPayload, SSHKeyPayload } from '../types';
 import { getPrefs } from '../lib/preferences';
 import { ConfirmButton } from './ui/ConfirmButton';
 import { CopyButton } from './ui/CopyButton';
@@ -90,24 +90,24 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
         </>
       ) : item.type === 'password' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>
-          {parsed.username && <Field label="Username" value={parsed.username} onCopy={() => copyToClipboard(parsed.username, setKeyCopied)} />}
-          <Field label="Password" value={parsed.password} onCopy={() => copyToClipboard(parsed.password, setKeyCopied)} mono />
-          {parsed.url && <Field label="URL" value={parsed.url} onCopy={() => copyToClipboard(parsed.url || '', setKeyCopied)} link />}
+          {(parsed as PasswordPayload).username && <Field label="Username" value={(parsed as PasswordPayload).username} onCopy={() => copyToClipboard((parsed as PasswordPayload).username, setKeyCopied)} />}
+          <Field label="Password" value={(parsed as PasswordPayload).password} onCopy={() => copyToClipboard((parsed as PasswordPayload).password, setKeyCopied)} mono />
+          {(parsed as PasswordPayload).url && <Field label="URL" value={(parsed as PasswordPayload).url!} onCopy={() => copyToClipboard((parsed as PasswordPayload).url!, setKeyCopied)} link />}
         </div>
       ) : item.type === 'note' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>
-          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[12px] font-mono text-zinc-200 whitespace-pre-wrap break-words leading-relaxed select-all">{parsed.content}</pre>
-          <button onClick={() => copyToClipboard(parsed.content, setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : 'Copy note'}</button></div>
+          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[12px] font-mono text-zinc-200 whitespace-pre-wrap break-words leading-relaxed select-all">{(parsed as NotePayload).content}</pre>
+          <button onClick={() => copyToClipboard((parsed as NotePayload).content, setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : 'Copy note'}</button></div>
         </div>
       ) : item.type === 'env' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>
-          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[11px] font-mono text-zinc-200 whitespace-pre-wrap break-all leading-relaxed select-all">{parsed.vars.map(v => `${v.key}=${v.value}`).join('\n')}</pre>
-          <button onClick={() => copyToClipboard(parsed.vars.map(v => `${v.key}=${v.value}`).join('\n'), setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : `Copy ${parsed.vars.length} var${parsed.vars.length !== 1 ? 's' : ''}`}</button></div>
+          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[11px] font-mono text-zinc-200 whitespace-pre-wrap break-all leading-relaxed select-all">{(parsed as EnvPayload).vars.map((v: { key: string; value: string }) => `${v.key}=${v.value}`).join('\n')}</pre>
+          <button onClick={() => copyToClipboard((parsed as EnvPayload).vars.map((v: { key: string; value: string }) => `${v.key}=${v.value}`).join('\n'), setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : `Copy ${(parsed as EnvPayload).vars.length} var${(parsed as EnvPayload).vars.length !== 1 ? 's' : ''}`}</button></div>
         </div>
       ) : item.type === 'ssh_key' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>
-          {parsed.publicKey && <Field label="Public" value={parsed.publicKey} onCopy={() => copyToClipboard(parsed.publicKey, setKeyCopied)} mono />}
-          <Field label="Private" value={`${parsed.privateKey.slice(0, 28)}\u2026${parsed.privateKey.slice(-12)}`} onCopy={() => copyToClipboard(parsed.privateKey, setKeyCopied)} mono />
+          {(parsed as SSHKeyPayload).publicKey && <Field label="Public" value={(parsed as SSHKeyPayload).publicKey} onCopy={() => copyToClipboard((parsed as SSHKeyPayload).publicKey, setKeyCopied)} mono />}
+          <Field label="Private" value={`${(parsed as SSHKeyPayload).privateKey.slice(0, 28)}\u2026${(parsed as SSHKeyPayload).privateKey.slice(-12)}`} onCopy={() => copyToClipboard((parsed as SSHKeyPayload).privateKey, setKeyCopied)} mono />
         </div>
       ) : (
         <div><button onClick={handleReveal} disabled={isDecrypting} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800 hover:border-zinc-700 text-[12px] text-zinc-300 hover:text-white transition-colors">

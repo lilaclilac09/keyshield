@@ -1,0 +1,6 @@
+packages:
+  - "src/sdk/packages/agent-sdk"
+  - "src/sdk/packages/cli"
+  - "src/sdk/packages/goat-wallet"
+  - "src/infra/sync-worker"
+  - "src/web-v2"
