@@ -5,7 +5,8 @@
      "src/sdk/packages/agent-sdk",
      "src/sdk/packages/cli",
      "src/sdk/packages/goat-wallet",
-     "src/infra/sync-worker"
+     "src/infra/sync-worker",
+     "src/web-v2"
    ],
   "scripts": {
     "dev:web": "cd src/web && npm run dev",
