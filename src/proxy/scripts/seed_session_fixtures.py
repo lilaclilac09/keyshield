@@ -42,8 +42,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-REPO_ROOT = PROXY_RS.parent
-V2_SESSION_PY = REPO_ROOT / "v2-mvp" / "src" / "session.py"
+# Post-restructure: src/proxy/ replaces top-level proxy-rs/, REPO_ROOT is
+# two parents up. Python session module lives at src/backend/auth/session.py.
+REPO_ROOT = PROXY_RS.parent.parent
+V2_SESSION_PY = REPO_ROOT / "src" / "backend" / "auth" / "session.py"
 
 
 def _load_session_module(db_path: Path, server_secret: str):

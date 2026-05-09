@@ -42,9 +42,11 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-REPO_ROOT = PROXY_RS.parent
-V2_VAULT_PY = REPO_ROOT / "v2-mvp" / "src" / "vault.py"
-V2_SESSION_PY = REPO_ROOT / "v2-mvp" / "src" / "session.py"
+REPO_ROOT = PROXY_RS.parent.parent  # src/proxy → src → repo root
+# Post-SOTA layout: Python control plane lives under src/backend/.
+# vault.py was inlined into the SDK; we encrypt directly here using the
+# documented format from src/proxy/specs/01-vault-format.md.
+BACKEND_SESSION_PY = REPO_ROOT / "src" / "backend" / "auth" / "session.py"
 
 
 def _load_module(name: str, path: Path):
@@ -54,6 +56,41 @@ def _load_module(name: str, path: Path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+# ─── Vault writer (mirrors deleted v2-mvp/src/vault.py format) ──────────────
+#
+# Format per src/proxy/specs/01-vault-format.md:
+#   {VAULT_DIR}/{user_id}/{upstream}.enc
+#   bytes: salt[16] || nonce[12] || AES-256-GCM(key, nonce, plaintext)
+#   key  : PBKDF2-HMAC-SHA256(password.utf8, salt, iters=100_000, dklen=32)
+
+
+def _vault_store(vault_root: Path, user_id: str, upstream: str, api_key: str, password: str) -> None:
+    import os as _os
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+
+    user_dir = vault_root / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _os.chmod(user_dir, 0o700)
+    except OSError:
+        pass
+
+    salt = _os.urandom(16)
+    nonce = _os.urandom(12)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100_000)
+    key = kdf.derive(password.encode())
+    ct = AESGCM(key).encrypt(nonce, api_key.encode(), None)
+
+    out = user_dir / f"{upstream}.enc"
+    out.write_bytes(salt + nonce + ct)
+    try:
+        _os.chmod(out, 0o600)
+    except OSError:
+        pass
 
 
 def main() -> None:
@@ -71,9 +108,6 @@ def main() -> None:
     session_db = out_dir / "sessions.db"
 
     # vault: store one key for user_a (openai). user_b has nothing → platform fallback.
-    vault = _load_module("v2_vault_proxytest", V2_VAULT_PY)
-    vault.VAULT_DIR = vault_root
-
     user_a = {
         "user_id": "alice",
         "password": "pw_a",
@@ -86,15 +120,15 @@ def main() -> None:
     }
 
     for entry in user_a["stored_keys"]:
-        vault.store(user_a["user_id"], entry["upstream"], entry["value"], user_a["password"])
+        _vault_store(vault_root, user_a["user_id"], entry["upstream"], entry["value"], user_a["password"])
 
     # session: create a fresh token per user. We re-import the module after
     # setting DB_PATH so the connection points at our scratch file.
-    session = _load_module("v2_session_proxytest", V2_SESSION_PY)
+    session = _load_module("backend_session_proxytest", BACKEND_SESSION_PY)
     session.DB_PATH = session_db
 
-    user_a["token"] = session.create(user_a["user_id"], user_a["password"])
-    user_b["token"] = session.create(user_b["user_id"], user_b["password"])
+    user_a["token"] = session.create_token(user_a["user_id"], user_a["password"])
+    user_b["token"] = session.create_token(user_b["user_id"], user_b["password"])
 
     manifest = {
         "vault_root":    str(vault_root),

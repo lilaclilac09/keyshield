@@ -34,8 +34,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-REPO_ROOT = PROXY_RS.parent
-V2_USAGE_PY = REPO_ROOT / "v2-mvp" / "src" / "usage.py"
+# Post-restructure: src/proxy/ replaces top-level proxy-rs/, so REPO_ROOT
+# is two parents up. Python control plane lives at src/backend/.
+REPO_ROOT = PROXY_RS.parent.parent
+V2_USAGE_PY = REPO_ROOT / "src" / "backend" / "billing" / "usage.py"
 
 
 def _load_usage_module():

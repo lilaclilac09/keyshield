@@ -34,29 +34,44 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-# Post-SOTA refactor: rust-proxy lives at src/rust-proxy/, so repo
-# root is two levels above PROXY_RS, not one. Pre-SOTA path was
-# proxy-rs/ (one level deep), where the now-wrong `.parent` worked.
+# Post-SOTA refactor: rust-proxy lives at src/proxy/, so repo root is two
+# levels above PROXY_RS. The original v2-mvp/src/vault.py was deleted in
+# the consolidation; we inline its on-disk format here (same approach as
+# seed_proxy_fixtures.py — keep the test fixture self-contained instead
+# of resurrecting a deleted module).
 REPO_ROOT = PROXY_RS.parent.parent
-V2_VAULT_PY = REPO_ROOT / "v2-mvp" / "src" / "vault.py"
 
 
-def _load_vault_module(target_dir: Path):
-    """Import v2-mvp/src/vault.py as a one-off module.
+# ─── Vault writer (mirrors deleted v2-mvp/src/vault.py format) ──────────────
+#
+# Format per src/proxy/specs/01-vault-format.md:
+#   {VAULT_DIR}/{user_id}/{upstream}.enc
+#   bytes: salt[16] || nonce[12] || AES-256-GCM(key, nonce, plaintext)
+#   key  : PBKDF2-HMAC-SHA256(password.utf8, salt, iters=100_000, dklen=32)
+def _vault_store(vault_root: Path, user_id: str, upstream: str, api_key: str, password: str) -> None:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
 
-    We avoid `sys.path.insert` here because importing the whole `v2-mvp/src`
-    package would pull in heavy FastAPI deps. Instead, load by file path and
-    monkey-patch its module-level `VAULT_DIR` to the test directory before
-    calling `store`.
-    """
-    spec = importlib.util.spec_from_file_location("v2_vault", V2_VAULT_PY)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load {V2_VAULT_PY}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    # Critical: redirect every store() write into the test directory.
-    mod.VAULT_DIR = target_dir
-    return mod
+    user_dir = vault_root / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(user_dir, 0o700)
+    except OSError:
+        pass
+
+    salt = os.urandom(16)
+    nonce = os.urandom(12)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100_000)
+    key = kdf.derive(password.encode())
+    ct = AESGCM(key).encrypt(nonce, api_key.encode(), None)
+
+    out = user_dir / f"{upstream}.enc"
+    out.write_bytes(salt + nonce + ct)
+    try:
+        os.chmod(out, 0o600)
+    except OSError:
+        pass
 
 
 # Five happy-path fixtures, varied to cover:
@@ -107,10 +122,9 @@ def main() -> None:
     out_dir = Path(sys.argv[1]).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    vault = _load_vault_module(out_dir)
-
     for fx in FIXTURES:
-        vault.store(
+        _vault_store(
+            out_dir,
             fx["user_id"],
             fx["upstream"],
             fx["expected_plaintext"],
@@ -125,14 +139,12 @@ def main() -> None:
         json.dumps(manifest, indent=2, ensure_ascii=False)
     )
 
-    # Defensive sanity check: refuse to ever clobber the real v2-mvp/vault.
-    real_vault = REPO_ROOT / "v2-mvp" / "vault"
-    if out_dir.resolve() == real_vault.resolve():
-        # Shouldn't be reachable — but if a future caller passes the real
-        # vault path through, fail loudly rather than silently overwrite.
-        raise SystemExit(
-            f"refusing to seed into the real vault dir: {real_vault}"
-        )
+    # Defensive sanity check: refuse to ever clobber a real production vault dir.
+    for guard in (REPO_ROOT / "vault", REPO_ROOT / "src" / "backend" / "vault"):
+        if out_dir.resolve() == guard.resolve():
+            raise SystemExit(
+                f"refusing to seed into a production vault dir: {guard}"
+            )
 
     # Stdout is parsed by the Rust harness as a quick smoke signal.
     print(json.dumps({"status": "ok", "count": len(FIXTURES)}))
