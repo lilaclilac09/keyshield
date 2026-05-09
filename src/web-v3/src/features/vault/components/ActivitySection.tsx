@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Card, StatCard } from "../../shared/ui/Card";
-import { Button } from "../../shared/ui/Button";
-import { Badge } from "../../shared/ui/Badge";
-import { DataTable, type Column } from "../../shared/ui/DataTable";
-import { apiFetch } from "../../shared/lib/auth";
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, StatCard } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
+import { Badge } from '../../../components/ui/Badge';
+import { DataTable, type Column } from '../../../components/ui/DataTable';
+import { apiFetch } from '../../../lib/auth';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;

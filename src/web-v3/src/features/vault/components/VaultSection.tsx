@@ -1,8 +1,8 @@
-import React from "react";
-import { Key, Plus } from "lucide-react";
-import type { VaultItem } from "../../shared/types";
-import { VaultItemCard } from "../VaultItemCard";
-import { StatCard } from "../../shared/ui/Card";
+import React from 'react';
+import { Key, Plus } from 'lucide-react';
+import type { VaultItem } from '../../types';
+import { VaultItemCard } from '../../../components/VaultItemCard';
+import { StatCard } from '../../../components/ui/Card';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;

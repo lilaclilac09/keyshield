@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, Search, Plus } from 'lucide-react';
-import { SolanaProvider } from './shared/ui/SolanaProvider';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen } from 'lucide-react';
+import { SolanaProvider } from './components/SolanaProvider';
 import { useWallet } from '@solana/wallet-adapter-react';
 import type { VaultItem } from './types';
-import { addAuth, clearAuth, getAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
+import { clearAuth, getAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
 import { apiFetch } from './lib/api';
-import { Sidebar } from './shared/ui/Sidebar';
-import { Header } from './shared/ui/Header';
-import { SearchOverlay } from './shared/ui/SearchOverlay';
-import { BetaBanner } from './shared/ui/BetaBanner';
-import { HealthBadge } from './shared/ui/HealthBadge';
+import { Sidebar } from './components/ui/Sidebar';
+import { Header } from './components/ui/Header';
+import { SearchOverlay } from './components/ui/SearchOverlay';
+import { BetaBanner } from './components/BetaBanner';
+import { HealthBadge } from './components/HealthBadge';
+import { AuthScreen } from './components/AuthScreen';
+import { AddKeyModal } from './components/AddKeyModal';
 import { VaultSection } from './features/vault/components/VaultSection';
 import { ActivitySection } from './features/vault/components/ActivitySection';
 import { AgentsSection } from './features/vault/components/AgentsSection';
@@ -19,8 +21,6 @@ import { SessionsSection } from './features/vault/components/SessionsSection';
 import { SettingsSection } from './features/vault/components/SettingsSection';
 import { DeveloperSection } from './features/vault/components/DeveloperSection';
 import { DocsSection } from './features/vault/components/DocsSection';
-import { AddKeyModal } from './shared/ui/AddKeyModal';
-import { RevealField } from './shared/ui/RevealField';
 import { useVaultList, useVaultDelete, useVaultAdd } from './hooks/useVaults';
 
 type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs';
@@ -37,14 +37,14 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
-  vault: { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
-  activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
-  agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
-  sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
-  sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
-  settings: { title: 'Settings', subtitle: 'Account, security, and preferences' },
+  vault:     { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
+  activity:  { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
+  agents:    { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
+  sharing:   { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
+  sessions:  { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
+  settings:  { title: 'Settings', subtitle: 'Account, security, and preferences' },
   developer: { title: 'Developer', subtitle: 'API tokens, SDK snippets, and endpoint reference' },
-  docs: { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
+  docs:      { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
 };
 
 interface PrefillData {
@@ -54,23 +54,29 @@ interface PrefillData {
   notes: string;
 }
 
-const MAIN: React.FC = () => {
+const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
   const [section, setSection] = useState<Section>('vault');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [prefilledData, setPrefilledData] = useState<PrefillData | null>(null);
+  const [prefilledData, setPrefilledData] = useState<PrefillData | undefined>(undefined);
+  const [showDebug, setShowDebug] = useState(true);
 
-  useEffect(() => {
-    setIsAuthenticated(hasStoredToken());
-  }, []);
-
-  const { data: items = [], isLoading } = useVaultList(searchQuery, 'All Items');
+  // useVaultList returns { data: VaultItem[], isLoading, ... } from react-query
+  const vaultQuery = useVaultList(searchQuery, 'All Items');
+  const items = (vaultQuery as any).data ?? [];
+  const isLoading = (vaultQuery as any).isLoading;
   const deleteMutation = useVaultDelete();
   const addMutation = useVaultAdd();
 
+  // Debug: log auth state on mount
+  useEffect(() => {
+    console.log('[App] isAuthenticated:', isAuthenticated, 'token:', localStorage.getItem('ks_token'));
+  }, [isAuthenticated]);
+
+  // Handle ?action=add deep-link from browser extension
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') !== 'add') return;
@@ -79,13 +85,20 @@ const MAIN: React.FC = () => {
     setPrefilledData({
       name: params.get('name') || '',
       value: params.get('value') || '',
-      domain: upstream ? ({ openai: 'openai.com', anthropic: 'anthropic.com', groq: 'groq.com', mistral: 'mistral.ai', cohere: 'cohere.ai', helius: 'helius.dev', '0x': '0x.org', alchemy: 'alchemy.com' } as Record<string, string>)[upstream] || domain : domain,
+      domain: upstream
+        ? ({
+            openai: 'openai.com', anthropic: 'anthropic.com', groq: 'groq.com',
+            mistral: 'mistral.ai', cohere: 'cohere.ai', helius: 'helius.dev',
+            '0x': '0x.org', alchemy: 'alchemy.com',
+          } as Record<string, string>)[upstream] || domain
+        : domain,
       notes: domain ? `Detected by extension on ${domain}` : 'Detected via extension',
     });
     setIsAddModalOpen(true);
     window.history.replaceState({}, '', window.location.pathname);
   }, [isAuthenticated]);
 
+  // Cross-component nav
   useEffect(() => {
     const onNav = (e: Event) => {
       const detail = (e as CustomEvent<Section>).detail;
@@ -95,11 +108,23 @@ const MAIN: React.FC = () => {
     return () => window.removeEventListener('ks-nav', onNav as EventListener);
   }, []);
 
+  // Sync auth state when token changes
+  const prevAuthRef = React.useRef(isAuthenticated);
+  useEffect(() => {
+    const unsub = notifyAuthChanged();
+    if (prevAuthRef.current !== isAuthenticated) {
+      setIsAuthenticated(hasStoredToken());
+      prevAuthRef.current = isAuthenticated;
+    }
+    return unsub;
+  }, [isAuthenticated]);
+
   const handleLogout = useCallback(async () => {
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
     try { await disconnect(); } catch {}
     clearAuth();
     notifyAuthChanged();
+    setIsAuthenticated(false);
   }, [disconnect]);
 
   const handleAddItem = useCallback(async (item: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
@@ -121,17 +146,29 @@ const MAIN: React.FC = () => {
   const fullAddr = publicKey?.toBase58() ?? getAuth()?.walletAddress ?? '';
   const config = SECTION_CONFIG[section];
 
-  if (isAuthenticated === null) {
-    return <div className="h-screen bg-black text-white flex items-center justify-center">Loading...</div>;
-  }
-
   if (!isAuthenticated) {
-    return <AuthScreen onAuthenticated={() => setSection('vault')} />;
+    console.log('[App] Showing AuthScreen, isAuthenticated:', isAuthenticated);
+    return (
+      <AuthScreen onAuthenticated={() => { console.log('[App] onAuthenticated'); setIsAuthenticated(true); }} />
+    );
   }
 
+  console.log('[App] Showing main UI, section:', section);
   return (
-    <div className="h-screen bg-black text-white flex flex-col" style={{ fontFamily: "'Montserrat', 'Inter', sans-serif" }}>
+    <div className="h-screen w-full bg-[#000] text-white flex flex-col" style={{ fontFamily: "'Montserrat', 'Inter', sans-serif" }}>
+      {/* Debug overlay */}
+      {showDebug && (
+        <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 9999, background: '#fff', color: '#000', padding: '8px 12px', fontSize: 12, fontFamily: 'monospace', borderRadius: 4 }}>
+          <div>isAuthenticated: {String(isAuthenticated)}</div>
+          <div>publicKey: {publicKey?.toBase58() ?? 'null'}</div>
+          <div>section: {section}</div>
+          <div>items.length: {(items as any[]).length}</div>
+          <button onClick={() => setShowDebug(false)} style={{ marginLeft: 10, cursor: 'pointer', background: 'none', border: '1px solid #999', padding: '2px 6px', color: '#333' }}>X</button>
+        </div>
+      )}
       <BetaBanner />
+
+      {/* Search overlay */}
       {isSearchOpen && (
         <SearchOverlay
           query={searchQuery}
@@ -139,13 +176,18 @@ const MAIN: React.FC = () => {
           onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
         />
       )}
+
+      {/* Add key modal */}
       <AddKeyModal
         isOpen={isAddModalOpen}
-        onClose={() => { setIsAddModalOpen(false); }}
+        onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }}
         onSave={handleAddItem}
-        initialData={prefilledData ?? undefined}
+        initialData={prefilledData}
       />
+
+      {/* Main layout */}
       <div className="flex flex-1 min-h-0">
+        {/* Sidebar */}
         <Sidebar
           items={NAV}
           active={section}
@@ -155,7 +197,10 @@ const MAIN: React.FC = () => {
           onCopyAddress={() => navigator.clipboard.writeText(fullAddr)}
           onLogout={handleLogout}
         />
-        <main className="flex-1 min-w-0 flex flex-col bg-black">
+
+        {/* Content area */}
+        <main className="flex-1 min-w-0 flex flex-col bg-[#000]">
+          {/* Header */}
           <Header
             title={config.title}
             subtitle={config.subtitle}
@@ -164,7 +209,9 @@ const MAIN: React.FC = () => {
             searchActive={!!searchQuery}
             actions={<HealthBadge />}
           />
-          <div className="flex-1 overflow-auto px-6 py-6">
+
+          {/* Content */}
+          <div className="flex-1 overflow-auto px-6 py-6" style={{ color: '#fff' }}>
             <div className="max-w-5xl mx-auto">
               {section === 'vault' && (
                 <VaultSection
@@ -178,7 +225,12 @@ const MAIN: React.FC = () => {
                 />
               )}
               {section === 'activity' && <ActivitySection />}
-              {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
+              {section === 'agents' && (
+                <>
+                  <AgentsSection />
+                  <EphemeralWalletsSection />
+                </>
+              )}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
               {section === 'sessions' && <SessionsSection onLogout={handleLogout} />}
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
@@ -192,25 +244,28 @@ const MAIN: React.FC = () => {
   );
 };
 
-const AuthScreen: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenticated }) => {
-  const { connect, connecting } = useWallet();
+const App: React.FC = () => {
+  // Debug: show if SolanaProvider is rendering
+  const [isReady, setIsReady] = useState(false);
+  
+  useEffect(() => {
+    console.log('[App] SolanaProvider mounting...');
+    setIsReady(true);
+  }, []);
+
+  if (!isReady) {
+    return (
+      <div style={{ background: '#000', color: '#fff', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace' }}>
+        Loading...
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen bg-black text-white flex flex-col items-center justify-center">
-      <div className="text-center space-y-8">
-        <h1 className="text-4xl font-bold tracking-tight">KeyShield</h1>
-        <p className="text-muted-foreground text-lg">Connect your wallet to sign in</p>
-        <button
-          onClick={() => connect()}
-          disabled={connecting}
-          className="px-8 py-3 bg-white text-black rounded-md font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-        >
-          {connecting ? 'Connecting...' : 'Connect Wallet'}
-        </button>
-      </div>
-    </div>
+    <SolanaProvider>
+      <MainContent />
+    </SolanaProvider>
   );
 };
 
-const App: React.FC = () => <SolanaProvider><MAIN /></SolanaProvider>;
 export default App;
