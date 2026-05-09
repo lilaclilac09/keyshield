@@ -5,17 +5,29 @@
 //!
 //! All metric names carry the `ks_` prefix to match the Python control plane.
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use metrics::{counter, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 
 /// Initialise the Prometheus recorder and return the render handle.
-/// Must be called exactly once before any `record_*` helpers.
+///
+/// Idempotent: subsequent calls return a clone of the same `PrometheusHandle`.
+/// `metrics_exporter_prometheus::install_recorder()` sets a process-global
+/// recorder and panics if called twice; the test suite has 19+ callsites
+/// that need a handle but cannot share a single `init` call (each test
+/// builds its own router). Wrapping the install in a `OnceLock` makes the
+/// production binary's single call work AND lets tests call this freely.
 pub fn init_prometheus() -> PrometheusHandle {
-    PrometheusBuilder::new()
-        .install_recorder()
-        .expect("failed to install Prometheus recorder")
+    static HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
+    HANDLE
+        .get_or_init(|| {
+            PrometheusBuilder::new()
+                .install_recorder()
+                .expect("failed to install Prometheus recorder")
+        })
+        .clone()
 }
 
 /// Record a completed proxy request.
