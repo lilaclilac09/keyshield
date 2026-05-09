@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Key, Fingerprint, RefreshCw, Trash2, Shield, Bell, BellOff } from 'lucide-react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { Toggle } from './ui/Toggle';
-import { Input } from './ui/Input';
-import { Badge } from './ui/Badge';
-import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../lib/auth';
-import { getPrefs, setPrefs, type VaultPreferences } from '../lib/preferences';
-import { fetchDeleteAccountChallenge, deleteAccount } from '../lib/api';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Toggle } from '../ui/Toggle';
+import { Input } from '../ui/Input';
+import { Badge } from '../ui/Badge';
+import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../../lib/auth';
+import { getPrefs, setPrefs, type VaultPreferences } from '../../lib/preferences';
+import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
 
 const DELETE_CONFIRMATION = 'DELETE my account';
 

@@ -133,7 +133,10 @@ export const ActivitySection: React.FC = () => {
             <StatCard label="Avg Latency" value={`${stats.length ? Math.round(stats.reduce((s, x) => s + x.avg_latency, 0) / stats.length) : 0}ms`} />
           </div>
           <Card title="Per-Provider Statistics">
-            <DataTable columns={statsCols} data={stats} emptyMessage="No stats available." />
+            {/* DataTable's row constraint expects `id`. UsageStat is keyed by
+                `upstream` server-side; project that as `id` for stable React
+                keys without changing the wire shape. */}
+            <DataTable columns={statsCols as any} data={stats.map(s => ({ ...s, id: s.upstream }))} emptyMessage="No stats available." />
           </Card>
         </div>
       )}

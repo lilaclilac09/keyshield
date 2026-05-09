@@ -88,7 +88,7 @@ const MainContent: React.FC = () => {
       {isSearchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }} />}
       <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={addItem} initialData={prefilledData} />
       <div className="flex flex-1 min-h-0">
-        <Sidebar items={NAV} active={section} onNavigate={setSection} walletAddress={fullAddr} connected={!!fullAddr} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
+        <Sidebar items={NAV} active={section} onNavigate={(id: string) => setSection(id as Section)} walletAddress={fullAddr} connected={!!fullAddr} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-black">
           <Header title={config.title} subtitle={config.subtitle} onSearch={() => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">

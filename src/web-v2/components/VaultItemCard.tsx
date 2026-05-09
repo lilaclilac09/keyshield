@@ -47,7 +47,10 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
   const copyToClipboard = (text: string, setCopied: (b: boolean) => void) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
-  let parsed: PasswordPayload | NotePayload | EnvPayload | SSHKeyPayload | null = null;
+  // Typed as `any` because JSON.parse output cannot be statically guaranteed
+  // to match a discriminated union; each `item.type === 'X'` branch below
+  // narrows behaviorally and accesses the corresponding shape's fields.
+  let parsed: any = null;
   if (isRevealed && rawValue && item.type !== 'api_key') { try { parsed = JSON.parse(rawValue); } catch { /* malformed */ } }
 
   return (
@@ -101,8 +104,8 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
         </div>
       ) : item.type === 'env' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>
-          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[11px] font-mono text-zinc-200 whitespace-pre-wrap break-all leading-relaxed select-all">{parsed.vars.map(v => `${v.key}=${v.value}`).join('\n')}</pre>
-          <button onClick={() => copyToClipboard(parsed.vars.map(v => `${v.key}=${v.value}`).join('\n'), setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : `Copy ${parsed.vars.length} var${parsed.vars.length !== 1 ? 's' : ''}`}</button></div>
+          <div className="px-3 py-2.5 rounded-[2px] bg-[#050505] border border-zinc-800"><pre className="text-[11px] font-mono text-zinc-200 whitespace-pre-wrap break-all leading-relaxed select-all">{parsed.vars.map((v: { key: string; value: string }) => `${v.key}=${v.value}`).join('\n')}</pre>
+          <button onClick={() => copyToClipboard(parsed.vars.map((v: { key: string; value: string }) => `${v.key}=${v.value}`).join('\n'), setKeyCopied)} className={`mt-2 flex items-center gap-1 text-[10px] ${keyCopied ? 'text-emerald-400' : 'text-zinc-500 hover:text-white'}`}>{keyCopied ? <Check size={11} /> : <Copy size={11} />}{keyCopied ? 'Copied' : `Copy ${parsed.vars.length} var${parsed.vars.length !== 1 ? 's' : ''}`}</button></div>
         </div>
       ) : item.type === 'ssh_key' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED \xb7 hides in {timeLeft}s</p>

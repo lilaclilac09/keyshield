@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Terminal, Eye, EyeOff, RotateCw } from 'lucide-react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { RevealField } from './ui/RevealField';
-import { CodeBlock } from './ui/CodeBlock';
-import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../lib/auth';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { RevealField } from '../ui/RevealField';
+import { CodeBlock } from '../ui/CodeBlock';
+import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../../lib/auth';
 
 export const DeveloperSection: React.FC = () => {
   const token = getToken() ?? '';
@@ -27,7 +27,7 @@ export const DeveloperSection: React.FC = () => {
         <RevealField value={token} label="Session token" autoHideSec={30} />
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[11px] text-zinc-500">Wallet: <span className="font-mono text-zinc-400">{wallet.length > 16 ? `${wallet.slice(0,8)}\u2026${wallet.slice(-6)}` : wallet}</span></span></div>
-          <Button variant={injectedAt ? 'warning' : 'ghost'} size="sm" onClick={() => setInjectedAt(injectedAt ? null : Date.now())}>{injectedAt ? <EyeOff size={11} /> : <Eye size={11} />}{injectedAt ? `Injected \xb7 clears in ${30 - Math.floor((Date.now() - injectedAt) / 1000)}s` : 'Inject token into snippets'}</Button>
+          <Button variant={injectedAt ? 'secondary' : 'ghost'} size="sm" onClick={() => setInjectedAt(injectedAt ? null : Date.now())}>{injectedAt ? <EyeOff size={11} /> : <Eye size={11} />}{injectedAt ? `Injected \xb7 clears in ${30 - Math.floor((Date.now() - injectedAt) / 1000)}s` : 'Inject token into snippets'}</Button>
         </div>
       </Card>
 

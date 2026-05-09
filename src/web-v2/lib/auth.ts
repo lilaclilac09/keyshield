@@ -2,9 +2,13 @@
  * KeyShield auth — localStorage session, API fetch, wallet/passkey login.
  */
 
-export const API_BASE: string =
-  (typeof process !== 'undefined' && (process.env as Record<string, string>)['KEYSHIELD_API_URL'])
-  ?? 'http://localhost:8000';
+export const API_BASE: string = (() => {
+  if (typeof process !== 'undefined') {
+    const env = process.env as Record<string, string | undefined>;
+    if (env.KEYSHIELD_API_URL) return env.KEYSHIELD_API_URL;
+  }
+  return 'http://localhost:8000';
+})();
 
 const TOKEN_KEY = 'ks_token';
 const WALLET_KEY = 'ks_wallet';

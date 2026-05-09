@@ -50,7 +50,11 @@ export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
       isSigner: k.isSigner,
       isWritable: k.isWritable,
     })),
-    data: b64decode(resp.data),
+    // TransactionInstruction#data wants a Node Buffer; b64decode returns a
+    // browser-safe Uint8Array. Buffer.from(Uint8Array) is a noop in Node and
+    // a polyfill in browser builds (Vite ships buffer polyfill via
+    // wallet-adapter-base), and matches the runtime shape Solana expects.
+    data: Buffer.from(b64decode(resp.data)),
   });
   return new Transaction().add(ix);
 }

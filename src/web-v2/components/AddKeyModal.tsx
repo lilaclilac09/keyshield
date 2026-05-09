@@ -71,7 +71,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
       else { if (!name) throw new Error('Give it a name'); upstream = `${TYPE_PREFIX[type]}${slugify(name)}`;
         if (type === 'password') { if (!pwPassword) throw new Error('Password required'); rawKey = JSON.stringify({ username: pwUsername, password: pwPassword, url: pwUrl, notes }); }
         else if (type === 'note') { if (!noteContent) throw new Error('Write something'); rawKey = JSON.stringify({ title: name, content: noteContent }); }
-        else if (type === 'env') { if (!envText.trim()) throw new Error('Paste KEY=VALUE lines'); const vars = envText.split('\n').map(l => l.trim()).filter(Boolean).map(line => { const eq = line.indexOf('='); return eq < 0 ? null : { key: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim }; }).filter((v): v is { key: string; value: string } => v !== null); if (vars.length === 0) throw new Error('No valid KEY=VALUE lines'); rawKey = JSON.stringify({ vars, notes }); }
+        else if (type === 'env') { if (!envText.trim()) throw new Error('Paste KEY=VALUE lines'); const vars = envText.split('\n').map(l => l.trim()).filter(Boolean).map(line => { const eq = line.indexOf('='); return eq < 0 ? null : { key: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() }; }).filter((v): v is { key: string; value: string } => v !== null); if (vars.length === 0) throw new Error('No valid KEY=VALUE lines'); rawKey = JSON.stringify({ vars, notes }); }
         else if (type === 'ssh_key') { if (!sshPrivate) throw new Error('Private key required'); rawKey = JSON.stringify({ publicKey: sshPublic, privateKey: sshPrivate, passphrase: sshPassphrase, comment: sshComment }); }
         else throw new Error('Unsupported type');
       }
