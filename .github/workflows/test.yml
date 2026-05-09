@@ -59,7 +59,11 @@ jobs:
           RUST_BACKTRACE: "1"
         run: |
           set +e
-          cargo test --workspace --manifest-path src/proxy/Cargo.toml -- --nocapture 2>&1 | tee /tmp/cargo-test.log
+          # --test-threads=1 — stealth::tests in src/proxy/crates/ks-proxy/src/stealth.rs
+          # mutate the KS_STEALTH env var and race when running in parallel
+          # (set_var is not thread-safe in the std::env API). Serialise unit tests
+          # at the runner level rather than rewiring every test with a mutex.
+          cargo test --workspace --manifest-path src/proxy/Cargo.toml -- --nocapture --test-threads=1 2>&1 | tee /tmp/cargo-test.log
           EXIT=${PIPESTATUS[0]}
           # Step summary (rendered on the run page)
           {
