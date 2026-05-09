@@ -34,7 +34,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
-REPO_ROOT = PROXY_RS.parent
+REPO_ROOT = PROXY_RS.parent.parent  # post-SOTA: src/proxy/ → up 2 levels to repo root
 V2_USAGE_PY = REPO_ROOT / "v2-mvp" / "src" / "usage.py"
 
 
