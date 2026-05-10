@@ -68,7 +68,7 @@ KeyShield is a **zero-trust proxy system** that decouples API key ownership from
 
 ## Component Architecture
 
-### 1. Rust Proxy (`src/rust-proxy/`)
+### 1. Rust Proxy (`src/proxy/`)
 
 **Purpose:** Hot-path request processing — authentication, rate limiting, key injection, caching.
 
@@ -81,10 +81,10 @@ KeyShield is a **zero-trust proxy system** that decouples API key ownership from
 - `ks-helius` — Helius RPC client, DAS API, enhanced methods
 
 **Key Design Decisions:**
-- See [ADR-002: Why fallthrough, not full port](src/rust-proxy/ADR-002-architecture.md)
-- See [ADR-001: Divergence decisions](src/rust-proxy/ADR-001-divergences.md)
+- See [ADR-002: Why fallthrough, not full port](../../src/proxy/ADR-002-architecture.md)
+- See [ADR-001: Divergence decisions](../../src/proxy/ADR-001-divergences.md)
 
-### 2. Python Control Plane (`src/python-legacy/`)
+### 2. Python Control Plane (`src/backend/`)
 
 **Purpose:** Vault CRUD, agent management, billing, passkey auth, Pyth price feeds.
 
@@ -127,7 +127,7 @@ KeyShield is a **zero-trust proxy system** that decouples API key ownership from
 - `withdraw` — Withdraw SOL from vault
 - `universal_vault` — Unified vault operations
 
-### 5. Web Frontend (`src/web-frontend/`)
+### 5. Web Frontend (`src/web/`)
 
 **Stack:** Next.js 14, React, TypeScript, Tailwind CSS
 
@@ -294,18 +294,18 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for local setup.
 
 ```bash
 # 1. Start Rust proxy
-cd src/rust-proxy && cargo run --bin ks-proxy
+cd src/proxy && cargo run --bin ks-proxy
 
 # 2. Start Python control plane (another terminal)
-cd src/python-legacy && uvicorn src.server:app --port 8001
+uvicorn src.backend.app:app --port 8001
 
 # 3. Start frontend (another terminal)
-cd src/web-frontend && npm run dev
+cd src/web && npm run dev
 
 # 4. Run tests
-cd src/rust-proxy && cargo test
-cd src/python-legacy && pytest
-cd src/web-frontend && npm test
+cd src/proxy && cargo test
+cd src/backend && pytest
+cd src/web && npm test
 ```
 
 ## Further Reading
