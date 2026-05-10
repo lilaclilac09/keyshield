@@ -304,21 +304,14 @@ async def mpp_build_open_tx(stream_id: int, request: Request):
         else int(stream["settlement_interval_secs"])
     )
 
-    # ── ATA redesign (2026-05-10) ─────────────────────────────────────
-    # The on-chain mpp_settle ix transfers USDC from `stream.usdc_ata`
-    # using the stream PDA as authority (programs/keyshield/src/
-    # instructions/mpp_settle.rs:228 — `authority: stream` with PDA-
-    # signed CPI). For that to work, `usdc_ata` MUST be an ATA whose
-    # owner is the stream PDA, not the user's wallet. The fix: server
-    # derives the right ATA, returns 3 ixs the frontend bundles into
-    # one Transaction:
-    #
-    #   1. Create stream PDA's USDC ATA (idempotent — succeeds even if
-    #      it already exists, so we don't gate on a getAccountInfo).
-    #   2. Transfer max_total_micro_usdc from the user's USDC ATA into
-    #      the stream PDA's ATA — owner signs.
-    #   3. open_payment_stream — references the stream PDA's ATA as
-    #      account #4 so the on-chain record points there.
+    # ── ATA redesign (commit 9974a8e85) ──────────────────────────────
+    # mpp_settle.rs:228 uses the stream PDA as transfer authority. For
+    # that to work, the on-chain `stream.usdc_ata` MUST be an ATA whose
+    # owner is the stream PDA (not the user's wallet). Server derives
+    # the right ATA + returns 3 ixs the frontend bundles into one tx:
+    #   1. Create stream-PDA-owned USDC ATA (idempotent).
+    #   2. Transfer max_total micro-USDC from owner ATA → stream ATA.
+    #   3. open_payment_stream — references stream-PDA ATA.
     try:
         stream_usdc_ata = mpp_onchain.derive_associated_token_address(
             owner_pubkey=stream_pda,
@@ -347,7 +340,7 @@ async def mpp_build_open_tx(stream_id: int, request: Request):
             owner_pubkey=owner_pubkey,
             agent_pubkey=stream["agent_pubkey"],
             stream_pda=stream_pda,
-            usdc_ata=stream_usdc_ata,  # ← PDA-owned, not the user's
+            usdc_ata=stream_usdc_ata,  # ← PDA-owned, not user's
             bump=bump,
             max_total_micro_usdc=max_total,
             cost_per_unit_micro_usdc=cost_per_unit,
@@ -359,11 +352,9 @@ async def mpp_build_open_tx(stream_id: int, request: Request):
         # (KS_VAULT_PDA env not set) or numeric ranges are wrong.
         return JSONResponse({"detail": str(e)}, status_code=400)
 
-    # Return the main ix in the legacy shape (so old frontends keep
-    # rendering the wallet-sign CTA), plus prereqIxs that the frontend
-    # MUST prepend to the Transaction. Old clients ignoring prereqIxs
-    # are no worse off than before — the on-chain ix would have failed
-    # at the SPL token CPI either way.
+    # Frontend MUST prepend `prereqIxs` to the Transaction before the
+    # main ix; old clients ignoring them are no worse off — the on-
+    # chain settle would have failed at the SPL token CPI either way.
     response = _ix_to_response(open_ix)
     response["prereqIxs"] = [_ix_to_response(create_ata_ix), _ix_to_response(fund_ix)]
     response["streamUsdcAta"] = stream_usdc_ata

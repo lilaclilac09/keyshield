@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Users, Plus, Trash2, Copy, Check, RefreshCw, Loader2, Bot } from 'lucide-react';
+import { Users, Plus, Trash2, Copy, Check, Loader2, Bot } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Badge, Skeleton, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label } from '@keyshield/ui';
 import { useAgents } from '@keyshield/shared/hooks/use-agents';
 import { relTime } from '@keyshield/shared/lib/time';
@@ -29,14 +29,18 @@ export default function Agents() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>;
+  if (isLoading) return (
+    <div>
+      <Skeleton className="h-40 rounded-xl bg-[#111]" />
+    </div>
+  );
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Agents</h1>
-          <p className="page-header-subtitle">AI agent identity registry with scoped API access</p>
+          <h1>Agents</h1>
+          <p className="page-header-subtitle">AI agent identities with scoped API access</p>
         </div>
         <Button size="sm" onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-1.5" /> Register Agent
@@ -44,64 +48,68 @@ export default function Agents() {
       </div>
 
       {agents.length === 0 ? (
-        <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-          <CardContent className="py-12 text-center">
-            <Bot className="h-10 w-10 mx-auto mb-3" style={{ color: '#333' }} />
-            <h3 className="text-lg font-medium mb-1" style={{ color: '#e0e0e0' }}>No agents registered</h3>
-            <p className="text-sm mb-4" style={{ color: '#333' }}>Register your first AI agent to enable scoped API access</p>
-            <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" /> Register Agent</Button>
-          </CardContent>
-        </Card>
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Bot size={20} />
+          </div>
+          <h3>No agents registered</h3>
+          <p>Register your first AI agent to enable scoped API access</p>
+          <button className="ks-btn-primary" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" /> Register Agent
+          </button>
+        </div>
       ) : (
-        <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-          <CardHeader><CardTitle style={{ color: '#707070' }}>Registered Agents ({agents.length})</CardTitle></CardHeader>
-          <CardContent>
+        <div className="ks-card">
+          <div className="ks-card-content" style={{ padding: 0 }}>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Name</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Agent ID</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Status</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Last Seen</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Created</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Agent ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last Seen</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {agents.map(a => (
                   <TableRow key={a.id}>
-                    <TableCell className="font-medium" style={{ color: '#e0e0e0' }}>{a.name}</TableCell>
+                    <TableCell className="font-medium text-white">{a.name}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{a.agent_id.slice(0, 12)}...</span>
-                        <button onClick={() => handleCopy(a.agent_id)} className="text-[#888] hover:text-white transition-colors" title="Copy ID">
-                          {copiedId === a.agent_id ? <Check className="h-3 w-3 text-[#34d399]" /> : <Copy className="h-3 w-3" />}
+                        <span className="font-mono text-xs" style={{ color: '#6b6b7a' }}>{a.agent_id.slice(0, 12)}...</span>
+                        <button onClick={() => handleCopy(a.agent_id)} className="hover:text-white transition-colors" style={{ color: '#6b6b7a' }} title="Copy ID">
+                          {copiedId === a.agent_id ? <Check className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
                         </button>
                       </div>
                     </TableCell>
                     <TableCell><Badge variant={a.is_active ? 'success' : 'secondary'}>{a.is_active ? 'Active' : 'Inactive'}</Badge></TableCell>
-                    <TableCell style={{ color: '#333' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
-                    <TableCell style={{ color: '#333' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
+                    <TableCell style={{ color: '#6b6b7a' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
+                    <TableCell style={{ color: '#6b6b7a' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => handleRevoke(a.id)} disabled={revokingId === a.id}>
-                        {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" style={{ color: '#c62232' }} />}
+                        {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-[#ef4444]" />}
                       </Button>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-[#080808] border-[#141414]">
-          <DialogHeader><DialogTitle style={{ color: '#707070' }}>Register Agent</DialogTitle><DialogDescription>Create a new agent identity for API access</DialogDescription></DialogHeader>
+        <DialogContent className="bg-[#141418] border-[#1e1e24]">
+          <DialogHeader>
+            <DialogTitle>Register Agent</DialogTitle>
+            <DialogDescription>Create a new agent identity for API access</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="agent-name" className="text-xs uppercase tracking-wider text-[#666]">Agent Name</Label>
-              <Input id="agent-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Trading Bot" className="bg-[#0a0a0a] border-[#141414] text-white" />
+              <Label htmlFor="agent-name" className="text-xs uppercase tracking-wider" style={{ color: '#6b6b7a' }}>Agent Name</Label>
+              <Input id="agent-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Trading Bot" className="bg-[#111114] border-[#1e1e24] text-white placeholder:text-[#4a4a56]" />
             </div>
           </div>
           <DialogFooter>

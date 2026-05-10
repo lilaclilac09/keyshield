@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* KEYSHIELD palette — institutional black & warm white */
+  /* KEYSHIELD palette — deep black, warm white */
   --color-ks-black: #000000;
   --color-ks-deep: #0a0a0b;
   --color-ks-ink: #111113;
@@ -15,73 +15,82 @@
   --color-ks-white: #f8f8fa;
   --color-ks-pure-white: #ffffff;
 
-  /* Accent — subtle blue for interactive elements */
-  --color-ks-blue: #3b5bdb;
-  --color-ks-blue-soft: #e0e6ff;
-  --color-ks-green: #0f7b41;
-  --color-ks-green-soft: #ecfdf3;
-  --color-ks-amber: #8a590e;
-  --color-ks-amber-soft: #fef9ec;
-  --color-ks-red: #c62232;
-  --color-ks-red-soft: #fdeef0;
+  /* Accent — indigo/violet for interactive elements */
+  --color-ks-blue: #6366f1;
+  --color-ks-blue-soft: rgba(99,102,241,0.15);
+  --color-ks-green: #10b981;
+  --color-ks-green-soft: rgba(16,185,129,0.15);
+  --color-ks-amber: #f59e0b;
+  --color-ks-amber-soft: rgba(245,158,11,0.15);
+  --color-ks-red: #ef4444;
+  --color-ks-red-soft: rgba(239,68,68,0.15);
 
-  /* shadcn/ui — warm light theme */
-  --color-background: hsl(0 0% 97.5%);
-  --color-foreground: hsl(240 6% 8%);
+  /* shadcn/ui — DARK theme (the app is dark-only) */
+  --color-background: #0A0A0A;
+  --color-foreground: #F8F8FA;
 
-  --color-muted: hsl(0 0% 96%);
-  --color-muted-foreground: hsl(240 4% 46%);
+  --color-muted: #1a1a1f;
+  --color-muted-foreground: #6b6b7a;
 
-  --color-accent: hsl(240 5% 96%);
-  --color-accent-foreground: hsl(240 6% 10%);
+  --color-accent: #1e1e24;
+  --color-accent-foreground: #F8F8FA;
 
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(240 6% 10%);
+  --color-popover: #141418;
+  --color-popover-foreground: #F8F8FA;
 
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(240 6% 8%);
+  --color-card: #111114;
+  --color-card-foreground: #F8F8FA;
 
-  --color-primary: hsl(240 6% 10%);
-  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary: #F8F8FA;
+  --color-primary-foreground: #0A0A0A;
 
-  --color-secondary: hsl(240 5% 96%);
-  --color-secondary-foreground: hsl(240 6% 10%);
+  --color-secondary: #1a1a1f;
+  --color-secondary-foreground: #F8F8FA;
 
-  --color-destructive: hsl(356 62% 56%);
-  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #F8F8FA;
 
-  --color-border: hsl(240 5% 89%);
-  --color-input: hsl(240 5% 89%);
-  --color-ring: hsl(240 6% 30%);
+  --color-border: #1e1e24;
+  --color-input: #1e1e24;
+  --color-ring: rgba(99,102,241,0.5);
 
-  /* Sidebar — deep black */
-  --color-sidebar: hsl(240 6% 6%);
-  --color-sidebar-foreground: hsl(0 0% 100%);
-  --color-sidebar-primary: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(240 5% 20%);
-  --color-sidebar-accent-foreground: hsl(0 0% 100%);
-  --color-sidebar-border: hsl(240 5% 16%);
-  --color-sidebar-ring: hsl(240 6% 30%);
+  /* Sidebar — deeper black */
+  --color-sidebar: #080808;
+  --color-sidebar-foreground: #F8F8FA;
+  --color-sidebar-primary: #F8F8FA;
+  --color-sidebar-accent: #1a1a1f;
+  --color-sidebar-accent-foreground: #F8F8FA;
+  --color-sidebar-border: #141418;
+  --color-sidebar-ring: rgba(99,102,241,0.5);
 
   /* Radius */
   --radius-lg: 0.75rem;
   --radius-md: calc(var(--radius-lg) - 2px);
   --radius-sm: calc(var(--radius-lg) - 4px);
+
+  /* Animation */
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-scale-in: scale-in 0.15s ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0 }
+    to { opacity: 1 }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px) }
+    to { opacity: 1; transform: translateY(0) }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96) }
+    to { opacity: 1; transform: scale(1) }
+  }
 }
 
 @layer base {
   * {}
   body {
-    @apply bg-[hsl(0deg_0%_97.5%)] text-[hsl(240deg_6%_8%)] font-sans;
+    @apply bg-[#0A0A0A] text-[#F8F8FA] font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
-}
-
-@keyframes accordion-down {
-  from { height: 0; }
-  to { height: var(--radix-accordion-content-height); }
-}
-@keyframes accordion-up {
-  from { height: var(--radix-accordion-content-height); }
-  to { height: 0; }
 }

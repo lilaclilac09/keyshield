@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { Key, Plus, Search, Filter } from 'lucide-react';
+import { Key, Plus, Search, Filter, Sparkles } from 'lucide-react';
 import { Button, Input, Tabs, TabsList, TabsTrigger, Badge, Skeleton } from '@keyshield/ui';
 import { StatCard } from '../components/ui/StatCard';
 import { useVault } from '@keyshield/shared/hooks/use-vault';
-import { inferVaultTypeIcon, inferVaultItemType } from '@keyshield/shared/types';
 import { relTime } from '@keyshield/shared/lib/time';
 import { VaultItemCard } from '../components/VaultItemCard';
 import { AddKeyModal } from '../components/AddKeyModal';
 import { OcrScanner } from '../components/OcrScanner';
-import { GuillochePattern } from '../components/ui/Guilloche';
 
 export default function Vault() {
   const { items, isLoading, refetch } = useVault();
@@ -34,18 +32,24 @@ export default function Vault() {
     return (Date.now() - new Date(i.updated_at).getTime()) / (1000 * 60 * 60 * 24) <= 7;
   }).length;
 
-  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>;
+  if (isLoading) return (
+    <div>
+      <div className="stat-card-grid">{[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl bg-[#111]" />)}</div>
+      <div className="grid gap-3 md:grid-cols-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-40 rounded-xl bg-[#111]" />)}</div>
+    </div>
+  );
 
   return (
-    <div className="relative">
+    <div>
+      {/* Page header */}
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Vault</h1>
-          <p className="page-header-subtitle">{total} items stored · AES-256-GCM encrypted</p>
+          <h1>Vault</h1>
+          <p className="page-header-subtitle">Encrypted secrets, keys, and credentials</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setOcrOpen(true)}>
-            <Key className="h-4 w-4 mr-1.5" /> OCR Scan
+          <Button variant="ghost" size="sm" onClick={() => setOcrOpen(true)} className="text-[#a0a0b0]">
+            Scan
           </Button>
           <Button size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-1.5" /> Add Secret
@@ -54,21 +58,26 @@ export default function Vault() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+      <div className="stat-card-grid">
         <StatCard label="Total secrets" value={total} hint="encrypted with AES-256-GCM" />
         <StatCard label="Used this week" value={recentlyUsed} hint="across agents and apps" />
         <StatCard
           label="Expiring soon"
-          value={<span className={expiringSoon > 0 ? 'text-amber-300' : 'text-white'}>{expiringSoon}</span>}
+          value={<span className={expiringSoon > 0 ? 'text-[#f59e0b]' : 'text-[#a0a0b0]'}>{expiringSoon}</span>}
           hint="within 14 days"
         />
       </div>
 
-      {/* Search & Filter */}
-      <div className="flex gap-2 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#505050' }} />
-          <Input className="pl-9 bg-[#0a0a0a] border-[#141414] text-white" placeholder="Search vault..." value={search} onChange={e => setSearch(e.target.value)} />
+      {/* Toolbar */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#4a4a56' }} />
+          <Input
+            className="pl-9 bg-[#111114] border-[#1e1e24] text-white placeholder:text-[#4a4a56]"
+            placeholder="Search vault\u2026"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
         <Tabs value={filter} onValueChange={setFilter}>
           <TabsList>
@@ -84,20 +93,16 @@ export default function Vault() {
 
       {/* Content */}
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center border border-dashed border-[#141414] rounded-2xl">
-          <div className="w-12 h-12 rounded-xl bg-[#0a0a0a] border border-[#141414] flex items-center justify-center mb-4">
-            <Key size={20} style={{ color: '#6366f1' }} strokeWidth={1.75} />
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Key size={20} strokeWidth={1.75} />
           </div>
-          <h3 className="text-lg font-medium" style={{ color: '#707070' }}>
-            {search ? 'No matching secrets' : 'Your vault is empty'}
-          </h3>
-          <p className="mt-1 text-sm" style={{ color: '#333' }}>
-            {search ? 'Try adjusting your search or filter.' : 'Add your first encrypted secret to get started.'}
-          </p>
+          <h3>{search ? 'No matching secrets' : 'Your vault is empty'}</h3>
+          <p>{search ? 'Try adjusting your search or filter.' : 'Add your first encrypted secret to get started.'}</p>
           {!search && (
-            <Button className="mt-4" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" /> Add a secret
-            </Button>
+            <button className="ks-btn-primary" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Add a secret
+            </button>
           )}
         </div>
       ) : (
@@ -108,7 +113,6 @@ export default function Vault() {
         </div>
       )}
 
-      <GuillochePattern opacity={0.02} />
       <AddKeyModal open={addOpen} onOpenChange={setAddOpen} />
       <OcrScanner open={ocrOpen} onOpenChange={setOcrOpen} />
     </div>

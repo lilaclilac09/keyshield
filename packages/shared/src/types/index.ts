@@ -59,6 +59,12 @@ export const RegisterAgentPayloadSchema = z.object({
 });
 export type RegisterAgentPayload = z.infer<typeof RegisterAgentPayloadSchema>;
 
+export const AgentWalletSchema = z.object({
+  agent_id: z.string(),
+  pubkey: z.string(),
+});
+export type AgentWallet = z.infer<typeof AgentWalletSchema>;
+
 // ============ MPP Types ============
 export const MppStreamSchema = z.object({
   id: z.string(),
