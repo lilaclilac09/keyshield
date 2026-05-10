@@ -1,7 +1,7 @@
 
 // API client – typed fetch wrapper
-// In production, this is generated from OpenAPI spec via orval/openapi-typescript.
-// Here we provide manual typed wrappers matching the spec.
+// Path A: vault storage is client-side AES-256-GCM via Cloudflare Worker.
+// Business logic (agents, sharing, billing, mpp, sessions) uses Python backend.
 
 type ApiConfig = {
   baseUrl: string;
@@ -22,7 +22,7 @@ export function getApiConfig() {
   return { ..._config };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = _config.getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -79,9 +79,9 @@ export async function getAgentsList() {
 }
 
 export async function registerAgent(payload: import('../types').RegisterAgentPayload) {
-  return request<{ id: string }>('/agents', {
+  return request<{ id: string; agent_id: string }>('/agents', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ name: payload.name }),
   });
 }
 
@@ -90,7 +90,8 @@ export async function revokeAgent(id: string) {
 }
 
 export async function getAgentWallets() {
-  return request<Array<{ id: string; address: string; balance_sol: number }>>('/agents/wallets');
+  const resp = await request<{ wallets: Array<import('../types').AgentWallet> }>('/agents/wallets');
+  return resp.wallets ?? [];
 }
 
 // ============ MPP Endpoints ============
@@ -99,7 +100,7 @@ export async function getMppStreams() {
 }
 
 export async function openMppStream(agentId: string, amountSol: number) {
-  return request<{ stream_id: string; tx: string }>('/mpp/open', {
+  return request<{ stream_id: string; tx: string }>('/mpp/streams', {
     method: 'POST',
     body: JSON.stringify({ agent_id: agentId, amount_sol: amountSol }),
   });
@@ -130,7 +131,8 @@ export async function getBillingInfo() {
 }
 
 export async function getUsageHistory(limit = 50) {
-  return request<Array<import('../types').MppUsageEntry>>(`/billing/usage?limit=${limit}`);
+  const resp = await request<{ history: Array<import('../types').MppUsageEntry> }>(`/billing/usage?limit=${limit}`);
+  return resp.history ?? [];
 }
 
 // ============ Sharing Endpoints ============
@@ -141,7 +143,10 @@ export async function getShares() {
 export async function grantShare(payload: import('../types').GrantSharePayload) {
   return request<{ id: string }>('/sharing', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      vault_key_id: payload.vault_key_id,
+      grantee_address: payload.grantee_address,
+    }),
   });
 }
 
@@ -205,3 +210,6 @@ export async function getHealth() {
 export async function getDeveloperEndpoints() {
   return request<Array<{ method: string; path: string; description: string }>>('/developer/endpoints');
 }
+
+// Backward-compat alias for components that import apiFetch
+export { request as apiFetch };

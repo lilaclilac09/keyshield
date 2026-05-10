@@ -1,6 +1,6 @@
 
 export function relTime(ts: string | number | Date): string {
-  const date = typeof ts === 'string' ? new Date(ts) : ts instanceof Date ? ts : new Date(ts);
+  const date = normalizeDate(ts);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
@@ -16,8 +16,18 @@ export function relTime(ts: string | number | Date): string {
   return `${Math.floor(diffDay / 365)}y ago`;
 }
 
+/** Handle epoch seconds, epoch ms, ISO strings, and Date objects. */
+function normalizeDate(ts: string | number | Date): Date {
+  if (ts instanceof Date) return ts;
+  if (typeof ts === 'string') return new Date(ts);
+  // Heuristic: if the number is < 1e12, it's likely epoch seconds (not ms).
+  // epoch ms for year 2001+ is > 978307200000.
+  const ms = ts < 1e12 ? ts * 1000 : ts;
+  return new Date(ms);
+}
+
 export function formatDate(ts: string | number | Date): string {
-  const date = typeof ts === 'string' ? new Date(ts) : ts instanceof Date ? ts : new Date(ts);
+  const date = normalizeDate(ts);
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',

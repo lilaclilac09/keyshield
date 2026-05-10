@@ -11,9 +11,10 @@ from fastapi import FastAPI
 def register_routes(app: FastAPI) -> None:
     """Register all domain routes on the app.
 
-    Path A: vault routes are intentionally absent. Key storage moved out of
-    Python (Cloudflare Worker + client-side AES-GCM). The proxy receives
-    decrypted keys per-request via the X-Upstream-API-Key header.
+    Vault routes (shim): local-dev fallback for /manage/* endpoints.
+    Production Path A uses Cloudflare Worker + client-side AES-GCM, but
+    the dashboard still calls /manage/* for local development without
+    requiring the CF Worker to be running.
     """
     from . import health
     from . import auth
@@ -21,6 +22,9 @@ def register_routes(app: FastAPI) -> None:
     from . import proxy
     from . import sharing
     from . import billing
+    from . import mpp
+    from . import vault  # local-dev shim
+    from . import sessions  # session management
 
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -28,3 +32,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(proxy.router)
     app.include_router(sharing.router)
     app.include_router(billing.router)
+    app.include_router(mpp.router)
+    app.include_router(vault.router)
+    app.include_router(sessions.router)
