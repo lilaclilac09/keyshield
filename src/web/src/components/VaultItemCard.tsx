@@ -62,16 +62,16 @@ export function VaultItemCard({ item }: Props) {
 
   return (
     <>
-      <div className="rounded-lg bg-[#080808] border shadow-sm hover:shadow-md transition-shadow duration-150" style={{ borderColor: '#0f0f0f' }}>
+      <div className="rounded-xl bg-[#111114] border shadow-sm hover:border-[#1e1e24] transition-all duration-150" style={{ borderColor: '#141418' }}>
         <div className="p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
-              <div className="h-10 w-10 rounded-lg bg-[#0a0a0a] flex items-center justify-center shrink-0" style={{ borderColor: '#141414', borderWidth: '1px' }}>
-                <Icon className="h-5 w-5" style={{ color: '#f8f8f8' }} />
+              <div className="h-10 w-10 rounded-lg bg-[#080808] flex items-center justify-center shrink-0 border" style={{ borderColor: '#1e1e24' }}>
+                <Icon className="h-5 w-5" style={{ color: '#F8F8FA' }} />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-medium truncate" style={{ color: '#f8f8f8' }}>{item.name}</h3>
-                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#f8f8f8' }}>{item.upstream}</p>}
+                <h3 className="font-medium truncate text-white">{item.name}</h3>
+                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#a0a0b0' }}>{item.upstream}</p>}
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <Badge variant="outline" className="text-xs">{item.type.replace('_', ' ')}</Badge>
                   {item.tags?.map(t => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
@@ -80,33 +80,33 @@ export function VaultItemCard({ item }: Props) {
             </div>
           </div>
 
-          <div className="mt-3 p-2.5 rounded-lg bg-[#0a0a0a] font-mono text-sm" style={{ borderColor: '#141414', borderWidth: '1px' }}>
+          <div className="mt-3 p-2.5 rounded-lg bg-[#080808] font-mono text-sm border" style={{ borderColor: '#1e1e24' }}>
             {revealed && decrypted ? (
-              <span className="break-all" style={{ color: '#f8f8f8' }}>{decrypted.value}</span>
+              <span className="break-all text-white">{decrypted.value}</span>
             ) : (
-              <span style={{ color: '#f8f8f8' }}>{item.masked_value || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}</span>
+              <span style={{ color: '#6b6b7a' }}>{item.masked_value || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}</span>
             )}
           </div>
 
           <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#f8f8f8' }}>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6b6b7a' }}>
               <Clock className="h-3 w-3" /> {relTime(item.updated_at)}
             </div>
             <div className="flex gap-0.5">
               <Button variant="ghost" size="icon" onClick={revealed ? () => { setRevealed(false); setDecrypted(null); } : handleReveal} title={revealed ? 'Hide' : 'Reveal'}>
-                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} />}
+                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />}
               </Button>
               <Button variant="ghost" size="icon" onClick={handleCopy} title="Copy">
-                <CopyIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} />
+                <CopyIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setDeleteDialog(true)} title="Delete">
-                <Trash2Icon className="h-4 w-4" style={{ color: '#f8f8f8' }} />
+                <Trash2Icon className="h-4 w-4" style={{ color: '#ef4444' }} />
               </Button>
             </div>
           </div>
 
           {revealed && (
-            <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#f8f8f8' }}>
+            <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#f59e0b' }}>
               <Clock className="h-3 w-3" /> Hiding in {reveal_duration_sec}s
             </div>
           )}
@@ -114,8 +114,8 @@ export function VaultItemCard({ item }: Props) {
       </div>
 
       <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
-        <DialogContent className="bg-[#080808] border-[#141414]">
-          <DialogHeader><DialogTitle style={{ color: '#f8f8f8' }}>Delete Vault Item</DialogTitle><DialogDescription>Are you sure you want to delete "{item.name}"?</DialogDescription></DialogHeader>
+        <DialogContent className="bg-[#141418] border-[#1e1e24]">
+          <DialogHeader><DialogTitle>Delete Vault Item</DialogTitle><DialogDescription>Are you sure you want to delete "{item.name}"?</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleteDialog(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
