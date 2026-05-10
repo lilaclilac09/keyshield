@@ -94,8 +94,10 @@ python -m uvicorn app:app --port 8001 --reload
 # Rust proxy (hot path; optional — Python /proxy works standalone)
 cd src/proxy && cargo run --bin ks-proxy
 
-# Web v2 dashboard (vault UI; client-side crypto via Path A)
-cd src/web-v2 && npm install && npm run dev
+# Dashboard (Path A vault UI; client-side crypto via @keyshield/shared)
+# Note: the previous src/web-v2/ was archived to src/_archive/web-v2/ on
+# 2026-05-10 and the current dashboard lives at src/web/.
+cd src/web && npm install && npm run dev
 
 # Cloudflare sync worker (vault storage; required for Path A)
 cd src/infra/sync-worker && npx wrangler dev
@@ -139,18 +141,33 @@ keyshield/
 │   ├── infra/                    # Infrastructure
 │   │   ├── sync-worker/          # Cloudflare Worker (vault storage)
 │   │   └── metrics-ui/           # Grafana dashboard
-│   └── scripts/                  # Dev/deploy scripts
+│   ├── scripts/                  # Dev/deploy scripts
+│   │   ├── dev.sh                # Boot the local stack
+│   │   ├── pay.sh                # MPP payment-flow demo
+│   │   ├── docker-smoke.sh       # Build + up + smoke + tear down
+│   │   ├── mpp-e2e-devnet.mjs    # 9-step devnet verification of the ATA fix
+│   │   └── bootstrap-fresh-agent.mjs   # Grant a fresh agent for a clean e2e
+│   └── _archive/                 # Pre-2026-05-10 layout (web/web-v2/web-v3) — kept for reference
 ├── packages/
 │   ├── shared/                   # Shared types, hooks, auth, API client
-│   │   ├── src/api/              # Typed API client
+│   │   ├── src/api/              # Typed API client (incl. buildMppOpenTx)
 │   │   ├── src/auth/             # Wallet auth + token management
-│   │   ├── src/hooks/            # React Query hooks
-│   │   ├── src/lib/              # Crypto, time, vault utilities
+│   │   ├── src/hooks/            # React Query hooks (use-mpp, use-vaults, …)
+│   │   ├── src/lib/              # Vault crypto, sync, wallet-mpp helper
 │   │   ├── src/stores/           # Zustand stores
 │   │   └── src/types/            # Zod-validated type schemas
 │   └── ui/                       # Shared UI components (shadcn + Radix)
-├── docs/                         # Documentation
+├── docs/                         # Architecture / get-started / technical
 ├── tests/                        # E2E tests (Playwright)
+├── CHANGELOG.md                  # Per-day, by-area record of what shipped
+├── ROADMAP.md                    # What's built / broken / left
+├── TODOS.md                      # Deferred work
+├── AGENTS.md                     # Collaborator quickstart (4 docs to read)
+├── Dockerfile.{python,proxy,web} # Compose-built images
+├── docker-compose.yml            # 5-service stack with healthchecks + isolation
+├── Makefile.docker               # `make -f Makefile.docker up / smoke / down`
+├── .env.example                  # Documented env (Solana, x402, Helius, …)
+├── railway.json                  # Production Python API deploy config
 ├── Cargo.toml                    # Rust workspace
 └── package.json                  # npm workspace
 ```
@@ -161,22 +178,55 @@ keyshield/
 
 KeyShield operates on a **zero-trust** principle:
 
-1. **Encryption at rest** — All vault entries are encrypted with AES-256-GCM. The encryption key is derived from your wallet signature via HKDF-SHA256.
+1. **Encryption at rest** — All vault entries are encrypted with AES-256-GCM. The encryption key is derived from a WebAuthn-PRF passkey on the user's device via HKDF-SHA256. Cloudflare Worker only stores ciphertext + HKDF-derived vault id.
 2. **Per-request key injection** — The proxy receives decrypted keys in the `X-Upstream-API-Key` header and never persists them.
 3. **WebAuthn passkeys** — Passwordless login with PRF extension. No password stored on any server.
 4. **Agent CRL** — Certificate revocation list ensures revoked agents cannot authenticate.
 5. **Session tokens** — Self-contained JWT-like tokens with HMAC signature and expiry.
+6. **MPP wallet sign-off** — On-chain payment streams use a stream-PDA-owned USDC ATA so `mpp_settle`'s PDA-signed transfer succeeds without exposing the owner wallet to a settler signature.
+
+### Verified on devnet (2026-05-10)
+
+The Solana program at `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` is end-to-end exercised by [`src/scripts/mpp-e2e-devnet.mjs`](src/scripts/mpp-e2e-devnet.mjs). All 9 steps green — the ATA fix (commit [`9974a8e85`](https://github.com/lilaclilac09/keyshield/commit/9974a8e85)) is provably wired:
+
+| | Devnet account / tx |
+|---|---|
+| Open MPP stream | [`678bqTSq…XTQc`](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) |
+| Stream PDA (`disc='ksaywal1'`) | [`E5sMx86o3MWV…DgfR`](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
+| Stream-PDA-owned USDC ATA (funded 0.1 USDC) | [`6QtooE6QVFF9…FtBH`](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet) |
+| Settle round-trip (1k micro-USDC) | no `0x4 OwnerMismatch` — clean |
+
+Reproduce:
+```bash
+node src/scripts/bootstrap-fresh-agent.mjs    # grant a new vault agent
+KS_AGENT_PUBKEY=<printed pubkey> \
+  node src/scripts/mpp-e2e-devnet.mjs         # 9-step verification
+```
 
 ---
 
 ## Documentation
 
+**Source-of-truth records:**
+
+- [CHANGELOG.md](CHANGELOG.md) — per-day, by-area: what shipped, which files, which commits. Read this first when catching up.
+- [ROADMAP.md](ROADMAP.md) — current state: shipped / in-flight / deferred.
+- [TODOS.md](TODOS.md) — deferred work with priority.
+- [AGENTS.md](AGENTS.md) — collaborator quickstart (4 docs to read in order).
+
+**Architecture:**
+
+- [System Design](docs/architecture/system-design.md) — §2.2 documents both Path A (zero-knowledge) and Path B (legacy).
+- [Sync Vault Architecture (Path A)](docs/technical/SYNC_VAULT_ARCHITECTURE.md) — vault crypto + Worker contract.
+- [TEE Architecture](docs/technical/TEE_ARCHITECTURE.md) — three-layer TEE stack + threat model + stub-vs-shipped table.
 - [Architecture Overview](docs/architecture/README.md)
-- [System Design](docs/architecture/system-design.md)
-- [Sync Vault Architecture (Path A)](docs/technical/SYNC_VAULT_ARCHITECTURE.md)
+
+**Get started:**
+
+- [Production deploy](docs/get-started/deploy-production.md) — Vercel × 2 + Cloudflare + Railway, env matrix, DNS.
+- [Device Vault UI](docs/get-started/device-vault-ui.md) — end-user guide for the dashboard's Path A page.
 - [Operator Guide](docs/OPERATOR.md)
 - [Payment Flows](docs/PAYMENT-FLOWS.md)
-- [Roadmap](ROADMAP.md)
 
 ### Architecture Decision Records
 
