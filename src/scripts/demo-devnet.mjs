@@ -86,9 +86,13 @@ async function main() {
     ok('ProgramData PDA found');
     info('PDA address:', programDataAddress.toBase58());
     info('Bytecode size:', `${progData.data.length} bytes`);
-    info('Last upgrade slot:',
-      Number(new DataView(progData.data.buffer, progData.data.byteOffset, 8).getBigUint64(0, true))
+    // ProgramData layout (UpgradeableLoaderState bincode): 4-byte enum
+    // tag (3 = ProgramData) + 8-byte deploy/upgrade slot u64 LE.
+    const deploySlot = Number(
+      new DataView(progData.data.buffer, progData.data.byteOffset + 4, 8)
+        .getBigUint64(0, true)
     );
+    info('Deployed at slot:', deploySlot.toLocaleString());
   }
 
   // ── 5. Cluster liveness check ────────────────────────────
