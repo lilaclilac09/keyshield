@@ -125,6 +125,65 @@ export async function getMppUsage(streamId: string) {
   return request<Array<import('../types').MppUsageEntry>>(`/mpp/streams/${encodeURIComponent(streamId)}/usage`);
 }
 
+/* ─── /build-open-tx — wallet sign-off prep (Solana) ────────────────
+ *
+ * The on-chain `mpp_settle` ix (programs/keyshield, ix #26) transfers
+ * USDC from the stream's PDA-owned ATA using the stream PDA as
+ * authority. For that to work end-to-end, the stream's USDC ATA must
+ * be:
+ *   1. Owned by the stream PDA (NOT the user's wallet), and
+ *   2. Pre-funded with the budget cap.
+ *
+ * The server returns three ixs the wallet adapter must bundle into
+ * one Solana Transaction owner-signs in order:
+ *   prereqIxs[0]  — Create stream-PDA-owned USDC ATA (idempotent SPL
+ *                   Associated Token Program disc=1).
+ *   prereqIxs[1]  — Transfer max_total micro-USDC from owner ATA →
+ *                   stream ATA (SPL Token TransferChecked, owner is
+ *                   the authority).
+ *   main          — open_payment_stream itself (KeyShield ix #24).
+ *
+ * Without prepending prereqIxs, mpp_settle's later transfer hits 0x4
+ * OwnerMismatch (verified on devnet 2026-05-10).
+ */
+
+export interface MppBuildTxIx {
+  programId: string;
+  /** Each AccountMeta as serializable JSON. */
+  keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
+  /** Base64-encoded ix data — wallet adapter passes to TransactionInstruction. */
+  data: string;
+}
+
+export interface MppBuildOpenTxResponse extends MppBuildTxIx {
+  /** Stream-PDA-owned USDC ATA the server derived. */
+  streamUsdcAta: string;
+  /** Two ixs the wallet MUST prepend to the Transaction before `main`. */
+  prereqIxs: [MppBuildTxIx, MppBuildTxIx];
+}
+
+export interface MppBuildOpenTxBody {
+  ownerPubkey: string;
+  streamPda: string;
+  bump: number;
+  /** Owner's USDC ATA — used as the source of the prereq funding transfer. */
+  usdcAta: string;
+  maxTotalMicroUsdc: number;
+  costPerUnitMicroUsdc?: number;
+  maxRateUsdPerMinBits?: number;
+  settlementIntervalSecsOverride?: number;
+}
+
+export async function buildMppOpenTx(streamId: string, body: MppBuildOpenTxBody) {
+  return request<MppBuildOpenTxResponse>(
+    `/mpp/streams/${encodeURIComponent(streamId)}/build-open-tx`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 // ============ Billing Endpoints ============
 export async function getBillingInfo() {
   return request<import('../types').BillingInfo>('/billing');
