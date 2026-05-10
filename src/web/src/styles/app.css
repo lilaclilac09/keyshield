@@ -364,22 +364,3 @@
 .search-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.95);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center}
 .search-overlay-input{background:transparent;border:none;font-size:32px;font-weight:700;color:#f8f8f8;width:100%;max-width:640px;outline:none;padding:16px}
 .search-overlay-input::placeholder{color:#333}
-/* ---- Dashboard Page Colors ---- */
-/* All headings should use #f8f8f8 on #030303 background */
-.page-header h1 { color: #f8f8f8 !important; }
-.page-header-subtitle { color: #888 !important; }
-
-/* Override all inline gray text colors on dark background */
-.text-sm[style*="color: #666"] { color: #c4c4d0 !important; }
-.text-xs[style*="color: #666"] { color: #a0a0b0 !important; }
-
-/* Card titles */
-.card-title { color: #f8f8f8; }
-
-/* Table text */
-table td { color: #e0e0e0; }
-table th { color: #888; }
-
-/* Links and buttons */
-a { color: #a5b4fc; }
-a:hover { color: #c4b5fd; }

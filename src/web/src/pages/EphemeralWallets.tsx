@@ -66,14 +66,14 @@ export default function EphemeralWallets() {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#f8f8f8' }}>Ephemeral Wallets</h1>
+          <h1 style={{ color: '#707070' }}>Ephemeral Wallets</h1>
           <p className="page-header-subtitle">One-time wallets for agent transactions</p>
         </div>
       </div>
 
       {/* Create form */}
       <Card className="border-[#0f0f0f] shadow-sm bg-[#080808] mb-6">
-        <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Create Ephemeral Wallet</CardTitle></CardHeader>
+        <CardHeader><CardTitle style={{ color: '#707070' }}>Create Ephemeral Wallet</CardTitle></CardHeader>
         <CardContent>
           <div className="flex gap-3 items-end">
             <div className="flex-1">
@@ -93,11 +93,11 @@ export default function EphemeralWallets() {
           )}
           {created && (
             <div className="mt-3 p-3 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
-              <p className="text-xs mb-1" style={{ color: '#c4c4d0' }}>Created wallet:</p>
+              <p className="text-xs mb-1" style={{ color: '#333' }}>Created wallet:</p>
               <div className="flex items-center gap-2">
                 <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{created.pubkey}</code>
                 <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(created.pubkey)}>
-                  <Copy size={14} style={{ color: '#888' }} />
+                  <Copy size={14} style={{ color: '#4a4a4a' }} />
                 </Button>
               </div>
             </div>
@@ -107,19 +107,19 @@ export default function EphemeralWallets() {
 
       {/* Wallets list */}
       <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-        <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Wallets ({wallets.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle style={{ color: '#707070' }}>Wallets ({wallets.length})</CardTitle></CardHeader>
         <CardContent>
           {wallets.length === 0 ? (
             <div className="py-12 text-center">
-              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
-              <p className="text-sm" style={{ color: '#c4c4d0' }}>No ephemeral wallets</p>
+              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#333' }} />
+              <p className="text-sm" style={{ color: '#333' }}>No ephemeral wallets</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Agent ID</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Pubkey</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Agent ID</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Pubkey</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -127,7 +127,7 @@ export default function EphemeralWallets() {
                 {wallets.map(w => (
                   <TableRow key={w.agent_id}>
                     <TableCell className="font-mono text-xs" style={{ color: '#e0e0e0' }}>{w.agent_id.slice(0, 12)}...</TableCell>
-                    <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{w.pubkey.slice(0, 16)}...</TableCell>
+                    <TableCell className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{w.pubkey.slice(0, 16)}...</TableCell>
                     <TableCell>
                       <ConfirmButton onConfirm={() => handleRevoke(w.agent_id)} confirmLabel="REVOKE">
                         <Trash2 className="h-4 w-4" style={{ color: '#c62232' }} />

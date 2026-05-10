@@ -59,18 +59,18 @@ export const AuditRetentionSettings: React.FC = () => {
     setPurging(false);
   };
 
-  if (loading) return <div style={{ color: '#a0a0b0', fontSize: 13 }}>Loading...</div>;
+  if (loading) return <div style={{ color: '#505050', fontSize: 13 }}>Loading...</div>;
 
   return (
     <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
       <CardHeader>
-        <CardTitle style={{ color: '#f8f8f8' }}>Audit Retention</CardTitle>
+        <CardTitle style={{ color: '#707070' }}>Audit Retention</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Max Age</p>
-            <p className="text-xs" style={{ color: '#a0a0b0' }}>Days to keep audit entries</p>
+            <p className="text-sm font-medium" style={{ color: '#707070' }}>Max Age</p>
+            <p className="text-xs" style={{ color: '#505050' }}>Days to keep audit entries</p>
           </div>
           <input
             type="number"
@@ -84,8 +84,8 @@ export const AuditRetentionSettings: React.FC = () => {
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Max Entries</p>
-            <p className="text-xs" style={{ color: '#a0a0b0' }}>Maximum number of log entries</p>
+            <p className="text-sm font-medium" style={{ color: '#707070' }}>Max Entries</p>
+            <p className="text-xs" style={{ color: '#505050' }}>Maximum number of log entries</p>
           </div>
           <input
             type="number"

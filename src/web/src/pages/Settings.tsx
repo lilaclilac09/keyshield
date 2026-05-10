@@ -45,10 +45,10 @@ export default function Settings() {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#f8f8f8' }}>Settings</h1>
+          <h1 style={{ color: '#707070' }}>Settings</h1>
           <p className="page-header-subtitle">Configure your dashboard preferences and security</p>
         </div>
-        <div className="flex items-center gap-2 text-xs" style={{ color: '#c4c4d0' }}>
+        <div className="flex items-center gap-2 text-xs" style={{ color: '#333' }}>
           <span>KeyShield {VERSION}</span>
           <span>·</span>
           <span>built {BUILD_DATE}</span>
@@ -69,18 +69,18 @@ export default function Settings() {
 
         <TabsContent value="general">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>General Settings</CardTitle><CardDescription>Configure your dashboard preferences</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#707070' }}>General Settings</CardTitle><CardDescription>Configure your dashboard preferences</CardDescription></CardHeader>
             <CardContent className="space-y-0">
               <div className="flex items-center justify-between py-4 border-b" style={{ borderBottomColor: '#0f0f0f' }}>
-                <div><Label>Collapsed Sidebar</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Start with sidebar collapsed</p></div>
+                <div><Label>Collapsed Sidebar</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Start with sidebar collapsed</p></div>
                 <Switch checked={sidebar_collapsed ?? false} onCheckedChange={v => setPref('sidebar_collapsed', v)} />
               </div>
               <div className="flex items-center justify-between py-4 border-b" style={{ borderBottomColor: '#0f0f0f' }}>
-                <div><Label>Reveal Duration</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Seconds to show decrypted key values</p></div>
+                <div><Label>Reveal Duration</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Seconds to show decrypted key values</p></div>
                 <Input type="number" className="w-20 bg-[#0a0a0a] border-[#141414] text-white" value={reveal_duration_sec ?? 30} onChange={e => setPref('reveal_duration_sec', Number(e.target.value))} min={5} max={120} />
               </div>
               <div className="flex items-center justify-between py-4">
-                <div><Label>Default Expiry</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Default days for new vault items</p></div>
+                <div><Label>Default Expiry</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Default days for new vault items</p></div>
                 <Input type="number" className="w-20 bg-[#0a0a0a] border-[#141414] text-white" value={default_expiry_days ?? 30} onChange={e => setPref('default_expiry_days', Number(e.target.value))} min={1} max={365} />
               </div>
             </CardContent>
@@ -89,12 +89,12 @@ export default function Settings() {
 
         <TabsContent value="security">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Security</CardTitle><CardDescription>Manage authentication and access</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#707070' }}>Security</CardTitle><CardDescription>Manage authentication and access</CardDescription></CardHeader>
             <CardContent className="space-y-0">
               <div className="flex items-center justify-between py-4 border-b" style={{ borderBottomColor: '#0f0f0f' }}>
                 <div className="flex items-center gap-3">
                   <Fingerprint size={20} style={{ color: '#6366f1' }} />
-                  <div><Label>Passkey Authentication</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Register a passkey for passwordless login</p></div>
+                  <div><Label>Passkey Authentication</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Register a passkey for passwordless login</p></div>
                 </div>
                 <Button variant={passkeyRegistered ? 'secondary' : 'primary'} size="sm" disabled={registeringPasskey} onClick={() => setPasskeyRegistered(true)}>
                   {registeringPasskey ? <Loader2 className="h-4 w-4 animate-spin" /> : passkeyRegistered ? <><Check className="h-4 w-4 mr-1.5" /> Registered</> : 'Register'}
@@ -103,7 +103,7 @@ export default function Settings() {
               <div className="flex items-center justify-between py-4">
                 <div className="flex items-center gap-3">
                   <Zap size={20} style={{ color: '#f59e0b' }} />
-                  <div><Label>Sign Out</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>End your current session</p></div>
+                  <div><Label>Sign Out</Label><p className="text-xs mt-1" style={{ color: '#333' }}>End your current session</p></div>
                 </div>
                 <Button variant="destructive" size="sm" onClick={handleLogout}>Sign Out</Button>
               </div>
@@ -117,19 +117,19 @@ export default function Settings() {
 
         <TabsContent value="notifications">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Notifications</CardTitle><CardDescription>Configure notification preferences</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#707070' }}>Notifications</CardTitle><CardDescription>Configure notification preferences</CardDescription></CardHeader>
             <CardContent className="space-y-0">
               <div className="flex items-center justify-between py-4 border-b" style={{ borderBottomColor: '#0f0f0f' }}>
                 <div className="flex items-center gap-3">
-                  {notify_on_expiry ? <Bell size={20} style={{ color: '#34d399' }} /> : <Bell size={20} style={{ color: '#c4c4d0' }} />}
-                  <div><Label>Expiry Notifications</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Get notified when keys are about to expire</p></div>
+                  {notify_on_expiry ? <Bell size={20} style={{ color: '#34d399' }} /> : <Bell size={20} style={{ color: '#333' }} />}
+                  <div><Label>Expiry Notifications</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Get notified when keys are about to expire</p></div>
                 </div>
                 <Switch checked={notify_on_expiry ?? true} onCheckedChange={v => setPref('notify_on_expiry', v)} />
               </div>
               <div className="flex items-center justify-between py-4">
                 <div className="flex items-center gap-3">
-                  {notify_on_anomaly ? <Bell size={20} style={{ color: '#34d399' }} /> : <Bell size={20} style={{ color: '#c4c4d0' }} />}
-                  <div><Label>Anomaly Detection</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Alert on unusual access patterns</p></div>
+                  {notify_on_anomaly ? <Bell size={20} style={{ color: '#34d399' }} /> : <Bell size={20} style={{ color: '#333' }} />}
+                  <div><Label>Anomaly Detection</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Alert on unusual access patterns</p></div>
                 </div>
                 <Switch checked={notify_on_anomaly ?? true} onCheckedChange={v => setPref('notify_on_anomaly', v)} />
               </div>
@@ -139,12 +139,12 @@ export default function Settings() {
 
         <TabsContent value="danger">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Danger Zone</CardTitle><CardDescription>Irreversible actions</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#707070' }}>Danger Zone</CardTitle><CardDescription>Irreversible actions</CardDescription></CardHeader>
             <CardContent className="space-y-0">
               <div className="flex items-center justify-between py-4">
                 <div className="flex items-center gap-3">
                   <Trash2 size={20} style={{ color: '#c62232' }} />
-                  <div><Label style={{ color: '#f8f8f8' }}>Delete Account</Label><p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>Permanently delete your account and all vault data</p></div>
+                  <div><Label style={{ color: '#707070' }}>Delete Account</Label><p className="text-xs mt-1" style={{ color: '#333' }}>Permanently delete your account and all vault data</p></div>
                 </div>
                 {!showDeleteConfirm ? (
                   <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>Delete Account</Button>
