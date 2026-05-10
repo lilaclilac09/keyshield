@@ -127,6 +127,9 @@ def _b58decode(s: str) -> bytes:
 # Solana program / mint defaults — same as billing_solana.py constants.
 USDC_MINT_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+# SPL Associated Token Program — used by `derive_associated_token_address`
+# + `build_create_ata_idempotent_ix` for the /build-open-tx prereq ixs.
+ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 DEFAULT_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 
