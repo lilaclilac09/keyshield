@@ -43,6 +43,12 @@ __pycache__/
 *$py.class
 *.so
 
+# --- Python virtualenvs (NEVER commit — v2-mvp/.venv was a 162-file mistake) -
+.venv/
+**/.venv/
+venv/
+**/venv/
+
 # --- Rust artifacts ----------------------------------------------------------
 **/*.rs.bk
 Cargo.lock.lock
