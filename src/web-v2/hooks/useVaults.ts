@@ -1,6 +1,26 @@
+/**
+ * useVaults — Path A vault hook backed by the CF Worker + client-side crypto.
+ *
+ * State machine:
+ *   - locked    → no PRF-derived master key in module state; user must
+ *                 trigger `unlock()` to do a passkey ceremony
+ *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
+ *
+ * The Python backend is no longer in the vault hot path — `/manage/*` is gone.
+ * Use `getDecryptedKey(upstream)` (re-exported from vault-session) when you
+ * need a raw key for a `/proxy/*` request.
+ */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
-import { apiFetch, isAuthenticated, API_BASE } from '../lib/auth';
+import { isAuthenticated, requestVaultUnlock, API_BASE } from '../lib/auth';
+import {
+  addEntry,
+  removeEntry,
+  listEntries,
+  isVaultUnlocked,
+  getDecryptedKey,
+} from '../lib/vault-session';
+import type { VaultEntry } from '../lib/vault';
 
 const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
   openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
@@ -11,64 +31,133 @@ const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string
   groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
 };
 
-function userSecretLabel(slug: string): string { const idx = slug.indexOf('__'); return idx >= 0 ? slug.slice(idx + 2).replace(/_/g, ' ') : slug; }
+function userSecretLabel(slug: string): string {
+  const idx = slug.indexOf('__');
+  return idx >= 0 ? slug.slice(idx + 2).replace(/_/g, ' ') : slug;
+}
 
-function backendItemToVault(item: { upstream: string; createdAt: number; updatedAt: number }): VaultItem {
-  const type = inferType(item.upstream);
+function entryToVault(entry: VaultEntry): VaultItem {
+  const type = inferType(entry.upstream);
   if (type === 'api_key') {
-    const meta = UPSTREAM_META[item.upstream] ?? { name: item.upstream, domain: '', tags: ['KEY'] };
-    return { id: item.upstream, name: meta.name, type: 'api_key', value: `${API_BASE}/proxy/${item.upstream}/`, domain: meta.domain, createdAt: item.createdAt * 1000, lastUsedAt: item.updatedAt * 1000, tags: [...meta.tags, 'VAULT'] };
+    const meta = UPSTREAM_META[entry.upstream] ?? { name: entry.upstream, domain: '', tags: ['KEY'] };
+    return {
+      id: entry.upstream,
+      name: meta.name,
+      type: 'api_key',
+      value: `${API_BASE}/proxy/${entry.upstream}/`,
+      domain: meta.domain,
+      createdAt: entry.addedAt,
+      lastUsedAt: entry.addedAt,
+      tags: [...meta.tags, 'VAULT'],
+    };
   }
-  return { id: item.upstream, name: userSecretLabel(item.upstream), type, value: '\u2022\u2022\u2022\u2022\u2022\u2022', createdAt: item.createdAt * 1000, lastUsedAt: item.updatedAt * 1000, tags: [type.replace('_', ' ')] };
+  return {
+    id: entry.upstream,
+    name: userSecretLabel(entry.upstream),
+    type,
+    value: '••••••',
+    createdAt: entry.addedAt,
+    lastUsedAt: entry.addedAt,
+    tags: [type.replace('_', ' ')],
+  };
 }
 
 export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
 
-  const loadFromAPI = useCallback(async () => {
-    if (!isAuthenticated()) return;
-    setLoading(true); setError(null);
-    try {
-      const res = await apiFetch('/manage/list');
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
-      const data: { items?: { upstream: string; createdAt: number; updatedAt: number }[]; keys?: string[] } = await res.json();
-      if (data.items && data.items.length > 0) setVaultItems(data.items.map(backendItemToVault));
-      else if (data.keys) { const now = Math.floor(Date.now() / 1000); setVaultItems(data.keys.map(k => backendItemToVault({ upstream: k, createdAt: now, updatedAt: now }))); }
-      else setVaultItems([]);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to load vault'); }
-    finally { setLoading(false); }
+  const refresh = useCallback(() => {
+    if (!isVaultUnlocked()) {
+      setVaultItems([]);
+      setUnlocked(false);
+      return;
+    }
+    setUnlocked(true);
+    setVaultItems(listEntries().map(entryToVault));
   }, []);
 
-  useEffect(() => { loadFromAPI(); const handler = () => loadFromAPI(); window.addEventListener('ks-auth-changed', handler); return () => window.removeEventListener('ks-auth-changed', handler); }, [loadFromAPI]);
+  const unlock = useCallback(async () => {
+    if (!isAuthenticated()) {
+      setError('log in first');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await requestVaultUnlock();
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Vault unlock failed');
+    } finally {
+      setLoading(false);
+    }
+  }, [refresh]);
+
+  useEffect(() => {
+    refresh();
+    const handler = () => refresh();
+    window.addEventListener('ks-auth-changed', handler);
+    return () => window.removeEventListener('ks-auth-changed', handler);
+  }, [refresh]);
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
     if (!q) return vaultItems;
-    return vaultItems.filter(item => item.name.toLowerCase().includes(q) || item.domain?.toLowerCase().includes(q) || item.tags.some(t => t.toLowerCase().includes(q)));
+    return vaultItems.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.domain?.toLowerCase().includes(q) ||
+        item.tags.some((t) => t.toLowerCase().includes(q)),
+    );
   }, [vaultItems, searchQuery]);
 
-  const addItem = useCallback(async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-    const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
-    const rawKey = data.rawKey ?? data.value ?? '';
-    if (!rawKey) return;
-    const res = await apiFetch('/manage/store', { method: 'POST', body: JSON.stringify({ upstream, apiKey: rawKey }) });
-    if (!res.ok) { const err = await res.json().catch(() => ({ detail: 'Store failed' })); throw new Error((err as { detail: string }).detail); }
-    await loadFromAPI();
-  }, [loadFromAPI]);
+  const addItem = useCallback(
+    async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
+      if (!isVaultUnlocked()) {
+        await unlock();
+        if (!isVaultUnlocked()) throw new Error('Vault still locked after unlock attempt');
+      }
+      const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
+      const rawKey = data.rawKey ?? data.value ?? '';
+      if (!rawKey) return;
+      await addEntry(upstream, rawKey);
+      refresh();
+    },
+    [refresh, unlock],
+  );
 
-  const deleteItem = useCallback(async (id: string) => {
-    setVaultItems(prev => prev.filter(i => i.id !== id));
-    try { const res = await apiFetch(`/manage/secret/${id}`, { method: 'DELETE' }); if (!res.ok) throw new Error('Delete failed'); }
-    catch { await loadFromAPI(); }
-  }, [loadFromAPI]);
+  const deleteItem = useCallback(
+    async (id: string) => {
+      if (!isVaultUnlocked()) throw new Error('Vault locked');
+      setVaultItems((prev) => prev.filter((i) => i.id !== id));
+      try {
+        await removeEntry(id);
+      } catch {
+        refresh();
+      }
+    },
+    [refresh],
+  );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
-    const res = await apiFetch(`/manage/decrypt/${id}`);
-    if (!res.ok) { const err = await res.json().catch(() => ({ detail: 'Decrypt failed' })); throw new Error((err as { detail: string }).detail ?? 'Decrypt failed'); }
-    const data = await res.json(); return data.key as string;
+    if (!isVaultUnlocked()) throw new Error('Vault locked — unlock first');
+    const key = getDecryptedKey(id);
+    if (!key) throw new Error(`No key for "${id}"`);
+    return key;
   }, []);
 
-  return { items: filteredItems, allItems: vaultItems, loading, error, addItem, deleteItem, decryptItem, refresh: loadFromAPI };
+  return {
+    items: filteredItems,
+    allItems: vaultItems,
+    loading,
+    error,
+    unlocked,
+    unlock,
+    addItem,
+    deleteItem,
+    decryptItem,
+    refresh,
+  };
 };

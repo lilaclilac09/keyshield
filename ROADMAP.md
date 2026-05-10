@@ -5,15 +5,20 @@ What's built, what's broken, what's left. Ground truth as of 2026-05-09.
 ## Architecture — Consolidated
 
 All code lives under `src/`:
-- **`src/backend/`** — Python FastAPI control plane (app.py + 12 domain modules)
+- **`src/backend/`** — Python FastAPI control plane (app.py + 12 domain modules). Stateless `/proxy/*` after the Path A merge.
 - **`src/proxy/`** — Rust hot-path proxy (6 crates, 78+ tests)
 - **`src/programs/keyshield/`** — Solana on-chain program (7 instructions)
 - **`src/web/`** — React frontend + Chrome extension (builds to 904KB)
+- **`src/web-v2/`** — Vite-based dashboard + Path A vault client (`lib/{vault,sync,sync-auth}.ts`)
 - **`src/mobile/`** — React Native mobile app (no native shell yet)
 - **`src/sdk/`** — SDK packages (agent-sdk, cli, goat-wallet, openclaw-skill)
-- **`src/infra/`** — Cloudflare workers, Grafana/Prometheus
+- **`src/infra/`** — Cloudflare workers (vault sync), Grafana/Prometheus
 - **`src/scripts/`** — Dev/deploy scripts
 - **`tests/e2e/`** — Playwright E2E tests
+
+## Recent Milestones
+
+- **2026-05-09 — Path A + Python merge** ✅ Vault storage moved off Python onto the Cloudflare sync-worker (zero-knowledge, R2-backed). Python `/proxy/*` refactored to stateless (`X-Upstream-API-Key` header per request). Legacy `/manage/*` plaintext-storage routes removed. `extension-sync/` workspace consolidated into `src/web-v2/lib/`.
 
 ## Status Legend
 
@@ -34,8 +39,7 @@ All code lives under `src/`:
 | ✅ | Agent self-auth (`/auth/agent-*`) | routes/auth.py |
 | ✅ | Agent register/list/revoke | routes/agents.py |
 | ✅ | Passkey register/auth/list/delete | routes/auth.py |
-| ✅ | Vault CRUD (multi-type) | routes/vault.py |
-| ✅ | Proxy with key injection | routes/proxy.py |
+| ✅ | Stateless `/proxy/*` (X-Upstream-API-Key header) | routes/proxy.py |
 | ✅ | Batch parallel proxy | routes/proxy.py |
 | ✅ | Usage logging + stats | routes/billing.py |
 | ✅ | Helius skill bundle | skills/helius_skill.py |
@@ -47,6 +51,11 @@ All code lives under `src/`:
 | ✅ | `KS_INTERNAL_SECRET` firewall | middleware/auth.py |
 | ✅ | TLS (rustls + axum-server) | src/proxy/ |
 | ⚠️ | Sharing — 501 stub | routes/sharing.py |
+
+> Vault CRUD lives outside the Python backend now: vault
+> ciphertext is stored on the Cloudflare sync-worker via the
+> Path A client in `src/web-v2/lib/{vault,sync,sync-auth}.ts`.
+> The Python `/proxy/*` no longer holds upstream keys.
 
 ## 2. Rust Hot-Path Proxy (`src/proxy/`)
 
@@ -63,15 +72,24 @@ All code lives under `src/`:
 
 7 instructions: CreateEphemeralSigner, OpenPaymentStream, PayX402, MppSettle, WithdrawAgentWallet + PDAs
 
-## 4. Web Frontend (`src/web/`)
+## 4. Web v2 dashboard (`src/web-v2/`) + Sync Worker (`src/infra/sync-worker/`)
+
+Path A vault client + dashboard. Builds with Vite 6 + React 19. The
+`lib/{vault,sync,sync-auth}.ts` modules implement WebAuthn-PRF →
+HKDF → AES-256-GCM client-side encryption and talk to the
+Cloudflare sync-worker over `/vault/:id` + `/auth/*`. The
+sync-worker is zero-knowledge — only ciphertext + WebAuthn
+material on R2.
+
+## 5. Web Frontend (`src/web/`)
 
 Builds to 904KB with React 19 + Vite 6. All 10 sections functional. Chrome extension integrated.
 
-## 5. Mobile (`src/mobile/`) — P3 Deferred
+## 6. Mobile (`src/mobile/`) — P3 Deferred
 
 1300 lines TS, no native shell.
 
-## 6. SDK + Infra (`src/sdk/`, `src/infra/`)
+## 7. SDK + Infra (`src/sdk/`, `src/infra/`)
 
 Agent SDK, CLI, goat-wallet, openclaw-skill. Cloudflare sync-worker, Grafana metrics.
 

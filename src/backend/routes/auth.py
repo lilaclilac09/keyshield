@@ -8,7 +8,6 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 
 from ..auth import session as sess_mod
-from ..vault import vault
 from ..proxy import api_router
 
 
