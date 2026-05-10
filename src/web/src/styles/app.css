@@ -468,9 +468,9 @@ a:hover { color: #c4b5fd; }
 }
 
 .sidebar-brand-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -478,8 +478,8 @@ a:hover { color: #c4b5fd; }
 }
 
 .sidebar-logo-img {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   filter: brightness(0) invert(1);
   display: block;
 }

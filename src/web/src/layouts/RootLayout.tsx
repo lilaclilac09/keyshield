@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import {
   Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen,
   Menu, X, Search, Plus, ChevronDown, Copy, Bell, BarChart3, Server,
-  ChevronLeft, ChevronRight, Wallet, LogOut, Plug
+  ChevronLeft, ChevronRight, Wallet, LogOut
 } from 'lucide-react';
 import { Badge, Skeleton, Button as ShadButton } from '@keyshield/ui';
 import { HealthBadge } from '../components/HealthBadge';
@@ -61,11 +61,11 @@ function SectionLabel({ children, collapsed }: { children: React.ReactNode; coll
   return <div className="sidebar-section-label">{children}</div>;
 }
 
-// ─── Sidebar Brand Logo (uses same SVG as landing page) ─────────────────────
+// ─── Sidebar Brand Logo ─────────────────────────────────────────────────────
 function SidebarLogo({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="sidebar-brand">
-      <div className="sidebar-brand-icon" style={{ background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="sidebar-brand-icon">
         <img src="/keyshield.svg" alt="KeyShield" className="sidebar-logo-img" />
       </div>
       {!collapsed && <span className="sidebar-brand-text">KEYSHIELD</span>}
@@ -80,20 +80,19 @@ export default function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Wallet connection state
+  // Wallet state
   const [address, setAddress] = useState<string | null>(null);
-  const [connectStep, setConnectStep] = useState<'idle' | 'select' | 'connecting' | 'done'>('idle');
+  const [connectStep, setConnectStep] = useState<'idle' | 'connecting' | 'done'>('idle');
   const [availableWallets, setAvailableWallets] = useState<WalletInfo[]>([]);
-  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Separate refs — NOT nested
   const addMenuRef = useRef<HTMLDivElement>(null);
-  const connectMenuRef = useRef<HTMLDivElement>(null);
-  const [connectMenuOpen, setConnectMenuOpen] = useState(false);
+  const walletMenuRef = useRef<HTMLDivElement>(null);
+  const [walletMenuOpen, setWalletMenuOpen] = useState(false);
 
   // Scan for available wallets
   useEffect(() => {
@@ -117,22 +116,22 @@ export default function RootLayout() {
   }, []);
 
   const shortAddr = address ? `${address.slice(0, 4)}\u2026${address.slice(-4)}` : '';
+  const available = availableWallets.filter(w => w.isInstalled);
 
   const handleCopy = () => {
     if (address) {
       navigator.clipboard.writeText(address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
     }
   };
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const handleDisconnect = () => {
     authDisconnect();
     setAddress(null);
     setConnectStep('idle');
-    setUserMenuOpen(false);
-    // Don't navigate away — let them reconnect from the same page
-    // Only redirect if no token at all
+    setWalletMenuOpen(false);
     if (!getToken()) {
       navigate('/login');
     }
@@ -141,8 +140,7 @@ export default function RootLayout() {
   const handleConnect = async (key: string) => {
     try {
       setConnectStep('connecting');
-      setConnectMenuOpen(false);
-      setUserMenuOpen(false);
+      setWalletMenuOpen(false);
       const walletInfo = await connectWalletByKey(key);
       const addr = walletInfo.address ?? null;
       setAddress(addr);
@@ -152,26 +150,20 @@ export default function RootLayout() {
       setConnectStep('done');
     } catch (err) {
       console.error('[KeyShield] Wallet connect error:', err);
-      setConnectStep('select');
+      setConnectStep('idle');
     }
   };
 
-  // Close menus on outside click
+  // Close all menus on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (userMenuOpen && userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
-      }
-      if (addMenuOpen && addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-        setAddMenuOpen(false);
-      }
-      if (connectMenuOpen && connectMenuRef.current && !connectMenuRef.current.contains(e.target as Node)) {
-        setConnectMenuOpen(false);
-      }
+      const target = e.target as Node;
+      if (addMenuRef.current && !addMenuRef.current.contains(target)) setAddMenuOpen(false);
+      if (walletMenuRef.current && !walletMenuRef.current.contains(target)) setWalletMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [userMenuOpen, addMenuOpen, connectMenuOpen]);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -182,9 +174,8 @@ export default function RootLayout() {
       }
       if (e.key === 'Escape') {
         setSearchOpen(false);
-        setUserMenuOpen(false);
+        setWalletMenuOpen(false);
         setAddMenuOpen(false);
-        setConnectMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -202,16 +193,13 @@ export default function RootLayout() {
   })();
 
   const collapsed = sidebarCollapsed;
-  const available = availableWallets.filter(w => w.isInstalled);
 
   return (
     <div className="app-shell">
       {/* ─── Desktop Sidebar ─── */}
       <aside className={`sidebar hidden md:flex ${collapsed ? 'collapsed' : ''}`}>
-        {/* Brand */}
         <SidebarLogo collapsed={collapsed} />
 
-        {/* Nav */}
         <nav className="sidebar-nav">
           <SectionLabel collapsed={collapsed}>Workspace</SectionLabel>
           {primaryNav.map(item => (
@@ -229,7 +217,6 @@ export default function RootLayout() {
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="sidebar-footer">
           <div className="sidebar-footer-content">
             {healthLoading ? (
@@ -279,24 +266,19 @@ export default function RootLayout() {
 
       {/* ─── Main area ─── */}
       <div className="app-main">
-        {/* Top bar */}
         <header className="top-bar">
           <div className="top-bar-left">
-            {/* Mobile menu */}
             <button className="top-bar-toggle md:hidden" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="h-5 w-5" />
             </button>
-            {/* Collapse toggle */}
             <button className="top-bar-toggle hidden md:flex" onClick={toggleSidebar} title="Toggle sidebar">
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
-            {/* Breadcrumb */}
             <div className="top-bar-breadcrumb hidden sm:block">
               <span>{pageTitle}</span>
             </div>
           </div>
 
-          {/* Search */}
           <div className="top-bar-search">
             <button className="search-command-btn" onClick={() => setSearchOpen(true)}>
               <Search className="h-3.5 w-3.5" />
@@ -305,14 +287,13 @@ export default function RootLayout() {
             </button>
           </div>
 
-          {/* Right controls */}
           <div className="top-bar-right">
             {/* Notifications */}
             <button className="top-bar-btn" title="Notifications">
               <Bell className="h-4 w-4" />
             </button>
 
-            {/* Quick Add */}
+            {/* Quick Add — separate ref container */}
             <div ref={addMenuRef} style={{ position: 'relative' }}>
               <button className="top-bar-add-btn" onClick={() => setAddMenuOpen(!addMenuOpen)}>
                 <Plus className="h-3.5 w-3.5" />
@@ -322,13 +303,13 @@ export default function RootLayout() {
                 <div className="absolute right-0 top-full mt-2 w-48 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
                   <div className="p-1.5">
                     {[
-                      { label: 'New secret', icon: Key },
-                      { label: 'Register agent', icon: Users },
-                      { label: 'Share key', icon: Share2 },
+                      { label: 'New secret', icon: Key, action: () => { setAddMenuOpen(false); navigate('/app/vault'); } },
+                      { label: 'Register agent', icon: Users, action: () => { setAddMenuOpen(false); navigate('/app/agents'); } },
+                      { label: 'Share key', icon: Share2, action: () => { setAddMenuOpen(false); navigate('/app/sharing'); } },
                     ].map((item) => (
                       <button key={item.label}
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-[#a0a0b0] hover:text-white hover:bg-white/5 transition-colors"
-                        onClick={() => { setAddMenuOpen(false); navigate('/app/vault'); }}
+                        onClick={item.action}
                       >
                         <item.icon className="h-4 w-4" />
                         {item.label}
@@ -339,76 +320,79 @@ export default function RootLayout() {
               )}
             </div>
 
-            {/* Wallet / User menu */}
-            <div ref={userMenuRef} style={{ position: 'relative' }}>
+            {/* Wallet / User menu — separate ref container, NOT nested */}
+            <div ref={walletMenuRef} style={{ position: 'relative' }}>
               {address ? (
-                /* Connected: show avatar with disconnect option */
-                <button className="user-avatar-btn" onClick={() => setUserMenuOpen(!userMenuOpen)}>
+                /* Connected: avatar button */
+                <button className="user-avatar-btn" onClick={() => setWalletMenuOpen(!walletMenuOpen)}>
                   <div className="user-avatar">{address[0].toUpperCase()}</div>
                   <span className="hidden sm:inline">{shortAddr}</span>
                   <ChevronDown className="h-3 w-3 text-[#555]" />
                 </button>
               ) : (
-                /* Disconnected: show connect button */
-                <div ref={connectMenuRef} style={{ position: 'relative' }}>
-                  <button className="top-bar-add-btn" style={{ background: 'transparent', border: '1px solid #1e1e24', color: '#a0a0b0' }} onClick={() => setConnectMenuOpen(!connectMenuOpen)}>
-                    <Wallet className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Connect</span>
-                  </button>
-                  {connectMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
-                      <div className="p-3">
-                        <p className="text-[10px] font-semibold text-[#4a4a56] uppercase tracking-wider mb-2">Select wallet</p>
-                        {available.length > 0 ? (
-                          available.map(w => (
-                            <button key={w.key}
-                              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-[#a0a0b0] hover:text-white hover:bg-white/5 transition-colors"
-                              onClick={() => handleConnect(w.key)}
-                            >
-                              <Wallet className="h-4 w-4" />
-                              <span>{w.name}</span>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="py-4 text-center">
-                            <Wallet className="h-6 w-6 mx-auto mb-2" style={{ color: '#4a4a56' }} />
-                            <p className="text-xs text-[#6b6b7a]">No wallet detected</p>
-                            <p className="text-[10px] text-[#4a4a56] mt-1">Install Phantom or Solflare</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                /* Disconnected: connect button */
+                <button className="top-bar-add-btn" style={{ background: 'transparent', border: '1px solid #1e1e24', color: '#a0a0b0' }} onClick={() => setWalletMenuOpen(!walletMenuOpen)}>
+                  <Wallet className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Connect</span>
+                </button>
               )}
 
-              {/* User dropdown (when connected) */}
-              {userMenuOpen && address && (
+              {/* Single dropdown — shows either wallets or user info */}
+              {walletMenuOpen && (
                 <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
-                  {/* Wallet info */}
-                  <div className="p-4 border-b" style={{ borderColor: '#141418' }}>
-                    <p className="text-[10px] font-semibold text-[#6b6b7a] uppercase tracking-wider mb-1">Connected wallet</p>
-                    <p className="text-xs font-mono text-white break-all">{address}</p>
-                    <button onClick={handleCopy} className="flex items-center gap-1.5 mt-2 text-[11px] text-[#a0a0b0] hover:text-white transition-colors">
-                      {copied ? <Copy className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
-                      {copied ? 'Copied!' : 'Copy address'}
-                    </button>
-                  </div>
-                  {/* Disconnect */}
-                  <button
-                    onClick={handleDisconnect}
-                    className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-[#ef4444] hover:bg-[#1a0808] transition-colors"
-                  >
-                    <LogOut className="h-3.5 w-3.5" />
-                    Disconnect
-                  </button>
+                  {address ? (
+                    /* Connected: wallet info + disconnect */
+                    <>
+                      <div className="p-4 border-b" style={{ borderColor: '#141418' }}>
+                        <p className="text-[10px] font-semibold text-[#6b6b7a] uppercase tracking-wider mb-1">Connected wallet</p>
+                        <p className="text-xs font-mono text-white break-all">{address}</p>
+                        <button onClick={handleCopy} className="flex items-center gap-1.5 mt-2 text-[11px] text-[#a0a0b0] hover:text-white transition-colors">
+                          {copySuccess ? <Copy className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
+                          {copySuccess ? 'Copied!' : 'Copy address'}
+                        </button>
+                      </div>
+                      <button
+                        onClick={handleDisconnect}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-[#ef4444] hover:bg-[#1a0808] transition-colors"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Disconnect
+                      </button>
+                    </>
+                  ) : connectStep === 'connecting' ? (
+                    /* Connecting state */
+                    <div className="p-4 text-center">
+                      <div className="animate-spin h-5 w-5 mx-auto mb-2 border-2 border-[#6366f1] border-t-transparent rounded-full" />
+                      <p className="text-xs text-[#a0a0b0]">Connecting\u2026</p>
+                    </div>
+                  ) : available.length > 0 ? (
+                    /* Wallet picker */
+                    <div className="p-3">
+                      <p className="text-[10px] font-semibold text-[#4a4a56] uppercase tracking-wider mb-2">Select wallet</p>
+                      {available.map(w => (
+                        <button key={w.key}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-[#a0a0b0] hover:text-white hover:bg-white/5 transition-colors"
+                          onClick={() => handleConnect(w.key)}
+                        >
+                          <Wallet className="h-4 w-4" />
+                          <span>{w.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    /* No wallet */
+                    <div className="p-4 text-center">
+                      <Wallet className="h-6 w-6 mx-auto mb-2" style={{ color: '#4a4a56' }} />
+                      <p className="text-xs text-[#6b6b7a]">No wallet detected</p>
+                      <p className="text-[10px] text-[#4a4a56] mt-1">Install Phantom or Solflare</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </header>
 
-        {/* Page content */}
         <main className="page-content">
           <Suspense fallback={
             <div className="space-y-4">
@@ -422,7 +406,6 @@ export default function RootLayout() {
         </main>
       </div>
 
-      {/* Search overlay */}
       {searchOpen && (
         <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => setSearchOpen(false)} />
       )}
