@@ -130,26 +130,31 @@ pub mod key_type {
 /// Maximum number of key groups per vault
 pub const MAX_KEY_GROUPS: usize = 16;
 
-/// Maximum number of agents per vault
-pub const MAX_AGENTS: usize = 32;
+/// Maximum number of agents per vault.
+/// Reduced from 32 → 8 so UniversalVault fits Solana's per-tx
+/// account-data growth cap (10240 bytes). The 8064-byte deployed
+/// program (slot 461190304+ on devnet) is built against this.
+pub const MAX_AGENTS: usize = 8;
 
-/// Maximum number of payment streams per vault
-pub const MAX_PAYMENT_STREAMS: usize = 8;
+/// Maximum number of payment streams per vault.
+/// Reduced from 8 → 4 for the same Solana per-tx cap reason.
+pub const MAX_PAYMENT_STREAMS: usize = 4;
 
-/// Maximum number of policy rules per vault
-pub const MAX_POLICY_RULES: usize = 64;
+/// Maximum number of policy rules per vault.
+/// Reduced from 64 → 8 for the same Solana per-tx cap reason.
+pub const MAX_POLICY_RULES: usize = 8;
 
 /// Layout byte offsets for raw UniversalVault account data.
 /// Used by on-chain instructions and proxy/src/vault.rs.
 /// Do not change without updating all consumers and running the drift test.
 pub const AGENT_GRANTS_START: usize = 768;   // 64-byte header + 16 × 44-byte KeyGroupEntry
 pub const AGENT_GRANT_SIZE: usize = 128;
-pub const POLICY_RULES_START: usize = 7760;  // AGENT_GRANTS_START + MAX_AGENTS × AGENT_GRANT_SIZE
+pub const POLICY_RULES_START: usize = 1792;  // AGENT_GRANTS_START + MAX_AGENTS (8) × AGENT_GRANT_SIZE (128)
 pub const POLICY_RULE_SIZE: usize = 96;
-pub const PAYMENT_STREAMS_START: usize = 13856; // POLICY_RULES_START + MAX_POLICY_RULES × POLICY_RULE_SIZE
+pub const PAYMENT_STREAMS_START: usize = 2560; // POLICY_RULES_START + MAX_POLICY_RULES (8) × POLICY_RULE_SIZE (96)
 pub const PAYMENT_STREAM_SIZE: usize = 108;
-/// Hard cap for the policy loop: physical max that fits in vault account.
-pub const MAX_POLICY_RULES_STORED: u8 = 110;
+/// Hard cap for the policy loop: matches the new MAX_POLICY_RULES.
+pub const MAX_POLICY_RULES_STORED: u8 = 8;
 
 /// Key group types
 #[repr(u8)]
@@ -564,14 +569,20 @@ pub struct UniversalVault {
     pub key_groups: [KeyGroupEntry; MAX_KEY_GROUPS],
     pub agent_grants: [AgentGrant; MAX_AGENTS],
     pub policy_rules: [PolicyRule; MAX_POLICY_RULES],
-    pub payment_streams: [PaymentStream; 8],
-    pub ephemeral_signers: [EphemeralSigner; 8],
-    pub _reserved: [u8; 1024],
+    pub payment_streams: [PaymentStream; MAX_PAYMENT_STREAMS],
+    // ephemeral_signers and _reserved removed — Solana per-tx data
+    // growth cap is 10240 bytes; trimmed the vault to fit. The
+    // EphemeralSigner flow lives in its own per-grant PDA per spec 10
+    // anyway, not inside UniversalVault.
 }
 
 impl UniversalVault {
     pub const DISCRIMINATOR: [u8; 8] = *b"univault";
-    pub const SIZE: usize = 18400;
+    /// Computed: 64-byte header + 16×44 key_groups (704)
+    /// + 8×128 agent_grants (1024) + 8×96 policy_rules (768)
+    /// + 4×108 payment_streams (432) = 2992 bytes.
+    /// Matches the deployed devnet program (slot ≥461190304).
+    pub const SIZE: usize = 2992;
 
     pub fn new(owner: Pubkey, created_at: u64) -> Self {
         Self {
@@ -593,12 +604,7 @@ impl UniversalVault {
                 data_len: 0,
                 _reserved: [0; 31],
             }; MAX_POLICY_RULES],
-            payment_streams: [PaymentStream::new([0; 32], Pubkey::default(), 0, 0, 0); 8],
-            ephemeral_signers: [EphemeralSigner {
-                agent_pubkey: Pubkey::default(),
-                ephemeral_pubkey: Pubkey::default(),
-            }; 8],
-            _reserved: [0; 1024],
+            payment_streams: [PaymentStream::new([0; 32], Pubkey::default(), 0, 0, 0); MAX_PAYMENT_STREAMS],
         }
     }
 
