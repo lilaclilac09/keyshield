@@ -22,13 +22,15 @@ import {
   startAuthentication,
   startRegistration,
 } from '@simplewebauthn/browser';
-import type {
-  AuthenticationResponseJSON,
-  PublicKeyCredentialCreationOptionsJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-  RegistrationResponseJSON,
-} from '@simplewebauthn/browser';
 import { deriveVaultId } from './vault';
+
+// Why local type defs: @simplewebauthn/browser v11 doesn't re-export these
+// type names from its top-level — they live in @simplewebauthn/types. Rather
+// than add another runtime dep just for types, alias to the function returns.
+type RegistrationResponseJSON = Awaited<ReturnType<typeof startRegistration>>;
+type AuthenticationResponseJSON = Awaited<ReturnType<typeof startAuthentication>>;
+type PublicKeyCredentialCreationOptionsJSON = Parameters<typeof startRegistration>[0] extends { optionsJSON: infer O } ? O : Parameters<typeof startRegistration>[0];
+type PublicKeyCredentialRequestOptionsJSON = Parameters<typeof startAuthentication>[0] extends { optionsJSON: infer O } ? O : Parameters<typeof startAuthentication>[0];
 
 // ── PRF salt ──────────────────────────────────────────────────────────
 //
@@ -206,7 +208,7 @@ export function makeSyncAuthClient(): SyncAuthClient {
               first: bufferToBase64Url(salt),
             },
           },
-        },
+        } as Record<string, unknown>,
       };
 
       const attestation = await startRegistration({
@@ -266,7 +268,7 @@ export function makeSyncAuthClient(): SyncAuthClient {
             prf: {
               eval: { first: bufferToBase64Url(salt) },
             },
-          },
+          } as Record<string, unknown>,
         };
         const probe = await startAuthentication({ optionsJSON: probeOpts });
         prfOutput = extractPrfOutput(probe);
@@ -298,7 +300,7 @@ export function makeSyncAuthClient(): SyncAuthClient {
         timeout: 60_000,
         extensions: {
           prf: { eval: { first: bufferToBase64Url(salt) } },
-        },
+        } as Record<string, unknown>,
       };
       const assertion = await startAuthentication({ optionsJSON: assertOpts });
 

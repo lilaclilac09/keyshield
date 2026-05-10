@@ -8,7 +8,13 @@
  */
 
 import { prfSalt } from './sync-auth';
-import { enrollVault, unlockVault, getCfChallenge, lockVault } from './vault-session';
+import {
+  enrollVault,
+  unlockVault,
+  getCfChallenge,
+  lockVault,
+  getDecryptedKey,
+} from './vault-session';
 
 export const API_BASE: string = (() => {
   if (typeof process !== 'undefined') {
@@ -138,7 +144,6 @@ export async function proxyFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const { getDecryptedKey } = await import('./vault-session');
   const apiKey = getDecryptedKey(upstream);
   if (!apiKey) throw new Error(`Vault locked or no key for "${upstream}"`);
   const headers = new Headers(options.headers);
