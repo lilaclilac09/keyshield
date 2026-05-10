@@ -89,6 +89,46 @@ export const MppUsageEntrySchema = z.object({
   model: z.string().optional(),
   timestamp: z.string(),
 });
+
+// /mpp/streams/:id/build-open-tx — wire shape the wallet adapter
+// signs. See packages/shared/src/api/index.ts::buildMppOpenTx for the
+// fetch wrapper, packages/shared/src/lib/wallet-mpp.ts for the
+// assembly helper. Wire contract recap:
+//   prereqIxs[0]  Create stream-PDA-owned USDC ATA (idempotent)
+//   prereqIxs[1]  TransferChecked: owner ATA → stream ATA
+//   main          KeyShield #24 open_payment_stream
+
+export const MppBuildAccountMetaSchema = z.object({
+  pubkey: z.string(),
+  isSigner: z.boolean(),
+  isWritable: z.boolean(),
+});
+export type MppBuildAccountMeta = z.infer<typeof MppBuildAccountMetaSchema>;
+
+export const MppBuildTxIxSchema = z.object({
+  programId: z.string(),
+  keys: z.array(MppBuildAccountMetaSchema),
+  data: z.string(), // base64
+});
+export type MppBuildTxIxRuntime = z.infer<typeof MppBuildTxIxSchema>;
+
+export const MppBuildOpenTxResponseSchema = MppBuildTxIxSchema.extend({
+  streamUsdcAta: z.string(),
+  prereqIxs: z.tuple([MppBuildTxIxSchema, MppBuildTxIxSchema]),
+});
+export type MppBuildOpenTxResponseRuntime = z.infer<typeof MppBuildOpenTxResponseSchema>;
+
+export const MppBuildOpenTxBodySchema = z.object({
+  ownerPubkey: z.string(),
+  streamPda: z.string(),
+  bump: z.number().int().min(0).max(255),
+  usdcAta: z.string(),
+  maxTotalMicroUsdc: z.number().int().nonnegative(),
+  costPerUnitMicroUsdc: z.number().int().nonnegative().optional(),
+  maxRateUsdPerMinBits: z.number().int().nonnegative().optional(),
+  settlementIntervalSecsOverride: z.number().int().nonnegative().optional(),
+});
+export type MppBuildOpenTxBodyRuntime = z.infer<typeof MppBuildOpenTxBodySchema>;
 export type MppUsageEntry = z.infer<typeof MppUsageEntrySchema>;
 
 // ============ Billing Types ============
