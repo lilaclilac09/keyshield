@@ -9,6 +9,7 @@ import { authLoader, protectedLoader } from './loaders';
 const Landing = lazy(() => import('../pages/Landing'));
 const Login = lazy(() => import('../pages/Login'));
 const Vault = lazy(() => import('../pages/Vault'));
+const DeviceVault = lazy(() => import('../pages/DeviceVault'));
 const Activity = lazy(() => import('../pages/Activity'));
 const Agents = lazy(() => import('../pages/Agents'));
 const Sharing = lazy(() => import('../pages/Sharing'));
@@ -30,6 +31,11 @@ export const rootRoutes: RouteObject[] = [
     path: '/vault',
     loader: async () => redirect('/app/vault'),
   },
+  // Redirect /device-vault → /app/device-vault (Path A passkey vault)
+  {
+    path: '/device-vault',
+    loader: async () => redirect('/app/device-vault'),
+  },
   {
     path: '/app',
     element: <RootLayout />,
@@ -37,6 +43,7 @@ export const rootRoutes: RouteObject[] = [
     children: [
       { index: true, element: <Vault /> },
       { path: 'vault', element: <Vault /> },
+      { path: 'device-vault', element: <DeviceVault /> },
       { path: 'activity', element: <Activity /> },
       { path: 'agents', element: <Agents /> },
       { path: 'sharing', element: <Sharing /> },

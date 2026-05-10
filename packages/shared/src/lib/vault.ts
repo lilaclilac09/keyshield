@@ -69,7 +69,11 @@ export async function deriveMasterKey(prfOutput: ArrayBuffer): Promise<CryptoKey
 export async function deriveVaultId(prfOutput: ArrayBuffer): Promise<string> {
   const ikm = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'HKDF', hash: HKDF_HASH, salt: HKDF_SALT, info: INFO_VAULT_ID },
+    // @types/node 22 + lib.dom both: HKDF salt + info now want
+    // BufferSource. The Uint8Array<ArrayBufferLike> generic Vite picks
+    // up clashes with BufferSource's expected ArrayBuffer-only buffer
+    // — same cast as deriveMasterKey above.
+    { name: 'HKDF', hash: HKDF_HASH, salt: HKDF_SALT as BufferSource, info: INFO_VAULT_ID as BufferSource },
     ikm,
     VAULT_ID_BYTES * 8,
   );
@@ -79,7 +83,10 @@ export async function deriveVaultId(prfOutput: ArrayBuffer): Promise<string> {
 export async function encryptVault(key: CryptoKey, plaintext: VaultPlaintext): Promise<VaultCipher> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const data = new TextEncoder().encode(JSON.stringify(plaintext));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  // Same BufferSource cast as deriveVaultId — `data` is the freshly-
+  // encoded plaintext, fully owned ArrayBuffer-backed Uint8Array, but
+  // strict tsconfig sees Uint8Array<ArrayBufferLike>.
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data as BufferSource);
   return {
     version: VAULT_VERSION,
     iv: bytesToB64url(iv),

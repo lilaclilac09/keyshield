@@ -6,6 +6,7 @@ import { TooltipProvider } from '@keyshield/ui';
 import { configureApi } from '@keyshield/shared/api';
 import { getToken, clearAuth, isAuthenticated } from '@keyshield/shared/auth';
 import '@keyshield/ui/styles';
+import { SolanaProvider } from './providers/SolanaProvider';
 import { rootRoutes } from './routes';
 import './styles/app.css';
 
@@ -35,9 +36,11 @@ const router = createBrowserRouter(rootRoutes, {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <RouterProvider router={router} />
-      </TooltipProvider>
+      <SolanaProvider>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
+      </SolanaProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );
