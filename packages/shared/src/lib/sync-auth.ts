@@ -49,7 +49,10 @@ let _prfSaltCache: ArrayBuffer | null = null;
 export async function prfSalt(): Promise<ArrayBuffer> {
   if (_prfSaltCache) return _prfSaltCache;
   const seed = new TextEncoder().encode(PRF_SALT_LABEL);
-  const salt = await crypto.subtle.digest('SHA-256', seed);
+  // @types/node 22 typed Uint8Array as `Uint8Array<ArrayBufferLike>` which
+  // includes SharedArrayBuffer; subtle.digest expects plain ArrayBuffer.
+  // Cast through BufferSource — `Uint8Array` is structurally a BufferSource.
+  const salt = await crypto.subtle.digest('SHA-256', seed as BufferSource);
   _prfSaltCache = salt;
   return salt;
 }
@@ -133,10 +136,13 @@ function extractPrfOutput(
   // simplewebauthn marshals base64url for binary extension outputs.
   const bytes = base64UrlToBytes(first);
   // Return a fresh ArrayBuffer (slice off the typed-array view).
+  // Cast through ArrayBuffer because @types/node 22 widens .buffer to
+  // ArrayBuffer | SharedArrayBuffer; bytes here is always Uint8Array
+  // backed by ArrayBuffer.
   return bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
-  );
+  ) as ArrayBuffer;
 }
 
 // ── Public API ────────────────────────────────────────────────────────

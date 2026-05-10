@@ -52,7 +52,14 @@ export function emptyVault(): VaultPlaintext {
 export async function deriveMasterKey(prfOutput: ArrayBuffer): Promise<CryptoKey> {
   const ikm = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    { name: 'HKDF', hash: HKDF_HASH, salt: HKDF_SALT, info: INFO_MASTER },
+    {
+      name: 'HKDF',
+      hash: HKDF_HASH,
+      // @types/node 22: HKDF_SALT / INFO_MASTER are Uint8Array; cast
+      // to BufferSource (compatible at runtime, narrowed for TS).
+      salt: HKDF_SALT as BufferSource,
+      info: INFO_MASTER as BufferSource,
+    },
     ikm,
     KEY_BYTES * 8,
   );
@@ -87,7 +94,14 @@ export async function decryptVault(key: CryptoKey, cipher: VaultCipher): Promise
   }
   const iv = b64urlToBytes(cipher.iv);
   const ct = b64urlToBytes(cipher.ciphertext);
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  // Uint8Array → BufferSource cast: @types/node 22 widens Uint8Array's
+  // underlying buffer to ArrayBufferLike (incl. SharedArrayBuffer); WebCrypto
+  // wants plain ArrayBufferView. Cast is a no-op at runtime.
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    key,
+    ct as BufferSource,
+  );
   return JSON.parse(new TextDecoder().decode(pt)) as VaultPlaintext;
 }
 

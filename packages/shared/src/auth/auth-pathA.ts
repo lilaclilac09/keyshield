@@ -7,6 +7,13 @@
  * Worker handles vault storage (zero-knowledge).
  */
 
+// `chrome` API is only present inside the Plasmo extension build. The web
+// build ships this file too — guarded by `typeof chrome !== 'undefined'`
+// at every call site — so we declare the global as `any` to satisfy tsc
+// without pulling in @types/chrome (which would also satisfy strict checks
+// but bloats the web bundle's type graph).
+declare const chrome: any;
+
 import { prfSalt } from '../lib/sync-auth';
 import {
   enrollVault,
