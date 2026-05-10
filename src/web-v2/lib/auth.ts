@@ -1,6 +1,14 @@
 /**
  * KeyShield auth — localStorage session, API fetch, wallet/passkey login.
+ *
+ * Path A wiring: passkey ceremonies request the WebAuthn PRF extension and
+ * pipe the output into vault-session for client-side AES-GCM. The Python
+ * backend continues to issue the bearer session (identity); the Cloudflare
+ * Worker handles vault storage (zero-knowledge).
  */
+
+import { prfSalt } from './sync-auth';
+import { enrollVault, unlockVault, getCfChallenge, lockVault } from './vault-session';
 
 export const API_BASE: string = (() => {
   if (typeof process !== 'undefined') {
@@ -30,6 +38,7 @@ export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(WALLET_KEY);
   clearTokenInExtension();
+  lockVault();
 }
 
 export function isAuthenticated(): boolean {
@@ -119,6 +128,27 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   return res;
 }
 
+/**
+ * Path A proxy call — pulls the upstream key out of the unlocked vault and
+ * sends it in `X-Upstream-API-Key` per request. Server uses it for one
+ * upstream HTTP call and discards. Vault must be unlocked first.
+ */
+export async function proxyFetch(
+  upstream: string,
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const { getDecryptedKey } = await import('./vault-session');
+  const apiKey = getDecryptedKey(upstream);
+  if (!apiKey) throw new Error(`Vault locked or no key for "${upstream}"`);
+  const headers = new Headers(options.headers);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Content-Type', 'application/json');
+  headers.set('X-Upstream-API-Key', apiKey);
+  return fetch(`${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`, { ...options, headers });
+}
+
 // ── Wallet challenge/login ────────────────────────────────────────────────
 
 export async function fetchChallenge(): Promise<{ challenge: string; nonce: string }> {
@@ -180,6 +210,10 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
     }));
   }
 
+  // Path A: ask the authenticator for a PRF output we can derive vault keys from.
+  const salt = await prfSalt();
+  opts.extensions = { ...(opts.extensions ?? {}), prf: { eval: { first: salt } } };
+
   const credential = await navigator.credentials.get({ publicKey: opts }) as PublicKeyCredential;
   if (!credential) throw new Error('Passkey authentication cancelled');
 
@@ -216,6 +250,11 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
   if (!optsRes.ok) throw new Error('Failed to get registration options');
   const opts = await optsRes.json();
 
+  // Why: WebAuthn challenge from Python is base64url ASCII; CF Worker's
+  // expectedChallenge needs the same string verbatim so the assertion
+  // verifies on both sides.
+  const challengeB64url: string = opts.challenge;
+
   opts.challenge = _b64urlToBuffer(opts.challenge);
   opts.user.id = _b64urlToBuffer(opts.user.id);
   if (opts.excludeCredentials) {
@@ -223,6 +262,11 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
       ...c, id: _b64urlToBuffer(c.id),
     }));
   }
+
+  // Path A: PRF extension. The salt MUST match what unlock uses, otherwise
+  // the master key derived later won't decrypt this device's vault.
+  const salt = await prfSalt();
+  opts.extensions = { ...(opts.extensions ?? {}), prf: { eval: { first: salt } } };
 
   const credential = await navigator.credentials.create({ publicKey: opts }) as PublicKeyCredential;
   if (!credential) throw new Error('Passkey creation cancelled');
@@ -246,7 +290,95 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
     const err = await verRes.json().catch(() => ({ detail: 'Registration failed' }));
     throw new Error((err as { detail: string }).detail ?? 'Registration failed');
   }
-  return verRes.json();
+  const result = await verRes.json();
+
+  // Path A dual-register: tell the CF Worker about this credential so
+  // subsequent unlocks can issue a vault JWT. PRF output is in extensions
+  // results — without it we can't derive the vault id, so this is best-effort
+  // (older browsers without PRF degrade to non-zero-knowledge mode).
+  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const prfOutput = ext?.prf?.results?.first;
+  if (prfOutput) {
+    try {
+      await enrollVault(prfOutput, {
+        id: credential.id,
+        rawId: _bufferToB64url(credential.rawId),
+        type: credential.type,
+        response: {
+          attestationObject: _bufferToB64url(response.attestationObject),
+          clientDataJSON: _bufferToB64url(response.clientDataJSON),
+        },
+        clientExtensionResults: { prf: { enabled: true } },
+      }, challengeB64url);
+    } catch (e) {
+      console.warn('CF Worker enroll failed (vault will need manual unlock):', e);
+    }
+  } else {
+    console.warn('Passkey created without PRF — vault crypto unavailable on this device');
+  }
+
+  return result;
+}
+
+/**
+ * Path A unlock — fresh WebAuthn ceremony against the CF Worker challenge,
+ * derives master key from PRF output, exchanges assertion for a vault JWT,
+ * pulls + decrypts the cipher into module state.
+ *
+ * Done as a separate gesture (not bundled into passkeyLogin) so the user
+ * sees one Face ID prompt per security domain: identity (Python session)
+ * and vault (CF Worker JWT).
+ */
+export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCount: number }> {
+  const trust = getPasskeyTrust();
+  if (!trust) throw new Error('No passkey registered on this device');
+  const { userId } = trust;
+
+  // Reuse Python's options endpoint just to learn allowed credential IDs;
+  // the challenge we'll use is the CF Worker's, so the assertion verifies
+  // there. We discard Python's challenge.
+  const optsRes = await fetch(`${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`);
+  if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
+  const opts = await optsRes.json();
+
+  // Probe ceremony: derive vaultId from PRF first (no server interaction
+  // beyond the challenge), so the second ceremony has the right vaultId for
+  // CF Worker /auth/challenge.
+  const salt = await prfSalt();
+  const probeOpts = {
+    ...opts,
+    challenge: _b64urlToBuffer(opts.challenge),
+    allowCredentials: (opts.allowCredentials ?? []).map((c: { id: string }) => ({ ...c, id: _b64urlToBuffer(c.id) })),
+    extensions: { prf: { eval: { first: salt } } },
+  };
+  const probe = await navigator.credentials.get({ publicKey: probeOpts }) as PublicKeyCredential;
+  const probeExt = probe.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const prfOutput = probeExt?.prf?.results?.first;
+  if (!prfOutput) throw new Error('Passkey did not return PRF — device unsupported for Path A vault');
+
+  // Now get a CF-issued challenge and run the real ceremony against it.
+  const cfChallenge = await getCfChallenge(prfOutput);
+  const realOpts = {
+    ...opts,
+    challenge: _b64urlToBuffer(cfChallenge),
+    allowCredentials: (opts.allowCredentials ?? []).map((c: { id: string }) => ({ ...c, id: _b64urlToBuffer(c.id) })),
+    extensions: { prf: { eval: { first: salt } } },
+  };
+  const credential = await navigator.credentials.get({ publicKey: realOpts }) as PublicKeyCredential;
+  const resp = credential.response as AuthenticatorAssertionResponse;
+  const assertion = {
+    id: credential.id,
+    rawId: _bufferToB64url(credential.rawId),
+    type: credential.type,
+    response: {
+      authenticatorData: _bufferToB64url(resp.authenticatorData),
+      clientDataJSON: _bufferToB64url(resp.clientDataJSON),
+      signature: _bufferToB64url(resp.signature),
+      userHandle: resp.userHandle ? _bufferToB64url(resp.userHandle) : undefined,
+    },
+  };
+
+  return await unlockVault(prfOutput, assertion);
 }
 
 export async function listPasskeys(): Promise<Array<{ id: string; name: string; createdAt: number }>> {

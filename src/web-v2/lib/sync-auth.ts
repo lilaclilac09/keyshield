@@ -44,7 +44,7 @@ const PRF_SALT_LABEL = 'ks-prf-salt-v1';
 
 let _prfSaltCache: ArrayBuffer | null = null;
 
-async function prfSalt(): Promise<ArrayBuffer> {
+export async function prfSalt(): Promise<ArrayBuffer> {
   if (_prfSaltCache) return _prfSaltCache;
   const seed = new TextEncoder().encode(PRF_SALT_LABEL);
   const salt = await crypto.subtle.digest('SHA-256', seed);
