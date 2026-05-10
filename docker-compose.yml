@@ -113,7 +113,7 @@ services:
     cpus: 0.25
 
   frontend:
-    # 2026-05-10: previous src/web-v2 was archived to src/_archive/web-v2/
+    # 2026-05-10: previous src/web was archived to src/_archive/web-v2/
     # and the dashboard renamed to src/web/. Build context follows.
     build:
       context: ./src/web

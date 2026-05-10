@@ -22,7 +22,7 @@ on:
       - 'docker-compose.yml'
       - 'src/backend/**'
       - 'src/proxy/**'
-      - 'src/web-v2/**'
+      - 'src/web/**'
       - '.github/workflows/docker-build.yml'
   workflow_dispatch: {}
 
@@ -51,7 +51,7 @@ jobs:
             context: ./src/proxy
           - name: web-v2
             file: Dockerfile.web
-            context: ./src/web-v2
+            context: ./src/web
     steps:
       - uses: actions/checkout@v4
 

@@ -1,6 +1,6 @@
 # KeyShield React dashboard — multi-stage Vite + nginx build.
 #
-# Layout note (2026-05-10): the previous src/web-v2/ was archived to
+# Layout note (2026-05-10): the previous src/web/ was archived to
 # src/_archive/web-v2/ and the freshly-renamed dashboard now lives at
 # `src/web/`. docker-compose.yml sets `context: ./src/web` and
 # `dockerfile: ../../Dockerfile.web`, so paths in this file are
