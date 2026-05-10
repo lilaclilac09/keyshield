@@ -46,9 +46,9 @@ export default function Agents() {
       {agents.length === 0 ? (
         <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
           <CardContent className="py-12 text-center">
-            <Bot className="h-10 w-10 mx-auto mb-3" style={{ color: '#333' }} />
+            <Bot className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
             <h3 className="text-lg font-medium mb-1" style={{ color: '#e0e0e0' }}>No agents registered</h3>
-            <p className="text-sm mb-4" style={{ color: '#666' }}>Register your first AI agent to enable scoped API access</p>
+            <p className="text-sm mb-4" style={{ color: '#c4c4d0' }}>Register your first AI agent to enable scoped API access</p>
             <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" /> Register Agent</Button>
           </CardContent>
         </Card>
@@ -80,8 +80,8 @@ export default function Agents() {
                       </div>
                     </TableCell>
                     <TableCell><Badge variant={a.is_active ? 'success' : 'secondary'}>{a.is_active ? 'Active' : 'Inactive'}</Badge></TableCell>
-                    <TableCell style={{ color: '#666' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
-                    <TableCell style={{ color: '#666' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
+                    <TableCell style={{ color: '#c4c4d0' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
+                    <TableCell style={{ color: '#c4c4d0' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => handleRevoke(a.id)} disabled={revokingId === a.id}>
                         {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" style={{ color: '#c62232' }} />}

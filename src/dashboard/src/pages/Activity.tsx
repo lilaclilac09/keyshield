@@ -14,7 +14,7 @@ const PROVIDER_META: Record<string, { name: string; color: string }> = {
 };
 
 function ProviderBadge({ upstream }: { upstream: string }) {
-  const meta = PROVIDER_META[upstream] ?? { name: upstream, color: '#666' };
+  const meta = PROVIDER_META[upstream] ?? { name: upstream, color: '#c4c4d0' };
   return <Badge variant="secondary" style={{ background: `${meta.color}15`, color: meta.color, borderColor: `${meta.color}30` }}>{meta.name}</Badge>;
 }
 
@@ -57,7 +57,7 @@ export default function Activity() {
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
             <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Recent Activity</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-sm" style={{ color: '#666' }}>Activity feed will show recent proxy calls, MPP settlements, and billing events.</p>
+              <p className="text-sm" style={{ color: '#c4c4d0' }}>Activity feed will show recent proxy calls, MPP settlements, and billing events.</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -68,9 +68,9 @@ export default function Activity() {
             <CardContent>
               {streams.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Zap className="h-8 w-8 mx-auto mb-3" style={{ color: '#333' }} />
-                  <p className="text-sm" style={{ color: '#666' }}>No active MPP streams</p>
-                  <p className="text-xs mt-1" style={{ color: '#505050' }}>Open a stream to enable micro-payments for agent API calls</p>
+                  <Zap className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
+                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No active MPP streams</p>
+                  <p className="text-xs mt-1" style={{ color: '#a0a0b0' }}>Open a stream to enable micro-payments for agent API calls</p>
                 </div>
               ) : (
                 <Table>
@@ -94,7 +94,7 @@ export default function Activity() {
                         </TableCell>
                         <TableCell style={{ color: '#c4c4d0' }}>{s.total_deposited_sol.toFixed(4)} SOL</TableCell>
                         <TableCell style={{ color: '#c4c4d0' }}>${s.total_usage_usd.toFixed(2)}</TableCell>
-                        <TableCell style={{ color: '#666' }}>{relTime(new Date(s.created_at).getTime() / 1000)}</TableCell>
+                        <TableCell style={{ color: '#c4c4d0' }}>{relTime(new Date(s.created_at).getTime() / 1000)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -108,7 +108,7 @@ export default function Activity() {
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
             <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Usage History</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-sm" style={{ color: '#666' }}>Detailed usage logs will show per-call tokens, latency, and cost.</p>
+              <p className="text-sm" style={{ color: '#c4c4d0' }}>Detailed usage logs will show per-call tokens, latency, and cost.</p>
             </CardContent>
           </Card>
         </TabsContent>

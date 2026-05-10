@@ -93,7 +93,7 @@ export default function EphemeralWallets() {
           )}
           {created && (
             <div className="mt-3 p-3 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
-              <p className="text-xs mb-1" style={{ color: '#666' }}>Created wallet:</p>
+              <p className="text-xs mb-1" style={{ color: '#c4c4d0' }}>Created wallet:</p>
               <div className="flex items-center gap-2">
                 <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{created.pubkey}</code>
                 <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(created.pubkey)}>
@@ -111,8 +111,8 @@ export default function EphemeralWallets() {
         <CardContent>
           {wallets.length === 0 ? (
             <div className="py-12 text-center">
-              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#333' }} />
-              <p className="text-sm" style={{ color: '#666' }}>No ephemeral wallets</p>
+              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
+              <p className="text-sm" style={{ color: '#c4c4d0' }}>No ephemeral wallets</p>
             </div>
           ) : (
             <Table>

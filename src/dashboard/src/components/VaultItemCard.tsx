@@ -67,11 +67,11 @@ export function VaultItemCard({ item }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
               <div className="h-10 w-10 rounded-lg bg-[#0a0a0a] flex items-center justify-center shrink-0" style={{ borderColor: '#141414', borderWidth: '1px' }}>
-                <Icon className="h-5 w-5" style={{ color: '#404040' }} />
+                <Icon className="h-5 w-5" style={{ color: '#777' }} />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-medium truncate" style={{ color: '#707070' }}>{item.name}</h3>
-                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#4a4a4a' }}>{item.upstream}</p>}
+                <h3 className="font-medium truncate" style={{ color: '#f8f8f8' }}>{item.name}</h3>
+                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#888' }}>{item.upstream}</p>}
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <Badge variant="outline" className="text-xs">{item.type.replace('_', ' ')}</Badge>
                   {item.tags?.map(t => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
@@ -82,22 +82,22 @@ export function VaultItemCard({ item }: Props) {
 
           <div className="mt-3 p-2.5 rounded-lg bg-[#0a0a0a] font-mono text-sm" style={{ borderColor: '#141414', borderWidth: '1px' }}>
             {revealed && decrypted ? (
-              <span className="break-all" style={{ color: '#707070' }}>{decrypted.value}</span>
+              <span className="break-all" style={{ color: '#f8f8f8' }}>{decrypted.value}</span>
             ) : (
               <span style={{ color: '#3a3a3a' }}>{item.masked_value || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}</span>
             )}
           </div>
 
           <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#4a4a4a' }}>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#888' }}>
               <Clock className="h-3 w-3" /> {relTime(item.updated_at)}
             </div>
             <div className="flex gap-0.5">
               <Button variant="ghost" size="icon" onClick={revealed ? () => { setRevealed(false); setDecrypted(null); } : handleReveal} title={revealed ? 'Hide' : 'Reveal'}>
-                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#606060' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#606060' }} />}
+                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />}
               </Button>
               <Button variant="ghost" size="icon" onClick={handleCopy} title="Copy">
-                <CopyIcon className="h-4 w-4" style={{ color: '#606060' }} />
+                <CopyIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setDeleteDialog(true)} title="Delete">
                 <Trash2Icon className="h-4 w-4" style={{ color: '#c62232' }} />
@@ -115,7 +115,7 @@ export function VaultItemCard({ item }: Props) {
 
       <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
         <DialogContent className="bg-[#080808] border-[#141414]">
-          <DialogHeader><DialogTitle style={{ color: '#707070' }}>Delete Vault Item</DialogTitle><DialogDescription>Are you sure you want to delete "{item.name}"?</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle style={{ color: '#f8f8f8' }}>Delete Vault Item</DialogTitle><DialogDescription>Are you sure you want to delete "{item.name}"?</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDeleteDialog(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>

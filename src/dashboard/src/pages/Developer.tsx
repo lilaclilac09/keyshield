@@ -42,7 +42,7 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
   };
   return (
     <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#e0e0e0' }}>
-      {label && <p className="text-xs mb-2" style={{ color: '#666' }}>{label}</p>}
+      {label && <p className="text-xs mb-2" style={{ color: '#c4c4d0' }}>{label}</p>}
       <pre className="whitespace-pre-wrap break-all">{code}</pre>
       <button onClick={handleCopy} className="absolute top-3 right-3 p-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] transition-colors">
         {copied ? <Check size={14} className="text-[#34d399]" /> : <Copy size={14} style={{ color: '#888' }} />}
@@ -135,7 +135,7 @@ export default function Developer() {
                     <TableRow key={i}>
                       <TableCell><Badge variant={ep.method === 'GET' ? 'success' : ep.method === 'POST' ? 'default' : 'destructive'} className="w-16 text-center">{ep.method}</Badge></TableCell>
                       <TableCell><code className="text-xs font-mono bg-[#0a0a0a] px-2 py-0.5 rounded" style={{ color: '#e0e0e0', borderColor: '#141414', borderWidth: '1px' }}>{ep.path}</code></TableCell>
-                      <TableCell className="text-sm" style={{ color: '#666' }}>{ep.desc}</TableCell>
+                      <TableCell className="text-sm" style={{ color: '#c4c4d0' }}>{ep.desc}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -152,7 +152,7 @@ export default function Developer() {
                 {cliCommands.map((c, i) => (
                   <div key={i} className="p-3 rounded-lg bg-[#0a0a0a] border" style={{ borderColor: '#141414' }}>
                     <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{c.cmd}</code>
-                    <p className="text-xs mt-1" style={{ color: '#666' }}>{c.desc}</p>
+                    <p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>{c.desc}</p>
                   </div>
                 ))}
               </div>

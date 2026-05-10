@@ -23,7 +23,7 @@ const CHAPTERS = [
 function CodeBlock({ code, label }: { code: string; label?: string }) {
   return (
     <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#e0e0e0' }}>
-      {label && <p className="text-xs mb-2" style={{ color: '#666' }}>{label}</p>}
+      {label && <p className="text-xs mb-2" style={{ color: '#c4c4d0' }}>{label}</p>}
       <pre className="whitespace-pre-wrap break-all">{code}</pre>
     </div>
   );
@@ -122,7 +122,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
               ].map((c, i) => (
                 <div key={i} className="p-3 rounded-lg bg-[#0a0a0a] border" style={{ borderColor: '#141414' }}>
                   <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{c.cmd}</code>
-                  <p className="text-xs mt-1" style={{ color: '#666' }}>{c.desc}</p>
+                  <p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>{c.desc}</p>
                 </div>
               ))}
             </div>

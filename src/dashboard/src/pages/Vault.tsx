@@ -67,7 +67,7 @@ export default function Vault() {
       {/* Search & Filter */}
       <div className="flex gap-2 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#505050' }} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a0a0b0' }} />
           <Input className="pl-9 bg-[#0a0a0a] border-[#141414] text-white" placeholder="Search vault..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Tabs value={filter} onValueChange={setFilter}>
@@ -91,7 +91,7 @@ export default function Vault() {
           <h3 className="text-lg font-medium" style={{ color: '#f8f8f8' }}>
             {search ? 'No matching secrets' : 'Your vault is empty'}
           </h3>
-          <p className="mt-1 text-sm" style={{ color: '#666' }}>
+          <p className="mt-1 text-sm" style={{ color: '#c4c4d0' }}>
             {search ? 'Try adjusting your search or filter.' : 'Add your first encrypted secret to get started.'}
           </p>
           {!search && (

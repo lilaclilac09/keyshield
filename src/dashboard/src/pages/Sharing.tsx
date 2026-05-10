@@ -54,8 +54,8 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {incoming.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#333' }} />
-                  <p className="text-sm" style={{ color: '#666' }}>No incoming shares</p>
+                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
+                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No incoming shares</p>
                 </div>
               ) : (
                 <Table>
@@ -65,7 +65,7 @@ export default function Sharing() {
                       <TableRow key={s.id}>
                         <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
                         <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#666' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                       </TableRow>
                     ))}
@@ -81,8 +81,8 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {outgoing.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#333' }} />
-                  <p className="text-sm" style={{ color: '#666' }}>No outgoing shares</p>
+                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
+                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No outgoing shares</p>
                 </div>
               ) : (
                 <Table>
@@ -92,7 +92,7 @@ export default function Sharing() {
                       <TableRow key={s.id}>
                         <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
                         <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#666' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                         <TableCell>
                           {s.is_active && (
