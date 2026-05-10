@@ -3,89 +3,105 @@
 ## One command
 
 ```bash
-bash scripts/dev.sh
+node dev.cjs
 ```
 
-This starts:
+Starts (cross-platform — works on macOS, Linux, Windows):
 
-- **Python control plane** on `:8001` (uvicorn auto-reload)
+- **Python control plane** on `:8001` (uvicorn auto-reload, `src/backend/`)
 - **Rust hot-path proxy** on `:8000` (release build, fronts everything)
-- **Frontend** on `:5173` (Vite dev with HMR)
+- **Web frontend** on `:5173` (Vite dev with HMR, `src/web/`)
 
-Output is interleaved with `[py]` / `[rs]` / `[fe]` prefixes. `Ctrl-C` stops
-everything cleanly. First run builds the Rust release binary (~30s) and
-runs `npm ci` in `frontend/` (~30s); subsequent runs start in <2s.
+`Ctrl-C` stops everything cleanly. First run builds the Rust release binary
+(~30s) and runs `npm install` in `src/web/` (~30s); subsequent runs start
+in <2s.
 
-Open **http://localhost:5173** — that's the dashboard / Chrome extension
-popup. It talks to `:8000` (Rust); Rust handles `/proxy/*` directly and
+Open **http://localhost:5173** — that's the dashboard / extension popup.
+It talks to `:8000` (Rust); Rust handles `/proxy/*` directly and
 reverse-proxies everything else (passkey, vault, billing, agents, usage)
-to Python on `:8001`. See [`proxy-rs/ADR-002-architecture.md`](proxy-rs/ADR-002-architecture.md).
+to Python on `:8001`. See [`src/proxy/ADR-002-architecture.md`](src/proxy/ADR-002-architecture.md).
+
+## Run a single service
+
+```bash
+node dev.cjs web      # just the frontend
+node dev.cjs proxy    # just the Rust proxy
+node dev.cjs backend  # just the Python control plane
+```
 
 ## First-time setup
 
 ```bash
-# Python venv (one-time)
-cd v2-mvp
+# Python venv + deps
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cd ..
+source .venv/bin/activate
+pip install -r src/backend/requirements.txt
 
 # Rust toolchain (if not already)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Node 20+ + npm (assume installed)
-
-# Now you can run:
-bash scripts/dev.sh
+npm install                    # root + workspaces
+cd src/web && npm install      # frontend bundle
 ```
 
-## Variants
+## Manual launch (separate terminals)
 
 ```bash
-# Skip Rust — frontend talks to Python directly (debug Python only)
-bash scripts/dev.sh --no-rust
+# 1. Python
+uvicorn src.backend.app:app --host 127.0.0.1 --port 8001 --reload
 
-# Run just one piece in foreground (separate terminals):
-cd v2-mvp && .venv/bin/uvicorn src.server:app --port 8001 --reload
+# 2. Rust proxy
 KS_BIND=127.0.0.1:8000 PYTHON_BACKEND_URL=http://127.0.0.1:8001 \
-  cargo run --release --manifest-path proxy-rs/Cargo.toml --bin ks-proxy
-cd frontend && npm run dev -- --port 5173
+  cargo run --release --manifest-path src/proxy/Cargo.toml --bin ks-proxy
+
+# 3. Web
+cd src/web && npm run dev -- --port 5173
 ```
 
 ## Test posture
 
-| Scope | Command | What it verifies |
-|---|---|---|
-| Rust unit + integration | `cargo test --workspace --manifest-path proxy-rs/Cargo.toml` | 78 tests across 5 crates: vault decrypt, session pool, cache TTL, upstream auth, Helius dispatch, proxy handlers, batch, fallthrough, stealth |
-| Solana program | `cargo test -p keyshield` | Mollusk unit tests for the on-chain program |
-| TypeScript workspaces | `npm test` | agent-sdk, cli, goat-wallet, sync-worker, mobile |
-| Frontend typecheck + build | `cd frontend && npx tsc --noEmit && npm run build` | dashboard / Chrome extension builds clean |
-| Rust ↔ Python byte parity | `bash proxy-rs/scripts/run_oracle_diff.sh` | 12 fixtures: real Python `:8001` vs real Rust `:8000` byte-equal |
+| Scope | Command |
+|---|---|
+| Rust unit + integration | `cargo test --workspace --manifest-path src/proxy/Cargo.toml` |
+| Solana program | `cargo test -p keyshield` |
+| TypeScript workspaces | `npm test` |
+| Frontend typecheck + build | `cd src/web && npx tsc --noEmit && npm run build` |
+| Python backend | `cd src/backend && pytest` |
+| Playwright E2E | `npm run test:e2e` |
+| Rust ↔ Python byte parity | `bash src/proxy/scripts/run_oracle_diff.sh` |
 
-CI runs all of these on every PR (`.github/workflows/{test,node-tests,sync-worker-deploy}.yml`).
+CI runs all of these on every PR (`.github/workflows/{python,test,uat,
+sync-worker-deploy,devnet-deploy}.yml`).
 
-**Not yet covered:** end-to-end "user clicks a button" tests. Listed as next
-deliverable in `proxy-rs/specs/SPEC-WRITING-GUIDE.md` ("Test like a user"
-section).
+## Docker compose
+
+```bash
+docker compose up -d           # start all (python, rust-proxy, postgres, redis, frontend)
+docker compose down
+docker compose logs -f python
+```
+
+Build context for the Rust image is `./src/proxy/` (pointing at
+`Dockerfile.proxy`).
 
 ## Known gotchas
 
 - **Passkey requires a real domain or `127.0.0.1`** — `localhost` doesn't
-  work in Chrome's passkey API. The dev script binds `127.0.0.1` for this
-  reason. If you change it, passkeys silently break.
-- **Port conflicts** — `dev.sh` kills any process holding `:8000`/`:8001`/`:5173`
-  before starting. If you have other dev servers running on those ports they
-  WILL be killed.
-- **Vault state persists** — `v2-mvp/vault/` and `v2-mvp/sessions.db` are not
-  reset between runs. To start fresh: `rm -rf v2-mvp/vault v2-mvp/*.db`.
-- **`cargo build --release`** is slow first time (~30s on M-series Mac, ~2min
-  on slow machines). Subsequent runs use cached artifacts.
+  work in Chrome's passkey API. `dev.cjs` binds `127.0.0.1` for this reason.
+- **Port conflicts** — `dev.cjs` doesn't auto-kill processes on `:8000` /
+  `:8001` / `:5173`. Free them first if you have other dev servers running.
+- **Vault state persists** — `src/backend/vault/` and `src/backend/data/*.db`
+  are not reset between runs. To start fresh: `rm -rf src/backend/vault src/backend/data`.
+- **`cargo build --release`** is slow first time (~30s on M-series Mac,
+  ~2min on slow machines). Subsequent runs use cached artifacts.
 
 ## Productionizing
 
-`scripts/dev.sh` is for local dev. Production is Stage-2 work, not yet built:
-- TLS termination on Rust (rustls + ACME, see https_proxy article pattern)
-- Single-binary packaging or Docker compose
-- Real x402 payment verification (Python's [server.py:1067](v2-mvp/src/server.py#L1067) is currently TODO)
-- Stealth mode is implemented (`KS_STEALTH=1`) but not yet wired into deploy
-- See [`proxy-rs/ADR-002-architecture.md`](proxy-rs/ADR-002-architecture.md) "What's NOT this decision" section
+Production work tracked in `src/proxy/specs/`:
+- TLS termination on Rust (rustls + ACME) — spec 12
+- x402 payment verification — `src/backend/proxy/x402_verify.py` (real
+  on-chain verify path; stub fallback for dev)
+- Embedded wallet for agents — spec 10
+- Stealth mode (`KS_STEALTH=1`) implemented but not yet wired into deploy
+- See [`src/proxy/ADR-002-architecture.md`](src/proxy/ADR-002-architecture.md) "What's NOT this decision"

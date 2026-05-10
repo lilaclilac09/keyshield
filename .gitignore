@@ -28,6 +28,7 @@ src/infra/metrics-ui/dist/
 *.swo
 .vscode/
 .idea/
+.cursor/
 *.pem
 *.log
 

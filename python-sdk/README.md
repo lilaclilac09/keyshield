@@ -1,6 +1,6 @@
 # keyshield (Python SDK)
 
-`pip install keyshield` — Python client for the KeyShield v2-mvp server.
+`pip install keyshield` — Python client for the KeyShield server.
 Talks to the same vault, proxy, and x402 billing endpoints the TypeScript
 CLI uses.
 
