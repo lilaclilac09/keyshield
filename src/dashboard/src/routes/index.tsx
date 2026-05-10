@@ -16,6 +16,7 @@ const Sessions = lazy(() => import('../pages/Sessions'));
 const Settings = lazy(() => import('../pages/Settings'));
 const Reports = lazy(() => import('../pages/Reports'));
 const Developer = lazy(() => import('../pages/Developer'));
+const EphemeralWallets = lazy(() => import('../pages/EphemeralWallets'));
 const Docs = lazy(() => import('../pages/Docs'));
 
 export const rootRoutes: RouteObject[] = [
@@ -43,6 +44,7 @@ export const rootRoutes: RouteObject[] = [
       { path: 'settings', element: <Settings /> },
       { path: 'reports', element: <Reports /> },
       { path: 'developer', element: <Developer /> },
+      { path: 'ephemeral-wallets', element: <EphemeralWallets /> },
       { path: 'docs', element: <Docs /> },
     ],
   },

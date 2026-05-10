@@ -1,7 +1,7 @@
 import { Suspense, useState, useEffect } from 'react';
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
-import { Shield, Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen, Menu, X, Search, Plus, Wallet, ChevronDown, Copy, BarChart3 } from 'lucide-react';
+import { Shield, Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen, Menu, X, Search, Plus, Wallet, ChevronDown, Copy, BarChart3, Server } from 'lucide-react';
 import { Badge, Skeleton, Button as ShadButton } from '@keyshield/ui';
 import { HealthBadge } from '../components/HealthBadge';
 import { SearchOverlay } from '../components/ui/SearchOverlay';
@@ -20,6 +20,7 @@ const navItems = [
   { to: '/app/settings', icon: Settings, label: 'Settings' },
   { to: '/app/developer', icon: Code, label: 'Developer' },
   { to: '/app/reports', icon: BarChart3, label: 'Reports' },
+  { to: '/app/ephemeral-wallets', icon: Server, label: 'Ephemeral' },
   { to: '/app/docs', icon: BookOpen, label: 'Docs' },
 ];
 
