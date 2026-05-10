@@ -16,6 +16,8 @@ src/proxy/target/
 src/programs/*/target/
 src/mobile/dist/
 src/infra/metrics-ui/dist/
+src/web-v2/dist/
+src/web-v2/tsconfig.tsbuildinfo
 *.egg-info/
 *.dll
 *.exe
