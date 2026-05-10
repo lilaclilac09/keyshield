@@ -9,6 +9,9 @@
     },
     "./styles": {
       "import": "./src/styles/globals.css"
+    },
+    "./components/*": {
+      "import": "./src/components/*.tsx"
     }
   },
   "dependencies": {

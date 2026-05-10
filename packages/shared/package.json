@@ -4,59 +4,35 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./types": {
-      "import": "./src/types/index.ts"
+    ".": {
+      "import": "./src/index.ts"
+    },
+    "./lib/*": {
+      "import": "./src/lib/*.ts"
     },
     "./auth": {
       "import": "./src/auth/index.ts"
     },
-    "./api": {
-      "import": "./src/api/index.ts"
+    "./auth/*": {
+      "import": "./src/auth/*.ts"
+    },
+    "./hooks/*": {
+      "import": "./src/hooks/*.ts"
     },
     "./stores": {
       "import": "./src/stores/index.ts"
     },
-    "./lib/key-detector": {
-      "import": "./src/lib/key-detector.ts"
+    "./stores/*": {
+      "import": "./src/stores/*.ts"
     },
-    "./lib/ocr-service": {
-      "import": "./src/lib/ocr-service.ts"
+    "./types": {
+      "import": "./src/types/index.ts"
     },
-    "./lib/time": {
-      "import": "./src/lib/time.ts"
+    "./types/*": {
+      "import": "./src/types/*.ts"
     },
-    "./lib/x402-trust": {
-      "import": "./src/lib/x402-trust.ts"
-    },
-    "./lib/audit-retention": {
-      "import": "./src/lib/audit-retention.ts"
-    },
-    "./lib/solana": {
-      "import": "./src/lib/solana.ts"
-    },
-    "./lib/preferences": {
-      "import": "./src/lib/preferences.ts"
-    },
-    "./hooks/use-vault": {
-      "import": "./src/hooks/use-vault.ts"
-    },
-    "./hooks/use-agents": {
-      "import": "./src/hooks/use-agents.ts"
-    },
-    "./hooks/use-mpp": {
-      "import": "./src/hooks/use-mpp.ts"
-    },
-    "./hooks/use-billing": {
-      "import": "./src/hooks/use-billing.ts"
-    },
-    "./hooks/use-sharing": {
-      "import": "./src/hooks/use-sharing.ts"
-    },
-    "./hooks/use-sessions": {
-      "import": "./src/hooks/use-sessions.ts"
-    },
-    "./hooks/use-health": {
-      "import": "./src/hooks/use-health.ts"
+    "./api": {
+      "import": "./src/api/index.ts"
     }
   },
   "dependencies": {
@@ -64,7 +40,8 @@
     "@tanstack/react-query": "^5.66.0",
     "zustand": "^5.0.0",
     "@solana/web3.js": "^2.0.0",
-    "tesseract.js": "^6.0.0"
+    "tesseract.js": "^6.0.0",
+    "@simplewebauthn/browser": "^11.0.0"
   },
   "devDependencies": {
     "@keyshield/tsconfig": "file:../../tooling/typescript-config",

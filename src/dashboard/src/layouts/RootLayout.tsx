@@ -236,7 +236,6 @@ export default function RootLayout() {
             <Outlet />
           </Suspense>
         </main>
-        </Suspense>
       </div>
 
       {/* Search overlay */}
