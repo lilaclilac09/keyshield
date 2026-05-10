@@ -1,11 +1,26 @@
 # 00 — Overview
 
+> **2026-05-10 update:** the original split was Rust hot-path next to a
+> Python control plane that owned an encrypted file vault. After the
+> 2026-05-09 Path A merge, the **vault storage is no longer in Python**
+> — it lives in a Cloudflare Worker (`src/infra/sync-worker/`) backed
+> by R2, and the Python `/proxy/*` is stateless w.r.t. upstream API
+> keys (`X-Upstream-API-Key` header per request). The Rust hot-path
+> port of `/proxy/*` is unchanged in shape; only the vault read source
+> moved. Specs 01 and 02 describe the legacy file vault, which still
+> works for Path B (server-side passphrase flow). For Path A see
+> [`SYNC_VAULT_ARCHITECTURE.md`](../../../docs/technical/SYNC_VAULT_ARCHITECTURE.md)
+> and [`system-design.md §2.2`](../../../docs/architecture/system-design.md).
+>
+> All `v2-mvp/` references in the specs below now map 1:1 to
+> `src/backend/` (Python consolidated there on 2026-05).
+
 ## Goal
 
-Port the **hot path** of `v2-mvp/src/server.py` to a single-binary Rust
-sidecar, leaving the control plane in Python. The hot path is the
-authenticated API-key-injecting proxy — every agent request hits it. See
-`BOUNDARY.md` for the exact split.
+Port the **hot path** of `src/backend/app.py` (was `v2-mvp/src/server.py`)
+to a single-binary Rust sidecar, leaving the control plane in Python. The
+hot path is the authenticated API-key-injecting proxy — every agent
+request hits it. See `BOUNDARY.md` for the exact split.
 
 ## Why Rust here
 

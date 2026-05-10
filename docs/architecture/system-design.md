@@ -37,17 +37,64 @@ Client → ks-proxy (:8000)
 - Control plane changes frequently (Python, faster iteration)
 - Client sees single endpoint (:8000)
 
-### 2.2 Vault Encryption at Rest
+### 2.2 Vault Encryption — Two Paths
+
+KeyShield ships two parallel vault paths. Path A is the recommended
+default (zero-knowledge); Path B remains for service flows where no
+human is present to tap a passkey.
+
+#### Path A — Zero-Knowledge / Device-as-TEE (default since 2026-05-09)
+
+```
+User device                              Cloudflare Worker        Python proxy
+┌────────────────────────┐               ┌────────────────────┐   ┌──────────┐
+│ WebAuthn passkey (PRF) │               │ /vault/:id (R2)    │   │ /proxy/* │
+│   │                    │               │   stores ciphertext│   │ stateless│
+│   ▼                    │               │   only             │   └────┬─────┘
+│ HKDF-SHA256            │  ciphertext   │                    │        │
+│   ├─ master key (AES)  │ ◀───push────▶ │                    │        │
+│   └─ vault ID (anon)   │               │                    │        │
+│   │                    │               └────────────────────┘        │
+│   ▼ AES-256-GCM        │                                             │
+│ Plaintext keys         │  X-Upstream-API-Key per request             │
+│   (in JS heap only)    │ ─────────────────────────────────────────▶  │
+└────────────────────────┘                                             │
+                                                                       ▼
+                                                                   Upstream
+                                                                   (OpenAI…)
+```
+
+- **Master key** derived from WebAuthn-PRF output via HKDF-SHA256 with
+  `info = "ks-master-key-v1"`. Imported as a non-extractable `CryptoKey`
+  in the browser's secure context.
+- **Vault ID** derived from the same PRF with a different `info` so the
+  server learns nothing about the master key from the public ID.
+- **Ciphertext storage**: Cloudflare Worker (`src/infra/sync-worker/`)
+  pinned to R2. CAS via `updatedAt` for cross-device conflicts.
+- **Proxy is stateless**: Python `/proxy/:upstream/:path` reads
+  `X-Upstream-API-Key` from one request and forwards. Plaintext lives
+  inside one async function's local scope; no DB, no log line.
+
+Code: `src/web-v2/lib/{vault,sync,sync-auth,vault-session}.ts` +
+`src/web-v2/lib/auth.ts::registerPasskey,requestVaultUnlock,proxyFetch`.
+End-to-end UI guide: `docs/get-started/device-vault-ui.md`. Full crypto
++ sync-worker spec: `docs/technical/SYNC_VAULT_ARCHITECTURE.md`.
+
+#### Path B — Server-Side Encrypted File Vault (legacy, opt-in)
 
 ```
 API Key (plaintext)
-    ↓ AES-256-GCM encrypt (with user passphrase)
-Encrypted Blob (stored in .keyshield-vault.json)
+    ↓ AES-256-GCM encrypt (with user passphrase, scrypt-derived key)
+Encrypted .enc file ({KS_VAULT_DIR}/{user}/{upstream}.enc)
     ↓ On request:
-Encrypted Blob + passphrase → AES-256-GCM decrypt → API Key (in memory, per request)
+Bearer token → look up password → decrypt → inject as upstream Auth
 ```
 
-**Key Derivation:** scrypt (N=16384, r=8, p=1) → 32-byte key
+- **Key Derivation:** scrypt (N=16384, r=8, p=1) → 32-byte key.
+- **Threat trade-off**: server holds the wrapping passphrase, so a
+  full server compromise can decrypt every vault. Use only when an
+  agent (no human) needs to call the proxy and Path A's passkey
+  ceremony isn't viable.
 
 ### 2.3 Session-Based Authentication
 

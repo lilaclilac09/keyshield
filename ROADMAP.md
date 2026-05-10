@@ -18,6 +18,10 @@ All code lives under `src/`:
 
 ## Recent Milestones
 
+- **2026-05-10 — Device Vault UI + Docker stack + program drift fix** ✅
+  - `src/web-v2/components/sections/DeviceVaultSection.tsx` wires Path A's crypto stack into the dashboard (three states: enroll / unlock / use). User-facing guide at `docs/get-started/device-vault-ui.md`.
+  - Docker stack complete: `Dockerfile.web` (multi-stage Node→nginx for `src/web-v2`), `src/web-v2/nginx.conf` (SPA fallback + `/healthz`), `Makefile.docker`, `.env.example`, healthchecks for python/rust-proxy + service-healthy `depends_on` chain, GH Actions matrix workflow (`.github/workflows/docker-build.yml`) that builds + pushes 3 images to GHCR.
+  - `UniversalVault::SIZE` reduced from 18400 → **2992 bytes** to fit Solana's per-tx data growth cap (10240). `MAX_AGENTS` 32→8, `MAX_POLICY_RULES` 64→8, `MAX_PAYMENT_STREAMS` 8→4. Recomputed offset constants. Deployed devnet program at `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` is built against this layout.
 - **2026-05-09 — Path A + Python merge** ✅ Vault storage moved off Python onto the Cloudflare sync-worker (zero-knowledge, R2-backed). Python `/proxy/*` refactored to stateless (`X-Upstream-API-Key` header per request). Legacy `/manage/*` plaintext-storage routes removed. `extension-sync/` workspace consolidated into `src/web-v2/lib/`.
 
 ## Status Legend

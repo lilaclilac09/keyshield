@@ -1,9 +1,19 @@
 # 01 — Vault file format
 
+> **2026-05-10 status:** this spec describes **Path B** only — the
+> legacy server-side encrypted file vault. After the 2026-05-09 Path A
+> merge, the default user flow stores ciphertext in a Cloudflare Worker
+> + R2, with the master key derived from a WebAuthn-PRF passkey on the
+> user's device. The server never sees that plaintext. For Path A see
+> [`SYNC_VAULT_ARCHITECTURE.md`](../../../docs/technical/SYNC_VAULT_ARCHITECTURE.md).
+>
+> Path B remains useful for service-to-service flows where no human is
+> at a passkey. The Rust hot-path's `ks-vault` crate reads it.
+
 ## Source of truth
 
-`v2-mvp/src/vault.py` lines 12-59. This spec is descriptive — Python is
-authoritative until it's deleted.
+`src/backend/__init__.py` (was `v2-mvp/src/vault.py`) — `KeyShield.store /
+load / delete`. This spec is descriptive; Python is authoritative.
 
 ## On-disk layout
 
