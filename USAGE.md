@@ -90,12 +90,12 @@ node --version
 ### Step 1 — Start the backend
 
 ```bash
-cd keyshield/v2-mvp
+cd keyshield
 
 # Create virtual env and install deps
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r src/backend/requirements.txt
 
 # Start server
 uvicorn src.server:app --port 8000 --reload
@@ -313,9 +313,9 @@ The CLI is a bash script that wraps the REST API with curl.
 ### Setup
 
 ```bash
-cd keyshield/v2-mvp
-chmod +x keyshield-cli.sh
-source keyshield-cli.sh        # loads all ks_* functions into your shell
+cd keyshield
+chmod +x src/scripts/keyshield-cli.sh
+source src/scripts/keyshield-cli.sh        # loads all ks_* functions into your shell
 ```
 
 Or add to your `.bashrc`:
@@ -704,7 +704,7 @@ from pathlib import Path
 import hashlib, os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-VAULT_FILE = Path("keyshield/v2-mvp/vault/YOUR_WALLET/openai.enc")
+VAULT_FILE = Path("keyshield/src/backend/vault/YOUR_WALLET/openai.enc")
 PASSPHRASE = "your_passphrase"
 
 payload  = VAULT_FILE.read_bytes()

@@ -89,5 +89,6 @@ Xcode for iOS) are listed in the page that needs them.
   pool didn't reset between tests. `npm test --workspace=@keyshield/sync-worker`
   re-runs cleanly from scratch.
 
-For deeper debugging, [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md)
-documents the V1.1 design end-to-end.
+For deeper debugging, the canonical references are the TypeScript
+modules under `src/web-v2/lib/` and the Cloudflare Worker source under
+`src/infra/sync-worker/`.

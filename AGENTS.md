@@ -699,11 +699,11 @@ ks_store 0x        "your-0x-key"
 export KS_TOKEN="ksv2_xxxxx..."
 
 # 3. Run (dry run — no real transactions)
-cd keyshield/v2-mvp
-DRY_RUN=true python3 -m trading.agent
+cd keyshield
+DRY_RUN=true python3 -m src.backend.trading.agent
 
 # 4. When ready, enable live trading
-DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m trading.agent
+DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m src.backend.trading.agent
 ```
 
 ### Environment variables

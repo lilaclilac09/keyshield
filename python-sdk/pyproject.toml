@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keyshield"
+version = "0.1.0"
+description = "Python SDK for KeyShield — programmatic access to the v2-mvp vault, proxy, and x402 billing endpoints."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "KeyShield" }]
+keywords = ["keyshield", "secrets", "api-keys", "vault", "x402", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+# pynacl is only needed for wallet_login_with_key + agent flows that
+# sign a server challenge locally. Most users hitting only /auth/login
+# + /proxy can skip it.
+agent = ["pynacl>=1.5"]
+test = ["pytest>=7", "fastapi>=0.115", "pydantic>=2.10", "cryptography>=42", "webauthn>=2", "httpx[http2]>=0.27"]
+
+[project.urls]
+Homepage = "https://github.com/lilaclilac09/keyshield"
+Repository = "https://github.com/lilaclilac09/keyshield"
+Issues = "https://github.com/lilaclilac09/keyshield/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["keyshield*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
