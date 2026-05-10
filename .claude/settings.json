@@ -8,5 +8,18 @@
       "Skill(gstack-upgrade:*)",
       "WebSearch"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/auto-rebase-main.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
   }
 }
