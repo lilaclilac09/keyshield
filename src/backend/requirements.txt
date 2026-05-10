@@ -3,7 +3,9 @@
 fastapi>=0.115
 uvicorn[standard]>=0.34
 pydantic>=2.10
-httpx>=0.28
+# http2 extra installs `h2` — proxy/api_router.py creates
+# httpx.AsyncClient(http2=True) which ImportErrors at import time without it.
+httpx[http2]>=0.28
 cryptography>=44
 pynacl>=1.5
 base58>=2.1
