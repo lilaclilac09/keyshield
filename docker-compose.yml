@@ -30,6 +30,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - KS_X402_BASE_RPC_URL=${KS_X402_BASE_RPC_URL:-https://mainnet.base.org}
       - HELIUS_API_KEY=${HELIUS_API_KEY:-}
+    networks:
+      - public
+      - backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,6 +44,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    mem_limit: 512m
+    cpus: 0.75
 
   rust-proxy:
     build:
@@ -54,6 +59,9 @@ services:
       - PROXY_PORT=3000
       - PYTHON_PROXY_URL=http://python:8000
       - HELIUS_API_KEY=${HELIUS_API_KEY:-}
+    networks:
+      - public
+      - backend
     depends_on:
       python:
         condition: service_healthy
@@ -63,13 +71,17 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    mem_limit: 384m
+    cpus: 0.5
 
   postgres:
     image: postgres:16-alpine
     container_name: keyshield-db
     restart: unless-stopped
-    ports:
-      - "5432:5432"
+    # Postgres + Redis intentionally NOT on the public network.
+    # They're only reachable from python via the `backend` network.
+    networks:
+      - backend
     environment:
       POSTGRES_USER: keyshield
       POSTGRES_PASSWORD: keyshield
@@ -81,13 +93,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 384m
+    cpus: 0.5
 
   redis:
     image: redis:7-alpine
     container_name: keyshield-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    networks:
+      - backend
     volumes:
       - redis_data:/data
     healthcheck:
@@ -95,6 +109,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 128m
+    cpus: 0.25
 
   frontend:
     # Active dashboard is web-v2 (Vite + React 19). Legacy src/web is
@@ -113,12 +129,29 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3000"
+    networks:
+      - public
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    mem_limit: 192m
+    cpus: 0.25
+
+# ─── Networks ───────────────────────────────────────────────────────
+# `public`  : services that need to be reachable from the host (or, in
+#             prod, from a reverse proxy / load balancer).
+# `backend` : DB + cache. Only reachable from python — postgres + redis
+#             have NO host port mapping, so even with the daemon socket
+#             open they can't be hit from outside this network.
+networks:
+  public:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true   # blocks outbound to the internet from this network
 
 volumes:
   postgres_data:
