@@ -289,3 +289,26 @@ function isUserRejection(msg: string): boolean {
   const lower = msg.toLowerCase();
   return lower.includes('reject') || lower.includes('cancel') || lower.includes('denied') || lower.includes('user') || lower.includes('refused');
 }
+
+// ── Path A auth (passkey, vault unlock, apiFetch, extension bridge) ──
+export {
+  API_BASE,
+  apiFetch,
+  proxyFetch,
+  fetchChallenge,
+  walletLogin,
+  passkeyLogin,
+  setPasskeyTrust,
+  getPasskeyTrust,
+  clearPasskeyTrust,
+  notifyAuthChanged,
+  setToken,
+  setWalletAddress,
+  clearTokenInExtension,
+  pushTokenToExtension,
+  pingExtension,
+  requestVaultUnlock,
+  deletePasskey,
+  registerPasskey,
+  listPasskeys,
+} from './auth-pathA';
