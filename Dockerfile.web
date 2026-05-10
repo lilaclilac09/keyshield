@@ -1,8 +1,10 @@
-# KeyShield React frontend (web-v2) — multi-stage Vite + nginx build.
+# KeyShield React dashboard — multi-stage Vite + nginx build.
 #
-# Layout note: docker-compose.yml sets `context: ./src/web-v2` and
+# Layout note (2026-05-10): the previous src/web-v2/ was archived to
+# src/_archive/web-v2/ and the freshly-renamed dashboard now lives at
+# `src/web/`. docker-compose.yml sets `context: ./src/web` and
 # `dockerfile: ../../Dockerfile.web`, so paths in this file are
-# relative to the src/web-v2/ directory.
+# relative to the src/web/ directory.
 
 # ─── Builder ────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder

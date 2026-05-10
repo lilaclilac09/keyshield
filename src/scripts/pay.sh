@@ -160,6 +160,24 @@ ok "stream id = $STREAM_ID"
 
 if (( BUILD_TX_ONLY == 1 )); then
   section "3a-extra. build-open-tx payload (frontend wallet-adapter input)"
+  cat <<'EOF'
+  Wire instructions (2026-05-10): the response now contains TWO things
+  the frontend must bundle into ONE Solana Transaction:
+
+    1. prereqIxs[] — list of prerequisite ixs the frontend MUST prepend
+       (in order) before the main ix:
+         (a) Create the stream-PDA-owned USDC ATA (idempotent — SPL
+             Associated Token Program, discriminator 1).
+         (b) Transfer maxTotalMicroUsdc from owner's USDC ATA → stream
+             ATA (SPL Token TransferChecked, owner signs).
+    2. The main ix (programId / keys / data) — open_payment_stream
+       itself, also signed by owner in the same Transaction.
+
+  Without (1), mpp_settle's later PDA-signed transfer would hit 0x4
+  OwnerMismatch (because the stream record would point at a non-PDA
+  ATA the program can't authority-sign).
+
+EOF
   curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/build-open-tx" "${AUTH[@]}" \
     -H 'content-type: application/json' \
     -d "{
