@@ -80,15 +80,28 @@ services:
       retries: 5
 
   frontend:
+    # Active dashboard is web-v2 (Vite + React 19). Legacy src/web is
+    # kept only for the browser-extension build.
     build:
-      context: ./src/web
+      context: ./src/web-v2
       dockerfile: ../../Dockerfile.web
+      args:
+        # Build-time env baked into the JS bundle. Override via .env
+        # or `docker compose build --build-arg KEYSHIELD_API_URL=...`.
+        KEYSHIELD_API_URL: ${KEYSHIELD_API_URL:-http://localhost:8000}
+        KEYSHIELD_PROGRAM_ID: ${KEYSHIELD_PROGRAM_ID:-41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j}
+        KEYSHIELD_SOLANA_CLUSTER: ${KEYSHIELD_SOLANA_CLUSTER:-devnet}
+        KEYSHIELD_SYNC_URL: ${KEYSHIELD_SYNC_URL:-http://localhost:8787}
     container_name: keyshield-frontend
     restart: unless-stopped
     ports:
       - "3001:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres_data:
