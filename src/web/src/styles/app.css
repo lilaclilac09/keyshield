@@ -471,11 +471,17 @@ a:hover { color: #c4b5fd; }
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: #F8F8FA;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.sidebar-logo-img {
+  width: 24px;
+  height: 24px;
+  filter: brightness(0) invert(1);
+  display: block;
 }
 
 .sidebar-brand-icon svg { width: 16px; height: 16px; color: #0A0A0A; }

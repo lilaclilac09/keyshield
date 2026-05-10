@@ -1,16 +1,26 @@
 import { Suspense, useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
 import {
-  Shield, Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen,
-  Menu, X, Search, Plus, Wallet, ChevronDown, Copy, Bell, BarChart3, Server,
-  ChevronLeft, ChevronRight
+  Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen,
+  Menu, X, Search, Plus, ChevronDown, Copy, Bell, BarChart3, Server,
+  ChevronLeft, ChevronRight, Wallet, LogOut, Plug
 } from 'lucide-react';
 import { Badge, Skeleton, Button as ShadButton } from '@keyshield/ui';
 import { HealthBadge } from '../components/HealthBadge';
 import { SearchOverlay } from '../components/ui/SearchOverlay';
 import { useUiLayoutStore } from '@keyshield/shared/stores';
 import { useHealth } from '@keyshield/shared/hooks/use-health';
-import { isAuthenticated, disconnectWallet, getToken } from '@keyshield/shared/auth';
+import {
+  detectWallets,
+  connectWalletByKey,
+  signWithWallet,
+  generateSessionToken,
+  saveToken,
+  disconnectWallet as authDisconnect,
+  getToken,
+  VAULT_KEY_MESSAGE,
+  type WalletInfo,
+} from '@keyshield/shared/auth';
 
 // ─── Nav sections ───────────────────────────────────────────────────────────
 const primaryNav = [
@@ -51,6 +61,18 @@ function SectionLabel({ children, collapsed }: { children: React.ReactNode; coll
   return <div className="sidebar-section-label">{children}</div>;
 }
 
+// ─── Sidebar Brand Logo (uses same SVG as landing page) ─────────────────────
+function SidebarLogo({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="sidebar-brand">
+      <div className="sidebar-brand-icon" style={{ background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img src="/keyshield.svg" alt="KeyShield" className="sidebar-logo-img" />
+      </div>
+      {!collapsed && <span className="sidebar-brand-text">KEYSHIELD</span>}
+    </div>
+  );
+}
+
 // ─── RootLayout ─────────────────────────────────────────────────────────────
 export default function RootLayout() {
   const { sidebarCollapsed, toggleSidebar } = useUiLayoutStore();
@@ -64,16 +86,32 @@ export default function RootLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Wallet connection state
   const [address, setAddress] = useState<string | null>(null);
+  const [connectStep, setConnectStep] = useState<'idle' | 'select' | 'connecting' | 'done'>('idle');
+  const [availableWallets, setAvailableWallets] = useState<WalletInfo[]>([]);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const connectMenuRef = useRef<HTMLDivElement>(null);
+  const [connectMenuOpen, setConnectMenuOpen] = useState(false);
 
+  // Scan for available wallets
+  useEffect(() => {
+    const scan = () => setAvailableWallets(detectWallets());
+    scan();
+    const iv = setInterval(scan, 3000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Restore address from token on mount
   useEffect(() => {
     const token = getToken();
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        setAddress(payload.sub ?? payload.address ?? null);
+        const addr = payload.sub ?? payload.address ?? null;
+        setAddress(addr);
+        setConnectStep(addr ? 'done' : 'idle');
       } catch { /* ignore */ }
     }
   }, []);
@@ -88,9 +126,34 @@ export default function RootLayout() {
     }
   };
 
-  const handleLogout = () => {
-    disconnectWallet();
-    navigate('/login');
+  const handleDisconnect = () => {
+    authDisconnect();
+    setAddress(null);
+    setConnectStep('idle');
+    setUserMenuOpen(false);
+    // Don't navigate away — let them reconnect from the same page
+    // Only redirect if no token at all
+    if (!getToken()) {
+      navigate('/login');
+    }
+  };
+
+  const handleConnect = async (key: string) => {
+    try {
+      setConnectStep('connecting');
+      setConnectMenuOpen(false);
+      setUserMenuOpen(false);
+      const walletInfo = await connectWalletByKey(key);
+      const addr = walletInfo.address ?? null;
+      setAddress(addr);
+      const signatureBytes = await signWithWallet(VAULT_KEY_MESSAGE, walletInfo.provider);
+      const token = await generateSessionToken(walletInfo.address!, signatureBytes);
+      saveToken(token, true);
+      setConnectStep('done');
+    } catch (err) {
+      console.error('[KeyShield] Wallet connect error:', err);
+      setConnectStep('select');
+    }
   };
 
   // Close menus on outside click
@@ -102,10 +165,13 @@ export default function RootLayout() {
       if (addMenuOpen && addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
         setAddMenuOpen(false);
       }
+      if (connectMenuOpen && connectMenuRef.current && !connectMenuRef.current.contains(e.target as Node)) {
+        setConnectMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [userMenuOpen, addMenuOpen]);
+  }, [userMenuOpen, addMenuOpen, connectMenuOpen]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -118,6 +184,7 @@ export default function RootLayout() {
         setSearchOpen(false);
         setUserMenuOpen(false);
         setAddMenuOpen(false);
+        setConnectMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -135,18 +202,14 @@ export default function RootLayout() {
   })();
 
   const collapsed = sidebarCollapsed;
+  const available = availableWallets.filter(w => w.isInstalled);
 
   return (
     <div className="app-shell">
       {/* ─── Desktop Sidebar ─── */}
       <aside className={`sidebar hidden md:flex ${collapsed ? 'collapsed' : ''}`}>
         {/* Brand */}
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-icon">
-            <Shield strokeWidth={2.5} />
-          </div>
-          <span className="sidebar-brand-text">KEYSHIELD</span>
-        </div>
+        <SidebarLogo collapsed={collapsed} />
 
         {/* Nav */}
         <nav className="sidebar-nav">
@@ -191,9 +254,7 @@ export default function RootLayout() {
           <div className="mobile-sidebar" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <div className="sidebar-brand-icon">
-                  <Shield strokeWidth={2.5} />
-                </div>
+                <img src="/keyshield.svg" alt="KeyShield" style={{ width: 28, height: 28, filter: 'brightness(0) invert(1)' }} />
                 <span className="font-semibold text-white tracking-wide text-sm">KEYSHIELD</span>
               </div>
               <ShadButton variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
@@ -278,35 +339,72 @@ export default function RootLayout() {
               )}
             </div>
 
-            {/* User menu */}
-            {address && (
-              <div className="user-menu-wrap" ref={userMenuRef}>
+            {/* Wallet / User menu */}
+            <div ref={userMenuRef} style={{ position: 'relative' }}>
+              {address ? (
+                /* Connected: show avatar with disconnect option */
                 <button className="user-avatar-btn" onClick={() => setUserMenuOpen(!userMenuOpen)}>
                   <div className="user-avatar">{address[0].toUpperCase()}</div>
                   <span className="hidden sm:inline">{shortAddr}</span>
                   <ChevronDown className="h-3 w-3 text-[#555]" />
                 </button>
-
-                {userMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-60 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
-                    <div className="p-4 border-b" style={{ borderColor: '#141418' }}>
-                      <p className="text-[10px] font-semibold text-[#6b6b7a] uppercase tracking-wider mb-1">Connected wallet</p>
-                      <p className="text-xs font-mono text-white break-all">{address}</p>
-                      <button onClick={handleCopy} className="flex items-center gap-1.5 mt-2 text-[11px] text-[#a0a0b0] hover:text-white transition-colors">
-                        {copied ? <Copy className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
-                        {copied ? 'Copied!' : 'Copy address'}
-                      </button>
+              ) : (
+                /* Disconnected: show connect button */
+                <div ref={connectMenuRef} style={{ position: 'relative' }}>
+                  <button className="top-bar-add-btn" style={{ background: 'transparent', border: '1px solid #1e1e24', color: '#a0a0b0' }} onClick={() => setConnectMenuOpen(!connectMenuOpen)}>
+                    <Wallet className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Connect</span>
+                  </button>
+                  {connectMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
+                      <div className="p-3">
+                        <p className="text-[10px] font-semibold text-[#4a4a56] uppercase tracking-wider mb-2">Select wallet</p>
+                        {available.length > 0 ? (
+                          available.map(w => (
+                            <button key={w.key}
+                              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-[#a0a0b0] hover:text-white hover:bg-white/5 transition-colors"
+                              onClick={() => handleConnect(w.key)}
+                            >
+                              <Wallet className="h-4 w-4" />
+                              <span>{w.name}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="py-4 text-center">
+                            <Wallet className="h-6 w-6 mx-auto mb-2" style={{ color: '#4a4a56' }} />
+                            <p className="text-xs text-[#6b6b7a]">No wallet detected</p>
+                            <p className="text-[10px] text-[#4a4a56] mt-1">Install Phantom or Solflare</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      onClick={handleLogout}
-                      className="w-full px-4 py-2.5 text-left text-sm text-[#ef4444] hover:bg-[#1a0808] transition-colors"
-                    >
-                      Disconnect
+                  )}
+                </div>
+              )}
+
+              {/* User dropdown (when connected) */}
+              {userMenuOpen && address && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border shadow-2xl z-50 overflow-hidden bg-[#141418]" style={{ borderColor: '#1e1e24' }}>
+                  {/* Wallet info */}
+                  <div className="p-4 border-b" style={{ borderColor: '#141418' }}>
+                    <p className="text-[10px] font-semibold text-[#6b6b7a] uppercase tracking-wider mb-1">Connected wallet</p>
+                    <p className="text-xs font-mono text-white break-all">{address}</p>
+                    <button onClick={handleCopy} className="flex items-center gap-1.5 mt-2 text-[11px] text-[#a0a0b0] hover:text-white transition-colors">
+                      {copied ? <Copy className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
+                      {copied ? 'Copied!' : 'Copy address'}
                     </button>
                   </div>
-                )}
-              </div>
-            )}
+                  {/* Disconnect */}
+                  <button
+                    onClick={handleDisconnect}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-[#ef4444] hover:bg-[#1a0808] transition-colors"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
