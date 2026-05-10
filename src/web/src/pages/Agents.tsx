@@ -46,9 +46,9 @@ export default function Agents() {
       {agents.length === 0 ? (
         <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
           <CardContent className="py-12 text-center">
-            <Bot className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
-            <h3 className="text-lg font-medium mb-1" style={{ color: '#e0e0e0' }}>No agents registered</h3>
-            <p className="text-sm mb-4" style={{ color: '#c4c4d0' }}>Register your first AI agent to enable scoped API access</p>
+            <Bot className="h-10 w-10 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+            <h3 className="text-lg font-medium mb-1" style={{ color: '#f8f8f8' }}>No agents registered</h3>
+            <p className="text-sm mb-4" style={{ color: '#f8f8f8' }}>Register your first AI agent to enable scoped API access</p>
             <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" /> Register Agent</Button>
           </CardContent>
         </Card>
@@ -59,32 +59,32 @@ export default function Agents() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Name</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Agent ID</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Last Seen</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Created</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Name</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Agent ID</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Status</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Last Seen</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Created</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {agents.map(a => (
                   <TableRow key={a.id}>
-                    <TableCell className="font-medium" style={{ color: '#e0e0e0' }}>{a.name}</TableCell>
+                    <TableCell className="font-medium" style={{ color: '#f8f8f8' }}>{a.name}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs" style={{ color: '#888' }}>{a.agent_id.slice(0, 12)}...</span>
+                        <span className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{a.agent_id.slice(0, 12)}...</span>
                         <button onClick={() => handleCopy(a.agent_id)} className="text-[#888] hover:text-white transition-colors" title="Copy ID">
                           {copiedId === a.agent_id ? <Check className="h-3 w-3 text-[#34d399]" /> : <Copy className="h-3 w-3" />}
                         </button>
                       </div>
                     </TableCell>
                     <TableCell><Badge variant={a.is_active ? 'success' : 'secondary'}>{a.is_active ? 'Active' : 'Inactive'}</Badge></TableCell>
-                    <TableCell style={{ color: '#c4c4d0' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
-                    <TableCell style={{ color: '#c4c4d0' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
+                    <TableCell style={{ color: '#f8f8f8' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
+                    <TableCell style={{ color: '#f8f8f8' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => handleRevoke(a.id)} disabled={revokingId === a.id}>
-                        {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" style={{ color: '#c62232' }} />}
+                        {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" style={{ color: '#f8f8f8' }} />}
                       </Button>
                     </TableCell>
                   </TableRow>

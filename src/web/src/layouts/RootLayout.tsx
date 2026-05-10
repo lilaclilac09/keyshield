@@ -231,7 +231,7 @@ export default function RootLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#030303]">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#030303] app-content">
           <Suspense fallback={<div className="space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /></div>}>
             <Outlet />
           </Suspense>

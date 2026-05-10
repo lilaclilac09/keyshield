@@ -41,11 +41,11 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#e0e0e0' }}>
-      {label && <p className="text-xs mb-2" style={{ color: '#c4c4d0' }}>{label}</p>}
+    <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#f8f8f8' }}>
+      {label && <p className="text-xs mb-2" style={{ color: '#f8f8f8' }}>{label}</p>}
       <pre className="whitespace-pre-wrap break-all">{code}</pre>
       <button onClick={handleCopy} className="absolute top-3 right-3 p-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] transition-colors">
-        {copied ? <Check size={14} className="text-[#34d399]" /> : <Copy size={14} style={{ color: '#888' }} />}
+        {copied ? <Check size={14} className="text-[#34d399]" /> : <Copy size={14} style={{ color: '#f8f8f8' }} />}
       </button>
     </div>
   );
@@ -92,10 +92,10 @@ export default function Developer() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Shield size={20} style={{ color: '#6366f1' }} />
+              <Shield size={20} style={{ color: '#f8f8f8' }} />
               <div>
-                <p className="text-sm font-medium" style={{ color: '#e0e0e0' }}>Session Token</p>
-                <p className="font-mono text-xs" style={{ color: '#888' }}>{token ? `${token.slice(0, 12)}…` : 'Not authenticated'}</p>
+                <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Session Token</p>
+                <p className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{token ? `${token.slice(0, 12)}…` : 'Not authenticated'}</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -103,7 +103,7 @@ export default function Developer() {
                 <Eye className="h-4 w-4 mr-1.5" /> Inject into Snippets
               </Button>
               {injectedAt && (
-                <Badge variant="secondary" style={{ color: '#f59e0b' }}>Auto-clears in {secLeft}s</Badge>
+                <Badge variant="secondary" style={{ color: '#f8f8f8' }}>Auto-clears in {secLeft}s</Badge>
               )}
             </div>
           </div>
@@ -125,17 +125,17 @@ export default function Developer() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Method</TableHead>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Endpoint</TableHead>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Description</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Method</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Endpoint</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Description</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {endpoints.map((ep, i) => (
                     <TableRow key={i}>
                       <TableCell><Badge variant={ep.method === 'GET' ? 'success' : ep.method === 'POST' ? 'default' : 'destructive'} className="w-16 text-center">{ep.method}</Badge></TableCell>
-                      <TableCell><code className="text-xs font-mono bg-[#0a0a0a] px-2 py-0.5 rounded" style={{ color: '#e0e0e0', borderColor: '#141414', borderWidth: '1px' }}>{ep.path}</code></TableCell>
-                      <TableCell className="text-sm" style={{ color: '#c4c4d0' }}>{ep.desc}</TableCell>
+                      <TableCell><code className="text-xs font-mono bg-[#0a0a0a] px-2 py-0.5 rounded" style={{ color: '#f8f8f8', borderColor: '#141414', borderWidth: '1px' }}>{ep.path}</code></TableCell>
+                      <TableCell className="text-sm" style={{ color: '#f8f8f8' }}>{ep.desc}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -151,8 +151,8 @@ export default function Developer() {
               <div className="space-y-2">
                 {cliCommands.map((c, i) => (
                   <div key={i} className="p-3 rounded-lg bg-[#0a0a0a] border" style={{ borderColor: '#141414' }}>
-                    <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{c.cmd}</code>
-                    <p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>{c.desc}</p>
+                    <code className="text-sm font-mono" style={{ color: '#f8f8f8' }}>{c.cmd}</code>
+                    <p className="text-xs mt-1" style={{ color: '#f8f8f8' }}>{c.desc}</p>
                   </div>
                 ))}
               </div>
@@ -182,12 +182,12 @@ const response = await fetch(proxy.url, { ... });`} label="Usage" />
             <CardContent>
               <div className="space-y-6">
                 <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: '#e0e0e0' }}><Key size={14} /> Proxy API Call</h4>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: '#f8f8f8' }}><Key size={14} /> Proxy API Call</h4>
                   <CodeBlock code={`curl -sS ${API_BASE}/proxy/openai/v1/models \
   -H "Authorization: Bearer ${t}"`} label="cURL" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: '#e0e0e0' }}><Zap size={14} /> Python SDK</h4>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2" style={{ color: '#f8f8f8' }}><Zap size={14} /> Python SDK</h4>
                   <CodeBlock code={`from keyshield_sdk import KeyShield
 
 ks = KeyShield(token="${t}")

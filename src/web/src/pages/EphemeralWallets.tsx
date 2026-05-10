@@ -60,7 +60,7 @@ export default function EphemeralWallets() {
     finally { setRevokingId(null); }
   };
 
-  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" style={{ color: '#6366f1' }} /></div>;
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" style={{ color: '#f8f8f8' }} /></div>;
 
   return (
     <div>
@@ -87,17 +87,17 @@ export default function EphemeralWallets() {
           </div>
           {err && (
             <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-[#1a0808] border border-[#3b2020]">
-              <AlertCircle size={14} style={{ color: '#f87171' }} />
-              <p className="text-sm" style={{ color: '#f87171' }}>{err}</p>
+              <AlertCircle size={14} style={{ color: '#f8f8f8' }} />
+              <p className="text-sm" style={{ color: '#f8f8f8' }}>{err}</p>
             </div>
           )}
           {created && (
             <div className="mt-3 p-3 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
-              <p className="text-xs mb-1" style={{ color: '#c4c4d0' }}>Created wallet:</p>
+              <p className="text-xs mb-1" style={{ color: '#f8f8f8' }}>Created wallet:</p>
               <div className="flex items-center gap-2">
-                <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{created.pubkey}</code>
+                <code className="text-sm font-mono" style={{ color: '#f8f8f8' }}>{created.pubkey}</code>
                 <Button variant="ghost" size="icon" onClick={() => navigator.clipboard.writeText(created.pubkey)}>
-                  <Copy size={14} style={{ color: '#888' }} />
+                  <Copy size={14} style={{ color: '#f8f8f8' }} />
                 </Button>
               </div>
             </div>
@@ -111,26 +111,26 @@ export default function EphemeralWallets() {
         <CardContent>
           {wallets.length === 0 ? (
             <div className="py-12 text-center">
-              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
-              <p className="text-sm" style={{ color: '#c4c4d0' }}>No ephemeral wallets</p>
+              <Server className="h-10 w-10 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+              <p className="text-sm" style={{ color: '#f8f8f8' }}>No ephemeral wallets</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Agent ID</TableHead>
-                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Pubkey</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Agent ID</TableHead>
+                  <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Pubkey</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {wallets.map(w => (
                   <TableRow key={w.agent_id}>
-                    <TableCell className="font-mono text-xs" style={{ color: '#e0e0e0' }}>{w.agent_id.slice(0, 12)}...</TableCell>
-                    <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{w.pubkey.slice(0, 16)}...</TableCell>
+                    <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{w.agent_id.slice(0, 12)}...</TableCell>
+                    <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{w.pubkey.slice(0, 16)}...</TableCell>
                     <TableCell>
                       <ConfirmButton onConfirm={() => handleRevoke(w.agent_id)} confirmLabel="REVOKE">
-                        <Trash2 className="h-4 w-4" style={{ color: '#c62232' }} />
+                        <Trash2 className="h-4 w-4" style={{ color: '#f8f8f8' }} />
                       </ConfirmButton>
                     </TableCell>
                   </TableRow>

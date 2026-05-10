@@ -54,18 +54,18 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {incoming.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
-                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No incoming shares</p>
+                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+                  <p className="text-sm" style={{ color: '#f8f8f8' }}>No incoming shares</p>
                 </div>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Granted By</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Granted By</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Status</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {incoming.map(s => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
-                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
+                        <TableCell style={{ color: '#f8f8f8' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                       </TableRow>
                     ))}
@@ -81,23 +81,23 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {outgoing.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
-                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No outgoing shares</p>
+                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+                  <p className="text-sm" style={{ color: '#f8f8f8' }}>No outgoing shares</p>
                 </div>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Grantee</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Grantee</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
                   <TableBody>
                     {outgoing.map(s => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
-                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
+                        <TableCell style={{ color: '#f8f8f8' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                         <TableCell>
                           {s.is_active && (
                             <Button variant="ghost" size="icon" onClick={() => handleRevoke(s.id)} disabled={revokingId === s.id}>
-                              <X className="h-4 w-4" style={{ color: '#c62232' }} />
+                              <X className="h-4 w-4" style={{ color: '#f8f8f8' }} />
                             </Button>
                           )}
                         </TableCell>

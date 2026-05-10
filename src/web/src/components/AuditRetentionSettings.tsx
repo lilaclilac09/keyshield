@@ -59,7 +59,7 @@ export const AuditRetentionSettings: React.FC = () => {
     setPurging(false);
   };
 
-  if (loading) return <div style={{ color: '#a0a0b0', fontSize: 13 }}>Loading...</div>;
+  if (loading) return <div style={{ color: '#f8f8f8', fontSize: 13 }}>Loading...</div>;
 
   return (
     <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
@@ -70,7 +70,7 @@ export const AuditRetentionSettings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Max Age</p>
-            <p className="text-xs" style={{ color: '#a0a0b0' }}>Days to keep audit entries</p>
+            <p className="text-xs" style={{ color: '#f8f8f8' }}>Days to keep audit entries</p>
           </div>
           <input
             type="number"
@@ -85,7 +85,7 @@ export const AuditRetentionSettings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Max Entries</p>
-            <p className="text-xs" style={{ color: '#a0a0b0' }}>Maximum number of log entries</p>
+            <p className="text-xs" style={{ color: '#f8f8f8' }}>Maximum number of log entries</p>
           </div>
           <input
             type="number"

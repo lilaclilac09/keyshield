@@ -383,3 +383,7 @@ table th { color: #888; }
 /* Links and buttons */
 a { color: #a5b4fc; }
 a:hover { color: #c4b5fd; }
+
+/* ---- App white text ---- */
+.app-content{color:#f8f8f8}
+.app-content h1{color:#f8f8f8!important}

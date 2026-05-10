@@ -67,11 +67,11 @@ export function VaultItemCard({ item }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
               <div className="h-10 w-10 rounded-lg bg-[#0a0a0a] flex items-center justify-center shrink-0" style={{ borderColor: '#141414', borderWidth: '1px' }}>
-                <Icon className="h-5 w-5" style={{ color: '#777' }} />
+                <Icon className="h-5 w-5" style={{ color: '#f8f8f8' }} />
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="font-medium truncate" style={{ color: '#f8f8f8' }}>{item.name}</h3>
-                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#888' }}>{item.upstream}</p>}
+                {item.upstream && <p className="text-xs mt-0.5" style={{ color: '#f8f8f8' }}>{item.upstream}</p>}
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <Badge variant="outline" className="text-xs">{item.type.replace('_', ' ')}</Badge>
                   {item.tags?.map(t => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
@@ -84,29 +84,29 @@ export function VaultItemCard({ item }: Props) {
             {revealed && decrypted ? (
               <span className="break-all" style={{ color: '#f8f8f8' }}>{decrypted.value}</span>
             ) : (
-              <span style={{ color: '#3a3a3a' }}>{item.masked_value || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}</span>
+              <span style={{ color: '#f8f8f8' }}>{item.masked_value || '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}</span>
             )}
           </div>
 
           <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#888' }}>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: '#f8f8f8' }}>
               <Clock className="h-3 w-3" /> {relTime(item.updated_at)}
             </div>
             <div className="flex gap-0.5">
               <Button variant="ghost" size="icon" onClick={revealed ? () => { setRevealed(false); setDecrypted(null); } : handleReveal} title={revealed ? 'Hide' : 'Reveal'}>
-                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />}
+                {revealed ? <EyeOffIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} /> : <EyeIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} />}
               </Button>
               <Button variant="ghost" size="icon" onClick={handleCopy} title="Copy">
-                <CopyIcon className="h-4 w-4" style={{ color: '#a0a0b0' }} />
+                <CopyIcon className="h-4 w-4" style={{ color: '#f8f8f8' }} />
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setDeleteDialog(true)} title="Delete">
-                <Trash2Icon className="h-4 w-4" style={{ color: '#c62232' }} />
+                <Trash2Icon className="h-4 w-4" style={{ color: '#f8f8f8' }} />
               </Button>
             </div>
           </div>
 
           {revealed && (
-            <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#8a590e' }}>
+            <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#f8f8f8' }}>
               <Clock className="h-3 w-3" /> Hiding in {reveal_duration_sec}s
             </div>
           )}

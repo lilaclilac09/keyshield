@@ -7,10 +7,10 @@ import { isAuthenticated, disconnectWallet, getToken } from '@keyshield/shared/a
 import { useNavigate } from 'react-router';
 
 function deviceIcon(userAgent: string) {
-  if (!userAgent) return <Globe className="h-4 w-4" style={{ color: '#c4c4d0' }} />;
-  if (/Mobile|Android|iPhone/i.test(userAgent)) return <Smartphone className="h-4 w-4" style={{ color: '#c4c4d0' }} />;
-  if (/Bot|Agent|Crawler/i.test(userAgent)) return <Bot className="h-4 w-4" style={{ color: '#c4c4d0' }} />;
-  return <Monitor className="h-4 w-4" style={{ color: '#c4c4d0' }} />;
+  if (!userAgent) return <Globe className="h-4 w-4" style={{ color: '#f8f8f8' }} />;
+  if (/Mobile|Android|iPhone/i.test(userAgent)) return <Smartphone className="h-4 w-4" style={{ color: '#f8f8f8' }} />;
+  if (/Bot|Agent|Crawler/i.test(userAgent)) return <Bot className="h-4 w-4" style={{ color: '#f8f8f8' }} />;
+  return <Monitor className="h-4 w-4" style={{ color: '#f8f8f8' }} />;
 }
 
 function maskIp(ip: string | null | undefined): string {
@@ -60,8 +60,8 @@ export default function Sessions() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: '#c4c4d0' }}>Current Session Token</p>
-                <p className="font-mono text-sm" style={{ color: '#e0e0e0' }}>{shortToken}</p>
+                <p className="text-xs uppercase tracking-wider mb-1" style={{ color: '#f8f8f8' }}>Current Session Token</p>
+                <p className="font-mono text-sm" style={{ color: '#f8f8f8' }}>{shortToken}</p>
               </div>
               <button
                 onClick={async () => {
@@ -72,7 +72,7 @@ export default function Sessions() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-[#0a0a0a] hover:bg-[#0f0f0f] transition-colors text-sm"
                 style={{ borderColor: '#141414' }}
               >
-                {copied ? <Check className="h-3.5 w-3.5 text-[#34d399]" /> : <Copy className="h-3.5 w-3.5" style={{ color: '#888' }} />}
+                {copied ? <Check className="h-3.5 w-3.5 text-[#34d399]" /> : <Copy className="h-3.5 w-3.5" style={{ color: '#f8f8f8' }} />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
@@ -85,23 +85,23 @@ export default function Sessions() {
         <CardContent>
           {sessions.length === 0 ? (
             <div className="py-12 text-center">
-              <Shield className="h-10 w-10 mx-auto mb-3" style={{ color: '#666' }} />
-              <p className="text-sm" style={{ color: '#c4c4d0' }}>No active sessions</p>
+              <Shield className="h-10 w-10 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+              <p className="text-sm" style={{ color: '#f8f8f8' }}>No active sessions</p>
             </div>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Device</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>IP Address</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Last Active</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Device</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>IP Address</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Last Active</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
               <TableBody>
                 {sessions.map(s => (
                   <TableRow key={s.id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {deviceIcon(s.user_agent)}
-                        <span className="text-xs truncate" style={{ color: '#888', maxWidth: 200 }}>{s.user_agent?.slice(0, 50) ?? '—'}</span>
+                        <span className="text-xs truncate" style={{ color: '#f8f8f8', maxWidth: 200 }}>{s.user_agent?.slice(0, 50) ?? '—'}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-sm" style={{ color: '#888' }}>{maskIp(s.ip_address)}</TableCell>
-                    <TableCell style={{ color: '#c4c4d0' }}>{s.last_active_at ? relTime(new Date(s.last_active_at).getTime() / 1000) : '—'}</TableCell>
+                    <TableCell className="font-mono text-sm" style={{ color: '#f8f8f8' }}>{maskIp(s.ip_address)}</TableCell>
+                    <TableCell style={{ color: '#f8f8f8' }}>{s.last_active_at ? relTime(new Date(s.last_active_at).getTime() / 1000) : '—'}</TableCell>
                     <TableCell><Badge variant={s.is_current ? 'success' : 'secondary'}>{s.is_current ? 'Current' : 'Active'}</Badge></TableCell>
                     <TableCell>
                       {!s.is_current && (

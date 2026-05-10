@@ -7,14 +7,14 @@ import { useMpp } from '@keyshield/shared/hooks/use-mpp';
 import { relTime } from '@keyshield/shared/lib/time';
 
 const PROVIDER_META: Record<string, { name: string; color: string }> = {
-  openai: { name: 'OpenAI', color: '#10a37f' },
-  anthropic: { name: 'Anthropic', color: '#d4a373' },
-  groq: { name: 'Groq', color: '#f59e0b' },
-  helius: { name: 'Helius', color: '#6366f1' },
+  openai: { name: 'OpenAI', color: '#f8f8f8' },
+  anthropic: { name: 'Anthropic', color: '#f8f8f8' },
+  groq: { name: 'Groq', color: '#f8f8f8' },
+  helius: { name: 'Helius', color: '#f8f8f8' },
 };
 
 function ProviderBadge({ upstream }: { upstream: string }) {
-  const meta = PROVIDER_META[upstream] ?? { name: upstream, color: '#c4c4d0' };
+  const meta = PROVIDER_META[upstream] ?? { name: upstream, color: '#f8f8f8' };
   return <Badge variant="secondary" style={{ background: `${meta.color}15`, color: meta.color, borderColor: `${meta.color}30` }}>{meta.name}</Badge>;
 }
 
@@ -57,7 +57,7 @@ export default function Activity() {
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
             <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Recent Activity</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-sm" style={{ color: '#c4c4d0' }}>Activity feed will show recent proxy calls, MPP settlements, and billing events.</p>
+              <p className="text-sm" style={{ color: '#f8f8f8' }}>Activity feed will show recent proxy calls, MPP settlements, and billing events.</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -68,33 +68,33 @@ export default function Activity() {
             <CardContent>
               {streams.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Zap className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
-                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No active MPP streams</p>
-                  <p className="text-xs mt-1" style={{ color: '#a0a0b0' }}>Open a stream to enable micro-payments for agent API calls</p>
+                  <Zap className="h-8 w-8 mx-auto mb-3" style={{ color: '#f8f8f8' }} />
+                  <p className="text-sm" style={{ color: '#f8f8f8' }}>No active MPP streams</p>
+                  <p className="text-xs mt-1" style={{ color: '#f8f8f8' }}>Open a stream to enable micro-payments for agent API calls</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Name</TableHead>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Agent</TableHead>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Deposited</TableHead>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Usage</TableHead>
-                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Created</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Name</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Agent</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Status</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Deposited</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Usage</TableHead>
+                      <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#f8f8f8' }}>Created</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {streams.map(s => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-medium" style={{ color: '#e0e0e0' }}>{s.name}</TableCell>
-                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.agent_id?.slice(0, 12)}...</TableCell>
+                        <TableCell className="font-medium" style={{ color: '#f8f8f8' }}>{s.name}</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#f8f8f8' }}>{s.agent_id?.slice(0, 12)}...</TableCell>
                         <TableCell>
                           <Badge variant={s.status === 'active' ? 'success' : 'secondary'}>{s.status}</Badge>
                         </TableCell>
-                        <TableCell style={{ color: '#c4c4d0' }}>{s.total_deposited_sol.toFixed(4)} SOL</TableCell>
-                        <TableCell style={{ color: '#c4c4d0' }}>${s.total_usage_usd.toFixed(2)}</TableCell>
-                        <TableCell style={{ color: '#c4c4d0' }}>{relTime(new Date(s.created_at).getTime() / 1000)}</TableCell>
+                        <TableCell style={{ color: '#f8f8f8' }}>{s.total_deposited_sol.toFixed(4)} SOL</TableCell>
+                        <TableCell style={{ color: '#f8f8f8' }}>${s.total_usage_usd.toFixed(2)}</TableCell>
+                        <TableCell style={{ color: '#f8f8f8' }}>{relTime(new Date(s.created_at).getTime() / 1000)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -108,7 +108,7 @@ export default function Activity() {
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
             <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Usage History</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-sm" style={{ color: '#c4c4d0' }}>Detailed usage logs will show per-call tokens, latency, and cost.</p>
+              <p className="text-sm" style={{ color: '#f8f8f8' }}>Detailed usage logs will show per-call tokens, latency, and cost.</p>
             </CardContent>
           </Card>
         </TabsContent>
