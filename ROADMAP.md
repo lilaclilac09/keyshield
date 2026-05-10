@@ -116,3 +116,53 @@ Agent SDK, CLI, goat-wallet, openclaw-skill. Cloudflare sync-worker, Grafana met
 
 ### P4 — Observability
 - Prometheus, Sentry, audit log retention
+
+---
+
+## Specs (architectural decision records)
+
+`src/proxy/specs/` is the canonical home for architecture +
+user-feature specs. Each spec follows the format in
+`SPEC-WRITING-GUIDE.md` (user-feature anchored, layer table, wire
+shape, decision rationale).
+
+### Foundational (Stage 1)
+
+| # | Topic | Status |
+|---|---|---|
+| 00 | Project overview | ✅ |
+| 01 | Vault format (legacy server-side) | ✅ |
+| 02 | Session format | ✅ |
+| 03 | Cache policy | ✅ |
+| 04 | Upstream auth | ✅ |
+| 05 | Helius routing | ✅ |
+| 06 | Batch | ✅ |
+| 07 | Bridge (Rust ↔ Python) | ✅ |
+| 08 | Python compat | ✅ |
+| 09 | Helius client + method list | ✅ |
+
+### User-feature specs (Stage 2+)
+
+| # | Topic | Status |
+|---|---|---|
+| 10 | Embedded wallet (EphemeralSigner) | ✅ shipped |
+| 11 | User interactions | ✅ shipped |
+| 12 | TLS / stealth mode | ✅ shipped |
+| 13 | Agent access (3 patterns: CLI / dashboard / agent) | ✅ shipped |
+| 14 | Dashboard CTA → on-chain signer | ✅ shipped (2026-05-10) |
+| 15 | MPP stream lifecycle (open / record / settle / close) | ✅ shipped (2026-05-10) |
+| 16 | Path A device vault (client crypto + CF sync) | ✅ shipped (2026-05-10) |
+| 17 | Agent permissions (owner/collaborator/viewer) | 📋 design v1 (2026-05-10) |
+| 18 | Audit log + retention | ⚙️ client v1 / 📋 server v1 (2026-05-10) |
+
+### Architecture decision records
+
+| # | Topic | Status |
+|---|---|---|
+| ADR-001 | (legacy, see file) | ✅ |
+| ADR-002 | User-feature spec format | ✅ |
+| ADR-007 | Stealth-default order | ✅ |
+| ADR-008 | CI devnet pipeline (workflow_dispatch + tag trigger) | ✅ shipped (2026-05-10) |
+
+When adding a new spec: pick the next free number, follow
+`src/proxy/specs/SPEC-WRITING-GUIDE.md`, link from this index.
