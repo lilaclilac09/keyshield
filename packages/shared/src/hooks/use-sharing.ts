@@ -30,5 +30,6 @@ export function useSharing() {
     isGranting: grantMutation.isPending,
     revoke: revokeMutation.mutateAsync,
     isRevoking: revokeMutation.isPending,
+    refetch: sharesQuery.refetch,
   };
 }

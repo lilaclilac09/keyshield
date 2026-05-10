@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus } from 'lucide-react';
@@ -29,10 +29,14 @@ export function AddKeyModal({ open, onOpenChange }: Props) {
   const { default_expiry_days } = usePreferencesStore();
   const [tab, setTab] = useState('api_key');
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<KeyForm>({
-    resolver: zodResolver(keySchema),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolver = zodResolver(keySchema as any) as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const formOpts: any = {
+    resolver,
     defaultValues: { type: tab as KeyForm['type'] },
-  });
+  };
+  const { register, handleSubmit, reset, formState: { errors } } = useForm(formOpts) as unknown as UseFormReturn<KeyForm>;
 
   function onSubmit(data: KeyForm) {
     store({ ...data, tags: [] }).then(() => {

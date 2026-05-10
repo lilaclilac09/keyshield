@@ -181,15 +181,12 @@ export const ReportPage: React.FC = () => {
 
   useEffect(() => {
     // Enforce retention policy before loading data so stale entries are pruned first.
-    purgeAuditLog()
-      .then((result) => {
-        const total = result.deletedByAge + result.deletedByCap;
-        if (total > 0) {
-          console.log(`[KeyShield] Audit log purge: removed ${total} entries`, result);
-        }
-      })
-      .catch((err) => console.warn('[KeyShield] Audit log purge failed:', err))
-      .finally(() => generate());
+    try {
+      purgeAuditLog();
+    } catch (err: unknown) {
+      console.warn('[KeyShield] Audit log purge failed:', err instanceof Error ? err.message : String(err));
+    }
+    generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

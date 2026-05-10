@@ -1,9 +1,9 @@
-const footerGroups = [
-  ["Solutions", ["For Enterprises", "For Developers", "For AI agents"]],
-  ["Technology", ["Security", "MPC-driven", "Infrastructure"]],
-  ["Developers", ["Docs", "API Library", "SDKs"]],
-  ["Company", ["About Us", "Careers", "Contact"]],
-  ["Legal", ["Privacy Policy", "Terms Service", "Security"]],
+const footerGroups: Array<{ title: string; links: string[] }> = [
+  { title: "Solutions", links: ["For Enterprises", "For Developers", "For AI agents"] },
+  { title: "Technology", links: ["Security", "MPC-driven", "Infrastructure"] },
+  { title: "Developers", links: ["Docs", "API Library", "SDKs"] },
+  { title: "Company", links: ["About Us", "Careers", "Contact"] },
+  { title: "Legal", links: ["Privacy Policy", "Terms Service", "Security"] },
 ];
 
 function Brand() {
@@ -20,9 +20,9 @@ export default function LandingFooter() {
     <>
       <footer className="footer">
         <div className="footerBrand"><Brand /></div>
-        {footerGroups.map(([t, links]) => (
-          <div key={t} className="fcol">
-            <b>{t}</b>
+        {footerGroups.map(({ title, links }) => (
+          <div key={title} className="fcol">
+            <b>{title}</b>
             {links.map((x) => <span key={x}>{x}</span>)}
           </div>
         ))}

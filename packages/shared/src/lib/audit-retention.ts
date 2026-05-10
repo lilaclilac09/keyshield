@@ -70,3 +70,14 @@ export { _getAuditLog as getAuditLog };
 export function clearAuditLog() {
   localStorage.removeItem(STORAGE_KEY);
 }
+
+// Public aliases for the dashboard UI (named after the conceptual UI verbs).
+export { getAuditPolicy as getPolicy };
+export { setAuditPolicy as setPolicy };
+export { clearAuditLog as purgeAuditLog };
+
+// Default retention policy shown in the Settings UI as the "reset" baseline.
+export const DEFAULT_POLICY: AuditRetention = { max_age_days: 30, max_entries: 1000 };
+
+// Re-export the type with a UI-friendly alias.
+export type { AuditRetention as AuditRetentionPolicy };

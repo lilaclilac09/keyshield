@@ -22,5 +22,6 @@ export function useSessions() {
     isLoading: sessionsQuery.isLoading,
     revoke: revokeMutation.mutateAsync,
     isRevoking: revokeMutation.isPending,
+    refetch: sessionsQuery.refetch,
   };
 }

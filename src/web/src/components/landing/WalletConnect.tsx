@@ -20,7 +20,7 @@ const WALLET_ICONS: Record<string, string> = {
 
 export default function WalletConnect() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'select' | 'connecting' | 'done'>('select');
+  const [step, setStep] = useState<'select' | 'connecting' | 'signing' | 'done'>('select');
   const [error, setError] = useState<string | null>(null);
   const [wallets, setWallets] = useState<WalletInfo[]>([]);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);

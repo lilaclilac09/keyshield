@@ -27,7 +27,7 @@ function MotionGraphic({ variant }: { variant: string }) {
   return (
     <svg className="motionSvg floatingShapes" viewBox="0 0 60 36" fill="none" aria-hidden="true">
       {(sets[variant] || sets.orbit).map((el, i) =>
-        React.cloneElement(el as React.ReactElement, {
+        React.cloneElement(el as React.ReactElement<React.SVGProps<SVGElement>>, {
           key: i,
           stroke: "white",
           fill: "none",
