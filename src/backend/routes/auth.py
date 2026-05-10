@@ -1,19 +1,19 @@
 """Auth routes — login, logout, wallet, passkey, delete-account."""
+
 from __future__ import annotations
 
 import time
-import json as _json
 
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..auth import session as sess_mod
-from ..proxy import api_router
 
 
 router = APIRouter()
 
 # ─── Helpers ──────────────────────────────────────────────────────
+
 
 def _bearer(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
@@ -27,6 +27,7 @@ async def _session(token: str) -> dict | None:
 
 
 # ─── Auth routes ────────────────────────────────────────────────
+
 
 @router.post("/auth/login")
 async def auth_login(request: Request):
@@ -76,6 +77,7 @@ async def agent_challenge():
 async def agent_login(request: Request):
     body = await request.json()
     from ..agents import agents as agents_mod
+
     agent_info = agents_mod.lookup_owner(body["pubkeyB58"])
     if not agent_info:
         return JSONResponse({"error": "agent not registered"}, status_code=401)

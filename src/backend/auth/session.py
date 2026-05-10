@@ -27,12 +27,11 @@ import hashlib
 import hmac as _hmac
 import json
 import os
-import secrets
 import sqlite3
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 DB_PATH = Path(__file__).parent.parent / "sessions.db"
@@ -85,14 +84,17 @@ def _decrypt(data: bytes) -> str:
 
 # ─── Token format ──────────────────────────────────────────────────────────
 
+
 def _make_token_payload(user_id: str, expires_at: int) -> str:
     """Create base64-encoded JSON payload."""
-    payload = json.dumps({
-        "uid": user_id,
-        "exp": expires_at,
-        "iat": int(time.time()),
-        "nbf": int(time.time()),  # not-before (now),
-    })
+    payload = json.dumps(
+        {
+            "uid": user_id,
+            "exp": expires_at,
+            "iat": int(time.time()),
+            "nbf": int(time.time()),  # not-before (now),
+        }
+    )
     return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
@@ -119,14 +121,17 @@ def create_token(user_id: str, password: str, ttl: int = SESSION_TTL) -> str:
 
     # Store password in DB (needed for key management operations)
     with _db() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO sessions (token, user_id, enc_pass, expires_at)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(token) DO UPDATE SET
                 user_id = excluded.user_id,
                 enc_pass = excluded.enc_pass,
                 expires_at = excluded.expires_at
-        """, (token, user_id, _encrypt(password), expires_at))
+        """,
+            (token, user_id, _encrypt(password), expires_at),
+        )
     return token
 
 

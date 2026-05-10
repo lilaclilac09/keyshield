@@ -347,7 +347,7 @@ async def mpp_build_open_tx(stream_id: int, request: Request):
             owner_pubkey=owner_pubkey,
             agent_pubkey=stream["agent_pubkey"],
             stream_pda=stream_pda,
-            usdc_ata=stream_usdc_ata,    # ← PDA-owned, not the user's
+            usdc_ata=stream_usdc_ata,  # ← PDA-owned, not the user's
             bump=bump,
             max_total_micro_usdc=max_total,
             cost_per_unit_micro_usdc=cost_per_unit,

@@ -7,42 +7,38 @@ Security fix tests for KeyShield v2-MVP.
 
 import pytest
 import time
-from pathlib import Path
-
 
 
 from conftest import _auth
+
+
 class TestVault:
     """Tests for vault.py."""
 
     def test_store_and_load(self):
-        from src.vault import store, load, VAULT_DIR
+        from src.vault import store, load
 
         store("alice", "openai", "sk-test-key", password="pw")
         result = load("alice", "openai", password="pw")
         assert result == "sk-test-key"
 
-
     def test_wrong_password_fails(self):
-        from src.vault import store, load, VAULT_DIR
+        from src.vault import store, load
 
         store("bob", "anthropic", "sk-ant-test", password="pw")
         with pytest.raises(PermissionError):
-
-
             load("bob", "anthropic", password="wrong")
 
     def test_key_isolation(self):
-        from src.vault import store, load, VAULT_DIR
+        from src.vault import store, load
 
         store("u1", "openai", "alice-key", password="pw")
         store("u2", "openai", "bob-key", password="pw")
         assert load("u1", "openai", password="pw") == "alice-key"
         assert load("u2", "openai", password="pw") == "bob-key"
 
-
     def test_list_keys(self):
-        from src.vault import store, list_keys, VAULT_DIR
+        from src.vault import store, list_keys
 
         store("alice", "openai", "key1", password="pw")
         store("alice", "anthropic", "key2", password="pw")
@@ -50,14 +46,12 @@ class TestVault:
         assert set(keys) == {"openai", "anthropic"}
 
     def test_delete_key(self):
-        from src.vault import store, load, delete, VAULT_DIR
+        from src.vault import store, load, delete
 
         store("alice", "openai", "key1", password="pw")
         delete("alice", "openai")
         with pytest.raises(PermissionError):
             load("alice", "openai", password="pw")
-
-
 
 
 class TestSession:
@@ -72,8 +66,6 @@ class TestSession:
         assert sess is not None
         assert sess["user_id"] == "alice"
         assert sess["password"] == "pw"
-
-
 
     def test_expired_token(self):
         from src.session import create_token, get
@@ -90,8 +82,6 @@ class TestSession:
         valid, err = verify_token(token)
         assert valid is True
         assert err is None
-
-
 
     def test_tampered_token(self):
         from src.session import verify_token
@@ -122,9 +112,7 @@ class TestAgentRevocation:
         assert result["name"] == "bot1"
 
     def test_revoke_agent(self):
-
-
-        from src.agents import register, lookup_owner, revoke_agent
+        from src.agents import register, revoke_agent
 
         register("owner1", "9WzDX...", name="bot1")
         agent_id = [a["id"] for a in []][0]  # placeholder
@@ -132,7 +120,7 @@ class TestAgentRevocation:
         assert result is True
 
     def test_re_revoke_is_idempotent(self):
-        from src.agents import register, lookup_owner, revoke_agent
+        from src.agents import register, revoke_agent
 
         register("owner1", "9WzDX...", name="bot1")
         for _ in range(5):
@@ -169,37 +157,44 @@ class TestAuthFlow:
 
     def test_store_key(self, client, login):
         r = client.post(
-            "/manage/store", headers=_auth(login),
-
+            "/manage/store",
+            headers=_auth(login),
             json={"upstream": "openai", "apiKey": "sk-test-key"},
         )
         assert r.status_code == 200
 
-
-
     def test_list_keys(self, client, login):
         # Store a key first
-        client.post("/manage/store", headers=_auth(login),
-                    json={"upstream": "openai", "apiKey": "sk-test-key"})
+        client.post(
+            "/manage/store",
+            headers=_auth(login),
+            json={"upstream": "openai", "apiKey": "sk-test-key"},
+        )
         r = client.get("/manage/list", headers=_auth(login))
 
         assert r.status_code == 200
         keys = r.json()["keys"]
         assert "openai" in keys
 
-
-
     def test_agent_register(self, client, login):
-        r = client.post("/agents/register", headers=_auth(login), json={
-            "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-            "name": "test-bot",
-        })
+        r = client.post(
+            "/agents/register",
+            headers=_auth(login),
+            json={
+                "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+                "name": "test-bot",
+            },
+        )
         assert r.status_code == 200
 
     def test_agent_list(self, client, login):
-        client.post("/agents/register", headers=_auth(login), json={
-            "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-        })
+        client.post(
+            "/agents/register",
+            headers=_auth(login),
+            json={
+                "pubkeyB58": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            },
+        )
         r = client.get("/agents/list", headers=_auth(login))
         assert r.status_code == 200
         assert len(r.json()["agents"]) >= 1

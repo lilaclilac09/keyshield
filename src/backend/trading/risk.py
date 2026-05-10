@@ -1,4 +1,5 @@
 """Risk agent — synchronous gate for trade proposals."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,14 +21,18 @@ class RiskCheckResult:
 
 # ─── Custom exceptions ──────────────────────────────────────────────
 
+
 class PositionSizeExceeded(Exception):
     """Position size exceeds configured limit."""
+
 
 class ExposureLimitExceeded(Exception):
     """Portfolio exposure exceeds configured limit."""
 
+
 class RateLimitExceeded(Exception):
     """Trade rate limit exceeded (per day)."""
+
 
 class ConfidenceTooLow(Exception):
     """AI confidence below configured threshold."""
@@ -109,7 +114,10 @@ class RiskAgent:
             return RiskCheckResult(
                 ok=False,
                 reason=f"Daily trade limit ({self.max_daily_trades}) reached",
-                details={"count": self._daily_trade_count, "limit": self.max_daily_trades},
+                details={
+                    "count": self._daily_trade_count,
+                    "limit": self.max_daily_trades,
+                },
             )
 
         # 3. Exposure check

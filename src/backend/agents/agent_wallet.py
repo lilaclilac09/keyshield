@@ -51,8 +51,6 @@ without exposing vault decryption.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Optional
 
 # Re-use mpp_onchain's _SimpleInstruction / _SimpleAccountMeta + base58 helpers
 # so this module's surface mirrors the same wallet-adapter contract.
@@ -75,7 +73,7 @@ EPHEMERAL_SIGNER_SEED = b"ephemeral_signer"
 class AllowedActions:
     """1-byte bitmap mirroring the on-chain `allowed_actions` field."""
 
-    PAY_X402:   int = 0x01
+    PAY_X402: int = 0x01
     MPP_RECORD: int = 0x02
     PROXY_CALL: int = 0x04
     READ_VAULT: int = 0x08
@@ -150,19 +148,29 @@ def build_create_ephemeral_signer_ix(
 
     accounts = (
         mpp_onchain._SimpleAccountMeta(
-            pubkey=owner_pubkey, is_signer=True, is_writable=False,
+            pubkey=owner_pubkey,
+            is_signer=True,
+            is_writable=False,
         ),
         mpp_onchain._SimpleAccountMeta(
-            pubkey=config.vault_pda, is_signer=False, is_writable=False,
+            pubkey=config.vault_pda,
+            is_signer=False,
+            is_writable=False,
         ),
         mpp_onchain._SimpleAccountMeta(
-            pubkey=ephemeral_signer_pda, is_signer=False, is_writable=True,
+            pubkey=ephemeral_signer_pda,
+            is_signer=False,
+            is_writable=True,
         ),
         mpp_onchain._SimpleAccountMeta(
-            pubkey=agent_pubkey, is_signer=False, is_writable=False,
+            pubkey=agent_pubkey,
+            is_signer=False,
+            is_writable=False,
         ),
         mpp_onchain._SimpleAccountMeta(
-            pubkey=mpp_onchain.SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False,
+            pubkey=mpp_onchain.SYSTEM_PROGRAM_ID,
+            is_signer=False,
+            is_writable=False,
         ),
     )
     return mpp_onchain._SimpleInstruction(
@@ -193,9 +201,9 @@ def derive_ephemeral_signer_pda(
             "Frontend can compute it via PublicKey.findProgramAddressSync.",
         )
     try:
-        agent_pk = mpp_onchain.Pubkey.from_string(agent_pubkey)        # type: ignore[union-attr]
-        owner_pk = mpp_onchain.Pubkey.from_string(owner_pubkey)        # type: ignore[union-attr]
-        program_pk = mpp_onchain.Pubkey.from_string(program_id)        # type: ignore[union-attr]
+        agent_pk = mpp_onchain.Pubkey.from_string(agent_pubkey)  # type: ignore[union-attr]
+        owner_pk = mpp_onchain.Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
+        program_pk = mpp_onchain.Pubkey.from_string(program_id)  # type: ignore[union-attr]
     except Exception as e:
         raise mpp_onchain.MppSubmitError(f"invalid pubkey: {e}") from e
 

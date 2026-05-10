@@ -75,11 +75,12 @@ def _db() -> sqlite3.Connection:
 
 # ─── Agent registration ─────────────────────────────────────────────────
 
+
 def register(
     owner_wallet: str,
-    pubkey_b58:   str,
-    name:         str  = "agent",
-    scopes:       str  = "*",
+    pubkey_b58: str,
+    name: str = "agent",
+    scopes: str = "*",
 ) -> int:
     """
     Register an agent pubkey under an owner wallet.
@@ -88,19 +89,25 @@ def register(
     """
     conn = _db()
     try:
-        cur = conn.execute("""
+        cur = conn.execute(
+            """
             INSERT INTO agent_keys (owner_wallet, pubkey_b58, name, scopes, created_at)
             VALUES (?, ?, ?, ?, ?)
-        """, (owner_wallet, pubkey_b58, name[:64], scopes, int(time.time())))
+        """,
+            (owner_wallet, pubkey_b58, name[:64], scopes, int(time.time())),
+        )
         conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
     except sqlite3.IntegrityError:
-        raise ValueError(f"Agent pubkey {pubkey_b58[:16]}… already registered for this wallet")
+        raise ValueError(
+            f"Agent pubkey {pubkey_b58[:16]}… already registered for this wallet"
+        )
     finally:
         conn.close()
 
 
 # ─── Agent lookup (with CRL check) ─────────────────────────────────────
+
 
 def lookup_owner(pubkey_b58: str) -> dict | None:
     """
@@ -109,35 +116,42 @@ def lookup_owner(pubkey_b58: str) -> dict | None:
     """
     conn = _db()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT id, owner_wallet, name, scopes
             FROM agent_keys
             WHERE pubkey_b58 = ?
             LIMIT 1
-        """, (pubkey_b58,)).fetchone()
+        """,
+            (pubkey_b58,),
+        ).fetchone()
         if not row:
             return None
 
         # Check revocation CRL
-        revoked_row = conn.execute("""
+        revoked_row = conn.execute(
+            """
             SELECT 1 FROM agent_revocations
             WHERE owner_wallet = ? AND pubkey_b58 = ?
             LIMIT 1
-        """, (row[1], pubkey_b58)).fetchone()
+        """,
+            (row[1], pubkey_b58),
+        ).fetchone()
         if revoked_row:
             return None
 
         return {
-            "agent_id":     row[0],
+            "agent_id": row[0],
             "owner_wallet": row[1],
-            "name":         row[2],
-            "scopes":       row[3],
+            "name": row[2],
+            "scopes": row[3],
         }
     finally:
         conn.close()
 
 
 # ─── Agent revocation (CRL) ───────────────────────────────────────────
+
 
 def revoke_agent(owner_wallet: str, agent_id: int, reason: str = "") -> bool:
     """
@@ -162,10 +176,13 @@ def revoke_agent(owner_wallet: str, agent_id: int, reason: str = "") -> bool:
         ).fetchone()[0]
 
         # Insert into CRL (idempotent)
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR IGNORE INTO agent_revocations (owner_wallet, pubkey_b58, revoked_at, reason)
             VALUES (?, ?, ?, ?)
-        """, (owner_wallet, pubkey, int(time.time()), reason[:256]))
+        """,
+            (owner_wallet, pubkey, int(time.time()), reason[:256]),
+        )
         conn.commit()
         return True
     finally:
@@ -183,10 +200,13 @@ def revoke_by_pubkey(owner_wallet: str, pubkey_b58: str, reason: str = "") -> bo
         if not agent_row:
             return False
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR IGNORE INTO agent_revocations (owner_wallet, pubkey_b58, revoked_at, reason)
             VALUES (?, ?, ?, ?)
-        """, (owner_wallet, pubkey_b58, int(time.time()), reason[:256]))
+        """,
+            (owner_wallet, pubkey_b58, int(time.time()), reason[:256]),
+        )
         conn.commit()
         return True
     finally:
@@ -197,19 +217,22 @@ def list_revoked(owner_wallet: str) -> list[dict]:
     """List all revoked agents for an owner."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT ar.pubkey_b58, ar.revoked_at, ar.reason, ak.name
             FROM agent_revocations ar
             LEFT JOIN agent_keys ak ON ar.pubkey_b58 = ak.pubkey_b58
             WHERE ar.owner_wallet = ?
             ORDER BY ar.revoked_at DESC
-        """, (owner_wallet,)).fetchall()
+        """,
+            (owner_wallet,),
+        ).fetchall()
 
         return [
             {
                 "pubkey_b58": r[0],
                 "revoked_at": r[1],
-                "reason":     r[2],
+                "reason": r[2],
                 "agent_name": r[3],
             }
             for r in rows
@@ -234,24 +257,28 @@ def un_revoke_agent(owner_wallet: str, pubkey_b58: str) -> bool:
 
 # ─── Agent CRUD (existing operations) ─────────────────────────────────
 
+
 def list_agents(owner_wallet: str) -> list[dict]:
     """Return all agents registered by an owner (excluding revoked ones)."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, pubkey_b58, name, scopes, created_at, last_used_at
             FROM agent_keys
             WHERE owner_wallet = ?
             ORDER BY created_at DESC
-        """, (owner_wallet,)).fetchall()
+        """,
+            (owner_wallet,),
+        ).fetchall()
 
         return [
             {
-                "id":           r[0],
-                "pubkey_b58":   r[1],
-                "name":         r[2],
-                "scopes":       r[3],
-                "created_at":   r[4],
+                "id": r[0],
+                "pubkey_b58": r[1],
+                "name": r[2],
+                "scopes": r[3],
+                "created_at": r[4],
                 "last_used_at": r[5],
             }
             for r in rows
@@ -278,10 +305,13 @@ def revoke(owner_wallet: str, agent_id: int) -> bool:
 
         # Add to CRL when deleting (not just revoking)
         if cur.rowcount > 0:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR IGNORE INTO agent_revocations (owner_wallet, pubkey_b58, revoked_at, reason)
                 VALUES (?, ?, ?, ?)
-            """, (owner_wallet, pubkey, int(time.time()), "deleted"))
+            """,
+                (owner_wallet, pubkey, int(time.time()), "deleted"),
+            )
             conn.commit()
 
         return cur.rowcount > 0
@@ -306,12 +336,18 @@ def purge_user(user_id: str) -> dict:
     """Delete all agents and revocations for a user."""
     conn = _db()
     try:
-        agent_n = conn.execute(
-            "DELETE FROM agent_keys WHERE owner_wallet = ?", (user_id,)
-        ).rowcount or 0
-        revoked_n = conn.execute(
-            "DELETE FROM agent_revocations WHERE owner_wallet = ?", (user_id,)
-        ).rowcount or 0
+        agent_n = (
+            conn.execute(
+                "DELETE FROM agent_keys WHERE owner_wallet = ?", (user_id,)
+            ).rowcount
+            or 0
+        )
+        revoked_n = (
+            conn.execute(
+                "DELETE FROM agent_revocations WHERE owner_wallet = ?", (user_id,)
+            ).rowcount
+            or 0
+        )
         conn.commit()
         return {"agents": agent_n, "revocations": revoked_n}
     finally:

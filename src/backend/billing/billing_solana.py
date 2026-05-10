@@ -23,11 +23,9 @@ MEMO_PROGRAM_V2 = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 MEMO_PROGRAM_V1 = "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo"
 
 USDC_MINT_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-USDC_MINT_DEVNET  = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+USDC_MINT_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
 
-PYTH_SOL_USD_FEED = (
-    "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"
-)
+PYTH_SOL_USD_FEED = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"
 
 
 class PaymentVerificationError(Exception):
@@ -47,13 +45,17 @@ async def fetch_sol_usd_price(
     fetch_impl: Any = None,
 ) -> SolUsdPrice:
     """Pull the latest SOL/USD price from Pyth Hermes."""
-    client_ctx = _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=8)
+    client_ctx = (
+        _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=8)
+    )
     async with client_ctx as client:
         url = f"{hermes_base}/v2/updates/price/latest"
         params = {"ids[]": PYTH_SOL_USD_FEED, "parsed": "true"}
         resp = await client.get(url, params=params)
         if resp.status_code != 200:
-            raise PaymentVerificationError(f"pyth hermes returned HTTP {resp.status_code}")
+            raise PaymentVerificationError(
+                f"pyth hermes returned HTTP {resp.status_code}"
+            )
         body = resp.json()
     parsed = body.get("parsed") or []
     if not parsed:
@@ -114,14 +116,20 @@ async def get_transaction(
             },
         ],
     }
-    client_ctx = _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=10)
+    client_ctx = (
+        _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=10)
+    )
     async with client_ctx as client:
         resp = await client.post(rpc_url, json=body)
         if resp.status_code != 200:
-            raise PaymentVerificationError(f"solana rpc returned HTTP {resp.status_code}")
+            raise PaymentVerificationError(
+                f"solana rpc returned HTTP {resp.status_code}"
+            )
         out = resp.json()
     if "error" in out:
-        raise PaymentVerificationError(f"solana rpc error: {out['error'].get('message', out['error'])}")
+        raise PaymentVerificationError(
+            f"solana rpc error: {out['error'].get('message', out['error'])}"
+        )
     return out.get("result")
 
 
@@ -203,7 +211,11 @@ def find_usdc_transfer(
             dst = info.get("destination")
             amt = info.get("tokenAmount", {}).get("amount") or info.get("amount")
             dst_owner, _ = ata_owner(dst)
-            if authority == expected_sender_authority and dst_owner == expected_recipient_owner and amt is not None:
+            if (
+                authority == expected_sender_authority
+                and dst_owner == expected_recipient_owner
+                and amt is not None
+            ):
                 return int(amt)
 
         elif ix_type == "transfer":

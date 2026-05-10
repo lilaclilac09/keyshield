@@ -8,6 +8,7 @@ All counters/histograms use the `ks_` prefix.
 Env vars:
   KS_METRICS_TOKEN — if set, /metrics requires Bearer <token>
 """
+
 from __future__ import annotations
 
 from prometheus_client import (
@@ -63,6 +64,7 @@ ACTIVE_SESSIONS = Gauge(
 
 
 # ── public helpers ───────────────────────────────────────────────────────────
+
 
 def record_proxy(upstream: str, status_code: int, latency_s: float) -> None:
     PROXY_REQUESTS.labels(upstream=upstream, status_code=str(status_code)).inc()

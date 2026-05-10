@@ -10,16 +10,23 @@
 | Tier | URL | Platform | Source dir | Config file |
 |---|---|---|---|---|
 | Landing | `https://ks.aileena.xyz` | Vercel | `landing/` | [`landing/vercel.json`](../../landing/vercel.json) |
-| App (web-v2 dashboard) | `https://app.ks.aileena.xyz` | Vercel | `src/web-v2/` | [`src/web-v2/vercel.json`](../../src/web-v2/vercel.json) |
+| App (dashboard) | `https://app.ks.aileena.xyz` | Vercel | `src/web/` | (currently no `vercel.json` in `src/web/` — see Tier 2) |
 | Sync Worker (vault storage) | `https://keyshield-sync.<account>.workers.dev` | Cloudflare | `src/infra/sync-worker/` | [`src/infra/sync-worker/wrangler.toml`](../../src/infra/sync-worker/wrangler.toml) |
 | API (Python business logic) | `https://api.ks.aileena.xyz` | Railway | repo root | [`railway.json`](../../railway.json) + [`Dockerfile.python`](../../Dockerfile.python) |
+
+> **Layout note (2026-05-10):** the previous `src/web-v2/` was archived
+> to `src/_archive/web-v2/` and the dashboard at `dashboard/` was
+> renamed to `src/web/`. Refs below that say "src/web-v2" in older
+> Vercel project settings should be re-pointed at `src/web`. The Path A
+> Device Vault UI components are still in the archive — they haven't
+> been ported into the new `src/web/` yet.
 
 ```
                       ┌───────────────────────────────┐
    ks.aileena.xyz ──▶ │ Vercel — landing/             │ static
                       └───────────────────────────────┘
                       ┌───────────────────────────────┐
-app.ks.aileena.xyz ─▶ │ Vercel — src/web-v2/          │ Vite SPA
+app.ks.aileena.xyz ─▶ │ Vercel — src/web/             │ Vite SPA
                       │   ↓ KEYSHIELD_API_URL          │
                       │   ↓ KEYSHIELD_SYNC_URL         │
                       └───────────────────────────────┘
@@ -53,14 +60,16 @@ api.ks.aileena.xyz ─▶ │ Railway — Dockerfile.python   │ FastAPI
 
 ---
 
-## Tier 2 — App / web-v2 (Vercel)
+## Tier 2 — App / dashboard (Vercel)
 
 **One-time setup**:
 
 1. **Add New Project** → same repo, separate Vercel project.
-2. **Root Directory**: `src/web-v2`.
-3. **Framework**: Vite (already set in `vercel.json`). Build command,
-   install command, and SPA rewrite are all pre-configured.
+2. **Root Directory**: `src/web`.
+3. **Framework**: Vite. Build command `npm run build`, install command
+   `npm install`, output `dist`, SPA rewrite (`/(.*) → /index.html`).
+   No `vercel.json` ships in `src/web/` yet — set these in the Vercel
+   UI, or commit one mirroring the archived `src/_archive/web-v2/vercel.json`.
 4. Custom domain `app.ks.aileena.xyz`.
 5. Project **Settings → Environment Variables** (Production scope):
 
@@ -75,8 +84,15 @@ api.ks.aileena.xyz ─▶ │ Railway — Dockerfile.python   │ FastAPI
    change them, so a redeploy is required. They get baked into the JS
    bundle.
 
-**Per-deploy**: nothing. Auto-deploys on push to `main` since
-`src/web-v2` is in the workspace.
+**Per-deploy**: nothing. Auto-deploys on push to `main` since `src/web`
+is in the workspace.
+
+**Pending (2026-05-10)**: the Path A Device Vault UI lives in
+`src/_archive/web-v2/components/sections/DeviceVaultSection.tsx`
+(archived during the dashboard rename). Until that flow is reintegrated
+into `src/web/`, on-chain wallet sign-off has to happen via
+`scripts/pay.sh --build-tx-only` + a wallet that can wrap the returned
+ix payload. See [device-vault-ui.md](./device-vault-ui.md).
 
 ---
 

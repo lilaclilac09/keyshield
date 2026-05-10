@@ -1,9 +1,7 @@
 """Configuration for KeyShield — Pydantic Settings model."""
+
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
 
 # Handle pydantic v2 where BaseSettings moved to pydantic_settings
 try:
@@ -11,8 +9,10 @@ try:
 except (ImportError, Exception):
     # Fallback: use BaseModel with env support
     from pydantic import BaseModel
+
     class _BaseSettings(BaseModel):
         model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
 
 BaseSettings = _BaseSettings
 

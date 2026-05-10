@@ -8,8 +8,9 @@ All code lives under `src/`:
 - **`src/backend/`** — Python FastAPI control plane (app.py + 12 domain modules). Stateless `/proxy/*` after the Path A merge.
 - **`src/proxy/`** — Rust hot-path proxy (6 crates, 78+ tests)
 - **`src/programs/keyshield/`** — Solana on-chain program (7 instructions)
-- **`src/web/`** — React frontend + Chrome extension (builds to 904KB)
-- **`src/web-v2/`** — Vite-based dashboard + Path A vault client (`lib/{vault,sync,sync-auth}.ts`)
+- **`src/web/`** — Active dashboard (Vite + React 19, renamed from `dashboard/` on 2026-05-10).
+- **`src/_archive/web-v2/`** — Prior dashboard with the full Path A vault client (`lib/{vault,sync,sync-auth}.ts`) + Device Vault UI. Archived 2026-05-10. Reintegration into the new `src/web/` is pending — wallet sign-off + device-vault flows currently live here only.
+- **`src/_archive/web/`** — Original popup-style React frontend + Chrome extension build.
 - **`src/mobile/`** — React Native mobile app (no native shell yet)
 - **`src/sdk/`** — SDK packages (agent-sdk, cli, goat-wallet, openclaw-skill)
 - **`src/infra/`** — Cloudflare workers (vault sync), Grafana/Prometheus

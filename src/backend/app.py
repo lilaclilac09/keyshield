@@ -9,6 +9,7 @@ Usage:
     # or
     uvicorn src.app:app --port 8001 --reload
 """
+
 from __future__ import annotations
 
 import os
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # ─── App factory ──────────────────────────────────────────────────────
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -37,6 +39,7 @@ app = FastAPI(title="KeyShield v2", version="2.0", lifespan=_lifespan)
 # ─── Register routes ─────────────────────────────────────────────────
 
 from .routes import register_routes
+
 register_routes(app)
 
 
@@ -44,7 +47,7 @@ register_routes(app)
 
 _origins = os.getenv(
     "KS_CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://ks.aileena.xyz,https://app.ks.aileena.xyz"
+    "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://ks.aileena.xyz,https://app.ks.aileena.xyz",
 ).split(",")
 app.add_middleware(
     CORSMiddleware,

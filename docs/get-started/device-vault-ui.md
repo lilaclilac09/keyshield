@@ -1,11 +1,28 @@
 # Using Device Vault — Path A UI
 
+> **2026-05-10 status:** the Device Vault UI (`DeviceVaultSection.tsx`,
+> `AddDeviceKeyModal`, etc.) shipped in `src/web-v2/`, which was
+> archived to `src/_archive/web-v2/` when the dashboard at `dashboard/`
+> was renamed to `src/web/`. The new `src/web/` does **not** contain
+> these components yet — reintegration is on the punch list. To run
+> the flow today, clone the archive locally:
+>
+> ```bash
+> cd src/_archive/web-v2
+> npm install && npm run dev
+> # http://localhost:5173 → Device Vault tab
+> ```
+>
+> The crypto + sync-worker contract is unchanged; the Cloudflare Worker
+> at `src/infra/sync-worker/` is what the archived UI talks to, and it
+> still works against `https://keyshield-sync.<account>.workers.dev`.
+
 > Path A is the zero-knowledge ("device-as-TEE") vault. Your passkey's
 > WebAuthn-PRF output derives a master key inside the secure element;
 > the server (Cloudflare Worker) only ever sees ciphertext.
 
-This guide is for *end users* of the dashboard at `src/web-v2/`. For the
-crypto and sync-worker contract, read
+This guide describes the UI as it exists in `src/_archive/web-v2/`. For
+the crypto and sync-worker contract, read
 [`docs/technical/SYNC_VAULT_ARCHITECTURE.md`](../technical/SYNC_VAULT_ARCHITECTURE.md).
 
 ---

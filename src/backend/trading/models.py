@@ -1,4 +1,5 @@
 """Trading models — shared types and Pydantic schemas."""
+
 from __future__ import annotations
 
 import time
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class TradeAction(str, Enum):
     """Trade decision from AnalysisAgent."""
+
     BUY = "buy"
     SELL = "sell"
     HOLD = "hold"
@@ -18,12 +20,14 @@ class TradeAction(str, Enum):
 
 class PositionSide(str, Enum):
     """Position direction."""
+
     LONG = "long"
     SHORT = "short"
     FLAT = "flat"
 
 
 # ─── Risk policy ─────────────────────────────────────────────────────
+
 
 class RiskPolicy(BaseModel):
     """Risk policy for a trading symbol."""
@@ -36,6 +40,7 @@ class RiskPolicy(BaseModel):
 
 
 # ─── Trading state ─────────────────────────────────────────────────
+
 
 class _PriceData(BaseModel):
     price: float
@@ -63,7 +68,9 @@ class TradingState(BaseModel):
     total_pnl_usd: float = 0.0
     risk_policy: RiskPolicy = Field(default_factory=RiskPolicy)
 
-    def add_price(self, symbol: str, price: float, confidence: float = 1.0, source: str = "pyth") -> None:
+    def add_price(
+        self, symbol: str, price: float, confidence: float = 1.0, source: str = "pyth"
+    ) -> None:
         self.prices[symbol] = _PriceData(
             price=price,
             timestamp=time.time(),
@@ -75,7 +82,9 @@ class TradingState(BaseModel):
         p = self.prices.get(symbol)
         return p.price if p else None
 
-    def get_deviation(self, symbol: str, window: int = 20, threshold: float = 0.005) -> tuple[bool, float]:
+    def get_deviation(
+        self, symbol: str, window: int = 20, threshold: float = 0.005
+    ) -> tuple[bool, float]:
         """Check if current price deviates from recent average."""
         prices = self._get_recent_prices(symbol, window)
         if len(prices) < 5:

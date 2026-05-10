@@ -23,22 +23,22 @@ DB_PATH = Path(__file__).parent.parent / "data" / "usage.db"
 # Cost per 1k tokens by upstream (USD, conservative averages)
 COST_PER_1K: dict[str, tuple[float, float]] = {
     # (input_per_1k, output_per_1k)
-    "openai":    (0.003,    0.012),
-    "anthropic": (0.003,    0.015),
-    "groq":      (0.0006,   0.0008),
-    "mistral":   (0.0002,   0.0006),
-    "cohere":    (0.001,    0.002),
+    "openai": (0.003, 0.012),
+    "anthropic": (0.003, 0.015),
+    "groq": (0.0006, 0.0008),
+    "mistral": (0.0002, 0.0006),
+    "cohere": (0.001, 0.002),
     # Non-AI: no per-token cost — tiny flat rate per call when using platform key
-    "helius":    (0.0,      0.0),
-    "0x":        (0.0,      0.0),
-    "titan":     (0.0,      0.0),
-    "pyth":      (0.0,      0.0),
-    "alchemy":   (0.0,      0.0),
+    "helius": (0.0, 0.0),
+    "0x": (0.0, 0.0),
+    "titan": (0.0, 0.0),
+    "pyth": (0.0, 0.0),
+    "alchemy": (0.0, 0.0),
 }
 
 # Flat per-call cost for non-AI upstreams when platform key is used
 FLAT_COST_PER_CALL: dict[str, float] = {
-    "helius":  0.00001,   # $0.01 per 1000 RPC calls
+    "helius": 0.00001,  # $0.01 per 1000 RPC calls
     "alchemy": 0.00001,
 }
 
@@ -47,6 +47,7 @@ FREE_CREDIT_USD = 0.10
 
 
 # ── DB setup ──────────────────────────────────────────────────────────────────
+
 
 def _db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +93,7 @@ def _db() -> sqlite3.Connection:
 
 # ── Token extraction ──────────────────────────────────────────────────────────
 
+
 def extract_token_usage(upstream: str, content: bytes) -> tuple[int, int, float]:
     """
     Parse proxy response body → (tokens_in, tokens_out, cost_usd).
@@ -109,8 +111,8 @@ def extract_token_usage(upstream: str, content: bytes) -> tuple[int, int, float]
     tok_in, tok_out = 0, 0
     usage = data.get("usage") if isinstance(data, dict) else None
     if isinstance(usage, dict):
-        tok_in  = (usage.get("prompt_tokens")  or usage.get("input_tokens")  or 0)
-        tok_out = (usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+        tok_in = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        tok_out = usage.get("completion_tokens") or usage.get("output_tokens") or 0
 
     in_rate, out_rate = COST_PER_1K.get(upstream, (0.0, 0.0))
     cost = tok_in / 1000 * in_rate + tok_out / 1000 * out_rate
@@ -127,40 +129,57 @@ def _flat_cost(upstream: str) -> float:
 
 # ── Core functions ────────────────────────────────────────────────────────────
 
+
 def log_call(
-    user_id:     str,
-    upstream:    str,
-    key_type:    str,
-    method:      str = "",
-    path:        str = "",
-    tokens_in:   int = 0,
-    tokens_out:  int = 0,
-    cost_usd:    float = 0.0,
-    latency_ms:  float = 0.0,
+    user_id: str,
+    upstream: str,
+    key_type: str,
+    method: str = "",
+    path: str = "",
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    cost_usd: float = 0.0,
+    latency_ms: float = 0.0,
     status_code: int = 0,
 ) -> None:
     """Record one proxy call. Also deducts from balance when platform key is used."""
     conn = _db()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO usage_log
               (user_id, upstream, key_type, method, path,
                tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        """, (user_id, upstream, key_type, method, path,
-              tokens_in, tokens_out, cost_usd, latency_ms, status_code,
-              int(time.time())))
+        """,
+            (
+                user_id,
+                upstream,
+                key_type,
+                method,
+                path,
+                tokens_in,
+                tokens_out,
+                cost_usd,
+                latency_ms,
+                status_code,
+                int(time.time()),
+            ),
+        )
         conn.commit()
 
         # Deduct from prepaid balance when using platform key
         if key_type == "platform" and cost_usd > 0:
             _ensure_balance(conn, user_id)
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE user_balance
                 SET balance_usd = balance_usd - ?,
                     updated_at  = ?
                 WHERE user_id = ?
-            """, (cost_usd, int(time.time()), user_id))
+            """,
+                (cost_usd, int(time.time()), user_id),
+            )
             conn.commit()
     finally:
         conn.close()
@@ -170,7 +189,8 @@ def get_stats(user_id: str) -> dict:
     """Per-upstream usage aggregates for the dashboard."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT
                 upstream,
                 key_type,
@@ -184,19 +204,21 @@ def get_stats(user_id: str) -> dict:
             WHERE user_id = ?
             GROUP BY upstream, key_type
             ORDER BY last_ts DESC
-        """, (user_id,)).fetchall()
+        """,
+            (user_id,),
+        ).fetchall()
 
         return {
             "stats": [
                 {
-                    "upstream":    r[0],
-                    "key_type":    r[1],
-                    "calls":       r[2],
-                    "tokens_in":   r[3] or 0,
-                    "tokens_out":  r[4] or 0,
-                    "cost_usd":    round(r[5] or 0, 6),
+                    "upstream": r[0],
+                    "key_type": r[1],
+                    "calls": r[2],
+                    "tokens_in": r[3] or 0,
+                    "tokens_out": r[4] or 0,
+                    "cost_usd": round(r[5] or 0, 6),
                     "avg_latency": r[6] or 0,
-                    "last_used":   r[7],
+                    "last_used": r[7],
                 }
                 for r in rows
             ]
@@ -209,28 +231,31 @@ def get_history(user_id: str, limit: int = 50) -> list[dict]:
     """Recent proxy calls for the Activity feed."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, upstream, key_type, method, path,
                    tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts
             FROM usage_log
             WHERE user_id = ?
             ORDER BY ts DESC
             LIMIT ?
-        """, (user_id, limit)).fetchall()
+        """,
+            (user_id, limit),
+        ).fetchall()
 
         return [
             {
-                "id":          r[0],
-                "upstream":    r[1],
-                "key_type":    r[2],
-                "method":      r[3],
-                "path":        r[4],
-                "tokens_in":   r[5],
-                "tokens_out":  r[6],
-                "cost_usd":    round(r[7], 6),
-                "latency_ms":  round(r[8], 1),
+                "id": r[0],
+                "upstream": r[1],
+                "key_type": r[2],
+                "method": r[3],
+                "path": r[4],
+                "tokens_in": r[5],
+                "tokens_out": r[6],
+                "cost_usd": round(r[7], 6),
+                "latency_ms": round(r[8], 1),
                 "status_code": r[9],
-                "ts":          r[10],
+                "ts": r[10],
             }
             for r in rows
         ]
@@ -256,12 +281,15 @@ def topup(user_id: str, amount_usd: float) -> float:
     conn = _db()
     try:
         _ensure_balance(conn, user_id)
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE user_balance
             SET balance_usd = balance_usd + ?,
                 updated_at  = ?
             WHERE user_id = ?
-        """, (amount_usd, int(time.time()), user_id))
+        """,
+            (amount_usd, int(time.time()), user_id),
+        )
         conn.commit()
         row = conn.execute(
             "SELECT balance_usd FROM user_balance WHERE user_id = ?", (user_id,)
@@ -272,25 +300,29 @@ def topup(user_id: str, amount_usd: float) -> float:
 
 
 def _ensure_balance(conn: sqlite3.Connection, user_id: str) -> None:
-    conn.execute("""
+    conn.execute(
+        """
         INSERT OR IGNORE INTO user_balance (user_id, balance_usd, updated_at)
         VALUES (?, ?, ?)
-    """, (user_id, FREE_CREDIT_USD, int(time.time())))
+    """,
+        (user_id, FREE_CREDIT_USD, int(time.time())),
+    )
     conn.commit()
 
 
 # ── Solana topup with idempotency ────────────────────────────────────────────
+
 
 class TopupAlreadyCredited(Exception):
     """Raised when the same tx_signature is submitted twice."""
 
 
 def credit_solana_topup(
-    user_id:      str,
+    user_id: str,
     tx_signature: str,
-    asset:        str = "SOL",           # 'SOL' or 'USDC'
+    asset: str = "SOL",  # 'SOL' or 'USDC'
     amount_atoms: int = 0,
-    amount_usd:   float = 0.0,
+    amount_usd: float = 0.0,
 ) -> float:
     """Insert into topup_tx (idempotent on PRIMARY KEY) AND credit the
     user's balance, in one transaction. Returns the new balance.
@@ -305,21 +337,31 @@ def credit_solana_topup(
         _ensure_balance(conn, user_id)
         conn.execute("BEGIN IMMEDIATE")
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO topup_tx
                   (tx_signature, user_id, chain, asset, amount_atoms,
                    amount_usd, credited_at)
                 VALUES (?, ?, 'solana', ?, ?, ?, ?)
-            """, (
-                tx_signature, user_id, asset, amount_atoms, amount_usd,
-                int(time.time()),
-            ))
-            conn.execute("""
+            """,
+                (
+                    tx_signature,
+                    user_id,
+                    asset,
+                    amount_atoms,
+                    amount_usd,
+                    int(time.time()),
+                ),
+            )
+            conn.execute(
+                """
                 UPDATE user_balance
                 SET balance_usd = balance_usd + ?,
                     updated_at  = ?
                 WHERE user_id = ?
-            """, (amount_usd, int(time.time()), user_id))
+            """,
+                (amount_usd, int(time.time()), user_id),
+            )
             conn.commit()
         except sqlite3.IntegrityError:
             conn.rollback()
@@ -342,9 +384,24 @@ def purge_user(user_id: str) -> dict:
     """
     conn = _db()
     try:
-        usage_n  = conn.execute("DELETE FROM usage_log    WHERE user_id = ?", (user_id,)).rowcount or 0
-        balance_n = conn.execute("DELETE FROM user_balance WHERE user_id = ?", (user_id,)).rowcount or 0
-        topup_n  = conn.execute("DELETE FROM topup_tx     WHERE user_id = ?", (user_id,)).rowcount or 0
+        usage_n = (
+            conn.execute(
+                "DELETE FROM usage_log    WHERE user_id = ?", (user_id,)
+            ).rowcount
+            or 0
+        )
+        balance_n = (
+            conn.execute(
+                "DELETE FROM user_balance WHERE user_id = ?", (user_id,)
+            ).rowcount
+            or 0
+        )
+        topup_n = (
+            conn.execute(
+                "DELETE FROM topup_tx     WHERE user_id = ?", (user_id,)
+            ).rowcount
+            or 0
+        )
         conn.commit()
         return {"usage_log": usage_n, "user_balance": balance_n, "topup_tx": topup_n}
     finally:
@@ -355,21 +412,24 @@ def list_topups(user_id: str, limit: int = 20) -> list[dict]:
     """User's recent Solana topups, newest first."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT tx_signature, chain, asset, amount_atoms, amount_usd, credited_at
             FROM topup_tx
             WHERE user_id = ?
             ORDER BY credited_at DESC
             LIMIT ?
-        """, (user_id, limit)).fetchall()
+        """,
+            (user_id, limit),
+        ).fetchall()
         return [
             {
                 "tx_signature": r[0],
-                "chain":        r[1],
-                "asset":        r[2],
+                "chain": r[1],
+                "asset": r[2],
                 "amount_atoms": r[3],
-                "amount_usd":   round(r[4], 6),
-                "credited_at":  r[5],
+                "amount_usd": round(r[4], 6),
+                "credited_at": r[5],
             }
             for r in rows
         ]

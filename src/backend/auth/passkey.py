@@ -21,7 +21,6 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 import webauthn
 from webauthn.helpers.structs import (
@@ -30,11 +29,10 @@ from webauthn.helpers.structs import (
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
-from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticatorDataStructure
 
-DB_PATH   = Path(os.getenv("KS_DB_PATH", "keyshield.db"))
-RP_ID     = os.getenv("KS_RP_ID", "localhost")
-RP_NAME   = os.getenv("KS_RP_NAME", "KeyShield")
+DB_PATH = Path(os.getenv("KS_DB_PATH", "keyshield.db"))
+RP_ID = os.getenv("KS_RP_ID", "localhost")
+RP_NAME = os.getenv("KS_RP_NAME", "KeyShield")
 
 # KS_ORIGIN accepts a single URL or a comma-separated list. webauthn 2.x
 # accepts list[str] for expected_origin and matches if any entry matches.
@@ -42,13 +40,14 @@ _origin_env = os.getenv("KS_ORIGIN", "http://localhost:3000,http://localhost:300
 ORIGIN: list[str] = [o.strip() for o in _origin_env.split(",") if o.strip()]
 
 # In-memory pending challenge stores (keyed by user_id)
-_PENDING_REGS:  dict[str, dict] = {}
+_PENDING_REGS: dict[str, dict] = {}
 _PENDING_AUTHS: dict[str, dict] = {}
 
 CHALLENGE_TTL = 120  # seconds
 
 
 # ─── DB ───────────────────────────────────────────────────────────────────────
+
 
 @contextmanager
 def _db():
@@ -73,13 +72,16 @@ def _init_db() -> None:
                 name        TEXT    DEFAULT 'Passkey'
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS pk_user ON passkey_credentials(user_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS pk_user ON passkey_credentials(user_id)"
+        )
 
 
 _init_db()
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
+
 
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -97,13 +99,11 @@ def _credentials_for_user(user_id: str) -> list[PublicKeyCredentialDescriptor]:
         rows = conn.execute(
             "SELECT id FROM passkey_credentials WHERE user_id = ?", (user_id,)
         ).fetchall()
-    return [
-        PublicKeyCredentialDescriptor(id=_b64url_bytes(row["id"]))
-        for row in rows
-    ]
+    return [PublicKeyCredentialDescriptor(id=_b64url_bytes(row["id"])) for row in rows]
 
 
 # ─── registration ─────────────────────────────────────────────────────────────
+
 
 def registration_options(user_id: str, display_name: str) -> dict:
     """Generate WebAuthn registration options and stash the challenge."""
@@ -162,6 +162,7 @@ def registration_verify(user_id: str, credential: dict, name: str = "Passkey") -
 
 # ─── authentication ───────────────────────────────────────────────────────────
 
+
 def authentication_options(user_id: str) -> dict:
     """Generate WebAuthn authentication options and stash the challenge."""
     opts = webauthn.generate_authentication_options(
@@ -213,13 +214,16 @@ def authentication_verify(user_id: str, credential: dict) -> dict:
 
 # ─── list / delete ─────────────────────────────────────────────────────────────
 
+
 def list_credentials(user_id: str) -> list[dict]:
     with _db() as conn:
         rows = conn.execute(
             "SELECT id, name, created_at FROM passkey_credentials WHERE user_id = ? ORDER BY created_at",
             (user_id,),
         ).fetchall()
-    return [{"id": r["id"], "name": r["name"], "createdAt": r["created_at"]} for r in rows]
+    return [
+        {"id": r["id"], "name": r["name"], "createdAt": r["created_at"]} for r in rows
+    ]
 
 
 def delete_credential(user_id: str, cred_id: str) -> None:

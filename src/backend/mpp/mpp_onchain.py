@@ -59,6 +59,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import base58 as _base58  # type: ignore
+
     _HAS_BASE58 = True
 except ImportError:
     _base58 = None
@@ -72,6 +73,7 @@ try:
     from solders.transaction import Transaction  # type: ignore
     from solders.message import Message  # type: ignore
     from solders.hash import Hash  # type: ignore
+
     _HAS_SOLDERS = True
 except ImportError:
     Keypair = None  # type: ignore
@@ -135,12 +137,12 @@ class MppConfig:
     base58 strings (matches billing_solana.py convention); secret_key
     is the raw 64-byte ed25519 keypair."""
 
-    secret_key: bytes                    # 64 bytes (32 seed + 32 pubkey)
-    settler_pubkey: str                  # base58
-    platform_usdc_ata: str               # base58
-    keyshield_program_id: str            # base58
-    usdc_mint: str                       # base58
-    vault_pda: Optional[str]             # base58 of owner's UniversalVault
+    secret_key: bytes  # 64 bytes (32 seed + 32 pubkey)
+    settler_pubkey: str  # base58
+    platform_usdc_ata: str  # base58
+    keyshield_program_id: str  # base58
+    usdc_mint: str  # base58
+    vault_pda: Optional[str]  # base58 of owner's UniversalVault
     rpc_url: str
 
 
@@ -175,11 +177,13 @@ def load_mpp_config() -> Optional[MppConfig]:
     if not (settler_key_b58 and platform_ata and program_id):
         if not _WARNED_ENV_MISSING:
             missing = [
-                name for name, val in (
+                name
+                for name, val in (
                     ("KS_MPP_SETTLER_KEY", settler_key_b58),
                     ("KS_PLATFORM_USDC_ATA", platform_ata),
                     ("KS_KEYSHIELD_PROGRAM_ID", program_id),
-                ) if not val
+                )
+                if not val
             ]
             logger.warning(
                 "mpp_onchain: stub-fallback active — missing env: %s. "
@@ -224,7 +228,8 @@ def load_mpp_config() -> Optional[MppConfig]:
         if len(decoded) != 32:
             logger.error(
                 "mpp_onchain: %s decoded to %d bytes, expected 32",
-                name, len(decoded),
+                name,
+                len(decoded),
             )
             return None
 
@@ -296,7 +301,7 @@ class _SimpleAccountMeta:
     requiring solders. The submitter (`submit_mpp_settle`) maps these
     to real solders.AccountMeta when building the transaction."""
 
-    pubkey: str         # base58
+    pubkey: str  # base58
     is_signer: bool
     is_writable: bool
 
@@ -307,7 +312,7 @@ class _SimpleInstruction:
     state for both serialization (`submit_mpp_settle`) and unit-testing
     of the byte layout."""
 
-    program_id: str                          # base58
+    program_id: str  # base58
     accounts: tuple[_SimpleAccountMeta, ...]
     data: bytes
 
@@ -352,25 +357,39 @@ def build_mpp_settle_ix(
 
     accounts = (
         _SimpleAccountMeta(
-            pubkey=config.settler_pubkey, is_signer=True, is_writable=False,
+            pubkey=config.settler_pubkey,
+            is_signer=True,
+            is_writable=False,
         ),
         _SimpleAccountMeta(
-            pubkey=config.vault_pda, is_signer=False, is_writable=False,
+            pubkey=config.vault_pda,
+            is_signer=False,
+            is_writable=False,
         ),
         _SimpleAccountMeta(
-            pubkey=stream_pda, is_signer=False, is_writable=True,
+            pubkey=stream_pda,
+            is_signer=False,
+            is_writable=True,
         ),
         _SimpleAccountMeta(
-            pubkey=stream_ata, is_signer=False, is_writable=True,
+            pubkey=stream_ata,
+            is_signer=False,
+            is_writable=True,
         ),
         _SimpleAccountMeta(
-            pubkey=config.platform_usdc_ata, is_signer=False, is_writable=True,
+            pubkey=config.platform_usdc_ata,
+            is_signer=False,
+            is_writable=True,
         ),
         _SimpleAccountMeta(
-            pubkey=config.usdc_mint, is_signer=False, is_writable=False,
+            pubkey=config.usdc_mint,
+            is_signer=False,
+            is_writable=False,
         ),
         _SimpleAccountMeta(
-            pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False,
+            pubkey=TOKEN_PROGRAM_ID,
+            is_signer=False,
+            is_writable=False,
         ),
     )
     return _SimpleInstruction(
@@ -443,7 +462,8 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
         resp = await client.post(
             rpc_url,
             json={
-                "jsonrpc": "2.0", "id": 1,
+                "jsonrpc": "2.0",
+                "id": 1,
                 "method": "getLatestBlockhash",
                 "params": [{"commitment": "confirmed"}],
             },
@@ -455,11 +475,7 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
         bh_body = resp.json()
         if "error" in bh_body:
             raise MppSubmitError(f"getLatestBlockhash error: {bh_body['error']}")
-        blockhash_str = (
-            (bh_body.get("result") or {})
-            .get("value", {})
-            .get("blockhash")
-        )
+        blockhash_str = (bh_body.get("result") or {}).get("value", {}).get("blockhash")
         if not blockhash_str:
             raise MppSubmitError("getLatestBlockhash response missing blockhash")
         try:
@@ -470,7 +486,9 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
         # 2. build + sign tx
         try:
             msg = Message.new_with_blockhash(  # type: ignore[union-attr]
-                [sd_ix], kp.pubkey(), blockhash,
+                [sd_ix],
+                kp.pubkey(),
+                blockhash,
             )
             tx = Transaction([kp], msg, blockhash)  # type: ignore[union-attr]
         except Exception as e:  # noqa: BLE001
@@ -478,11 +496,13 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
 
         # 3. submit
         import base64
+
         tx_b64 = base64.b64encode(bytes(tx)).decode("ascii")
         send_resp = await client.post(
             rpc_url,
             json={
-                "jsonrpc": "2.0", "id": 2,
+                "jsonrpc": "2.0",
+                "id": 2,
                 "method": "sendTransaction",
                 "params": [
                     tx_b64,
@@ -520,8 +540,8 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
 # Discriminator parity is the only thing that needs to be byte-perfect
 # here; the rest is orchestration. Tests cover layout exhaustively.
 
-OPEN_PAYMENT_STREAM_DISCRIMINATOR = 24      # 0x18
-WITHDRAW_AGENT_WALLET_DISCRIMINATOR = 27    # 0x1b
+OPEN_PAYMENT_STREAM_DISCRIMINATOR = 24  # 0x18
+WITHDRAW_AGENT_WALLET_DISCRIMINATOR = 27  # 0x1b
 
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 
@@ -549,13 +569,13 @@ def derive_agent_payment_stream_pda(
             "`pip install solders`.",
         )
     try:
-        agent_pk = Pubkey.from_string(agent_pubkey)        # type: ignore[union-attr]
-        owner_pk = Pubkey.from_string(owner_pubkey)        # type: ignore[union-attr]
-        program_pk = Pubkey.from_string(program_id)        # type: ignore[union-attr]
+        agent_pk = Pubkey.from_string(agent_pubkey)  # type: ignore[union-attr]
+        owner_pk = Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
+        program_pk = Pubkey.from_string(program_id)  # type: ignore[union-attr]
     except Exception as e:  # noqa: BLE001
         raise MppSubmitError(f"invalid pubkey for PDA derivation: {e}") from e
 
-    pda, bump = Pubkey.find_program_address(   # type: ignore[union-attr]
+    pda, bump = Pubkey.find_program_address(  # type: ignore[union-attr]
         [APS_SEED, bytes(agent_pk), bytes(owner_pk)],
         program_pk,
     )
@@ -581,9 +601,9 @@ def derive_associated_token_address(
             "`pip install solders`.",
         )
     try:
-        owner_pk = Pubkey.from_string(owner_pubkey)               # type: ignore[union-attr]
-        mint_pk = Pubkey.from_string(mint_pubkey)                 # type: ignore[union-attr]
-        token_pk = Pubkey.from_string(token_program_id)           # type: ignore[union-attr]
+        owner_pk = Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
+        mint_pk = Pubkey.from_string(mint_pubkey)  # type: ignore[union-attr]
+        token_pk = Pubkey.from_string(token_program_id)  # type: ignore[union-attr]
         ata_program_pk = Pubkey.from_string(ASSOCIATED_TOKEN_PROGRAM_ID)  # type: ignore[union-attr]
     except Exception as e:  # noqa: BLE001
         raise MppSubmitError(f"invalid pubkey for ATA derivation: {e}") from e
@@ -615,12 +635,14 @@ def build_create_ata_idempotent_ix(
       5. []                 SPL Token program
     """
     accounts = (
-        _SimpleAccountMeta(pubkey=payer_pubkey,         is_signer=True,  is_writable=True),
-        _SimpleAccountMeta(pubkey=ata_pubkey,           is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=owner_pubkey,         is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=mint_pubkey,          is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID,    is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID,     is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=payer_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=ata_pubkey, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=mint_pubkey, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(
+            pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False
+        ),
+        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
     )
     return _SimpleInstruction(
         program_id=ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -654,10 +676,10 @@ def build_spl_transfer_checked_ix(
     if amount_micro_usdc < 0:
         raise ValueError("amount_micro_usdc must be non-negative")
     accounts = (
-        _SimpleAccountMeta(pubkey=source_ata,         is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=mint_pubkey,        is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=dest_ata,           is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=authority_pubkey,   is_signer=True,  is_writable=False),
+        _SimpleAccountMeta(pubkey=source_ata, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=mint_pubkey, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=dest_ata, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=authority_pubkey, is_signer=True, is_writable=False),
     )
     # u8 discriminator + u64 amount LE + u8 decimals
     data = bytes([12]) + amount_micro_usdc.to_bytes(8, "little") + bytes([decimals])
@@ -693,12 +715,14 @@ def build_open_payment_stream_ix_data(
     if not 0 <= bump <= 0xFF:
         raise ValueError("bump must fit u8 (0..=255)")
     if max_total_micro_usdc <= 0:
-        raise ValueError("max_total_micro_usdc must be positive (matches on-chain check)")
+        raise ValueError(
+            "max_total_micro_usdc must be positive (matches on-chain check)"
+        )
     for name, val, max_val in (
-        ("max_total_micro_usdc",       max_total_micro_usdc,       0xFFFFFFFFFFFFFFFF),
-        ("cost_per_unit_micro_usdc",   cost_per_unit_micro_usdc,   0xFFFFFFFFFFFFFFFF),
-        ("max_rate_usd_per_min_bits",  max_rate_usd_per_min_bits,  0xFFFFFFFFFFFFFFFF),
-        ("settlement_interval_secs",   settlement_interval_secs,   0xFFFFFFFF),
+        ("max_total_micro_usdc", max_total_micro_usdc, 0xFFFFFFFFFFFFFFFF),
+        ("cost_per_unit_micro_usdc", cost_per_unit_micro_usdc, 0xFFFFFFFFFFFFFFFF),
+        ("max_rate_usd_per_min_bits", max_rate_usd_per_min_bits, 0xFFFFFFFFFFFFFFFF),
+        ("settlement_interval_secs", settlement_interval_secs, 0xFFFFFFFF),
     ):
         if val < 0 or val > max_val:
             raise ValueError(f"{name}={val} out of range")
@@ -750,14 +774,18 @@ def build_open_payment_stream_ix(
         )
 
     accounts = (
-        _SimpleAccountMeta(pubkey=owner_pubkey,            is_signer=True,  is_writable=False),
-        _SimpleAccountMeta(pubkey=config.vault_pda,        is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=stream_pda,              is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=config.usdc_mint,        is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=usdc_ata,                is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=agent_pubkey,            is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=config.settler_pubkey,   is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID,       is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=False),
+        _SimpleAccountMeta(pubkey=config.vault_pda, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=stream_pda, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=config.usdc_mint, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=usdc_ata, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=agent_pubkey, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(
+            pubkey=config.settler_pubkey, is_signer=False, is_writable=False
+        ),
+        _SimpleAccountMeta(
+            pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False
+        ),
     )
     return _SimpleInstruction(
         program_id=config.keyshield_program_id,
@@ -823,13 +851,13 @@ def build_withdraw_agent_wallet_ix(
         )
 
     accounts = (
-        _SimpleAccountMeta(pubkey=owner_pubkey,        is_signer=True,  is_writable=True),
-        _SimpleAccountMeta(pubkey=config.vault_pda,    is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=stream_pda,          is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=stream_ata,          is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=owner_ata,           is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=config.usdc_mint,    is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID,    is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=config.vault_pda, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=stream_pda, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=stream_ata, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=owner_ata, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=config.usdc_mint, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
     )
     return _SimpleInstruction(
         program_id=config.keyshield_program_id,

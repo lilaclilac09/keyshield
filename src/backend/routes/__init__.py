@@ -3,6 +3,7 @@
 Each module defines its own APIRouter with routes.
 Use register_routes(app) to attach all routes to a FastAPI app.
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI

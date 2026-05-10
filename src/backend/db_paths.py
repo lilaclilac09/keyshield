@@ -4,6 +4,7 @@ Set `KS_DATA_DIR` (e.g., a Railway Volume mounted at `/data`) to put all
 SQLite files under one persistent directory. Otherwise the defaults
 preserve the historical per-file layout so tests + local dev keep working.
 """
+
 from __future__ import annotations
 
 import os

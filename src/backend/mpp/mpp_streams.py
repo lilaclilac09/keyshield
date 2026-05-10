@@ -169,23 +169,23 @@ def _row_to_stream(row: tuple) -> dict:
     # frontend banner both work without surprises.
     sig = row[16] if len(row) > 16 else None
     return {
-        "id":                         row[0],
-        "user_id":                    row[1],
-        "agent_pubkey":               row[2],
-        "agent_name":                 row[3] or "",
-        "upstream":                   row[4],
-        "rate_per_call_micro_usdc":   row[5],
-        "rate_per_token_micro_usdc":  row[6],
-        "settlement_interval_secs":   row[7],
-        "status":                     row[8],
-        "opened_at":                  row[9],
-        "last_settled_at":            row[10],
-        "closed_at":                  row[11],
-        "total_calls":                row[12],
-        "total_tokens":               row[13],
-        "pending_micro_usdc":         row[14],
-        "settled_micro_usdc":         row[15],
-        "on_chain_signature":         sig,
+        "id": row[0],
+        "user_id": row[1],
+        "agent_pubkey": row[2],
+        "agent_name": row[3] or "",
+        "upstream": row[4],
+        "rate_per_call_micro_usdc": row[5],
+        "rate_per_token_micro_usdc": row[6],
+        "settlement_interval_secs": row[7],
+        "status": row[8],
+        "opened_at": row[9],
+        "last_settled_at": row[10],
+        "closed_at": row[11],
+        "total_calls": row[12],
+        "total_tokens": row[13],
+        "pending_micro_usdc": row[14],
+        "settled_micro_usdc": row[15],
+        "on_chain_signature": sig,
     }
 
 
@@ -197,17 +197,17 @@ _EVENT_COLS = (
 
 def _row_to_event(row: tuple) -> dict:
     return {
-        "id":           row[0],
-        "user_id":      row[1],
-        "stream_id":    row[2],
-        "kind":         row[3],
-        "calls":        row[4],
-        "tokens":       row[5],
-        "micro_usdc":   row[6],
-        "cost_usd":     row[7],
-        "ts":           row[8],
-        "upstream":     row[9],
-        "agent_name":   row[10] or "",
+        "id": row[0],
+        "user_id": row[1],
+        "stream_id": row[2],
+        "kind": row[3],
+        "calls": row[4],
+        "tokens": row[5],
+        "micro_usdc": row[6],
+        "cost_usd": row[7],
+        "ts": row[8],
+        "upstream": row[9],
+        "agent_name": row[10] or "",
         "agent_pubkey": row[11],
     }
 
@@ -267,17 +267,17 @@ def _emit_event(
         ),
     )
     return {
-        "id":           cur.lastrowid,
-        "user_id":      user_id,
-        "stream_id":    stream["id"],
-        "kind":         kind,
-        "calls":        calls,
-        "tokens":       tokens,
-        "micro_usdc":   micro_usdc,
-        "cost_usd":     cost_usd,
-        "ts":           ts,
-        "upstream":     stream["upstream"],
-        "agent_name":   stream.get("agent_name") or "",
+        "id": cur.lastrowid,
+        "user_id": user_id,
+        "stream_id": stream["id"],
+        "kind": kind,
+        "calls": calls,
+        "tokens": tokens,
+        "micro_usdc": micro_usdc,
+        "cost_usd": cost_usd,
+        "ts": ts,
+        "upstream": stream["upstream"],
+        "agent_name": stream.get("agent_name") or "",
         "agent_pubkey": stream["agent_pubkey"],
     }
 
@@ -355,8 +355,12 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
         # stub-fallback behavior as PDA missing.
         logger.warning("mpp_settle build_ix failed for stream %s: %s", stream_id, e)
         _record_settle_attempt(
-            stream_id, micro_usdc, now_ts,
-            success=False, debited=0, error=str(e),
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error=str(e),
         )
         return 0
 
@@ -380,14 +384,22 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
         _record_settle_attempt(
-            stream_id, micro_usdc, now_ts,
-            success=False, debited=0, error=str(e),
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error=str(e),
         )
         return 0
 
     _record_settle_attempt(
-        stream_id, micro_usdc, now_ts,
-        success=True, debited=int(debited), error=None,
+        stream_id,
+        micro_usdc,
+        now_ts,
+        success=True,
+        debited=int(debited),
+        error=None,
     )
     return int(debited)
 
@@ -492,6 +504,7 @@ def _run_async_in_thread(coro):
     invoked from inside a running event loop (FastAPI request
     handler) where asyncio.run() would raise."""
     import threading
+
     result: dict[str, object] = {}
 
     def runner() -> None:
@@ -518,12 +531,12 @@ def _run_async_in_thread(coro):
 
 
 def open_stream(
-    user_id:             str,
-    agent_pubkey:        str,
-    agent_name:          str,
-    upstream:            str,
-    rate_per_token:      int,
-    rate_per_call:       int,
+    user_id: str,
+    agent_pubkey: str,
+    agent_name: str,
+    upstream: str,
+    rate_per_token: int,
+    rate_per_call: int,
     settlement_interval: int,
 ) -> dict:
     """Open a new MPP stream for `user_id`. Returns the stream row +
@@ -549,9 +562,15 @@ def open_stream(
             VALUES (?,?,?,?,?,?,?, 'open', ?, ?)
             """,
             (
-                user_id, agent_pubkey, agent_name or "", upstream,
-                int(rate_per_call), int(rate_per_token),
-                int(settlement_interval), now, now,
+                user_id,
+                agent_pubkey,
+                agent_name or "",
+                upstream,
+                int(rate_per_call),
+                int(rate_per_token),
+                int(settlement_interval),
+                now,
+                now,
             ),
         )
         stream_id = cur.lastrowid
@@ -564,10 +583,10 @@ def open_stream(
 
 
 def record_usage(
-    user_id:    str,
-    stream_id:  int,
-    calls:      int,
-    tokens:     int,
+    user_id: str,
+    stream_id: int,
+    calls: int,
+    tokens: int,
 ) -> dict:
     """Add `calls` + `tokens` to the stream's running totals; recompute
     `pending_micro_usdc`. Auto-settles when elapsed >= settlement_interval.
@@ -588,10 +607,9 @@ def record_usage(
         if stream["status"] != "open":
             raise StreamClosed(stream_id)
 
-        added = (
-            int(tokens) * int(stream["rate_per_token_micro_usdc"])
-            + int(calls) * int(stream["rate_per_call_micro_usdc"])
-        )
+        added = int(tokens) * int(stream["rate_per_token_micro_usdc"]) + int(
+            calls
+        ) * int(stream["rate_per_call_micro_usdc"])
         conn.execute(
             """
             UPDATE mpp_streams
@@ -631,10 +649,10 @@ def record_usage(
 
 
 def _settle_locked(
-    conn:    sqlite3.Connection,
+    conn: sqlite3.Connection,
     user_id: str,
-    stream:  dict,
-    now:     int,
+    stream: dict,
+    now: int,
 ) -> tuple[dict, int]:
     """Move pending → settled + emit a 'settle' event. Caller manages
     the commit boundary.
@@ -650,8 +668,12 @@ def _settle_locked(
         )
         stream = _get_owned_stream(conn, user_id, stream["id"])
         _emit_event(
-            conn, user_id=user_id, stream=stream,
-            kind="settle", micro_usdc=0, ts=now,
+            conn,
+            user_id=user_id,
+            stream=stream,
+            kind="settle",
+            micro_usdc=0,
+            ts=now,
         )
         return stream, 0
 
@@ -676,8 +698,12 @@ def _settle_locked(
     )
     stream = _get_owned_stream(conn, user_id, stream["id"])
     _emit_event(
-        conn, user_id=user_id, stream=stream,
-        kind="settle", micro_usdc=pending, ts=now,
+        conn,
+        user_id=user_id,
+        stream=stream,
+        kind="settle",
+        micro_usdc=pending,
+        ts=now,
     )
     return stream, pending
 
@@ -728,7 +754,11 @@ def close_stream(user_id: str, stream_id: int) -> dict:
         )
         stream = _get_owned_stream(conn, user_id, stream_id)
         _emit_event(
-            conn, user_id=user_id, stream=stream, kind="close", ts=now,
+            conn,
+            user_id=user_id,
+            stream=stream,
+            kind="close",
+            ts=now,
         )
         conn.commit()
         stream["just_settled_micro_usdc"] = just_settled
@@ -787,20 +817,20 @@ def list_streams(user_id: str) -> dict:
         streams = [_row_to_stream(r) for r in rows]
 
         streams_total = len(streams)
-        streams_open  = sum(1 for s in streams if s["status"] == "open")
-        calls_total   = sum(s["total_calls"]  for s in streams)
-        tokens_total  = sum(s["total_tokens"] for s in streams)
+        streams_open = sum(1 for s in streams if s["status"] == "open")
+        calls_total = sum(s["total_calls"] for s in streams)
+        tokens_total = sum(s["total_tokens"] for s in streams)
         settled_micro = sum(s["settled_micro_usdc"] for s in streams)
         pending_micro = sum(s["pending_micro_usdc"] for s in streams)
 
         # The frontend prints these via `.toFixed(6)` — so usd, not micro.
         summary = {
             "streams_total": streams_total,
-            "streams_open":  streams_open,
-            "calls_total":   calls_total,
-            "tokens_total":  tokens_total,
-            "settled_usd":   round(settled_micro / 1_000_000, 6),
-            "pending_usd":   round(pending_micro / 1_000_000, 6),
+            "streams_open": streams_open,
+            "calls_total": calls_total,
+            "tokens_total": tokens_total,
+            "settled_usd": round(settled_micro / 1_000_000, 6),
+            "pending_usd": round(pending_micro / 1_000_000, 6),
         }
         return {"streams": streams, "summary": summary}
     finally:

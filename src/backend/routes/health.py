@@ -1,4 +1,5 @@
 """Health and static asset routes."""
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, FileResponse
 from pathlib import Path

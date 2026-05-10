@@ -66,9 +66,13 @@ exclusively client-encrypted via Path A.
 ### Step 1 — Store your keys once
 
 ```bash
-# Option A: web UI (web-v2 dashboard, Path A)
+# Option A: web UI (Path A — dashboard with Device Vault)
 # Go to https://app.ks.aileena.xyz → Vault → New secret → select provider → paste key
-# (locally: http://localhost:5173 once `cd src/web-v2 && npm run dev` is running)
+# (locally: http://localhost:5173 once `cd src/_archive/web-v2 && npm run dev` is running)
+# NOTE: 2026-05-10 — the dashboard was archived to src/_archive/web-v2/ when
+# `dashboard/` was renamed to src/web/. The Device Vault UI hasn't been
+# reintegrated into the new src/web/ yet — clone the archive locally for
+# the full Path A flow.
 # The dashboard encrypts client-side via WebAuthn-PRF → HKDF → AES-GCM and
 # pushes ciphertext to the Cloudflare sync-worker.
 
@@ -91,13 +95,12 @@ ks.store("0x",        "xxx")
 ks.store("groq",      "gsk_xxx")
 ```
 
-> **Note (2026-05):** Option A previously pointed at the old Path B
-> frontend on `http://localhost:3001`. The vault UI now lives in
-> `src/web-v2/` and writes ciphertext to the Cloudflare sync-worker
-> (Path A) — the Python backend never sees plaintext at storage time.
-> The CLI and Python SDK options retain the same surface; under the
-> hood they delegate vault writes through the same Path A modules
-> (`src/web-v2/lib/{vault,sync,sync-auth}.ts`).
+> **Note (2026-05-10):** Path A vault UI was archived to
+> `src/_archive/web-v2/` when the new `src/web/` dashboard replaced it.
+> The CLI and Python SDK still write Path A ciphertext to the Cloudflare
+> sync-worker — the Python backend never sees plaintext at storage time —
+> via the modules at `src/_archive/web-v2/lib/{vault,sync,sync-auth}.ts`.
+> Reintegrating the visual flow into `src/web/` is on the punch list.
 
 ### Step 2 — Login and get a token
 

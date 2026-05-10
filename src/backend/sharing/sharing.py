@@ -42,18 +42,22 @@ def _db() -> sqlite3.Connection:
             UNIQUE(owner_id, recipient_id, key_name)
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_owner     ON vault_shares(owner_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_recipient ON vault_shares(recipient_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_shares_owner     ON vault_shares(owner_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_shares_recipient ON vault_shares(recipient_id)"
+    )
     conn.commit()
     return conn
 
 
 def grant(
-    owner_id:      str,
-    recipient_id:  str,
-    key_name:      str,
+    owner_id: str,
+    recipient_id: str,
+    key_name: str,
     encrypted_dek: bytes | None = None,
-    expires_at:    int | None = None,
+    expires_at: int | None = None,
 ) -> int:
     """Insert a share row. Returns the new share id."""
     conn = _db()
@@ -64,7 +68,14 @@ def grant(
               (owner_id, recipient_id, key_name, encrypted_dek, expires_at, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (owner_id, recipient_id, key_name, encrypted_dek, expires_at, int(time.time())),
+            (
+                owner_id,
+                recipient_id,
+                key_name,
+                encrypted_dek,
+                expires_at,
+                int(time.time()),
+            ),
         )
         conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -134,10 +145,10 @@ def purge_user(user_id: str) -> int:
 
 def _row_to_dict(r) -> dict:
     return {
-        "id":           r[0],
-        "owner_id":     r[1],
+        "id": r[0],
+        "owner_id": r[1],
         "recipient_id": r[2],
-        "key_name":     r[3],
-        "expires_at":   r[4],
-        "created_at":   r[5],
+        "key_name": r[3],
+        "expires_at": r[4],
+        "created_at": r[5],
     }

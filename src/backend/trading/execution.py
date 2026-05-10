@@ -1,14 +1,16 @@
 """Execution agent — signs and submits transactions after all checks pass."""
+
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
 @dataclass
 class Quote:
     """Swap quote from a DEX router."""
+
     sell_amount: int
     buy_amount: int
     price: float
@@ -22,6 +24,7 @@ class Quote:
 @dataclass
 class Bundle:
     """Transaction bundle."""
+
     tx_hexes: list[str]
     bundle_hash: str
     confirmed: bool = False
@@ -74,6 +77,7 @@ class ZeroXRouter:
     async def _simulate_network_delay(self) -> None:
         """Simulate network delay (production uses real HTTP calls)."""
         import asyncio
+
         await asyncio.sleep(0.15)
 
 
@@ -89,9 +93,7 @@ class TitanExecutor:
     def __init__(self, ks_token: str = ""):
         self.ks_token = ks_token
 
-    async def simulate(
-        self, tx_hexas: list[str]
-    ) -> dict:
+    async def simulate(self, tx_hexas: list[str]) -> dict:
         """Simulate bundle before submitting."""
         # In production: POST /simulate with signed TX hexes
         return {"results": [{"error": None} for _ in tx_hexas]}
@@ -120,6 +122,7 @@ class TitanExecutor:
 
         # In production, this calls POST /send-bundle
         import asyncio
+
         await asyncio.sleep(0.05)  # Simulate network delay
 
         return Bundle(
@@ -140,7 +143,9 @@ class ExecutionAgent:
       5. Monitor for confirmation
     """
 
-    def __init__(self, zerox: Optional[ZeroXRouter] = None, titan: Optional[TitanExecutor] = None):
+    def __init__(
+        self, zerox: Optional[ZeroXRouter] = None, titan: Optional[TitanExecutor] = None
+    ):
         self.zerox = zerox or ZeroXRouter()
         self.titan = titan or TitanExecutor()
         self._monitor_tasks: list[str] = []
@@ -175,5 +180,6 @@ class ExecutionAgent:
         """Monitor a bundle for confirmation."""
         # In production, polls Helius RPC until confirmed/failed
         import asyncio
+
         await asyncio.sleep(0.1)
         return True

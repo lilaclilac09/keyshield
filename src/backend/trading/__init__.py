@@ -15,12 +15,20 @@ Architecture:
 - Signal fires → RiskAgent checks → AnalysisAgent + ZeroXRouter run in parallel
 - If both agree → ExecutionAgent submits
 """
+
 from __future__ import annotations
 
 # Re-export trading domain
 from .orchestrator import TradingOrchestrator
 from .market_data import MarketDataAgent, PriceSignal, PriceFeed
-from .risk import RiskAgent, RiskCheckResult, PositionSizeExceeded, ExposureLimitExceeded, RateLimitExceeded, ConfidenceTooLow
+from .risk import (
+    RiskAgent,
+    RiskCheckResult,
+    PositionSizeExceeded,
+    ExposureLimitExceeded,
+    RateLimitExceeded,
+    ConfidenceTooLow,
+)
 from .analysis import AnalysisAgent, ModelRouter, TaskType
 from .execution import ExecutionAgent, ZeroXRouter, TitanExecutor
 from .models import (

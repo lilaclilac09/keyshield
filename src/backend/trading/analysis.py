@@ -1,16 +1,17 @@
 """Analysis agent — sends price signal context to AI model, gets trade decision."""
+
 from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Optional
 
 
 class TaskType(str, Enum):
     """Task routing for AI model selection."""
-    URGENT = "urgent"       # Fast decision (Groq)
-    ANALYSIS = "analysis"   # Normal analysis (GPT-4o-mini)
-    RESEARCH = "research"   # Deep reasoning (Claude Opus)
+
+    URGENT = "urgent"  # Fast decision (Groq)
+    ANALYSIS = "analysis"  # Normal analysis (GPT-4o-mini)
+    RESEARCH = "research"  # Deep reasoning (Claude Opus)
     STRUCTURED = "structured"  # JSON output (GPT-4o-mini)
 
 
@@ -26,7 +27,9 @@ class ModelRouter:
     Falls back automatically if primary model fails.
     """
 
-    def __init__(self, ks_token: str = "", cache: bool = True, budget_usd: float = 100.0):
+    def __init__(
+        self, ks_token: str = "", cache: bool = True, budget_usd: float = 100.0
+    ):
         self.ks_token = ks_token
         self.cache = cache
         self.budget_usd = budget_usd
@@ -92,7 +95,7 @@ class ModelRouter:
         return {
             "trade": True,
             "confidence": 0.82,
-            "reason": f"Price signal indicates bullish momentum",
+            "reason": "Price signal indicates bullish momentum",
             "model": model,
             "latency_ms": 150,
         }
@@ -102,13 +105,13 @@ class ModelRouter:
     ) -> list[dict]:
         """Analyze multiple signals in parallel."""
         import asyncio
+
         return await asyncio.gather(*[self.chat(p, task) for p in prompts])
 
-    async def race(
-        self, prompt: str, models: list[str] | None = None
-    ) -> dict:
+    async def race(self, prompt: str, models: list[str] | None = None) -> dict:
         """Race multiple models — fastest wins."""
         import asyncio
+
         if not models:
             models = ["groq/llama-3.1-70b", "gpt-4o-mini"]
 

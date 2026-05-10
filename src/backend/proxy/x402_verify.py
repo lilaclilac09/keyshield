@@ -102,11 +102,11 @@ ERC20_TRANSFER_TOPIC = (
 
 @dataclass(frozen=True)
 class X402Config:
-    rpc_url:             str
-    receiver_address:    str   # 40-hex EVM, lowercase, with 0x prefix
-    usdc_address:        str   # 40-hex EVM, lowercase, with 0x prefix
-    min_confirmations:   int
-    verify_required:     bool  # if True, stub-fallback is an error
+    rpc_url: str
+    receiver_address: str  # 40-hex EVM, lowercase, with 0x prefix
+    usdc_address: str  # 40-hex EVM, lowercase, with 0x prefix
+    min_confirmations: int
+    verify_required: bool  # if True, stub-fallback is an error
 
 
 _WARNED_ENV_MISSING = False
@@ -127,10 +127,12 @@ def load_x402_config() -> Optional[X402Config]:
     if not (rpc_url and receiver):
         if not _WARNED_ENV_MISSING:
             missing = [
-                name for name, val in (
+                name
+                for name, val in (
                     ("KS_X402_BASE_RPC_URL", rpc_url),
                     ("KS_X402_RECEIVER_ADDRESS", receiver),
-                ) if not val
+                )
+                if not val
             ]
             logger.warning(
                 "x402_verify: stub-fallback active — missing env: %s. "
@@ -143,8 +145,8 @@ def load_x402_config() -> Optional[X402Config]:
     # Light validation — must look like an EVM address.
     if not _is_evm_address(receiver):
         logger.error(
-            "x402_verify: KS_X402_RECEIVER_ADDRESS is not a valid 0x… "
-            "EVM address: %r", receiver,
+            "x402_verify: KS_X402_RECEIVER_ADDRESS is not a valid 0x… EVM address: %r",
+            receiver,
         )
         return None
 
@@ -199,10 +201,10 @@ class DuplicateClaim(Exception):
 
 
 def record_claim(
-    payment_proof:  str,
-    user_id:        str,
-    amount_usd:     float,
-    verified_mode:  str,
+    payment_proof: str,
+    user_id: str,
+    amount_usd: float,
+    verified_mode: str,
 ) -> None:
     """Insert the claim row. Raises DuplicateClaim if payment_proof
     has been used before — UNIQUE constraint catches the race."""
@@ -212,8 +214,13 @@ def record_claim(
             conn.execute(
                 "INSERT INTO x402_claims (payment_proof, user_id, amount_usd, "
                 "verified_mode, ts) VALUES (?, ?, ?, ?, ?)",
-                (payment_proof, user_id, float(amount_usd), verified_mode,
-                 int(time.time())),
+                (
+                    payment_proof,
+                    user_id,
+                    float(amount_usd),
+                    verified_mode,
+                    int(time.time()),
+                ),
             )
             conn.commit()
         except sqlite3.IntegrityError as e:
@@ -250,9 +257,9 @@ class VerifyError(Exception):
 
 
 async def verify_on_chain(
-    config:                Optional[X402Config],
-    payment_proof:         str,
-    expected_amount_usd:   float,
+    config: Optional[X402Config],
+    payment_proof: str,
+    expected_amount_usd: float,
 ) -> tuple[bool, str]:
     """Returns (verified, mode). Mode is "real" when on-chain verify
     succeeded, "stub-fallback" when env wasn't configured.
@@ -277,9 +284,9 @@ async def verify_on_chain(
 
 
 async def _verify_on_chain_real(
-    config:                X402Config,
-    payment_proof:         str,
-    expected_amount_usd:   float,
+    config: X402Config,
+    payment_proof: str,
+    expected_amount_usd: float,
 ) -> tuple[bool, str]:
     """eth_getTransactionReceipt + Transfer log decode against Base RPC.
 
@@ -310,7 +317,8 @@ async def _verify_on_chain_real(
         receipt_resp = await client.post(
             config.rpc_url,
             json={
-                "jsonrpc": "2.0", "id": 1,
+                "jsonrpc": "2.0",
+                "id": 1,
                 "method": "eth_getTransactionReceipt",
                 "params": [payment_proof],
             },
@@ -354,9 +362,9 @@ async def _verify_on_chain_real(
 
 
 def _verify_transfer_log(
-    logs:                  list,
-    config:                X402Config,
-    expected_amount_usd:   float,
+    logs: list,
+    config: X402Config,
+    expected_amount_usd: float,
 ) -> tuple[bool, str]:
     """Pure-data verification of ERC-20 Transfer logs.
 
@@ -387,7 +395,7 @@ def _verify_transfer_log(
             return (True, "real")
         else:
             raise VerifyError(
-                f"USDC transfer amount {amount/1e6:.6f} < expected "
+                f"USDC transfer amount {amount / 1e6:.6f} < expected "
                 f"{expected_amount_usd:.6f}",
             )
 

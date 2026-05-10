@@ -12,6 +12,7 @@ exactly once, for the single upstream call, and then dropped.
 
 See docs/technical/SYNC_VAULT_ARCHITECTURE.md.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,7 +24,9 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 
 
-@router.api_route("/proxy/{upstream}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@router.api_route(
+    "/proxy/{upstream}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
+)
 async def proxy_route(upstream: str, path: str, request: Request):
     """Stateless proxy: read upstream key from X-Upstream-API-Key header,
     forward one request, return the upstream response. The key is never
