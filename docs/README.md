@@ -1,33 +1,29 @@
 # KeyShield Documentation
 
-Presentation materials, technical guides, roadmap, and testing docs.
+Operator guides, get-started flows, and architecture notes.
 
 ---
 
 ## Structure
 
-| Directory | Contents |
-|-----------|----------|
-| [pitch/](pitch/) | Executive pitch deck (Markdown + PDF export), diagrams |
-| [technical/](technical/) | Architecture, API detection, Lit, MPC, API routing |
-| [roadmap/](roadmap/) | Product roadmap, implementation plan, decision log |
-| [testing/](testing/) | Jupyter setup and sample notebooks |
+| Path | Contents |
+|------|----------|
+| [get-started/](get-started/) | CLI install, local dev, self-host, top-up with SOL, frontend integration |
+| [architecture/](architecture/) | System design + architecture overview |
+| [DEVNET.md](DEVNET.md) | Devnet deployment guide |
+| [EXTENSION.md](EXTENSION.md) | Browser extension build + install |
+| [OPERATOR.md](OPERATOR.md) | Operator runbook |
+| [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | x402 + MPP payment flow walkthrough |
 
----
+## Repo root
 
-## Quick Links
+- [README.md](../README.md) — project overview + quick start
+- [ROADMAP.md](../ROADMAP.md) — current roadmap
+- [AGENTS.md](../AGENTS.md) — agent design guide
+- [DEVELOPMENT.md](../DEVELOPMENT.md) — dev environment setup
+- [USAGE.md](../USAGE.md) — end-user usage guide
 
-- **Technical reference + roadmap** (all-in-one): [TECHNICAL_REFERENCE_AND_ROADMAP.md](TECHNICAL_REFERENCE_AND_ROADMAP.md)
-- **Pitch deck**: [pitch/PITCH_DECK.md](pitch/PITCH_DECK.md)
-- **Technical architecture**: [technical/TECHNICAL_ARCHITECTURE.md](technical/TECHNICAL_ARCHITECTURE.md)
-- **Technical architecture (plain English)**: [technical/TECHNICAL_ARCHITECTURE_HUMANIZED.md](technical/TECHNICAL_ARCHITECTURE_HUMANIZED.md)
-- **Product roadmap**: [roadmap/PRODUCT_ROADMAP.md](roadmap/PRODUCT_ROADMAP.md)
-- **Export pitch to PDF**: [pitch/README.md](pitch/README.md#export-to-pdf-with-rendered-diagrams)
+## Engineering specs
 
----
-
-## Project Docs (Repo Root)
-
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — Full system architecture
-- [README.md](../README.md) — Project overview and quick start
-- [COMPLETE_OVERVIEW.md](../COMPLETE_OVERVIEW.md) — User flows and status
+[src/proxy/specs/](../src/proxy/specs/) — numbered specs for each subsystem
+(vault format, session, cache, helius routing/client, embedded wallet, etc).

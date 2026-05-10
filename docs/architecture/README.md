@@ -310,8 +310,6 @@ cd src/web-frontend && npm test
 
 ## Further Reading
 
-- [Architecture Decision Records](src/rust-proxy/) — ADR-001 through ADR-007
-- [API Routing Guide](docs/technical/API_ROUTING_GUIDE.md)
-- [Technical Architecture](docs/technical/TECHNICAL_ARCHITECTURE.md)
-- [Local Vault Architecture](docs/technical/LOCAL_VAULT_ARCHITECTURE.md)
-- [MPC Coordination Guide](docs/technical/MPC_COORDINATION_GUIDE.md)
+- [Architecture Decision Records](../../src/proxy/) — ADR-001 through ADR-007
+- [Engineering specs](../../src/proxy/specs/) — vault format, session, cache, helius routing/client, embedded wallet, etc.
+- [system-design.md](system-design.md)

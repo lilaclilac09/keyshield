@@ -28,8 +28,8 @@ either:
 - **Import the lib modules directly** (`vault.ts`, `auth.ts`,
   `sync.ts`, `sync-auth.ts`) and build your own UI on top.
 
-This page covers the embed path. Direct lib usage is documented
-in [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md).
+This page covers the embed path. For direct lib usage, read the
+TypeScript modules under `src/web-v2/lib/` — they're the source of truth.
 
 ---
 
@@ -202,8 +202,8 @@ async function handleLostDevice() {
 
 The hook calls `/auth/revoke-challenge` + `/auth/force-revoke` on
 your worker; the user's seed-derived Ed25519 key is the
-authorization. Documented in
-[SYNC_VAULT_ARCHITECTURE.md § 11.5](../technical/SYNC_VAULT_ARCHITECTURE.md#115-seed-bound-force-revoke).
+authorization (seed-bound force-revoke; the seed-derived signing key
+is the only credential that can wipe a remote passkey).
 
 ---
 
@@ -239,7 +239,5 @@ authorization. Documented in
 ## Next steps
 
 - [Self-host](./self-host.md) — deploy your own worker + program.
-- [SYNC_VAULT_ARCHITECTURE.md](../technical/SYNC_VAULT_ARCHITECTURE.md)
-  — the full V1.1 design, threat model, and per-key crypto.
-- The 219 tests in `extension-sync/` are the canonical contract;
-  read them when in doubt.
+- The TypeScript modules under `src/web-v2/lib/` are the canonical
+  contract; read them when in doubt.

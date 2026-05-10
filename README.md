@@ -136,7 +136,6 @@ npx playwright test
 - [Operator Guide](docs/OPERATOR.md)
 - [Payment Flows](docs/PAYMENT-FLOWS.md)
 - [Roadmap](ROADMAP.md)
-- [Integration Log](integration-log.md)
 
 ### Architecture Decision Records
 
