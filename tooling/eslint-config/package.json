@@ -1,0 +1,18 @@
+{
+  "name": "@keyshield/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./eslint.config.js"
+    }
+  },
+  "dependencies": {
+    "@eslint/js": "^9.20.0",
+    "eslint": "^9.20.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "typescript-eslint": "^8.24.0"
+  }
+}

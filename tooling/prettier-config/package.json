@@ -1,0 +1,8 @@
+{
+  "name": "@keyshield/prettier-config",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./prettier.config.js"
+  }
+}

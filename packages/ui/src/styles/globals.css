@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  /* KEYSHIELD palette — institutional black & warm white */
+  --color-ks-black: #000000;
+  --color-ks-deep: #0a0a0b;
+  --color-ks-ink: #111113;
+  --color-ks-charcoal: #1c1c20;
+  --color-ks-slate: #2a2a2f;
+  --color-ks-mid: #525260;
+  --color-ks-muted: #8e8e9a;
+  --color-ks-muted-light: #b4b4be;
+  --color-ks-border: #d4d4dc;
+  --color-ks-frost: #eeeff1;
+  --color-ks-white: #f8f8fa;
+  --color-ks-pure-white: #ffffff;
+
+  /* Accent — subtle blue for interactive elements */
+  --color-ks-blue: #3b5bdb;
+  --color-ks-blue-soft: #e0e6ff;
+  --color-ks-green: #0f7b41;
+  --color-ks-green-soft: #ecfdf3;
+  --color-ks-amber: #8a590e;
+  --color-ks-amber-soft: #fef9ec;
+  --color-ks-red: #c62232;
+  --color-ks-red-soft: #fdeef0;
+
+  /* shadcn/ui — warm light theme */
+  --color-background: hsl(0 0% 97.5%);
+  --color-foreground: hsl(240 6% 8%);
+
+  --color-muted: hsl(0 0% 96%);
+  --color-muted-foreground: hsl(240 4% 46%);
+
+  --color-accent: hsl(240 5% 96%);
+  --color-accent-foreground: hsl(240 6% 10%);
+
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(240 6% 10%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(240 6% 8%);
+
+  --color-primary: hsl(240 6% 10%);
+  --color-primary-foreground: hsl(0 0% 100%);
+
+  --color-secondary: hsl(240 5% 96%);
+  --color-secondary-foreground: hsl(240 6% 10%);
+
+  --color-destructive: hsl(356 62% 56%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+
+  --color-border: hsl(240 5% 89%);
+  --color-input: hsl(240 5% 89%);
+  --color-ring: hsl(240 6% 30%);
+
+  /* Sidebar — deep black */
+  --color-sidebar: hsl(240 6% 6%);
+  --color-sidebar-foreground: hsl(0 0% 100%);
+  --color-sidebar-primary: hsl(0 0% 100%);
+  --color-sidebar-accent: hsl(240 5% 20%);
+  --color-sidebar-accent-foreground: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(240 5% 16%);
+  --color-sidebar-ring: hsl(240 6% 30%);
+
+  /* Radius */
+  --radius-lg: 0.75rem;
+  --radius-md: calc(var(--radius-lg) - 2px);
+  --radius-sm: calc(var(--radius-lg) - 4px);
+}
+
+@layer base {
+  * {}
+  body {
+    @apply bg-[hsl(0deg_0%_97.5%)] text-[hsl(240deg_6%_8%)] font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
