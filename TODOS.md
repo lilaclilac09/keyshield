@@ -102,3 +102,69 @@ support MV3 service workers). Reference: `frontend/manifest.firefox.json` + `bui
 
 **Effort:** S (human: ~4 hrs / CC: ~10 min)
 **Priority:** P3
+
+---
+
+## P0: Run mpp-e2e-devnet.mjs against a live stack
+
+**What:** [`src/scripts/mpp-e2e-devnet.mjs`](src/scripts/mpp-e2e-devnet.mjs)
+proves the 2026-05-10 ATA fix end-to-end on devnet: login → open stream
+→ `/build-open-tx` with `prereqIxs` → assemble + sign + submit →
+verify stream PDA + funded stream-PDA-owned USDC ATA → record sig.
+
+Hasn't been run yet — running it once upgrades the fix from
+"tsc-clean + unit-tested" to "verified on chain".
+
+```bash
+# Terminal 1:
+KS_VAULT_PDA=8QBVXySkwWJcic2K4b7SAdaG4tQtyA2ekPvaRQLpizmp \
+  KS_KEYSHIELD_PROGRAM_ID=41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j \
+  KS_USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU \
+  KS_MPP_SETTLER_PUBKEY=<pubkey>  KS_MPP_SETTLER_KEY=<base58 secret> \
+  KS_PLATFORM_USDC_ATA=<your-USDC-ATA> \
+  uvicorn src.backend.app:app --port 8000
+# Terminal 2:
+node src/scripts/mpp-e2e-devnet.mjs
+```
+
+Script detects `0x4 OwnerMismatch` specifically and dies with a clear
+error if the fix regresses.
+
+**Effort:** XS (run + observe, ~15 min)
+**Priority:** P0
+
+---
+
+## P1: Path A "Use" CTA — agent prerequisites
+
+**What:** The Device Vault page's "Use → open MPP stream" panel
+(`src/web/src/pages/DeviceVault.tsx::UseDeviceKeyPanel`) requires:
+
+  1. At least one registered agent visible from `getAgentsList()`.
+  2. That agent has an embedded wallet via
+     `POST /agents/{id}/wallet/create`, so it shows up in
+     `getAgentWallets()`.
+
+If neither exists, the panel surfaces "No agents with on-chain wallets.
+Register an agent + create its embedded wallet on the Agents page first."
+Today the user has to navigate to Agents manually — add inline CTAs.
+
+**Effort:** S (~15 min)
+**Priority:** P1
+
+---
+
+## P1: MPP "settle" button on Activity page
+
+**What:** After a stream is opened on-chain (via Device Vault's new
+Use CTA), there's no UI to manually settle it. Backend exposes
+`POST /mpp/streams/{id}/settle`; we should surface that as a button
+on each Activity-page stream row.
+
+On-chain settle path is already proven correct
+(`mpp_settle.rs:228` PDA-signs the transfer). UI just lacks the
+trigger.
+
+**Effort:** S (~15 min)
+**Priority:** P1
+**Depends on:** working stream on-chain (Device Vault Use CTA, shipped)
