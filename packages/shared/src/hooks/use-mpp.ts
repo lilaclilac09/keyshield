@@ -12,8 +12,10 @@ export function useMpp(streamId?: string) {
   });
 
   const openMutation = useMutation({
-    mutationFn: ({ agentId, amountSol }: { agentId: string; amountSol: number }) =>
-      api.openMppStream(agentId, amountSol),
+    // Matches the backend `mpp_open_stream` body shape. See
+    // packages/shared/src/api/index.ts::OpenMppStreamBody. The
+    // previous (agentId, amountSol) form never matched the server.
+    mutationFn: (body: api.OpenMppStreamBody) => api.openMppStream(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mpp'] }),
   });
 

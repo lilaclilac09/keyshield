@@ -35,9 +35,13 @@ import {
   removeEntry,
 } from '@keyshield/shared/lib/vault-session';
 import type { VaultEntry } from '@keyshield/shared/lib/vault';
-// MppStreamOpener intentionally NOT imported here — it's the wallet
-// sign-off for an MPP *stream* (id + agentPubkey), not a vault entry.
-// Wire it on the Agents/MPP surface, not on the Device Vault page.
+import {
+  openMppStream,
+  getAgentsList,
+  getAgentWallets,
+  type OpenMppStreamBody,
+} from '@keyshield/shared/api';
+import { MppStreamOpener } from '../components/MppStreamOpener';
 
 // ── Provider catalog (mirror of AddKeyModal's, scoped to API-key types) ──
 const PROVIDERS: { id: string; name: string; placeholder: string }[] = [
@@ -180,6 +184,205 @@ function AddDeviceKeyModal({ isOpen, onClose, onAdded }: AddModalProps) {
       </div>
     </div>
   );
+}
+
+// ── "Use" panel — bridges a vault entry → MPP stream → wallet sign ──
+//
+// The DeviceVault page surfaces vault entries (`{upstream, apiKey,
+// addedAt}`). To actually USE a key on-chain you need an MPP stream
+// (`{id, agentPubkey}`). This panel orchestrates the bridge:
+//
+//   1. Lazy-load the user's agents + their on-chain wallets.
+//   2. Show "Open MPP stream" button. On click, pop an agent picker.
+//   3. POST /mpp/streams to create a stream (backend off-chain row).
+//   4. Hand streamId + agentPubkey to <MppStreamOpener>, which builds
+//      the 3-ix Transaction (create stream-PDA-owned ATA + fund + open)
+//      and routes it through the wallet adapter.
+//
+// Once signed + confirmed on-chain, the panel shows the explorer link.
+// The plaintext API key never enters this component — that's vault-
+// session's job during a future proxy call, not the wallet sign-off.
+
+interface UsePanelState {
+  phase: 'idle' | 'loading-agents' | 'pick-agent' | 'opening' | 'signing' | 'error';
+  error?: string;
+  agents?: Array<{ id: string; name: string; pubkey: string }>;
+  selectedAgent?: { id: string; name: string; pubkey: string };
+  streamId?: string;
+}
+
+function UseDeviceKeyPanel({ entry }: { entry: VaultEntry }) {
+  const [state, setState] = useState<UsePanelState>({ phase: 'idle' });
+
+  const openPicker = useCallback(async () => {
+    setState({ phase: 'loading-agents' });
+    try {
+      // Join agent list with their on-chain wallets (the backend
+      // returns them in two separate endpoints; both are owner-scoped).
+      const [agents, wallets] = await Promise.all([
+        getAgentsList(),
+        getAgentWallets(),
+      ]);
+      const walletByAgent = new Map(wallets.map((w) => [w.agent_id, w.pubkey]));
+      const joined = agents
+        .filter((a) => walletByAgent.has(a.agent_id))
+        .map((a) => ({
+          id: a.id,
+          name: a.name || a.agent_id,
+          pubkey: walletByAgent.get(a.agent_id)!,
+        }));
+      if (joined.length === 0) {
+        setState({
+          phase: 'error',
+          error:
+            'No agents with on-chain wallets. Register an agent + create its ' +
+            'embedded wallet on the Agents page first.',
+        });
+        return;
+      }
+      setState({ phase: 'pick-agent', agents: joined });
+    } catch (e) {
+      setState({
+        phase: 'error',
+        error: e instanceof Error ? e.message : 'Failed to load agents',
+      });
+    }
+  }, []);
+
+  const openStreamForAgent = useCallback(
+    async (agent: { id: string; name: string; pubkey: string }) => {
+      setState({ phase: 'opening', selectedAgent: agent });
+      try {
+        const body: OpenMppStreamBody = {
+          agentPubkey: agent.pubkey,
+          agentName: agent.name,
+          upstream: entry.upstream,
+          ratePerTokenMicroUsdc: 1,
+          settlementIntervalSecs: 60,
+        };
+        const res = await openMppStream(body);
+        // The MppStream `id` field is what we hand MppStreamOpener.
+        // Backend returns it as a number coerced to string in some
+        // schemas; normalise here.
+        const streamId = String((res.stream as { id: number | string }).id);
+        setState({ phase: 'signing', selectedAgent: agent, streamId });
+      } catch (e) {
+        setState({
+          phase: 'error',
+          error: e instanceof Error ? e.message : 'Failed to open stream',
+        });
+      }
+    },
+    [entry.upstream],
+  );
+
+  const reset = () => setState({ phase: 'idle' });
+
+  // ── Render: 5 phases ─────────────────────────────────────────────
+  if (state.phase === 'idle') {
+    return (
+      <button
+        type="button"
+        onClick={() => void openPicker()}
+        className="ks-btn-ghost text-[12px] mt-1"
+        title="Open MPP stream + sign on-chain with your wallet"
+      >
+        Use → open MPP stream
+      </button>
+    );
+  }
+
+  if (state.phase === 'loading-agents') {
+    return (
+      <div className="flex items-center gap-2 text-[12px] text-[#a4abc2] mt-1">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Loading agents…
+      </div>
+    );
+  }
+
+  if (state.phase === 'pick-agent' && state.agents) {
+    return (
+      <div className="space-y-2 mt-1">
+        <p className="text-[11px] uppercase tracking-wider text-[#6b7494]">
+          Pick an agent to open the stream against
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {state.agents.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => void openStreamForAgent(a)}
+              className="ks-btn-ghost text-[11px] px-2 py-1"
+              title={a.pubkey}
+            >
+              {a.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={reset}
+            className="text-[11px] text-[#6b7494] hover:text-white px-2 py-1"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.phase === 'opening' && state.selectedAgent) {
+    return (
+      <div className="flex items-center gap-2 text-[12px] text-[#a4abc2] mt-1">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Opening stream for {state.selectedAgent.name}…
+      </div>
+    );
+  }
+
+  if (state.phase === 'signing' && state.streamId && state.selectedAgent) {
+    // Hand off to MppStreamOpener for the actual wallet sign-off.
+    // The component handles its own success/error UI; we just provide
+    // the streamId + agentPubkey it needs.
+    return (
+      <div className="space-y-1 mt-1">
+        <p className="text-[11px] text-[#6b7494]">
+          Stream #{state.streamId} created · agent {state.selectedAgent.name}
+        </p>
+        <MppStreamOpener
+          streamId={state.streamId}
+          agentPubkey={state.selectedAgent.pubkey}
+        />
+        <button
+          type="button"
+          onClick={reset}
+          className="text-[10px] text-[#6b7494] hover:text-white"
+        >
+          Done
+        </button>
+      </div>
+    );
+  }
+
+  if (state.phase === 'error') {
+    return (
+      <div className="space-y-1 mt-1">
+        <div className="flex items-start gap-1.5 text-[12px] text-[#fca5a5]">
+          <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+          <span>{state.error ?? 'Unknown error'}</span>
+        </div>
+        <button
+          type="button"
+          onClick={reset}
+          className="text-[10px] text-[#6b7494] hover:text-white"
+        >
+          Reset
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // ── Main page ─────────────────────────────────────────────────────────
@@ -404,22 +607,13 @@ export default function DeviceVault() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                {/* "Use" CTA. The plaintext API key lives in
-                 * vault-session memory after unlock; for an actual
-                 * upstream call go through proxyFetch (or the existing
-                 * Vault page's similar flow). The MppStreamOpener
-                 * component (src/web/src/components/MppStreamOpener.tsx)
-                 * is the wallet sign-off for an MPP **stream** rather
-                 * than a vault entry — wire it on the Agents/MPP page
-                 * once an `MppStream { id, agentPubkey }` exists, not
-                 * here. */}
-                <button
-                  type="button"
-                  className="ks-btn-ghost text-[12px] mt-1"
-                  title="Use this key via the proxy (manual integration)"
-                >
-                  Copy use-instructions →
-                </button>
+                {/* "Use" CTA — bridges the Path A vault entry to the
+                 * MPP wallet-sign flow. Renders an inline panel that
+                 * picks an agent → opens an MPP stream for this entry's
+                 * upstream → hands streamId + agentPubkey to
+                 * MppStreamOpener (which signs the 3-ix transaction
+                 * with the user's wallet). */}
+                <UseDeviceKeyPanel entry={e} />
               </div>
             );
           })}

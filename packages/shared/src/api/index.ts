@@ -130,10 +130,34 @@ export async function getMppStreams() {
   return request<Array<import('../types').MppStream>>('/mpp/streams');
 }
 
-export async function openMppStream(agentId: string, amountSol: number) {
-  return request<{ stream_id: string; tx: string }>('/mpp/streams', {
+/**
+ * Body for `POST /mpp/streams` — matches `mpp_open_stream` in
+ * src/backend/routes/mpp.py (camelCase + …MicroUsdc keys).
+ *
+ * The legacy `(agentId, amountSol)` signature this used to accept
+ * never matched the backend: it would have been silently rejected as
+ * missing required fields (agentPubkey / agentName / upstream). The
+ * new shape sends the same camelCase fields the server reads.
+ */
+export interface OpenMppStreamBody {
+  /** Agent's on-chain pubkey (base58). Required by the backend. */
+  agentPubkey: string;
+  /** Display name; backend defaults to a placeholder if empty. */
+  agentName?: string;
+  /** e.g. "openai" / "anthropic" / "helius" — pin the stream to one upstream. */
+  upstream: string;
+  /** Per-token billing rate. Default 0 (no per-token charge). */
+  ratePerTokenMicroUsdc?: number;
+  /** Per-call billing rate. Default 0. */
+  ratePerCallMicroUsdc?: number;
+  /** Settlement cadence in seconds. Default 60. */
+  settlementIntervalSecs?: number;
+}
+
+export async function openMppStream(body: OpenMppStreamBody) {
+  return request<{ stream: import('../types').MppStream }>('/mpp/streams', {
     method: 'POST',
-    body: JSON.stringify({ agent_id: agentId, amount_sol: amountSol }),
+    body: JSON.stringify(body),
   });
 }
 
