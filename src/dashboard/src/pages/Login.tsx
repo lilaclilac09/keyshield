@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { Wallet, Shield, ChevronRight, Check, Key, Lock, Zap, Eye } from 'lucide-react';
+import {
+  detectWallets,
+  connectWalletByKey,
+  signWithWallet,
+  generateSessionToken,
+  saveToken,
+  disconnectWallet,
+  VAULT_KEY_MESSAGE,
+} from '@keyshield/shared/auth';
 
 const WALLET_ICONS: Record<string, string> = {
   Phantom: `data:image/svg+xml,${encodeURIComponent(`<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#AB9FF2"/><stop offset="100%" stop-color="#5C47D9"/></linearGradient></defs><rect width="40" height="40" rx="10" fill="url(#g)"/><path d="M20 8c-4 0-8 2-8 6 0 2 1 4 3 5l-2 8h14l-2-8c2-1 3-3 3-5 0-4-4-6-8-6z" fill="white" opacity="0.9"/></svg>`)}`,
