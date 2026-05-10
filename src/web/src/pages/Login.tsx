@@ -83,7 +83,7 @@ export default function Login() {
             <Shield size={26} strokeWidth={1.5} />
           </div>
         </div>
-        <h1 className="text-3xl font-semibold tracking-wide mb-1" style={{ color: '#707070' }}>KEYSHIELD</h1>
+        <h1 className="text-3xl font-semibold tracking-wide mb-1" style={{ color: '#f8f8f8' }}>KEYSHIELD</h1>
         <p className="text-[9px] tracking-[0.35em] uppercase text-[#4a4a4a] font-medium">Protect what matters</p>
       </div>
 
@@ -109,16 +109,16 @@ export default function Login() {
               <div className="h-14 w-14 rounded-full bg-[#ecfdf3] flex items-center justify-center mb-3">
                 <Check className="h-7 w-7 text-[#0f7b41]" />
               </div>
-              <p className="text-sm font-medium" style={{ color: '#707070' }}>Wallet Connected</p>
-              <span className="text-xs font-mono mt-2 px-3 py-1 rounded bg-[#0a0a0a] border border-[#0f0f0f]" style={{ color: '#333' }}>{shortAddress(connectedAddress)}</span>
+              <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Wallet Connected</p>
+              <span className="text-xs font-mono mt-2 px-3 py-1 rounded bg-[#0a0a0a] border border-[#0f0f0f]" style={{ color: '#c4c4d0' }}>{shortAddress(connectedAddress)}</span>
             </div>
           )}
 
           {/* Loading */}
           {(step === 'connecting' || step === 'signing') && (
             <div className="flex flex-col items-center py-8">
-              <Shield className="h-10 w-10 mb-4 animate-pulse" style={{ color: '#333' }} />
-              <p className="text-sm font-medium" style={{ color: '#505050' }}>
+              <Shield className="h-10 w-10 mb-4 animate-pulse" style={{ color: '#666' }} />
+              <p className="text-sm font-medium" style={{ color: '#a0a0b0' }}>
                 {step === 'connecting' ? `Opening ${selectedWallet}...` : 'Verifying signature...'}
               </p>
             </div>
@@ -127,7 +127,7 @@ export default function Login() {
           {/* Wallet list */}
           {step === 'select' && (
             <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.2em] font-medium mb-3" style={{ color: '#505050' }}>Available wallets</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-medium mb-3" style={{ color: '#a0a0b0' }}>Available wallets</p>
               {wallets.map((w: any) => {
                 const icon = WALLET_ICONS[w.name] ?? '';
                 return (
@@ -145,19 +145,19 @@ export default function Login() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm" style={{ color: '#707070' }}>{w.name}</span>
+                        <span className="font-medium text-sm" style={{ color: '#f8f8f8' }}>{w.name}</span>
                         {w.isConnected && (
                           <span className="text-[10px] px-2 py-0.5 rounded bg-[#ecfdf3] text-[#0f7b41] font-medium">Connected</span>
                         )}
                       </div>
                       {!w.isInstalled
-                        ? <span className="text-xs" style={{ color: '#404040' }}>Not installed</span>
+                        ? <span className="text-xs" style={{ color: '#777' }}>Not installed</span>
                         : w.isConnected && w.address
-                          ? <span className="text-xs font-mono" style={{ color: '#505050' }}>{shortAddress(w.address)}</span>
-                          : <span className="text-xs" style={{ color: '#505050' }}>Click to connect</span>
+                          ? <span className="text-xs font-mono" style={{ color: '#a0a0b0' }}>{shortAddress(w.address)}</span>
+                          : <span className="text-xs" style={{ color: '#a0a0b0' }}>Click to connect</span>
                       }
                     </div>
-                    {w.isInstalled && <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#404040' }} />}
+                    {w.isInstalled && <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#777' }} />}
                   </button>
                 );
               })}
@@ -169,7 +169,7 @@ export default function Login() {
                   <div className="p-3 rounded-lg bg-[#0a0a0a] flex items-center justify-between" style={{ borderColor: '#0f0f0f', borderWidth: '1px' }}>
                     <div className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-[#0f7b41]" />
-                      <span className="text-sm font-mono" style={{ color: '#707070' }}>{shortAddress(connectedAddress)}</span>
+                      <span className="text-sm font-mono" style={{ color: '#f8f8f8' }}>{shortAddress(connectedAddress)}</span>
                     </div>
                   </div>
                 </>
@@ -177,9 +177,9 @@ export default function Login() {
 
               {available.length === 0 && (
                 <div className="text-center py-6 space-y-3">
-                  <Wallet className="h-8 w-8 mx-auto" style={{ color: '#404040' }} />
-                  <p className="font-medium text-sm" style={{ color: '#505050' }}>No wallet detected</p>
-                  <p className="text-xs" style={{ color: '#505050' }}>Install a Solana wallet extension</p>
+                  <Wallet className="h-8 w-8 mx-auto" style={{ color: '#777' }} />
+                  <p className="font-medium text-sm" style={{ color: '#a0a0b0' }}>No wallet detected</p>
+                  <p className="text-xs" style={{ color: '#a0a0b0' }}>Install a Solana wallet extension</p>
                 </div>
               )}
 
@@ -189,7 +189,7 @@ export default function Login() {
 
           {step === 'select' && available.length > 0 && (
             <div className="text-center pt-2">
-              <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: '#4a4a4a', fontWeight: 500 }}>
+              <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: '#888', fontWeight: 500 }}>
                 Signs a message to verify ownership. No gas fee.
               </p>
             </div>
@@ -201,8 +201,8 @@ export default function Login() {
       <div className="grid grid-cols-2 gap-4 max-w-md w-full">
         {featureItems.map((f) => (
           <div key={f.label} className="flex items-center gap-2">
-            <f.icon size={14} style={{ color: '#404040' }} />
-            <span className="text-sm" style={{ color: '#505050' }}>{f.label}</span>
+            <f.icon size={14} style={{ color: '#777' }} />
+            <span className="text-sm" style={{ color: '#a0a0b0' }}>{f.label}</span>
           </div>
         ))}
       </div>

@@ -125,7 +125,6 @@ def _b58decode(s: str) -> bytes:
 # Solana program / mint defaults — same as billing_solana.py constants.
 USDC_MINT_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 DEFAULT_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 
@@ -560,112 +559,6 @@ def derive_agent_payment_stream_pda(
         program_pk,
     )
     return (str(pda), bump)
-
-
-def derive_associated_token_address(
-    owner_pubkey: str,
-    mint_pubkey: str,
-    token_program_id: str = TOKEN_PROGRAM_ID,
-) -> str:
-    """Derive an Associated Token Account address.
-
-    Seeds: [owner, token_program, mint] under the
-    Associated Token Program (`ATokenGPvbdG…`). This is the standard
-    SPL ATA layout — same derivation Phantom and the `spl-token` CLI
-    use, so any wallet that can hold USDC for `owner_pubkey` already
-    knows about this address.
-    """
-    if not _HAS_SOLDERS:
-        raise MppSubmitError(
-            "solders not installed — cannot derive ATA. Install via "
-            "`pip install solders`.",
-        )
-    try:
-        owner_pk = Pubkey.from_string(owner_pubkey)               # type: ignore[union-attr]
-        mint_pk = Pubkey.from_string(mint_pubkey)                 # type: ignore[union-attr]
-        token_pk = Pubkey.from_string(token_program_id)           # type: ignore[union-attr]
-        ata_program_pk = Pubkey.from_string(ASSOCIATED_TOKEN_PROGRAM_ID)  # type: ignore[union-attr]
-    except Exception as e:  # noqa: BLE001
-        raise MppSubmitError(f"invalid pubkey for ATA derivation: {e}") from e
-
-    ata, _bump = Pubkey.find_program_address(  # type: ignore[union-attr]
-        [bytes(owner_pk), bytes(token_pk), bytes(mint_pk)],
-        ata_program_pk,
-    )
-    return str(ata)
-
-
-def build_create_ata_idempotent_ix(
-    payer_pubkey: str,
-    ata_pubkey: str,
-    owner_pubkey: str,
-    mint_pubkey: str,
-) -> _SimpleInstruction:
-    """SPL Associated Token Program — idempotent `Create` (discriminator 1).
-
-    Idempotent variant: succeeds if the ATA already exists, so the
-    frontend can include this ix unconditionally without first probing
-    on-chain state. Account order matches spl-token-2022 ATA program:
-
-      0. [signer, writable] funding (payer for rent)
-      1. [writable]         ATA address
-      2. []                 wallet (owner of the ATA, NOT the signer)
-      3. []                 mint
-      4. []                 system program
-      5. []                 SPL Token program
-    """
-    accounts = (
-        _SimpleAccountMeta(pubkey=payer_pubkey,         is_signer=True,  is_writable=True),
-        _SimpleAccountMeta(pubkey=ata_pubkey,           is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=owner_pubkey,         is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=mint_pubkey,          is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID,    is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID,     is_signer=False, is_writable=False),
-    )
-    return _SimpleInstruction(
-        program_id=ASSOCIATED_TOKEN_PROGRAM_ID,
-        accounts=accounts,
-        data=bytes([1]),  # CreateIdempotent discriminator
-    )
-
-
-def build_spl_transfer_checked_ix(
-    source_ata: str,
-    dest_ata: str,
-    mint_pubkey: str,
-    authority_pubkey: str,
-    amount_micro_usdc: int,
-    decimals: int = 6,
-) -> _SimpleInstruction:
-    """SPL Token Program — `TransferChecked` (discriminator 12).
-
-    Checks that the mint matches both source and dest, plus the
-    declared decimals — safer than the legacy `Transfer`. Used to fund
-    the stream's PDA-owned USDC ATA from the owner's USDC ATA when
-    opening a payment stream. The `authority_pubkey` must sign in the
-    outer transaction.
-
-    Account order:
-      0. [writable] source ATA
-      1. []         mint
-      2. [writable] destination ATA
-      3. [signer]   authority (owner of source ATA)
-    """
-    if amount_micro_usdc < 0:
-        raise ValueError("amount_micro_usdc must be non-negative")
-    accounts = (
-        _SimpleAccountMeta(pubkey=source_ata,         is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=mint_pubkey,        is_signer=False, is_writable=False),
-        _SimpleAccountMeta(pubkey=dest_ata,           is_signer=False, is_writable=True),
-        _SimpleAccountMeta(pubkey=authority_pubkey,   is_signer=True,  is_writable=False),
-    )
-    # u8 discriminator + u64 amount LE + u8 decimals
-    data = bytes([12]) + amount_micro_usdc.to_bytes(8, "little") + bytes([decimals])
-    return _SimpleInstruction(
-        program_id=TOKEN_PROGRAM_ID,
-        accounts=accounts,
-        data=data,
-    )
 
 
 def build_open_payment_stream_ix_data(

@@ -40,7 +40,7 @@ export default function Vault() {
     <div className="relative">
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Vault</h1>
+          <h1 style={{ color: '#f8f8f8' }}>Vault</h1>
           <p className="page-header-subtitle">{total} items stored · AES-256-GCM encrypted</p>
         </div>
         <div className="flex gap-2">
@@ -67,7 +67,7 @@ export default function Vault() {
       {/* Search & Filter */}
       <div className="flex gap-2 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#505050' }} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#a0a0b0' }} />
           <Input className="pl-9 bg-[#0a0a0a] border-[#141414] text-white" placeholder="Search vault..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Tabs value={filter} onValueChange={setFilter}>
@@ -88,10 +88,10 @@ export default function Vault() {
           <div className="w-12 h-12 rounded-xl bg-[#0a0a0a] border border-[#141414] flex items-center justify-center mb-4">
             <Key size={20} style={{ color: '#6366f1' }} strokeWidth={1.75} />
           </div>
-          <h3 className="text-lg font-medium" style={{ color: '#707070' }}>
+          <h3 className="text-lg font-medium" style={{ color: '#f8f8f8' }}>
             {search ? 'No matching secrets' : 'Your vault is empty'}
           </h3>
-          <p className="mt-1 text-sm" style={{ color: '#333' }}>
+          <p className="mt-1 text-sm" style={{ color: '#c4c4d0' }}>
             {search ? 'Try adjusting your search or filter.' : 'Add your first encrypted secret to get started.'}
           </p>
           {!search && (

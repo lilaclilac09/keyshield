@@ -91,53 +91,6 @@ keyshield/
 └── package.json                 # npm workspace
 ```
 
-## Helius client — typed Rust SDK
-
-`ks-helius` is a typed Rust client for the Helius RPC, living in
-[`src/proxy/crates/ks-helius/`](src/proxy/crates/ks-helius/). The
-hot-path Rust proxy ([`src/proxy/crates/ks-proxy/`](src/proxy/crates/ks-proxy/))
-calls into it whenever a user hits `POST /proxy/helius/...` — instead of
-spraying raw HTTP at upstream, the proxy gets type-safe wrappers,
-caching, and request dedup for free.
-
-**Shipped today** (see [`src/proxy/crates/ks-helius/src/lib.rs`](src/proxy/crates/ks-helius/src/lib.rs)):
-
-- Five typed wrappers: `get_balance`, `get_asset`, `get_assets_by_owner`,
-  `get_priority_fee_estimate`, `parse_transactions`.
-- `cached_call()` with single-flight dedup — 50 concurrent callers for
-  the same `CacheKey` fire **one** upstream request; the rest park on a
-  `Shared<Future>` and clone the result.
-- In-memory `moka::future::Cache` with per-entry TTL via `PerEntryTtl`
-  (built-in TTL table mirrors spec 09's "Method coverage matrix").
-- `CacheKey` byte-parity with Python's `_ck("helius", method, params)`
-  through `ks_cache::pycompat::cache_key`.
-- `HeliusConfig` for endpoint, concurrency, and TTL setup.
-- `PaymentInterceptor` trait stub for future x402 integration.
-- Tests in [`src/proxy/crates/ks-helius/tests/cache.rs`](src/proxy/crates/ks-helius/tests/cache.rs).
-
-**Integration**:
-[`ks-proxy/src/handlers.rs`](src/proxy/crates/ks-proxy/src/handlers.rs)
-maps `helius` → `HELIUS_API_KEY` env;
-[`ks-proxy/src/lib.rs`](src/proxy/crates/ks-proxy/src/lib.rs) registers
-the empty-path variant `POST /proxy/helius/` (JSON-RPC body dispatch);
-[`ks-proxy/src/main.rs`](src/proxy/crates/ks-proxy/src/main.rs) wires
-`UpstreamId::Helius` into the upstream registry.
-
-**Not done yet**:
-
-- Disk tier of the cache (Phase 2 — trait shaped, not implemented).
-- 70-90 method audit + remaining typed wrappers (Phase 3a/3b).
-- Real x402 `PaymentInterceptor` impl (Phase 4 — blocked on embedded
-  wallet spec).
-
-**Quick reference**:
-
-```rust
-let cfg = HeliusConfig::default();
-let client = HeliusClient::with_api_key(api_key, cfg);
-let balance = client.get_balance(&pubkey).await?;
-```
-
 ## Quick Start
 
 > **Self-host note:** vault sync (storage) uses Path A — a Cloudflare Worker

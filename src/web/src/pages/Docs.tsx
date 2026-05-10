@@ -23,7 +23,7 @@ const CHAPTERS = [
 function CodeBlock({ code, label }: { code: string; label?: string }) {
   return (
     <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#e0e0e0' }}>
-      {label && <p className="text-xs mb-2" style={{ color: '#333' }}>{label}</p>}
+      {label && <p className="text-xs mb-2" style={{ color: '#c4c4d0' }}>{label}</p>}
       <pre className="whitespace-pre-wrap break-all">{code}</pre>
     </div>
   );
@@ -38,8 +38,8 @@ export default function Docs() {
       case 'quickstart':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Quickstart</h2>
-            <p className="text-sm" style={{ color: '#4a4a4a' }}>Get KeyShield running in 3 minutes.</p>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Quickstart</h2>
+            <p className="text-sm" style={{ color: '#888' }}>Get KeyShield running in 3 minutes.</p>
             <div className="space-y-4">
               <h3 className="text-lg font-medium" style={{ color: '#e0e0e0' }}>1. Install</h3>
               <CodeBlock code={`curl -fsSL ${API_BASE}/install.sh | bash`} label="Linux/macOS" />
@@ -56,19 +56,19 @@ export default function Docs() {
       case 'concepts':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Core Concepts</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Core Concepts</h2>
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Shield size={18} style={{ color: '#6366f1' }} /> Zero-Trust Architecture</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>KeyShield never stores raw API keys in memory between requests. Keys are AES-256-GCM encrypted at rest and decrypted per-request on the server side.</p>
+                <p className="text-sm" style={{ color: '#888' }}>KeyShield never stores raw API keys in memory between requests. Keys are AES-256-GCM encrypted at rest and decrypted per-request on the server side.</p>
               </div>
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Key size={18} style={{ color: '#6366f1' }} /> Vault</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>The vault stores API keys, passwords, notes, and SSH keys. Each entry is encrypted with a key derived from your wallet signature.</p>
+                <p className="text-sm" style={{ color: '#888' }}>The vault stores API keys, passwords, notes, and SSH keys. Each entry is encrypted with a key derived from your wallet signature.</p>
               </div>
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Bot size={18} style={{ color: '#6366f1' }} /> Agents</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>Agents are AI identities with scoped API access. Each agent has its own keypair and can be independently revoked.</p>
+                <p className="text-sm" style={{ color: '#888' }}>Agents are AI identities with scoped API access. Each agent has its own keypair and can be independently revoked.</p>
               </div>
             </div>
           </div>
@@ -76,8 +76,8 @@ export default function Docs() {
       case 'agents':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Agent Setup</h2>
-            <p className="text-sm" style={{ color: '#4a4a4a' }}>Register AI agents for scoped API access.</p>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Agent Setup</h2>
+            <p className="text-sm" style={{ color: '#888' }}>Register AI agents for scoped API access.</p>
             <CodeBlock code={`keyshield agent register --name "Trading Bot"
 # Returns agent_id and pubkey`} label="CLI" />
             <CodeBlock code={`from keyshield_sdk import KeyShield
@@ -88,7 +88,7 @@ client = ks.openai_client()  # uses agent's scoped access`} label="Python" />
       case 'sdk':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Python SDK</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Python SDK</h2>
             <CodeBlock code="pip install keyshield-sdk" label="Install" />
             <CodeBlock code={`from keyshield_sdk import KeyShield
 
@@ -109,7 +109,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
       case 'cli':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>CLI Reference</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>CLI Reference</h2>
             <div className="space-y-3">
               {[
                 { cmd: 'keyshield login <addr> <passphrase>', desc: 'Authenticate with wallet' },
@@ -122,7 +122,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
               ].map((c, i) => (
                 <div key={i} className="p-3 rounded-lg bg-[#0a0a0a] border" style={{ borderColor: '#141414' }}>
                   <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{c.cmd}</code>
-                  <p className="text-xs mt-1" style={{ color: '#333' }}>{c.desc}</p>
+                  <p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>{c.desc}</p>
                 </div>
               ))}
             </div>
@@ -131,19 +131,19 @@ anthropic = ks.anthropic_client()`} label="Usage" />
       case 'billing':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Billing & x402 & MPP</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Billing & x402 & MPP</h2>
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><DollarSign size={18} style={{ color: '#6366f1' }} /> Billing</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>Track usage and spend across all proxied API calls. SOL and USD balances shown in the Activity page.</p>
+                <p className="text-sm" style={{ color: '#888' }}>Track usage and spend across all proxied API calls. SOL and USD balances shown in the Activity page.</p>
               </div>
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Zap size={18} style={{ color: '#6366f1' }} /> x402 Auto-Pay</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>x402 is the micropayment protocol for AI agent payments. Configure trusted domains and thresholds in Settings.</p>
+                <p className="text-sm" style={{ color: '#888' }}>x402 is the micropayment protocol for AI agent payments. Configure trusted domains and thresholds in Settings.</p>
               </div>
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Activity size={18} style={{ color: '#6366f1' }} /> MPP Streams</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>Multi-Party Payment streams enable agents to make micro-payments per API call. Open a stream with a SOL deposit.</p>
+                <p className="text-sm" style={{ color: '#888' }}>Multi-Party Payment streams enable agents to make micro-payments per API call. Open a stream with a SOL deposit.</p>
               </div>
             </div>
           </div>
@@ -151,15 +151,15 @@ anthropic = ks.anthropic_client()`} label="Usage" />
       case 'security':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Security</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Security</h2>
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Lock size={18} style={{ color: '#6366f1' }} /> Encryption</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>All vault entries are encrypted with AES-256-GCM. The encryption key is derived from your wallet signature via HKDF-SHA256.</p>
+                <p className="text-sm" style={{ color: '#888' }}>All vault entries are encrypted with AES-256-GCM. The encryption key is derived from your wallet signature via HKDF-SHA256.</p>
               </div>
               <div className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                 <h3 className="text-lg font-medium flex items-center gap-2 mb-2" style={{ color: '#e0e0e0' }}><Shield size={18} style={{ color: '#6366f1' }} /> Passkey Auth</h3>
-                <p className="text-sm" style={{ color: '#4a4a4a' }}>WebAuthn passkeys with PRF extension for zero-knowledge vault unlock. No password stored on any server.</p>
+                <p className="text-sm" style={{ color: '#888' }}>WebAuthn passkeys with PRF extension for zero-knowledge vault unlock. No password stored on any server.</p>
               </div>
             </div>
           </div>
@@ -167,7 +167,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
       case 'troubleshoot':
         return (
           <div className="space-y-6">
-            <h2 className="text-2xl font-semibold" style={{ color: '#707070' }}>Troubleshooting</h2>
+            <h2 className="text-2xl font-semibold" style={{ color: '#f8f8f8' }}>Troubleshooting</h2>
             <div className="space-y-3">
               {[
                 { q: '401 Unauthorized', a: 'Your session token has expired. Re-authenticate with your wallet.' },
@@ -177,7 +177,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
               ].map((item, i) => (
                 <div key={i} className="p-4 rounded-lg bg-[#080808] border" style={{ borderColor: '#141414' }}>
                   <h4 className="font-medium mb-1" style={{ color: '#e0e0e0' }}>{item.q}</h4>
-                  <p className="text-sm" style={{ color: '#4a4a4a' }}>{item.a}</p>
+                  <p className="text-sm" style={{ color: '#888' }}>{item.a}</p>
                 </div>
               ))}
             </div>
@@ -192,7 +192,7 @@ anthropic = ks.anthropic_client()`} label="Usage" />
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Documentation</h1>
+          <h1 style={{ color: '#f8f8f8' }}>Documentation</h1>
           <p className="page-header-subtitle">KeyShield {VERSION} · built {BUILD_DATE}</p>
         </div>
         <a href={REPO_URL} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-[#a5b4fc] hover:text-white transition-colors">

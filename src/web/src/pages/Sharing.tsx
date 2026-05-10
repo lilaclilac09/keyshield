@@ -30,7 +30,7 @@ export default function Sharing() {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Sharing</h1>
+          <h1 style={{ color: '#f8f8f8' }}>Sharing</h1>
           <p className="page-header-subtitle">Vault key access grants and delegation</p>
         </div>
         <div className="flex gap-2">
@@ -54,18 +54,18 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {incoming.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#333' }} />
-                  <p className="text-sm" style={{ color: '#333' }}>No incoming shares</p>
+                  <ArrowDownLeft className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
+                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No incoming shares</p>
                 </div>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Granted By</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Status</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Granted By</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {incoming.map(s => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
-                        <TableCell className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#333' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
+                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                       </TableRow>
                     ))}
@@ -81,18 +81,18 @@ export default function Sharing() {
             <CardContent className="pt-6">
               {outgoing.length === 0 ? (
                 <div className="py-12 text-center">
-                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#333' }} />
-                  <p className="text-sm" style={{ color: '#333' }}>No outgoing shares</p>
+                  <ArrowUpRight className="h-8 w-8 mx-auto mb-3" style={{ color: '#666' }} />
+                  <p className="text-sm" style={{ color: '#c4c4d0' }}>No outgoing shares</p>
                 </div>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Grantee</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Key ID</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Grantee</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Expires</TableHead><TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Status</TableHead><TableHead></TableHead></TableRow></TableHeader>
                   <TableBody>
                     {outgoing.map(s => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
-                        <TableCell className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
-                        <TableCell style={{ color: '#333' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.vault_key_id?.slice(0, 12) ?? s.id.slice(0, 12)}...</TableCell>
+                        <TableCell className="font-mono text-xs" style={{ color: '#888' }}>{s.grantee_address?.slice(0, 8) ?? '...'}...</TableCell>
+                        <TableCell style={{ color: '#c4c4d0' }}>{s.expires_at ? relTime(new Date(s.expires_at).getTime() / 1000) : 'Never'}</TableCell>
                         <TableCell><Badge variant={s.is_active ? 'success' : 'secondary'}>{s.is_active ? 'Active' : 'Revoked'}</Badge></TableCell>
                         <TableCell>
                           {s.is_active && (
@@ -113,7 +113,7 @@ export default function Sharing() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-[#080808] border-[#141414]">
-          <DialogHeader><DialogTitle style={{ color: '#707070' }}>Share Vault Key</DialogTitle><DialogDescription>Grant access to a specific vault item</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle style={{ color: '#f8f8f8' }}>Share Vault Key</DialogTitle><DialogDescription>Grant access to a specific vault item</DialogDescription></DialogHeader>
           <div className="space-y-4 py-4">
             <div><Label>Vault Key ID</Label><Input value={keyId} onChange={e => setKeyId(e.target.value)} placeholder="key_..." className="bg-[#0a0a0a] border-[#141414] text-white" /></div>
             <div><Label>Grantee Wallet Address</Label><Input value={grantee} onChange={e => setGrantee(e.target.value)} placeholder="wallet address" className="bg-[#0a0a0a] border-[#141414] text-white" /></div>

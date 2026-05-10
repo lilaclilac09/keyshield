@@ -8,7 +8,7 @@ export default function Reports() {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Reports</h1>
+          <h1 style={{ color: '#f8f8f8' }}>Reports</h1>
           <p className="page-header-subtitle">Vault audit logs and activity reports</p>
         </div>
       </div>

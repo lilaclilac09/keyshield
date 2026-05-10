@@ -42,10 +42,10 @@ function CodeBlock({ code, label }: { code: string; label?: string }) {
   };
   return (
     <div className="relative p-4 rounded-lg bg-[#0a0a0a] border font-mono text-sm" style={{ borderColor: '#141414', color: '#e0e0e0' }}>
-      {label && <p className="text-xs mb-2" style={{ color: '#333' }}>{label}</p>}
+      {label && <p className="text-xs mb-2" style={{ color: '#c4c4d0' }}>{label}</p>}
       <pre className="whitespace-pre-wrap break-all">{code}</pre>
       <button onClick={handleCopy} className="absolute top-3 right-3 p-1.5 rounded bg-[#141414] hover:bg-[#1a1a1a] transition-colors">
-        {copied ? <Check size={14} className="text-[#34d399]" /> : <Copy size={14} style={{ color: '#4a4a4a' }} />}
+        {copied ? <Check size={14} className="text-[#34d399]" /> : <Copy size={14} style={{ color: '#888' }} />}
       </button>
     </div>
   );
@@ -82,7 +82,7 @@ export default function Developer() {
     <div>
       <div className="page-header">
         <div>
-          <h1 style={{ color: '#707070' }}>Developer</h1>
+          <h1 style={{ color: '#f8f8f8' }}>Developer</h1>
           <p className="page-header-subtitle">API reference, CLI usage, and SDK documentation</p>
         </div>
       </div>
@@ -95,7 +95,7 @@ export default function Developer() {
               <Shield size={20} style={{ color: '#6366f1' }} />
               <div>
                 <p className="text-sm font-medium" style={{ color: '#e0e0e0' }}>Session Token</p>
-                <p className="font-mono text-xs" style={{ color: '#4a4a4a' }}>{token ? `${token.slice(0, 12)}…` : 'Not authenticated'}</p>
+                <p className="font-mono text-xs" style={{ color: '#888' }}>{token ? `${token.slice(0, 12)}…` : 'Not authenticated'}</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -120,14 +120,14 @@ export default function Developer() {
 
         <TabsContent value="api">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#707070' }}>API Endpoints</CardTitle><CardDescription>All KeyShield API endpoints</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>API Endpoints</CardTitle><CardDescription>All KeyShield API endpoints</CardDescription></CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Method</TableHead>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Endpoint</TableHead>
-                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#4a4a4a' }}>Description</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Method</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Endpoint</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase tracking-wider" style={{ color: '#888' }}>Description</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -135,7 +135,7 @@ export default function Developer() {
                     <TableRow key={i}>
                       <TableCell><Badge variant={ep.method === 'GET' ? 'success' : ep.method === 'POST' ? 'default' : 'destructive'} className="w-16 text-center">{ep.method}</Badge></TableCell>
                       <TableCell><code className="text-xs font-mono bg-[#0a0a0a] px-2 py-0.5 rounded" style={{ color: '#e0e0e0', borderColor: '#141414', borderWidth: '1px' }}>{ep.path}</code></TableCell>
-                      <TableCell className="text-sm" style={{ color: '#333' }}>{ep.desc}</TableCell>
+                      <TableCell className="text-sm" style={{ color: '#c4c4d0' }}>{ep.desc}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -146,13 +146,13 @@ export default function Developer() {
 
         <TabsContent value="cli">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#707070' }}>CLI Commands</CardTitle><CardDescription>Install with: npm install -g @keyshield/cli</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>CLI Commands</CardTitle><CardDescription>Install with: npm install -g @keyshield/cli</CardDescription></CardHeader>
             <CardContent>
               <div className="space-y-2">
                 {cliCommands.map((c, i) => (
                   <div key={i} className="p-3 rounded-lg bg-[#0a0a0a] border" style={{ borderColor: '#141414' }}>
                     <code className="text-sm font-mono" style={{ color: '#e0e0e0' }}>{c.cmd}</code>
-                    <p className="text-xs mt-1" style={{ color: '#333' }}>{c.desc}</p>
+                    <p className="text-xs mt-1" style={{ color: '#c4c4d0' }}>{c.desc}</p>
                   </div>
                 ))}
               </div>
@@ -162,7 +162,7 @@ export default function Developer() {
 
         <TabsContent value="sdk">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#707070' }}>SDK Integration</CardTitle><CardDescription>Use the KeyShield SDK in your applications</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>SDK Integration</CardTitle><CardDescription>Use the KeyShield SDK in your applications</CardDescription></CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <CodeBlock code="npm install @keyshield/sdk" label="Install" />
@@ -178,7 +178,7 @@ const response = await fetch(proxy.url, { ... });`} label="Usage" />
 
         <TabsContent value="examples">
           <Card className="border-[#0f0f0f] shadow-sm bg-[#080808]">
-            <CardHeader><CardTitle style={{ color: '#707070' }}>Examples</CardTitle><CardDescription>Real-world usage patterns</CardDescription></CardHeader>
+            <CardHeader><CardTitle style={{ color: '#f8f8f8' }}>Examples</CardTitle><CardDescription>Real-world usage patterns</CardDescription></CardHeader>
             <CardContent>
               <div className="space-y-6">
                 <div>
