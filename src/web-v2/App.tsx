@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen } from 'lucide-react';
+import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
@@ -21,12 +21,14 @@ import { SessionsSection } from './components/sections/SessionsSection';
 import { SettingsSection } from './components/sections/SettingsSection';
 import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
+import { DeviceVaultSection } from './components/sections/DeviceVaultSection';
 import { RevealField } from './components/ui/RevealField';
 
-type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs';
+type Section = 'vault' | 'device-vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'vault', label: 'Vault', icon: <Key size={14} /> },
+  { id: 'device-vault', label: 'Device Vault', icon: <ShieldCheck size={14} /> },
   { id: 'activity', label: 'Activity', icon: <Activity size={14} /> },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} /> },
   { id: 'sharing', label: 'Sharing', icon: <Share2 size={14} /> },
@@ -38,6 +40,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   vault: { title: 'Vault Management', subtitle: 'Encrypted secrets \u2014 AES-256-GCM at rest' },
+  'device-vault': { title: 'Device Vault', subtitle: 'Zero-knowledge \u2014 encrypted on this device, server only sees ciphertext' },
   activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
@@ -94,6 +97,7 @@ const MainContent: React.FC = () => {
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
               {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} />}
+              {section === 'device-vault' && <DeviceVaultSection />}
               {section === 'activity' && <ActivitySection />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
