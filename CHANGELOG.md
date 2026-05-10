@@ -133,32 +133,31 @@ compatibility (the `Uint8Array<ArrayBufferLike>` vs
   `DHPTRYbLXSkrM9xYoU2ZJ1HhHWf3huvNoqFvXf5S6EBj` (a separate test
   deployment — adjust if you redeploy).
 
-### Docker / CI / Infra
+### Deploy / Infra
 
 | Commit | Summary |
 |---|---|
-| `b3cc1a145` | `docker: complete the stack — Dockerfile.web + nginx + Makefile + .env.example` |
-| `f99c1fcad` | `docker: harden compose + GH Actions build/push to GHCR` |
-| `da667a71b` | `docker: phase 4 hardening (network isolation + resource limits) + smoke script` |
 | `1bee613f4` | `deploy: railway.json for Python API + production-deploy reference doc + TEE doc` |
+| `b3cc1a145`, `f99c1fcad`, `da667a71b` | docker stack — **reverted** later the same day, see below |
+| `<this commit>` | `chore: drop docker compose stack (Vercel + CF + Railway is the prod path)` |
 
-- `Dockerfile.web`, `src/web/nginx.conf`, `src/web/.dockerignore`,
-  `src/proxy/.dockerignore` — multi-stage Vite→nginx build, SPA
-  fallback, `/healthz` for HEALTHCHECK.
-- `Makefile.docker` — one-command `up / down / logs / smoke / rebuild`.
-- `.env.example` — all stack env vars in one place.
-- `docker-compose.yml` — healthchecks for python + rust-proxy,
-  network isolation (`public` vs `internal: true backend`), per-service
-  `mem_limit` / `cpus`.
-- `scripts/docker-smoke.sh` (under repo root, NOT `src/scripts/`) —
-  CI/dev one-shot: build → up → wait-healthy → 4 endpoint probes →
-  `scripts/smoke.sh` → tear down.
 - `railway.json` — production Railway config for the Python API
-  (Dockerfile-based build + `/health` probe).
+  (Dockerfile-based build, `/health` probe, ON_FAILURE restart).
+- `.env.example` — all stack env vars in one place. Useful for any
+  deploy target (Railway, local dev), kept after the docker rollback.
 
-> Note: `.github/workflows/docker-build.yml` (GHA matrix push to
-> GHCR) was deleted in a later refactor — see commit history if you
-> want to bring it back.
+**Docker rollback (later 2026-05-10).** Production deploy is
+Vercel × 2 + Cloudflare Worker + Railway. Each PaaS has its own build
+chain: Vercel runs Vite directly, Cloudflare uses `wrangler`, Railway
+builds via `Dockerfile.python`. The docker-compose stack
+(`Dockerfile.web` / `Dockerfile.proxy` / `docker-compose.yml` /
+`docker-compose.observability.yml` / `Makefile.docker` /
+`src/web/nginx.conf` / `src/web/.dockerignore` /
+`src/proxy/.dockerignore`) duplicated this work for self-host /
+local-dev convenience and was deleted to reduce maintenance debt.
+`Dockerfile.python` + `railway.json` stay because Railway uses them.
+`.github/workflows/docker-build.yml` was already deleted in an earlier
+refactor.
 
 ### Docs
 

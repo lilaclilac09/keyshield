@@ -144,7 +144,6 @@ keyshield/
 │   ├── scripts/                  # Dev/deploy scripts
 │   │   ├── dev.sh                # Boot the local stack
 │   │   ├── pay.sh                # MPP payment-flow demo
-│   │   ├── docker-smoke.sh       # Build + up + smoke + tear down
 │   │   ├── mpp-e2e-devnet.mjs    # 9-step devnet verification of the ATA fix
 │   │   └── bootstrap-fresh-agent.mjs   # Grant a fresh agent for a clean e2e
 │   └── _archive/                 # Pre-2026-05-10 layout (web/web-v2/web-v3) — kept for reference
@@ -163,14 +162,19 @@ keyshield/
 ├── ROADMAP.md                    # What's built / broken / left
 ├── TODOS.md                      # Deferred work
 ├── AGENTS.md                     # Collaborator quickstart (4 docs to read)
-├── Dockerfile.{python,proxy,web} # Compose-built images
-├── docker-compose.yml            # 5-service stack with healthchecks + isolation
-├── Makefile.docker               # `make -f Makefile.docker up / smoke / down`
+├── Dockerfile.python             # Used by Railway to build the Python API
+├── railway.json                  # Production Python API deploy config (points at Dockerfile.python)
 ├── .env.example                  # Documented env (Solana, x402, Helius, …)
-├── railway.json                  # Production Python API deploy config
 ├── Cargo.toml                    # Rust workspace
 └── package.json                  # npm workspace
 ```
+
+> Production deploy is **Vercel × 2 + Cloudflare Worker + Railway** —
+> see [`docs/get-started/deploy-production.md`](docs/get-started/deploy-production.md).
+> No `docker-compose.yml` / `Makefile.docker` / `Dockerfile.{web,proxy}` —
+> Vercel builds Vite directly, Cloudflare uses `wrangler`, Railway uses
+> `Dockerfile.python`. Deleted on 2026-05-10 because they duplicated
+> what the PaaS providers do for free.
 
 ---
 

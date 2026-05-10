@@ -74,16 +74,17 @@ cd src/web && npm run dev -- --port 5173
 CI runs all of these on every PR (`.github/workflows/{python,test,uat,
 sync-worker-deploy,devnet-deploy}.yml`).
 
-## Docker compose
+## Production deploy
 
-```bash
-docker compose up -d           # start all (python, rust-proxy, postgres, redis, frontend)
-docker compose down
-docker compose logs -f python
-```
+No docker-compose. Each tier is on its native PaaS:
 
-Build context for the Rust image is `./src/proxy/` (pointing at
-`Dockerfile.proxy`).
+- **Landing** (`landing/`) → Vercel
+- **Dashboard** (`src/web/`) → Vercel (Vite build)
+- **Sync Worker** (`src/infra/sync-worker/`) → Cloudflare (wrangler)
+- **API** (`src/backend/`) → Railway (uses `Dockerfile.python` + `railway.json`)
+
+Step-by-step + env matrix + DNS in
+[`docs/get-started/deploy-production.md`](docs/get-started/deploy-production.md).
 
 ## Known gotchas
 
