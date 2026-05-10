@@ -94,6 +94,37 @@ export async function getAgentWallets() {
   return resp.wallets ?? [];
 }
 
+// ── On-chain ephemeral signer (CreateEphemeralSigner ix #23) ──
+// Server returns the unsigned ix; the dashboard signs + submits via
+// the wallet adapter. See src/backend/agents/agent_wallet.py and the
+// CreateAgentSignerButton component for the consumer.
+export interface BuildSignerTxRequest {
+  ownerPubkey: string;
+  ephemeralPubkey: string;
+  agentPubkey?: string;
+  allowedActions?: number;
+  expirySeconds?: number;
+  vaultPda?: string;
+}
+
+export interface BuildSignerTxResponse {
+  programId: string;
+  keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
+  data: string; // base64
+  rpcUrl: string;
+  cluster: string;
+}
+
+export async function buildAgentSignerTx(
+  agentId: string,
+  body: BuildSignerTxRequest,
+): Promise<BuildSignerTxResponse> {
+  return request<BuildSignerTxResponse>(
+    `/agents/${encodeURIComponent(agentId)}/wallet/build-tx`,
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+}
+
 // ============ MPP Endpoints ============
 export async function getMppStreams() {
   return request<Array<import('../types').MppStream>>('/mpp/streams');

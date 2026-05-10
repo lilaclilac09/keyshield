@@ -1,10 +1,31 @@
 """Agent routes — register, list, delete, wallet."""
 
+import base64
+import os
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 
 router = APIRouter()
+
+
+def _ix_to_response(ix) -> dict:
+    """Convert a `_SimpleInstruction` from mpp_onchain into the JSON shape
+    expected by the dashboard wallet adapter (programId / keys / base64 data).
+    Mirrors `routes/mpp.py::_ix_to_response`."""
+    return {
+        "programId": ix.program_id,
+        "keys": [
+            {
+                "pubkey": a.pubkey,
+                "isSigner": a.is_signer,
+                "isWritable": a.is_writable,
+            }
+            for a in ix.accounts
+        ],
+        "data": base64.b64encode(ix.data).decode("ascii"),
+    }
 
 
 def _auth(request: Request) -> dict | None:
@@ -130,6 +151,113 @@ async def agent_wallet_create(agent_id: str, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"agent_id": aid, "pubkey": pubkey})
+
+
+# ─── On-chain ephemeral signer (CreateEphemeralSigner ix #23) ───────────
+#
+# Server builds a byte-perfect unsigned ix; owner signs in-browser via
+# the wallet adapter and submits to devnet. This is the demo path the
+# /app/agents page wires into.
+
+
+@router.post("/agents/{agent_id}/wallet/build-tx")
+async def agent_wallet_build_tx(agent_id: str, request: Request):
+    """Build the unsigned `CreateEphemeralSigner` ix (#23).
+
+    Returns the wallet-adapter-friendly JSON shape (programId / keys /
+    base64 data). The dashboard signs + sends in-browser.
+
+    Body (JSON):
+      ownerPubkey       — base58 owner wallet (signs the tx)
+      agentPubkey       — base58 agent grant pubkey on-chain (defaults to
+                          the route param if it parses as base58 32-byte)
+      ephemeralPubkey   — base58 EphemeralSigner PDA (frontend derives
+                          via PublicKey.findProgramAddressSync)
+      allowedActions    — u8 bitmap (see AllowedActions); default 0x05
+                          (PAY_AND_PROXY: pay_x402 + proxy_call)
+      expirySeconds     — u64; default 0 (no expiry)
+    """
+    from ..agents import agent_wallet
+    from ..mpp import mpp_onchain
+
+    body = await request.json()
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+        agent_pubkey = str(body.get("agentPubkey") or agent_id).strip()
+        ephemeral_pubkey = str(body["ephemeralPubkey"]).strip()
+        allowed_actions = int(body.get("allowedActions", agent_wallet.AllowedActions.PAY_AND_PROXY))
+        expiry_seconds = int(body.get("expirySeconds", 0))
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    if not owner_pubkey or not ephemeral_pubkey:
+        return JSONResponse(
+            {"detail": "ownerPubkey and ephemeralPubkey are required"},
+            status_code=400,
+        )
+
+    # Try the existing mpp_onchain config (production path with all envs
+    # set). If unset, fall back to a minimal devnet config so the demo
+    # button works out of the box. The owner signs, so we don't need a
+    # settler keypair — but build_create_ephemeral_signer_ix expects a
+    # MppConfig with vault_pda + program_id. We synthesize one for the
+    # devnet demo: the program ID defaults to the deployed devnet program,
+    # and `vault_pda` is sourced from KS_VAULT_PDA or the request body.
+    config = mpp_onchain.load_mpp_config()
+    if config is None:
+        program_id = (
+            os.environ.get("KS_KEYSHIELD_PROGRAM_ID", "").strip()
+            or "DHPTRYbLXSkrM9xYoU2ZJ1HhHWf3huvNoqFvXf5S6EBj"
+        )
+        vault_pda = (
+            os.environ.get("KS_VAULT_PDA", "").strip()
+            or str(body.get("vaultPda") or "").strip()
+            or None
+        )
+        config = mpp_onchain.MppConfig(
+            secret_key=b"\x00" * 64,
+            settler_pubkey="",
+            platform_usdc_ata="",
+            keyshield_program_id=program_id,
+            usdc_mint="",
+            vault_pda=vault_pda,
+            rpc_url=os.environ.get("KS_SOLANA_RPC_URL", "https://api.devnet.solana.com").strip(),
+        )
+
+    if not config.vault_pda:
+        # Allow request body to override (frontend can derive owner-vault
+        # PDA via findProgramAddressSync as a fallback).
+        body_vault = str(body.get("vaultPda") or "").strip()
+        if body_vault:
+            config = mpp_onchain.MppConfig(
+                secret_key=config.secret_key,
+                settler_pubkey=config.settler_pubkey,
+                platform_usdc_ata=config.platform_usdc_ata,
+                keyshield_program_id=config.keyshield_program_id,
+                usdc_mint=config.usdc_mint,
+                vault_pda=body_vault,
+                rpc_url=config.rpc_url,
+            )
+
+    try:
+        ix = agent_wallet.build_create_ephemeral_signer_ix(
+            config=config,
+            owner_pubkey=owner_pubkey,
+            agent_pubkey=agent_pubkey,
+            ephemeral_signer_pda=ephemeral_pubkey,
+            allowed_actions=allowed_actions,
+            expiry_seconds=expiry_seconds,
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({
+        **_ix_to_response(ix),
+        "programId": config.keyshield_program_id,
+        "rpcUrl": config.rpc_url,
+        "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
+    })
 
 
 @router.delete("/agents/{agent_id}/wallet")

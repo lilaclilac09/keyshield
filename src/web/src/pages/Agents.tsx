@@ -3,6 +3,7 @@ import { Users, Plus, Trash2, Copy, Check, Loader2, Bot } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Badge, Skeleton, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label } from '@keyshield/ui';
 import { useAgents } from '@keyshield/shared/hooks/use-agents';
 import { relTime } from '@keyshield/shared/lib/time';
+import CreateAgentSignerButton from '../components/CreateAgentSignerButton';
 
 export default function Agents() {
   const { agents, isLoading, register, revoke } = useAgents();
@@ -69,6 +70,7 @@ export default function Agents() {
                   <TableHead>Status</TableHead>
                   <TableHead>Last Seen</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead>On-chain</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -87,6 +89,9 @@ export default function Agents() {
                     <TableCell><Badge variant={a.is_active ? 'success' : 'secondary'}>{a.is_active ? 'Active' : 'Inactive'}</Badge></TableCell>
                     <TableCell style={{ color: '#6b6b7a' }}>{a.last_seen_at ? relTime(new Date(a.last_seen_at).getTime() / 1000) : 'Never'}</TableCell>
                     <TableCell style={{ color: '#6b6b7a' }}>{relTime(new Date(a.created_at).getTime() / 1000)}</TableCell>
+                    <TableCell>
+                      <CreateAgentSignerButton agentId={a.agent_id} />
+                    </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => handleRevoke(a.id)} disabled={revokingId === a.id}>
                         {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-[#ef4444]" />}
