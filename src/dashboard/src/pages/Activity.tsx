@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Activity as ActivityIcon, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tabs, TabsContent, TabsList, TabsTrigger, Skeleton } from '@keyshield/ui';
+import { StatCard } from '../components/ui/StatCard';
 import { useBilling } from '@keyshield/shared/hooks/use-billing';
 import { useMpp } from '@keyshield/shared/hooks/use-mpp';
 import { relTime } from '@keyshield/shared/lib/time';
@@ -23,10 +24,10 @@ export default function Activity() {
 
       {info && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="stat-card bg-[#080808] border-[#0f0f0f]"><div className="label">Balance (SOL)</div><div className="value" style={{ color: '#707070' }}>{info.balance_sol.toFixed(4)}</div></div>
-          <div className="stat-card bg-[#080808] border-[#0f0f0f]"><div className="label">Balance (USD)</div><div className="value" style={{ color: '#707070' }}>${info.balance_usd.toFixed(2)}</div></div>
-          <div className="stat-card bg-[#080808] border-[#0f0f0f]"><div className="label">Total Spent</div><div className="value" style={{ color: '#707070' }}>${info.total_spent_usd.toFixed(2)}</div></div>
-          <div className="stat-card bg-[#080808] border-[#0f0f0f]"><div className="label">Keys Proxied</div><div className="value" style={{ color: '#707070' }}>{info.total_keys_proxied.toLocaleString()}</div></div>
+          <StatCard label="Balance (SOL)" value={info.balance_sol.toFixed(4)} />
+          <StatCard label="Balance (USD)" value={`$${info.balance_usd.toFixed(2)}`} />
+          <StatCard label="Total Spent" value={`$${info.total_spent_usd.toFixed(2)}`} />
+          <StatCard label="Keys Proxied" value={info.total_keys_proxied.toLocaleString()} />
         </div>
       )}
 

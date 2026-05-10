@@ -348,3 +348,19 @@
 .newsItem{grid-template-columns:48px 1fr;gap:7px;padding-left:10px;padding-right:10px}
 .footer{grid-template-columns:80px repeat(5,1fr);gap:4px}
 }
+
+/* ---- Page Header ---- */
+.page-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;gap:16px}
+.page-header h1{font-size:24px;font-weight:600;margin:0;letter-spacing:-0.02em}
+.page-header-subtitle{font-size:13px;color:#666;margin:4px 0 0}
+
+/* ---- Stat Card ---- */
+.stat-card{border-radius:12px;border:1px solid #141414;padding:16px 20px;transition:transform 0.2s var(--spring)}
+.stat-card:hover{transform:translateY(-2px)}
+.stat-card .label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.05em}
+.stat-card .value{font-size:24px;font-weight:600;letter-spacing:-0.02em;margin-top:4px}
+
+/* ---- Search Overlay ---- */
+.search-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.95);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center}
+.search-overlay-input{background:transparent;border:none;font-size:32px;font-weight:700;color:#f8f8f8;width:100%;max-width:640px;outline:none;padding:16px}
+.search-overlay-input::placeholder{color:#333}

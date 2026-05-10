@@ -14,6 +14,7 @@ const Agents = lazy(() => import('../pages/Agents'));
 const Sharing = lazy(() => import('../pages/Sharing'));
 const Sessions = lazy(() => import('../pages/Sessions'));
 const Settings = lazy(() => import('../pages/Settings'));
+const Reports = lazy(() => import('../pages/Reports'));
 const Developer = lazy(() => import('../pages/Developer'));
 const Docs = lazy(() => import('../pages/Docs'));
 
@@ -40,6 +41,7 @@ export const rootRoutes: RouteObject[] = [
       { path: 'sharing', element: <Sharing /> },
       { path: 'sessions', element: <Sessions /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'reports', element: <Reports /> },
       { path: 'developer', element: <Developer /> },
       { path: 'docs', element: <Docs /> },
     ],

@@ -1,10 +1,15 @@
 import { Suspense, useState, useEffect } from 'react';
+
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router';
-import { Shield, Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen, Menu, X, Search, Plus, Wallet, ChevronDown, Copy } from 'lucide-react';
+import { Shield, Key, Activity, Users, Share2, Monitor, Settings, Code, BookOpen, Menu, X, Search, Plus, Wallet, ChevronDown, Copy, BarChart3 } from 'lucide-react';
 import { Badge, Skeleton, Button as ShadButton } from '@keyshield/ui';
+import { HealthBadge } from '../components/HealthBadge';
+import { SearchOverlay } from '../components/ui/SearchOverlay';
 import { useUiLayoutStore } from '@keyshield/shared/stores';
 import { useHealth } from '@keyshield/shared/hooks/use-health';
 import { isAuthenticated, disconnectWallet, getToken } from '@keyshield/shared/auth';
+
+// Keyboard shortcut: Ctrl/Cmd+K for search
 
 const navItems = [
   { to: '/app/vault', icon: Key, label: 'Vault' },
@@ -14,6 +19,7 @@ const navItems = [
   { to: '/app/sessions', icon: Monitor, label: 'Sessions' },
   { to: '/app/settings', icon: Settings, label: 'Settings' },
   { to: '/app/developer', icon: Code, label: 'Developer' },
+  { to: '/app/reports', icon: BarChart3, label: 'Reports' },
   { to: '/app/docs', icon: BookOpen, label: 'Docs' },
 ];
 
@@ -21,6 +27,8 @@ export default function RootLayout() {
   const { sidebarCollapsed, toggleSidebar } = useUiLayoutStore();
   const { data: health, isLoading } = useHealth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const location = useLocation();
@@ -66,6 +74,18 @@ export default function RootLayout() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [userMenuOpen, mobileMenuOpen]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const pageTitle = (() => {
     const path = location.pathname.split('/').pop();
@@ -116,6 +136,7 @@ export default function RootLayout() {
               </>
             )}
           </div>
+          {!sidebarCollapsed && <HealthBadge />}
         </div>
       </aside>
 
@@ -162,7 +183,7 @@ export default function RootLayout() {
 
           <div className="flex items-center gap-2">
             {/* Search */}
-            <ShadButton variant="ghost" size="icon" className="text-[#999]">
+            <ShadButton variant="ghost" size="icon" className="text-[#999]" onClick={() => setSearchOpen(true)}>
               <Search className="h-[18px] w-[18px]" />
             </ShadButton>
 
@@ -214,7 +235,11 @@ export default function RootLayout() {
             <Outlet />
           </Suspense>
         </main>
+        </Suspense>
       </div>
+
+      {/* Search overlay */}
+      {searchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => setSearchOpen(false)} />}
     </div>
   );
 }
