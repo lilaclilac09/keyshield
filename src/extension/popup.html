@@ -103,23 +103,194 @@
       font-size: 10px;
       color: #71717a;
     }
+    button.secondary {
+      background: transparent;
+      color: #a1a1aa;
+      border-color: #27272a;
+    }
+    button.secondary:hover {
+      color: #fafafa;
+      border-color: #3f3f46;
+      background: transparent;
+    }
+    button.danger {
+      background: transparent;
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    button.danger:hover {
+      color: #fecaca;
+      border-color: #f87171;
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .row button { margin-top: 0; flex: 1; }
+    details {
+      margin-top: 12px;
+      border-top: 1px solid #1c2238;
+      padding-top: 10px;
+    }
+    details summary {
+      cursor: pointer;
+      font-size: 11px;
+      color: #71717a;
+      user-select: none;
+      outline: none;
+    }
+    details summary:hover { color: #a1a1aa; }
+    textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 56px;
+      padding: 7px 9px;
+      background: #020408;
+      border: 1px solid #1c2238;
+      border-radius: 6px;
+      color: #e4e4e7;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      resize: vertical;
+      margin-top: 4px;
+    }
+    textarea:focus { outline: none; border-color: #5b8cff; }
+    .fingerprint {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 16px;
+      color: #5b8cff;
+      padding: 8px 10px;
+      border: 1px dotted #5b8cff;
+      border-radius: 6px;
+      margin-top: 4px;
+      letter-spacing: 0.06em;
+      text-align: center;
+      background: rgba(91, 140, 255, 0.05);
+    }
+    .info-block {
+      font-size: 10px;
+      color: #a1a1aa;
+      margin: 6px 0 8px 0;
+      line-height: 1.5;
+    }
+    .info-block.subtle {
+      color: #71717a;
+    }
+    .info-block code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      color: #93b4ff;
+    }
+    .hint {
+      color: #52525b;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: normal;
+    }
+    input[type="file"] {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 6px 0;
+      color: #a1a1aa;
+      font-size: 11px;
+    }
+    input[type="file"]::file-selector-button {
+      background: transparent;
+      color: #a1a1aa;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 5px 9px;
+      margin-right: 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    input[type="file"]::file-selector-button:hover {
+      color: #fafafa;
+      border-color: #3f3f46;
+    }
   </style>
 </head>
 <body>
   <h1>KeyShield Vault <span class="badge" id="conn">…</span></h1>
   <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
 
-  <label for="api">Backend API base URL</label>
-  <input type="text" id="api" placeholder="http://127.0.0.1:8001" />
-
-  <label for="dash">Dashboard URL (fallback)</label>
-  <input type="text" id="dash" placeholder="http://127.0.0.1:8001" />
-
-  <button id="save">Save settings</button>
+  <button id="signin">→ Sign in to KeyShield</button>
   <div id="status" class="status"></div>
 
+  <details>
+    <summary>Settings &amp; manual token</summary>
+
+    <label for="api">Backend API base URL</label>
+    <input type="text" id="api" placeholder="http://127.0.0.1:8001" />
+
+    <label for="dash">Dashboard URL</label>
+    <input type="text" id="dash" placeholder="http://127.0.0.1:5173" />
+
+    <div class="row">
+      <button id="save" class="secondary">Save settings</button>
+    </div>
+
+    <label for="manual">Paste session token (fallback)</label>
+    <textarea id="manual" placeholder="paste ks_token from dashboard localStorage…"></textarea>
+    <div class="row">
+      <button id="register" class="secondary">Register token</button>
+      <button id="clear" class="danger">Sign out</button>
+    </div>
+  </details>
+
+  <details>
+    <summary>Cross-device sync</summary>
+
+    <div class="info-block">
+      Your vault key is derived from your wallet signature, so the SAME wallet
+      produces the SAME key on every browser. Sign in to KeyShield in another
+      browser (same wallet) and compare these 8 hex chars — if they match,
+      both browsers can decrypt the same vault.
+    </div>
+
+    <label>Vault key fingerprint <span class="hint">SHA-256(key)[:4]</span></label>
+    <div id="fingerprint" class="fingerprint">—</div>
+
+    <label for="remote">Remote API base (for deployed backend)</label>
+    <input type="text" id="remote" placeholder="https://api.keyshield.dev" />
+    <div class="row">
+      <button id="point-remote" class="secondary">Point at remote</button>
+      <button id="point-local"  class="secondary">Reset to local</button>
+    </div>
+
+    <div class="info-block subtle">
+      Local: <code>http://127.0.0.1:8001</code> — ciphertext is in your machine's
+      SQLite. Remote: a deployed KeyShield backend (R2 storage in spec 16).
+      Same wallet sig + same backend URL ⇒ same vault visible from anywhere.
+    </div>
+  </details>
+
+  <details>
+    <summary>Backup &amp; restore</summary>
+
+    <div class="info-block">
+      Export your encrypted vault to a JSON file. Decryption still requires
+      your wallet, so the file is safe to put on a USB drive, iCloud Drive,
+      or even a public Gist — without the wallet sig it's opaque ciphertext.
+    </div>
+
+    <div class="row">
+      <button id="export-vault" class="secondary">Export to file…</button>
+    </div>
+
+    <label for="import-file">Restore from JSON file</label>
+    <input type="file" id="import-file" accept="application/json" />
+    <div class="row">
+      <button id="import-vault" class="secondary">Restore</button>
+    </div>
+
+    <div id="backup-status" class="status"></div>
+  </details>
+
   <div class="footer">
-    Token is registered automatically when you sign into the dashboard.
+    Sign in opens the dashboard. Token pushes back automatically once you
+    connect your wallet and sign the vault-unlock message.
   </div>
 
   <script src="popup.js"></script>

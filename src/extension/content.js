@@ -382,6 +382,247 @@ async function bulkSave() {
 // ── Legacy single-key API (no longer used; kept for grep stability) ─────────
 function showNotification(_key, _provider, _onDomain) { renderPanel(); }
 
+// ── Auto-fill: 🔑 floating button on detected key inputs ────────────────────
+// Per-input anchored button (top-right of the input). Click → asks background
+// for decrypted keys matching this page's domain. If multiple, shows a small
+// inline dropdown attached to the same anchor.
+
+const KS_FILL_ATTACHED = '__ksFillAttached';   // marker on inputs we've decorated
+let   ksFillEnabled    = null;                 // null=unknown, true=have keys, false=skip
+let   ksCachedKeys     = null;                 // { keys: [...], fetchedAt: ms }
+const KS_KEYS_TTL_MS   = 30_000;
+
+function ksIsFillableInput(el) {
+  if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
+  if (el.closest && el.closest('#keyshield-detection-notice')) return false;
+  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
+  if (el.disabled || el.readOnly) return false;
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (el.tagName === 'INPUT' && type === 'password') return true;
+  const name = (el.getAttribute('name') || '').toLowerCase();
+  const ph   = (el.getAttribute('placeholder') || '').toLowerCase();
+  const id   = (el.getAttribute('id') || '').toLowerCase();
+  const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+  const hay  = `${name} ${ph} ${id} ${aria}`;
+  return /\bkey\b|api[\s_-]?key|api\b|token|secret/.test(hay);
+}
+
+function ksFlashGreen(el) {
+  const prev = {
+    boxShadow:   el.style.boxShadow,
+    transition:  el.style.transition,
+    borderColor: el.style.borderColor,
+  };
+  el.style.transition  = 'box-shadow .2s, border-color .2s';
+  el.style.boxShadow   = '0 0 0 2px #34d39988, 0 0 0 4px #34d39933';
+  el.style.borderColor = '#34d399';
+  setTimeout(() => {
+    el.style.boxShadow   = prev.boxShadow;
+    el.style.borderColor = prev.borderColor;
+    el.style.transition  = prev.transition;
+  }, 800);
+}
+
+function ksSetValue(el, value) {
+  // React/Vue use a native value setter that bypasses property descriptors.
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (setter && setter.set) setter.set.call(el, value);
+  else el.value = value;
+  el.dispatchEvent(new Event('input',  { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  ksFlashGreen(el);
+}
+
+function ksRequestKeys() {
+  const now = Date.now();
+  if (ksCachedKeys && (now - ksCachedKeys.fetchedAt) < KS_KEYS_TTL_MS) {
+    return Promise.resolve(ksCachedKeys);
+  }
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        { type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname },
+        (response) => {
+          if (chrome.runtime.lastError || !response) {
+            resolve({ ok: false, reason: 'extension' });
+            return;
+          }
+          if (response.ok) {
+            ksCachedKeys = { keys: response.keys, fetchedAt: Date.now() };
+          }
+          resolve(response);
+        },
+      );
+    } catch {
+      resolve({ ok: false, reason: 'extension' });
+    }
+  });
+}
+
+function ksCloseDropdowns() {
+  document.querySelectorAll('.ks-fill-dropdown').forEach((n) => n.remove());
+}
+
+function ksShowDropdown(anchor, input, keys) {
+  ksCloseDropdowns();
+  const rect = anchor.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'ks-fill-dropdown';
+  Object.assign(menu.style, {
+    position:        'fixed',
+    top:             `${Math.round(rect.bottom + 4)}px`,
+    left:            `${Math.round(Math.max(8, rect.right - 220))}px`,
+    width:           '220px',
+    zIndex:          '999999',
+    backgroundColor: '#0a0d1a',
+    border:          '1px solid #1c2238',
+    borderRadius:    '8px',
+    padding:         '4px',
+    boxShadow:       '0 10px 30px -8px rgba(0,0,0,0.6)',
+    color:           '#e4e4e7',
+    fontFamily:      '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    fontSize:        '12px',
+  });
+  for (const k of keys) {
+    const row = document.createElement('div');
+    Object.assign(row.style, {
+      padding:       '6px 8px',
+      cursor:        'pointer',
+      borderRadius:  '4px',
+      display:       'flex',
+      flexDirection: 'column',
+      gap:           '2px',
+    });
+    row.onmouseenter = () => { row.style.background = '#131929'; };
+    row.onmouseleave = () => { row.style.background = 'transparent'; };
+    row.innerHTML = `
+      <div style="font-weight:500">${(k.name || k.upstream || 'key').replace(/[<>&]/g, '')}</div>
+      <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#71717a">${k.upstream}</div>
+    `;
+    row.onclick = () => {
+      ksSetValue(input, k.value);
+      menu.remove();
+    };
+    menu.appendChild(row);
+  }
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener('mousedown', function onAway(ev) {
+      if (!menu.contains(ev.target)) {
+        menu.remove();
+        document.removeEventListener('mousedown', onAway);
+      }
+    });
+  }, 0);
+}
+
+function ksAttachFillButton(input) {
+  if (!ksIsFillableInput(input)) return;
+  if (!input.dataset) return;
+  input.dataset[KS_FILL_ATTACHED] = '1';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ks-fill-btn';
+  btn.textContent = '🔑';
+  btn.title = 'Fill saved key from KeyShield';
+  Object.assign(btn.style, {
+    position:        'absolute',
+    zIndex:          '999998',
+    width:           '22px',
+    height:          '22px',
+    padding:         '0',
+    lineHeight:      '20px',
+    fontSize:        '12px',
+    cursor:          'pointer',
+    background:      '#0a0d1a',
+    border:          '1px solid #1c2550',
+    borderRadius:    '6px',
+    color:           '#5b8cff',
+    boxShadow:       '0 2px 6px rgba(0,0,0,0.3)',
+    display:         'none',
+  });
+
+  // Position the button at the top-right of the input each tick — handles
+  // pages where layout shifts post-load.
+  const reposition = () => {
+    const r = input.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) { btn.style.display = 'none'; return; }
+    btn.style.display = 'inline-block';
+    btn.style.top     = `${Math.round(window.scrollY + r.top + (r.height - 22) / 2)}px`;
+    btn.style.left    = `${Math.round(window.scrollX + r.right - 28)}px`;
+    btn.style.position = 'absolute';
+  };
+  reposition();
+  document.body.appendChild(btn);
+
+  // Reposition on scroll/resize. Cheap — no observer per input.
+  const repoInterval = setInterval(() => {
+    if (!input.isConnected) { clearInterval(repoInterval); btn.remove(); return; }
+    reposition();
+  }, 800);
+
+  btn.onclick = async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    // Don't overwrite a value the user is actively typing.
+    if ((input.value || '').length >= 8) {
+      ksFlashGreen(input);  // brief visual; keep value
+      return;
+    }
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = '…';
+    const resp = await ksRequestKeys();
+    btn.disabled = false;
+    btn.textContent = prev;
+    if (!resp || !resp.ok) {
+      btn.title = resp && resp.reason ? `KeyShield: ${resp.reason}` : 'KeyShield: no keys';
+      btn.style.opacity = '0.5';
+      return;
+    }
+    if (resp.keys.length === 1) {
+      ksSetValue(input, resp.keys[0].value);
+    } else {
+      ksShowDropdown(btn, input, resp.keys);
+    }
+  };
+}
+
+function ksScanForInputs() {
+  if (ksFillEnabled === false) return;
+  const sel = 'input[type=password], input[name*=key i], input[placeholder*=key i], '
+            + 'input[placeholder*=API i], input[name*=token i], input[placeholder*=token i], '
+            + 'input[name*=secret i], textarea[name*=key i]';
+  let nodes;
+  try { nodes = document.querySelectorAll(sel); }
+  catch { return; }
+  nodes.forEach(ksAttachFillButton);
+}
+
+// On load: ping background once. If we have keys for this domain, enable
+// the fill UI. If `no-vault-key`, stay disabled silently.
+(function ksInitFillUI() {
+  // Best-effort: dashboard pages shouldn't get the fill button.
+  if (location.host === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
+      location.hostname === 'keyshield.dev' || location.hostname.endsWith('.keyshield.dev')) {
+    ksFillEnabled = false;
+    return;
+  }
+  ksRequestKeys().then((resp) => {
+    if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
+      ksFillEnabled = true;
+      ksScanForInputs();
+    } else {
+      ksFillEnabled = false;
+    }
+  });
+  setInterval(() => {
+    if (ksFillEnabled) ksScanForInputs();
+  }, 2000);
+})();
+
 // ── Bridge: announce extension ID to KeyShield dashboard ────────────────────
 // Dashboard's auth/index.ts listens for {__ks_ext_announce} to push token +
 // vault key. Manifest's externally_connectable gates who can actually message

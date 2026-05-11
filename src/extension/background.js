@@ -40,6 +40,105 @@ async function _getVaultKeyBytes() {
   return r.ks_vault_key ? _b64uDec(r.ks_vault_key) : null;
 }
 
+// ── Domain → upstream map for auto-fill (subset of content.js PROVIDERS) ────
+// Used by GET_KEYS_FOR_DOMAIN to resolve which vault items belong to a page.
+const DOMAIN_TO_UPSTREAM = {
+  'platform.openai.com':   'openai',
+  'openai.com':            'openai',
+  'console.anthropic.com': 'anthropic',
+  'anthropic.com':         'anthropic',
+  'console.groq.com':      'groq',
+  'groq.com':              'groq',
+  'console.mistral.ai':    'mistral',
+  'mistral.ai':            'mistral',
+  'dashboard.cohere.com':  'cohere',
+  'cohere.com':            'cohere',
+  'cohere.ai':             'cohere',
+  'dashboard.helius.dev':  'helius',
+  'helius.dev':            'helius',
+  'helius.xyz':            'helius',
+  'dashboard.0x.org':      '0x',
+  '0x.org':                '0x',
+  'dashboard.alchemy.com': 'alchemy',
+  'alchemy.com':           'alchemy',
+};
+
+function _upstreamForDomain(domain) {
+  if (!domain) return null;
+  if (DOMAIN_TO_UPSTREAM[domain]) return DOMAIN_TO_UPSTREAM[domain];
+  // suffix match (e.g. foo.openai.com → openai)
+  for (const d of Object.keys(DOMAIN_TO_UPSTREAM)) {
+    if (domain === d || domain.endsWith('.' + d)) return DOMAIN_TO_UPSTREAM[d];
+  }
+  return null;
+}
+
+// In-memory decryption cache: id → { value, expires }
+const _decryptCache = new Map();
+const _DECRYPT_TTL_MS = 30_000;
+
+async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
+  const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+  const ct = _b64uDec(cipherB64u);
+  const iv = _b64uDec(ivB64u);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
+  return new TextDecoder().decode(pt);
+}
+
+async function getKeysForDomain(domain) {
+  const keyBytes = await _getVaultKeyBytes();
+  if (!keyBytes) return { ok: false, reason: 'no-vault-key' };
+
+  const upstream = _upstreamForDomain(domain);
+  // We still query the vault even without a known upstream — caller may match
+  // by hostname suffix on their side. But for now, no match → no keys.
+  if (!upstream) return { ok: false, reason: 'no-upstream-match' };
+
+  const { token } = await getStoredToken();
+  const { apiBase } = await getApiBase();
+  const headers = { 'X-Dev-Mode': '1' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let items;
+  try {
+    const r = await fetch(`${apiBase}/manage/vault`, { headers });
+    if (!r.ok) return { ok: false, reason: `http-${r.status}` };
+    items = await r.json();
+  } catch (e) {
+    return { ok: false, reason: 'network', detail: String(e) };
+  }
+  if (!Array.isArray(items)) return { ok: false, reason: 'bad-response' };
+
+  const matched = items.filter((it) =>
+    it && it.upstream === upstream &&
+    Number(it.cipher_v) === 1 &&
+    typeof it.cipher === 'string' && it.cipher !== '' &&
+    typeof it.iv === 'string' && it.iv !== ''
+  );
+  if (matched.length === 0) return { ok: false, reason: 'no-keys' };
+
+  const now = Date.now();
+  const out = [];
+  for (const it of matched) {
+    let value;
+    const cached = _decryptCache.get(it.id);
+    if (cached && cached.expires > now) {
+      value = cached.value;
+    } else {
+      try {
+        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
+        _decryptCache.set(it.id, { value, expires: now + _DECRYPT_TTL_MS });
+      } catch (e) {
+        // skip items we can't decrypt (key mismatch, corrupt cipher, etc.)
+        continue;
+      }
+    }
+    out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
+  }
+  if (out.length === 0) return { ok: false, reason: 'decrypt-failed' };
+  return { ok: true, keys: out };
+}
+
 async function getApiBase() {
   const { ks_api_base, ks_dashboard_url } = await chrome.storage.local.get([
     'ks_api_base',
@@ -137,15 +236,180 @@ async function directStore({ upstream, value }) {
   }
 }
 
+// ── Vault fingerprint helper (Path A lite) ──────────────────────────────────
+// SHA-256(vault_key_bytes)[:4] as hex — used to detect "this backup was
+// encrypted with a different vault key than the one currently unlocked".
+async function _vaultFingerprint(keyBytes) {
+  if (!keyBytes) return null;
+  const digest = await crypto.subtle.digest('SHA-256', keyBytes);
+  const bytes = new Uint8Array(digest).slice(0, 4);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── EXPORT_VAULT: fetch vault, return stringified backup JSON ───────────────
+async function exportVault() {
+  const { token } = await getStoredToken();
+  const { apiBase } = await getApiBase();
+  const headers = { 'X-Dev-Mode': '1' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let items;
+  try {
+    const r = await fetch(`${apiBase}/manage/vault`, { headers });
+    if (!r.ok) return { ok: false, reason: `http-${r.status}` };
+    items = await r.json();
+  } catch (e) {
+    return { ok: false, reason: 'network', detail: String(e) };
+  }
+  if (!Array.isArray(items)) return { ok: false, reason: 'bad-response' };
+
+  const keyBytes = await _getVaultKeyBytes();
+  const fingerprint = await _vaultFingerprint(keyBytes);
+
+  const out = {
+    schema:      'keyshield-backup-v1',
+    exported_at: Math.floor(Date.now() / 1000),
+    fingerprint: fingerprint,                       // null if no vault key unlocked
+    items: items.map((it) => ({
+      id:         it.id,
+      upstream:   it.upstream,
+      name:       it.name,
+      cipher:     it.cipher,
+      iv:         it.iv,
+      cipher_v:   it.cipher_v,
+      created_at: it.created_at,
+      expires_at: it.expires_at ?? null,
+    })),
+  };
+
+  return { ok: true, json: JSON.stringify(out) };
+}
+
+// ── IMPORT_VAULT: parse, validate, POST each item back to /manage/store ─────
+async function importVault(jsonStr) {
+  let backup;
+  try {
+    backup = JSON.parse(jsonStr);
+  } catch (e) {
+    return { ok: false, reason: 'bad-format', detail: 'invalid JSON' };
+  }
+  if (!backup || backup.schema !== 'keyshield-backup-v1') {
+    return { ok: false, reason: 'bad-format', detail: 'schema mismatch' };
+  }
+  if (!Array.isArray(backup.items)) {
+    return { ok: false, reason: 'bad-format', detail: 'items not array' };
+  }
+
+  // Fingerprint check — warn but don't block. The user may legitimately be
+  // restoring after losing their browser; they need to unlock first to decrypt.
+  const keyBytes = await _getVaultKeyBytes();
+  const currentFp = await _vaultFingerprint(keyBytes);
+  const warnFingerprint = !!backup.fingerprint && !!currentFp && backup.fingerprint !== currentFp;
+
+  const { token } = await getStoredToken();
+  const { apiBase } = await getApiBase();
+  const headers = { 'Content-Type': 'application/json', 'X-Dev-Mode': '1' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let imported = 0;
+  let skipped  = 0;
+  const errors = [];
+
+  for (const it of backup.items) {
+    if (!it || typeof it.id !== 'string') { skipped++; continue; }
+    const body = JSON.stringify({
+      id:       it.id,
+      upstream: it.upstream,
+      name:     it.name,
+      cipher:   it.cipher,
+      iv:       it.iv,
+      cipher_v: it.cipher_v,
+    });
+    try {
+      const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
+      if (r.ok) {
+        imported++;
+      } else {
+        skipped++;
+        if (errors.length < 3) errors.push(`http-${r.status}`);
+      }
+    } catch (e) {
+      skipped++;
+      if (errors.length < 3) errors.push(String(e));
+    }
+  }
+
+  return { ok: true, imported, skipped, warnFingerprint, errors };
+}
+
 // ── SAVE_KEY (from content.js) ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Backup: export encrypted vault as JSON (decryption needs wallet, file is safe).
+  if (message.type === 'EXPORT_VAULT') {
+    (async () => {
+      try {
+        const result = await exportVault();
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  // Restore: import a previously-exported backup JSON.
+  if (message.type === 'IMPORT_VAULT') {
+    (async () => {
+      try {
+        const result = await importVault(message.json || '');
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  // Auto-fill: return decrypted vault values for a given page domain.
+  if (message.type === 'GET_KEYS_FOR_DOMAIN') {
+    (async () => {
+      try {
+        const result = await getKeysForDomain(message.domain || '');
+        sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
   // Auxiliary: token+vault status (gates content.js bulk-save UX)
   if (message.type === 'GET_TOKEN_STATUS') {
     (async () => {
       const { token, user } = await getStoredToken();
       const vaultKey = await _getVaultKeyBytes();
       sendResponse({ hasToken: !!token, user, hasVaultKey: !!vaultKey });
+    })();
+    return true;
+  }
+
+  // Cross-device sync proof: return SHA-256(keyBytes)[:4] as 8 hex chars.
+  // Since ks_vault_key = HKDF-SHA256(walletSig), the same wallet on any
+  // browser produces the same key → same fingerprint. Leaking 32 bits of a
+  // SHA-256 prefix doesn't compromise the underlying key.
+  if (message.type === 'GET_VAULT_FINGERPRINT') {
+    (async () => {
+      const keyBytes = await _getVaultKeyBytes();
+      if (!keyBytes) {
+        sendResponse({ ok: false, reason: 'no-vault-key' });
+        return;
+      }
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', keyBytes));
+      const hex = Array.from(digest.slice(0, 4))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      sendResponse({ ok: true, fingerprint: hex });
     })();
     return true;
   }
