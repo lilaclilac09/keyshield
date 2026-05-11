@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..auth import session as sess_mod
+from ..auth import passkey as pk_mod
 
 
 router = APIRouter()
@@ -32,7 +33,9 @@ async def _session(token: str) -> dict | None:
 @router.post("/auth/login")
 async def auth_login(request: Request):
     body = await request.json()
-    user_id = body["userId"]
+    user_id = body.get("userId")
+    if not user_id:
+        return JSONResponse({"error": "userId required"}, status_code=400)
     password = body.get("password", "default")
     token = sess_mod.create_token(user_id, password)
     return JSONResponse({"token": token})
@@ -83,3 +86,101 @@ async def agent_login(request: Request):
         return JSONResponse({"error": "agent not registered"}, status_code=401)
     token = sess_mod.create_token(agent_info["owner_wallet"], "default")
     return JSONResponse({"token": token})
+
+
+# ─── Passkey routes (WebAuthn) ──────────────────────────────────
+
+
+@router.get("/auth/passkey/register-options")
+async def passkey_register_options(request: Request):
+    """Generate registration options for the currently-authenticated user."""
+    sess = await _session(_bearer(request))
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    user_id = sess.get("user_id") or sess.get("userId")
+    opts = pk_mod.registration_options(user_id, display_name="Device Vault")
+    return JSONResponse(opts)
+
+
+@router.post("/auth/passkey/register-verify")
+async def passkey_register_verify(request: Request):
+    sess = await _session(_bearer(request))
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    user_id = sess.get("user_id") or sess.get("userId")
+    body = await request.json()
+    try:
+        out = pk_mod.registration_verify(
+            user_id, body["credential"], body.get("name", "Passkey")
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True, **out})
+
+
+@router.get("/auth/passkey/auth-options")
+async def passkey_auth_options(user_id: str):
+    """Unauthenticated — used by login flow."""
+    try:
+        opts = pk_mod.authentication_options(user_id)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse(opts)
+
+
+@router.post("/auth/passkey/auth-verify")
+async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = "default"):
+    """Verify the assertion and mint a session token (Path A login)."""
+    body = await request.json()
+    try:
+        pk_mod.authentication_verify(user_id, body.get("credential", body))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    token = sess_mod.create_token(user_id, passphrase)
+    return JSONResponse({"token": token, "userId": user_id})
+
+
+@router.get("/auth/passkey/list")
+async def passkey_list(request: Request):
+    sess = await _session(_bearer(request))
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    user_id = sess.get("user_id") or sess.get("userId")
+    return JSONResponse(pk_mod.list_credentials(user_id))
+
+
+@router.delete("/auth/passkey/{cred_id}")
+async def passkey_delete(cred_id: str, request: Request):
+    sess = await _session(_bearer(request))
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    user_id = sess.get("user_id") or sess.get("userId")
+    pk_mod.delete_credential(user_id, cred_id)
+    return JSONResponse({"ok": True})
+
+
+# ─── Delete-account ──────────────────────────────────────────────
+
+
+@router.post("/auth/delete-account-challenge")
+async def delete_account_challenge(request: Request):
+    sess = await _session(_bearer(request))
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    nonce = str(hash(time.time()))
+    sess_mod._record_nonce(nonce)
+    return JSONResponse({"challenge": nonce, "nonce": nonce})
+
+
+@router.post("/auth/delete-account")
+async def delete_account(request: Request):
+    """Hard-delete: drop all sessions for the user. Wallet/passkey artifacts
+    on the device are wiped client-side."""
+    token = _bearer(request)
+    sess = await _session(token)
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    user_id = sess.get("user_id") or sess.get("userId")
+    sess_mod.mark_deleted(user_id)
+    sess_mod.delete_all_for_user(user_id)
+    return JSONResponse({"ok": True})

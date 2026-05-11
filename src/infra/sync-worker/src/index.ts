@@ -22,6 +22,7 @@
  */
 
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { ed25519 } from '@noble/curves/ed25519';
 import { extractBearer, issueJwt, verifyJwt } from './auth';
@@ -58,6 +59,30 @@ export interface Env {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// --------------------------------------------------------------------
+// CORS — allow the local + production frontends to call from the browser
+// --------------------------------------------------------------------
+
+app.use(
+  '*',
+  cors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
+      'http://127.0.0.1:5173',
+      'https://ks.aileena.xyz',
+      'https://app.ks.aileena.xyz',
+    ],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 600,
+  }),
+);
 
 // --------------------------------------------------------------------
 // /vault/* — gated on Bearer JWT whose sub claim matches :id
