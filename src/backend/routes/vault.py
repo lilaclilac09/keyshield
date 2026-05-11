@@ -1,29 +1,54 @@
 """Vault shim routes — local development fallback.
 
 Path A production: vault lives on Cloudflare Worker (client-side AES-GCM).
-Local dev: this shim provides an in-memory vault so the dashboard works
-without running the CF Worker. Data is scoped per session user_id.
+Local dev: this shim stores to SQLite so keys survive backend restarts.
 
 Endpoints:
-  GET    /manage/vault       → list vault items
-  POST   /manage/store       → store a new item
-  GET    /manage/decrypt/{id} → decrypt an item (returns value)
-  DELETE /manage/vault/{id}  → delete an item
-  PUT    /manage/vault/{id}  → update an item
+  GET    /manage/vault        → list vault items
+  POST   /manage/store        → store a new item
+  GET    /manage/decrypt/{id} → decrypt an item (returns plaintext value)
+  DELETE /manage/vault/{id}   → delete an item
+  PUT    /manage/vault/{id}   → update an item
 """
 from __future__ import annotations
 
+import sqlite3
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 
 router = APIRouter()
 
-# In-memory store: {user_id: {item_id: item_dict}}
-_vault: dict[str, dict[str, dict]] = {}
+_DB_PATH = Path(__file__).parent.parent / "data" / "vault_shim.db"
+
+
+def _db() -> sqlite3.Connection:
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS vault_items (
+            id         TEXT NOT NULL,
+            user_id    TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            type       TEXT NOT NULL DEFAULT 'api_key',
+            upstream   TEXT NOT NULL DEFAULT '',
+            value      TEXT NOT NULL DEFAULT '',
+            tags       TEXT NOT NULL DEFAULT '[]',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            expires_at REAL,
+            PRIMARY KEY (id, user_id)
+        )
+    """)
+    conn.commit()
+    return conn
 
 
 def _auth(request: Request) -> dict | None:
@@ -35,13 +60,6 @@ def _auth(request: Request) -> dict | None:
 
 
 def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
-    """Resolve the authenticated user_id or return a 401.
-
-    The only exception is when the caller sets `X-Dev-Mode: 1`, which
-    falls back to the "default" bucket — intended for local dev without
-    a session token. This bypass MUST NOT be enabled in production (set
-    KEYSHIELD_DEV_MODE=0 or just never send that header in prod code).
-    """
     sess = _auth(request)
     if sess:
         return sess["user_id"], None
@@ -50,21 +68,17 @@ def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None
     return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
 
 
-def _user_vault(uid: str) -> dict[str, dict]:
-    if uid not in _vault:
-        _vault[uid] = {}
-    return _vault[uid]
-
-
 def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
 def _mask(value: str) -> str:
-    """Mask a secret value like sk-abc...xyz."""
     if len(value) <= 8:
-        return "\u2022" * 8
-    return value[:6] + "\u2022" * (len(value) - 10) + value[-4:]
+        return "•" * 8
+    return value[:6] + "•" * (len(value) - 10) + value[-4:]
+
+
+import json as _json
 
 
 @router.get("/manage/vault")
@@ -72,19 +86,22 @@ async def vault_list(request: Request):
     uid, err = _require_user_id(request)
     if err:
         return err
-    items = _user_vault(uid)
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC", (uid,)
+        ).fetchall()
     result = []
-    for item_id, item in items.items():
+    for r in rows:
         result.append({
-            "id": item_id,
-            "name": item["name"],
-            "type": item["type"],
-            "upstream": item.get("upstream", ""),
-            "masked_value": _mask(item.get("value", "")),
-            "tags": item.get("tags", []),
-            "created_at": _iso(item["created_at"]),
-            "updated_at": _iso(item["updated_at"]),
-            "expires_at": _iso(item["expires_at"]) if item.get("expires_at") else None,
+            "id": r["id"],
+            "name": r["name"],
+            "type": r["type"],
+            "upstream": r["upstream"],
+            "masked_value": _mask(r["value"]),
+            "tags": _json.loads(r["tags"]),
+            "created_at": _iso(r["created_at"]),
+            "updated_at": _iso(r["updated_at"]),
+            "expires_at": _iso(r["expires_at"]) if r["expires_at"] else None,
         })
     return JSONResponse(result)
 
@@ -98,16 +115,24 @@ async def vault_store(request: Request):
     item_id = body.get("id") or f"ks_{uuid.uuid4().hex[:12]}"
     now = time.time()
     expiry_days = body.get("expiry_days", 30)
-    _user_vault(uid)[item_id] = {
-        "name": body.get("name", "unnamed"),
-        "type": body.get("type", "api_key"),
-        "upstream": body.get("upstream", ""),
-        "value": body.get("value", ""),
-        "tags": body.get("tags", []),
-        "created_at": now,
-        "updated_at": now,
-        "expires_at": now + (expiry_days * 86400) if expiry_days else None,
-    }
+    expires_at = now + (expiry_days * 86400) if expiry_days else None
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO vault_items (id, user_id, name, type, upstream, value, tags, created_at, updated_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id, user_id) DO UPDATE SET
+                name=excluded.name, type=excluded.type, upstream=excluded.upstream,
+                value=excluded.value, tags=excluded.tags,
+                updated_at=excluded.updated_at, expires_at=excluded.expires_at
+        """, (
+            item_id, uid,
+            body.get("name", "unnamed"),
+            body.get("type", "api_key"),
+            body.get("upstream", ""),
+            body.get("value", ""),
+            _json.dumps(body.get("tags", [])),
+            now, now, expires_at,
+        ))
     return JSONResponse({"id": item_id})
 
 
@@ -116,13 +141,13 @@ async def vault_decrypt(item_id: str, request: Request):
     uid, err = _require_user_id(request)
     if err:
         return err
-    items = _user_vault(uid)
-    if item_id not in items:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT value FROM vault_items WHERE id = ? AND user_id = ?", (item_id, uid)
+        ).fetchone()
+    if not row:
         return JSONResponse({"detail": "item not found"}, status_code=404)
-    return JSONResponse({
-        "id": item_id,
-        "value": items[item_id]["value"],
-    })
+    return JSONResponse({"id": item_id, "value": row["value"]})
 
 
 @router.delete("/manage/vault/{item_id}")
@@ -130,10 +155,12 @@ async def vault_delete(item_id: str, request: Request):
     uid, err = _require_user_id(request)
     if err:
         return err
-    items = _user_vault(uid)
-    if item_id not in items:
+    with _db() as conn:
+        cur = conn.execute(
+            "DELETE FROM vault_items WHERE id = ? AND user_id = ?", (item_id, uid)
+        )
+    if cur.rowcount == 0:
         return JSONResponse({"detail": "item not found"}, status_code=404)
-    del items[item_id]
     return JSONResponse({"ok": True})
 
 
@@ -142,14 +169,20 @@ async def vault_update(item_id: str, request: Request):
     uid, err = _require_user_id(request)
     if err:
         return err
-    items = _user_vault(uid)
-    if item_id not in items:
-        return JSONResponse({"detail": "item not found"}, status_code=404)
     body = await request.json()
-    existing = items[item_id]
-    existing.update({
-        k: v for k, v in body.items()
-        if k in ("name", "type", "upstream", "value", "tags", "expires_at")
-    })
-    existing["updated_at"] = time.time()
+    allowed = ("name", "type", "upstream", "value", "tags", "expires_at")
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        return JSONResponse({"ok": True})
+    if "tags" in updates:
+        updates["tags"] = _json.dumps(updates["tags"])
+    updates["updated_at"] = time.time()
+    cols = ", ".join(f"{k}=?" for k in updates)
+    vals = list(updates.values()) + [item_id, uid]
+    with _db() as conn:
+        cur = conn.execute(
+            f"UPDATE vault_items SET {cols} WHERE id=? AND user_id=?", vals
+        )
+    if cur.rowcount == 0:
+        return JSONResponse({"detail": "item not found"}, status_code=404)
     return JSONResponse({"ok": True})
