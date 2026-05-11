@@ -29,6 +29,23 @@ use crate::AppState;
 /// error string.
 const MAX_BODY: usize = 1_000_000;
 
+/// JSON-RPC methods the Helius fast-path will service via `ks-helius`
+/// `cached_call`. Anything outside this set falls through to the existing
+/// ks-upstream pass-through, preserving the original behavior.
+const HELIUS_FAST_PATH_METHODS: &[&str] = &[
+    "getBalance",
+    "getAsset",
+    "getAssetBatch",
+    "getAssetsByOwner",
+    "getAssetsByCreator",
+    "getSignaturesForAddress",
+    "getTransactionsForAddress",
+    "parseTransactions",
+    "getPriorityFeeEstimate",
+    "getLatestBlockhash",
+    "getTokenAccountBalance",
+];
+
 // ─── /health ─────────────────────────────────────────────────────────────────
 
 pub async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -117,6 +134,15 @@ async fn proxy_inner(
         Ok(b) => b,
         Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "payload too large").into_response(),
     };
+
+    // 4.5. Helius fast-path: vault key + ks-helius cached_call.
+    // Falls through to the standard ks-upstream pass-through on any failure
+    // (vault NotFound, JSON parse error, unknown method, helius error).
+    if upstream_str == "helius" {
+        if let Some(resp) = helius_fast_path(&state, &session, &body_bytes).await {
+            return resp;
+        }
+    }
 
     // 5. Resolve key (vault → platform fallback).
     let (api_key, key_type) = match resolve_key(&state, &session, &upstream_str) {
@@ -510,6 +536,95 @@ fn build_python_url(base: &str, uri: &Uri) -> String {
         .map(|p| p.as_str())
         .unwrap_or_else(|| uri.path());
     format!("{}{}", base.trim_end_matches('/'), path_and_query)
+}
+
+// ─── helius fast-path ────────────────────────────────────────────────────────
+
+/// Attempt to service a `/proxy/helius/*` POST via the in-process ks-helius
+/// client. Returns `Some(response)` on success; `None` on any failure or
+/// unknown method so the caller falls through to the existing ks-upstream
+/// pass-through. Fail-open by design.
+async fn helius_fast_path(
+    state: &AppState,
+    session: &ks_session::Session,
+    body: &Bytes,
+) -> Option<Response> {
+    // 1. Parse body as JSON-RPC `{method, params}`. Anything else falls
+    //    through.
+    #[derive(serde::Deserialize)]
+    struct JsonRpcReq {
+        method: String,
+        #[serde(default)]
+        params: Value,
+    }
+    let parsed: JsonRpcReq = serde_json::from_slice(body).ok()?;
+
+    // 2. Restrict to the curated method list. Other methods (writes,
+    //    sendTransaction, etc.) must keep flowing through pass-through.
+    let static_method: &'static str = HELIUS_FAST_PATH_METHODS
+        .iter()
+        .copied()
+        .find(|m| *m == parsed.method.as_str())?;
+
+    // 3. Resolve the per-user Helius key from the vault SQLite shim.
+    //    Vault NotFound / DB-missing → fall through (let pass-through
+    //    decide between vault and platform fallback).
+    let key = match ks_vault::sqlite::lookup_upstream_key(
+        &state.vault_db_path,
+        &session.user_id,
+        "helius",
+    ) {
+        Ok(k) => k,
+        Err(ks_vault::SqliteVaultError::NotFound { .. }) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "helius fast-path vault lookup failed; falling through");
+            return None;
+        }
+    };
+
+    // 4. Fork the shared client. This shares the in-memory cache + HTTP/2
+    //    pool across users; only the API key is per-fork.
+    let fork = state.helius.fork_with_api_key(key);
+
+    // 5. Fire via cached_call.
+    let value: Value = match fork
+        .cached_call::<Value>(static_method, parsed.params, None)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, method = static_method, "helius fast-path cached_call failed; falling through");
+            return None;
+        }
+    };
+
+    // 6. Build 200 response. cached_call doesn't surface HIT/MISS today —
+    //    punt to MISS unconditionally. TODO: thread through real cache state.
+    let body = match serde_json::to_vec(&value) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "helius fast-path serialize failed; falling through");
+            return None;
+        }
+    };
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(body))
+        .ok()?;
+    let h = response.headers_mut();
+    h.insert(
+        HeaderName::from_static("content-type"),
+        HeaderValue::from_static("application/json"),
+    );
+    h.insert(
+        HeaderName::from_static("x-ks-key-type"),
+        HeaderValue::from_static("self_custodian"),
+    );
+    h.insert(
+        HeaderName::from_static("x-ks-cache"),
+        HeaderValue::from_static("MISS"),
+    );
+    Some(response)
 }
 
 // ─── shared helpers ──────────────────────────────────────────────────────────

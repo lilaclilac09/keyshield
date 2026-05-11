@@ -70,6 +70,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!("stealth mode enabled — unauthed requests will see nginx");
     }
 
+    let vault_db_path = std::env::var("KS_VAULT_DB_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/vault_shim.db"));
+    let helius = std::sync::Arc::new(
+        ks_helius::HeliusClient::with_api_key("placeholder", ks_helius::HeliusConfig::default()),
+    );
+
     let state = AppState {
         vault: VaultPath::new(vault_root),
         sessions: Arc::new(sessions),
@@ -78,6 +85,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         bridge: bridge_inst,
         log_buffer,
         stealth: stealth_on,
+        vault_db_path,
+        helius,
     };
 
     // Install the global Prometheus recorder once and pass the render

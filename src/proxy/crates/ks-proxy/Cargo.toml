@@ -20,6 +20,7 @@ dashmap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 ks-cache = { path = "../ks-cache" }
+ks-helius = { path = "../ks-helius" }
 ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }
 ks-vault = { path = "../ks-vault" }
@@ -51,5 +52,6 @@ http-body-util = "0.1"
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 wiremock = { workspace = true }

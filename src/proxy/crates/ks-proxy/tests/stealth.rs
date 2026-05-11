@@ -241,6 +241,13 @@ impl Harness {
         ));
         let (log_buffer, log_task) = LogBuffer::spawn(bridge.clone());
 
+        let vault_db_dir = tempfile::tempdir().expect("tempdir for vault db");
+        let vault_db_path = vault_db_dir.path().join("vault_shim.db");
+        let helius = Arc::new(ks_helius::HeliusClient::with_api_key(
+            "placeholder",
+            ks_helius::HeliusConfig::default(),
+        ));
+
         let state = AppState {
             vault: VaultPath::new(&manifest.vault_root),
             sessions,
@@ -249,7 +256,10 @@ impl Harness {
             bridge,
             log_buffer,
             stealth: stealth_on,
+            vault_db_path,
+            helius,
         };
+        std::mem::forget(vault_db_dir);
 
         Self {
             state,

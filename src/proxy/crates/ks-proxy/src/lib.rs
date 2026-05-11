@@ -31,6 +31,13 @@ pub struct AppState {
     /// When `true`, unauthed requests get an nginx-shaped response instead
     /// of a keyshield-flavored 401. Wire from `KS_STEALTH=1` in `main.rs`.
     pub stealth: bool,
+    /// Path to the vault SQLite DB. Used by the Helius fast-path to look up
+    /// per-user upstream keys (`ks_vault::sqlite::lookup_upstream_key`).
+    pub vault_db_path: std::path::PathBuf,
+    /// Shared Helius client. Per-request, `helius.fork_with_api_key(user_key)`
+    /// yields a per-user client that reuses the warm in-memory cache and
+    /// the HTTP/2 keep-alive pool.
+    pub helius: std::sync::Arc<ks_helius::HeliusClient>,
 }
 
 /// Build the axum `Router` for the hot path. Used by both `main.rs` and
