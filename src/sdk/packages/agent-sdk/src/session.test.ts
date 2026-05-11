@@ -162,6 +162,11 @@ describe('isSessionExpired', () => {
   it('is true after expiry', () => {
     expect(isSessionExpired(s, 9000)).toBe(true);
   });
+
+  it('isSessionExpired returns false when expiresAt is 0 (no expiry)', () => {
+    const s = { agentPubkey: new PublicKey('11111111111111111111111111111112'), createdAt: 0, sessionTimeoutSecs: 0, expiresAt: 0, isActive: true, slotIndex: 0 };
+    expect(isSessionExpired(s, Date.now() / 1000)).toBe(false);
+  });
 });
 
 describe('SessionManager', () => {

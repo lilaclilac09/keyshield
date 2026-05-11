@@ -1,7 +1,3 @@
-/**
- * KeyShield Agent SDK - Type Definitions
- */
-
 import { PublicKey } from '@solana/web3.js';
 
 // ==================== ENUMS ====================
@@ -28,8 +24,8 @@ export enum PolicyRuleType {
 }
 
 export enum PaymentUnit {
-  PerCall = 0,
-  PerToken = 1,
+  PerCall = 'per_call',
+  PerToken = 'per_token',
 }
 
 // ==================== STRUCTURES ====================
@@ -95,7 +91,6 @@ export interface KeyGroupEntry {
 export interface EphemeralSigner {
   agentPubkey: PublicKey;
   ephemeralPubkey: PublicKey;
-  ephemeralPrivateKey?: Uint8Array;
   expiry: number;
   allowedActions: string[];
 }
@@ -105,10 +100,6 @@ export interface EphemeralSigner {
 export interface KeyShieldConfig {
   rpcUrl: string;
   programId: string;
-  lit?: {
-    network: 'datil-dev' | 'datil';
-    chain: 'solana';
-  };
 }
 
 export interface AgentAccessParams {
@@ -121,7 +112,6 @@ export interface AgentAccessParams {
   paymentStreamEnabled?: boolean;
   allowedEndpoints?: string[];
   allowedModels?: string[];
-  bonsolProof?: Uint8Array;
 }
 
 export interface PaymentParams {
@@ -173,18 +163,6 @@ export interface StreamingSession {
   startedAt: number;
 }
 
-// ==================== PROOFS ====================
-
-export interface BonsolProof {
-  proofData: Uint8Array;
-  publicSignals: Uint8Array;
-}
-
-export interface ArciumMPCShare {
-  shareData: Uint8Array;
-  participantId: string;
-}
-
 // ==================== STATUS ====================
 
 export interface AgentStatusResponse {
@@ -234,4 +212,46 @@ export interface PolicyViolationEvent {
   ruleType: PolicyRuleType;
   details: string;
   timestamp: number;
+}
+
+// ==================== VAULT ITEMS ====================
+
+export interface VaultItem {
+  id: string;
+  name: string;
+  type: 'api_key' | 'secret' | 'credential';
+  upstream: string;
+  masked_value: string;
+  cipher?: string;
+  iv?: string;
+  cipher_v?: number;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  expires_at?: string | null;
+}
+
+// ==================== AGENT REGISTRY ====================
+
+export interface AgentRegistration {
+  agentId: string;
+  name: string;
+  pubkey: string;
+  ownerWallet: string;
+  createdAt: string;
+}
+
+// ==================== MPP ====================
+
+export interface MppStream {
+  id: number;
+  upstream: string;
+  status: 'open' | 'closed';
+  ratePerCallMicroUsdc: number;
+  ratePerTokenMicroUsdc: number;
+  totalCalls: number;
+  totalTokens: number;
+  pendingMicroUsdc: number;
+  settledMicroUsdc: number;
+  openedAt: number;
 }
