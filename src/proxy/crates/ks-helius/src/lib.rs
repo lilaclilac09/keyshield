@@ -243,6 +243,18 @@ fn builtin_method_ttls() -> HashMap<String, Duration> {
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct CacheKey(pub String);
 
+/// Whether [`HeliusClient::cached_call_with_state`] served the response
+/// from cache or had to fire upstream. Surfaced to the proxy hot-path
+/// so the `x-ks-cache` HTTP header reflects reality (drives the
+/// dashboard's `VenueBadge` Cache vs Upstream label).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CacheState {
+    /// Response came from memory cache — no upstream request.
+    Hit,
+    /// Cache miss — fired upstream (or joined an in-flight share).
+    Miss,
+}
+
 impl CacheKey {
     pub fn derive(method: &str, params: &Value) -> Self {
         Self(pycompat::cache_key("helius", method, params))
@@ -252,69 +264,19 @@ impl CacheKey {
     }
 }
 
-    /// Fork this client with a different API key. All other state
-    /// (caches, semaphore, HTTP client, config) is shared via `Arc`,
-    /// so this is a cheap clone — designed for multi-tenant proxies
-    /// that resolve the caller's vault-stored Helius key per request
-    /// while keeping a single warm cache across users.
-    ///
-    /// Cache safety: Helius RPC responses depend only on the JSON
-    /// `method` + `params`, not on which API key called them. Sharing
-    /// the cache across users is correct (and is the whole point of
-    /// running a single proxy with a warm cache).
-    pub fn with_api_key(&self, key: impl Into<Arc<str>>) -> Self {
-        Self {
-            http: self.http.clone(),
-            api_key: key.into(),
-            base_url: self.base_url.clone(),
-            wallet: self.wallet.clone(),
-            mem_cache: self.mem_cache.clone(),
-            disk_cache: self.disk_cache.clone(),
-            semaphore: self.semaphore.clone(),
-            config: self.config.clone(),
-        }
-    }
+// ─── Wire types ─────────────────────────────────────────────────────────────
 
-    // ─── cached_call ────────────────────────────────────────────────────────
-
-    /// Generic cached + x402-aware caller used by every typed wrapper.
-    ///
-    /// Algorithm (spec 09 §"The cached_call shape"):
-    ///   1. Memory cache hit → return immediately
-    ///   2. Disk cache hit → promote to memory, return
-    ///   3. Cache miss → acquire semaphore, fire to upstream
-    ///   4. If 402 → try x402 payment + retry (max 1)
-    ///   5. Write to both cache tiers (unless TTL = 0)
-    pub(crate) async fn cached_call<T>(
-        &self,
-        method: &'static str,
-        params: Value,
-        ttl: Option<Duration>,
-    ) -> Result<T, HeliusError>
-    where
-        T: DeserializeOwned,
-    {
-        let key = CacheKey::derive(method, &params);
-        // method_ttls in config always take priority over the wrapper's hint
-        // (allows tests and operators to force TTL=0 to disable caching).
-        let ttl = if let Some(&override_ttl) = self.config.method_ttls.get(method) {
-            override_ttl
-        } else {
-            ttl.unwrap_or_else(|| self.ttl_for(method))
-        };
-
-        // 1. Memory cache hit.
-        if let Some(bytes) = self.mem_cache.get(key.as_str()) {
-            return serde_json::from_slice(&bytes).map_err(HeliusError::Json);
-        }
-
-        // 2. Disk cache hit → promote to memory.
-        if let Some(bytes) = self.disk_cache.get(&key).await? {
-            if !ttl.is_zero() {
-                self.mem_cache.set(key.as_str().to_string(), bytes.clone(), ttl);
-            }
-            return serde_json::from_slice(&bytes).map_err(HeliusError::Json);
-        }
+/// Minimal `getAsset` response shape per spec 09 line 322 acceptance
+/// criterion ("define struct minimally — id, content, ownership"). Real
+/// callers will want the full DAS schema once Phase 3b expands.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct GetAssetResponse {
+    pub id: String,
+    #[serde(default)]
+    pub content: Value,
+    #[serde(default)]
+    pub ownership: Value,
+}
 
 /// Single asset row from `getAssetsByOwner`. Schema mirrors
 /// `GetAssetResponse` for now — Phase 3b adds the rest of DAS's
@@ -643,15 +605,32 @@ impl HeliusClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        self.cached_call_with_state(method, params, ttl)
-            .await
-            .map(|(v, _)| v)
+        let key = CacheKey::derive(method, &params);
+
+        // 1. Memory cache hit — fastest path. moka's `Expiry` impl
+        //    (see `PerEntryTtl`) already filters expired entries out
+        //    before they reach `get`, so a Some return is guaranteed
+        //    to be a live record.
+        if let Some(rec) = self.inner.mem_cache.get(&key).await {
+            return serde_json::from_slice(&rec.bytes).map_err(Into::into);
+        }
+
+        // 2. Single-flight: if another caller is already in-flight for
+        //    this key, await their `Shared<Future>` instead of firing
+        //    again. This is the path the 50-concurrent stampede test in
+        //    `tests/cache.rs` exercises — see spec 09 line 261-265.
+        let bytes_arc = match self.join_or_start_inflight(&key, method, params, ttl).await {
+            Ok(b) => b,
+            Err(e) => return Err(e),
+        };
+
+        serde_json::from_slice(&bytes_arc).map_err(Into::into)
     }
 
     /// Same as [`cached_call`] but also returns whether the result came
     /// from the memory cache (`Hit`) or required an upstream fetch
     /// (`Miss`). Used by the proxy hot-path to set the `x-ks-cache`
-    /// response header and to decide MPP charging.
+    /// response header and to drive the dashboard's VenueBadge.
     pub async fn cached_call_with_state<T>(
         &self,
         method: &'static str,
@@ -663,15 +642,15 @@ impl HeliusClient {
     {
         let key = CacheKey::derive(method, &params);
 
-        // 1. Memory cache hit — fastest path.
         if let Some(rec) = self.inner.mem_cache.get(&key).await {
-            let v = serde_json::from_slice(&rec.bytes)?;
+            let v = serde_json::from_slice(&rec.bytes).map_err(HeliusError::from)?;
             return Ok((v, CacheState::Hit));
         }
 
-        // 2. Single-flight (cache miss) — fire upstream or join an in-flight share.
-        let bytes_arc = self.join_or_start_inflight(&key, method, params, ttl).await?;
-        let v = serde_json::from_slice(&bytes_arc)?;
+        let bytes_arc = self
+            .join_or_start_inflight(&key, method, params, ttl)
+            .await?;
+        let v = serde_json::from_slice(&bytes_arc).map_err(HeliusError::from)?;
         Ok((v, CacheState::Miss))
     }
 

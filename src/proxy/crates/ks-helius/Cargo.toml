@@ -5,11 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-bytes      = { workspace = true }
-ks-cache   = { path = "../ks-cache" }
-redb       = { workspace = true }
-reqwest    = { workspace = true }
-serde      = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+ks-cache = { path = "../ks-cache" }
+moka = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

@@ -601,26 +601,31 @@ async fn helius_fast_path(
     //    pool across users; only the API key is per-fork.
     let fork = state.helius.fork_with_api_key(key);
 
-    // 5. Fire via cached_call.
-    let value: Value = match fork
-        .cached_call::<Value>(static_method, parsed.params, None)
+    // 5. Fire via cached_call_with_state — surfaces HIT/MISS so the
+    //    x-ks-cache header (and downstream PaymentBadge/VenueBadge in
+    //    the dashboard) reflect real cache behavior, not a guess.
+    let (value, cache_state): (Value, ks_helius::CacheState) = match fork
+        .cached_call_with_state::<Value>(static_method, parsed.params, None)
         .await
     {
-        Ok(v) => v,
+        Ok(pair) => pair,
         Err(e) => {
-            tracing::warn!(error = %e, method = static_method, "helius fast-path cached_call failed; falling through");
+            tracing::warn!(error = %e, method = static_method, "helius fast-path cached_call_with_state failed; falling through");
             return None;
         }
     };
 
-    // 6. Build 200 response. cached_call doesn't surface HIT/MISS today —
-    //    punt to MISS unconditionally. TODO: thread through real cache state.
+    // 6. Build 200 response with real cache state.
     let body = match serde_json::to_vec(&value) {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(error = %e, "helius fast-path serialize failed; falling through");
             return None;
         }
+    };
+    let cache_header = match cache_state {
+        ks_helius::CacheState::Hit => "HIT",
+        ks_helius::CacheState::Miss => "MISS",
     };
     let mut response = Response::builder()
         .status(StatusCode::OK)
@@ -637,7 +642,7 @@ async fn helius_fast_path(
     );
     h.insert(
         HeaderName::from_static("x-ks-cache"),
-        HeaderValue::from_static("MISS"),
+        HeaderValue::from_static(cache_header),
     );
     Some(response)
 }
