@@ -375,6 +375,38 @@ impl HeliusClient {
         Self::with_http_client(http, api_key, config)
     }
 
+    /// Fork this client with a different upstream API key.
+    ///
+    /// Shares the HTTP/2 pool, in-memory cache, semaphore, and config
+    /// with the original — only `api_key` is swapped. Designed for a
+    /// multi-tenant proxy that resolves the caller's vault-stored
+    /// Helius key per request while keeping ONE warm cache across all
+    /// users.
+    ///
+    /// Cache correctness: Helius RPC responses depend only on the JSON
+    /// `method` + `params`, never on which API key called them, so
+    /// sharing the mem_cache across forks is sound. The per-fork
+    /// `inflight` table is fresh — single-flight dedup happens only
+    /// within a fork's request stream, not across the proxy. For our
+    /// use case this is the right tradeoff (cache hits are shared and
+    /// free; concurrent misses for the same key+params from different
+    /// users still trigger one upstream each — same as today).
+    pub fn fork_with_api_key(&self, api_key: impl Into<String>) -> Self {
+        let inner = HeliusInner {
+            http: self.inner.http.clone(),
+            api_key: Arc::from(api_key.into()),
+            rpc_base: self.inner.rpc_base.clone(),
+            das_base: self.inner.das_base.clone(),
+            enhanced_base: self.inner.enhanced_base.clone(),
+            interceptor: self.inner.interceptor.clone(),
+            mem_cache: self.inner.mem_cache.clone(),
+            inflight: DashMap::new(),
+            semaphore: self.inner.semaphore.clone(),
+            config: self.inner.config.clone(),
+        };
+        Self { inner: Arc::new(inner) }
+    }
+
     /// Test/override constructor — accepts a pre-built `reqwest::Client`
     /// (so tests can disable connection pooling / shorten timeouts) and
     /// uses production base URLs. Tests typically follow up with
@@ -552,7 +584,7 @@ impl HeliusClient {
     /// bytes* (after pycompat re-serialization, when we land Phase 2
     /// disk parity) rather than the typed value, so different callers
     /// can decode into different shapes from the same cache slot.
-    pub(crate) async fn cached_call<T>(
+    pub async fn cached_call<T>(
         &self,
         method: &'static str,
         params: Value,
@@ -889,3 +921,32 @@ const _ASSERT_SEND_SYNC: fn() = || {
     t::<HeliusError>();
     t::<HeliusConfig>();
 };
+
+#[cfg(test)]
+mod fork_tests {
+    use super::*;
+
+    #[test]
+    fn fork_with_api_key_swaps_key_and_keeps_state() {
+        let base = HeliusClient::with_api_key("base-key", HeliusConfig::default());
+        let fork = base.fork_with_api_key("forked-key");
+
+        // Different api_key.
+        assert_eq!(&*base.inner.api_key, "base-key");
+        assert_eq!(&*fork.inner.api_key, "forked-key");
+
+        // Shared semaphore — same Arc pointer.
+        assert!(Arc::ptr_eq(&base.inner.semaphore, &fork.inner.semaphore));
+
+        // Bases match.
+        assert_eq!(base.inner.rpc_base, fork.inner.rpc_base);
+        assert_eq!(base.inner.das_base, fork.inner.das_base);
+    }
+
+    #[test]
+    fn fork_inherits_default_bases() {
+        let base = HeliusClient::with_api_key("k", HeliusConfig::default());
+        let fork = base.fork_with_api_key("k2");
+        assert!(fork.inner.rpc_base.contains("mainnet"));
+    }
+}
