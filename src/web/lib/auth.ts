@@ -194,20 +194,30 @@ export async function walletLogin(
 
 // ── Passkey helpers ───────────────────────────────────────────────────────
 
+/** Mark this device as passkey-trusted. userId is non-secret → localStorage.
+ *  passphrase is secret → sessionStorage (cleared on tab close, never persisted). */
 export function setPasskeyTrust(userId: string, passphrase: string): void {
   localStorage.setItem(PASSKEY_USER, userId);
-  localStorage.setItem(PASSKEY_PP, passphrase);
+  sessionStorage.setItem(PASSKEY_PP, passphrase);
 }
 
 export function getPasskeyTrust(): { userId: string; passphrase: string } | null {
   const u = localStorage.getItem(PASSKEY_USER);
-  const p = localStorage.getItem(PASSKEY_PP);
+  // Migration: if passphrase was previously stored in localStorage (pre-P0 fix),
+  // move it to sessionStorage and remove from localStorage on first access.
+  const legacy = localStorage.getItem(PASSKEY_PP);
+  if (legacy) {
+    sessionStorage.setItem(PASSKEY_PP, legacy);
+    localStorage.removeItem(PASSKEY_PP);
+  }
+  const p = sessionStorage.getItem(PASSKEY_PP);
   return u && p ? { userId: u, passphrase: p } : null;
 }
 
 export function clearPasskeyTrust(): void {
   localStorage.removeItem(PASSKEY_USER);
   localStorage.removeItem(PASSKEY_PP);
+  sessionStorage.removeItem(PASSKEY_PP);
 }
 
 export async function passkeyLogin(): Promise<{ token: string; userId: string }> {
