@@ -75,7 +75,7 @@ export default function Login() {
   const available = wallets.filter((w: any) => w.isInstalled);
 
   return (
-    <div className="space-y-6 min-h-screen flex items-center justify-center bg-[#030303] p-4">
+    <div className="space-y-6 min-h-screen flex flex-col items-center justify-center bg-[#030303] p-4">
       {/* Brand header */}
       <div className="text-center py-8">
         <div className="inline-flex items-center justify-center mb-4">
