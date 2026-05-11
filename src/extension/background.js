@@ -18,8 +18,27 @@
  *     re-zipping. Defaults to localhost in dev. The popup writes this value.
  */
 
-const DEFAULT_KS_BASE       = 'http://127.0.0.1:8001';
-const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:8001';
+const DEFAULT_KS_BASE       = 'http://127.0.0.1:8001';   // FastAPI control plane
+const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:5173';   // Vite dashboard
+
+// ── base64url helpers ───────────────────────────────────────────────────────
+function _b64uEnc(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _b64uDec(s) {
+  const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+  const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// ── Vault key (Path A lite): session-only, base64url-encoded 32-byte AES key
+async function _getVaultKeyBytes() {
+  const r = await chrome.storage.session.get('ks_vault_key');
+  return r.ks_vault_key ? _b64uDec(r.ks_vault_key) : null;
+}
 
 async function getApiBase() {
   const { ks_api_base, ks_dashboard_url } = await chrome.storage.local.get([
@@ -65,22 +84,47 @@ function notify(title, message, icon) {
 
 async function directStore({ upstream, value }) {
   const { token } = await getStoredToken();
-  if (!token) return { ok: false, reason: 'no-token' };
-
   const { apiBase } = await getApiBase();
 
-  try {
-    const r = await fetch(`${apiBase}/manage/store`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ upstream, apiKey: value }),
-    });
+  // Backend's vault.py shim requires either a Bearer token OR an explicit
+  // X-Dev-Mode header. We always send X-Dev-Mode so unsigned-in users can
+  // still save (lands in the "default" bucket); Authorization is added on
+  // top when available so signed-in users land in their own bucket.
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Dev-Mode':   '1',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
+  // Path A lite: if a vault key is registered (dashboard pushed it after
+  // wallet sign), encrypt the value here with AES-256-GCM; the server only
+  // ever sees ciphertext. Field name MUST be `value` (or cipher/iv/cipher_v),
+  // backend reads body.get("value") — NOT "apiKey".
+  let body;
+  const keyBytes = await _getVaultKeyBytes();
+  if (keyBytes) {
+    const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      aesKey,
+      new TextEncoder().encode(value),
+    ));
+    body = JSON.stringify({
+      upstream,
+      name:     `${upstream} key`,
+      cipher:   _b64uEnc(ct),
+      iv:       _b64uEnc(iv),
+      cipher_v: 1,
+    });
+  } else {
+    console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at 127.0.0.1:5173 to enable client-side encryption.');
+    body = JSON.stringify({ upstream, value, name: `${upstream} key` });
+  }
+
+  try {
+    const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
     if (r.status === 401) {
-      // token expired
       await clearStoredToken();
       return { ok: false, reason: 'token-expired' };
     }
@@ -96,9 +140,34 @@ async function directStore({ upstream, value }) {
 // ── SAVE_KEY (from content.js) ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Accept both the structured form ({type, payload}) and the spec form
-  // ({action: "save-key", provider, key, source_url}) so we don't break
-  // either client.
+  // Auxiliary: token+vault status (gates content.js bulk-save UX)
+  if (message.type === 'GET_TOKEN_STATUS') {
+    (async () => {
+      const { token, user } = await getStoredToken();
+      const vaultKey = await _getVaultKeyBytes();
+      sendResponse({ hasToken: !!token, user, hasVaultKey: !!vaultKey });
+    })();
+    return true;
+  }
+
+  // Auxiliary: open dashboard once for sign-in (bulk-save flow). Auto-correct
+  // a stale stored value that points at :8001 (FastAPI, no frontend) — old
+  // popups defaulted there before we split backend vs dashboard ports.
+  if (message.type === 'OPEN_DASHBOARD_FOR_SIGNIN') {
+    (async () => {
+      let { dashboardUrl } = await getApiBase();
+      const looksLikeBackend = /:8001(\/|$)/.test(dashboardUrl) || /:8000(\/|$)/.test(dashboardUrl);
+      if (looksLikeBackend || !dashboardUrl) {
+        dashboardUrl = DEFAULT_DASHBOARD_URL;
+        try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
+      }
+      chrome.tabs.create({ url: dashboardUrl });
+      sendResponse({ ok: true, dashboardUrl });
+    })();
+    return true;
+  }
+
+  // SAVE_KEY: structured form ({type, payload}) or spec form ({action, ...})
   let payload = null;
   if (message.type === 'SAVE_KEY' && message.payload) {
     payload = message.payload;
@@ -115,16 +184,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const { upstream, name, value, domain } = payload;
 
-    // Try direct API store
     const result = await directStore({ upstream, value });
-
     if (result.ok) {
       notify('KeyShield', `Saved ${upstream} key to KeyShield`);
       sendResponse({ ok: true, mode: 'direct' });
       return;
     }
 
-    // Fallback: open dashboard with prefilled URL
+    // Silent mode (bulk save): return error to caller, don't open per-key tab
+    if (message.silent) {
+      sendResponse({ ok: false, mode: 'silent', reason: result.reason });
+      return;
+    }
+
+    // Fallback: open dashboard prefill (single save UX)
     const reasonMsg = {
       'no-token':      'Sign in to KeyShield first',
       'token-expired': 'Session expired — sign in again',
@@ -145,7 +218,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: false, mode: 'fallback', reason: result.reason });
   })();
 
-  return true;  // keep sendResponse channel open for async reply
+  return true;
 });
 
 // ── External messages (from dashboard) ──────────────────────────────────────
@@ -168,6 +241,21 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   if (message.type === 'KS_PING') {
     getStoredToken().then(({ token, user }) => {
       sendResponse({ ok: true, hasToken: !!token, user });
+    });
+    return true;
+  }
+  // Path A lite: dashboard pushes the AES master key (HKDF of wallet sig)
+  if (message.type === 'KS_VAULT_KEY_REGISTER' && typeof message.keyB64 === 'string') {
+    chrome.storage.session.set({ ks_vault_key: message.keyB64 }).then(() => {
+      console.log('[KeyShield] vault key registered (session-scoped)');
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (message.type === 'KS_VAULT_KEY_CLEAR') {
+    chrome.storage.session.remove('ks_vault_key').then(() => {
+      console.log('[KeyShield] vault key cleared');
+      sendResponse({ ok: true });
     });
     return true;
   }

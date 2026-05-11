@@ -244,12 +244,54 @@ const TOKEN_KEY = 'ks_token';
 const WALLET_KEY = 'ks_wallet';
 const DEMO_FLAG = 'ks_demo';
 
+// ── KeyShield browser-extension bridge ───────────────────────────────────────
+// Extension content script broadcasts {__ks_ext_announce: <id>} via postMessage
+// on dashboard pages. We cache it and forward saveToken / clearAuth + the
+// vault key (Path A lite) so the extension can encrypt API keys client-side.
+
+let _ksExtensionId: string | null = null;
+const _pendingPushes: Array<Record<string, unknown>> = [];
+
+function _flushPending(): void {
+  if (!_ksExtensionId) return;
+  const c = (globalThis as { chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void; lastError?: unknown } } }).chrome ?? null;
+  const runtime = c?.runtime;
+  if (!runtime?.sendMessage) { _pendingPushes.length = 0; return; }
+  while (_pendingPushes.length) {
+    const p = _pendingPushes.shift()!;
+    try { runtime.sendMessage(_ksExtensionId, p, () => void runtime.lastError); }
+    catch { /* extension uninstalled / messaging blocked */ }
+  }
+}
+
+function _pushToExtension(payload: Record<string, unknown>): void {
+  _pendingPushes.push(payload);
+  _flushPending();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data) return;
+    if (typeof (e.data as { __ks_ext_announce?: unknown }).__ks_ext_announce === 'string') {
+      _ksExtensionId = (e.data as { __ks_ext_announce: string }).__ks_ext_announce;
+      _flushPending();
+    }
+  });
+  try { window.postMessage({ __ks_ext_request: true }, window.location.origin); }
+  catch { /* noop */ }
+}
+
 export function saveToken(token: LoginToken, isDemo = false) {
   localStorage.setItem(TOKEN_KEY, token.token);
   if (token.wallet_address) localStorage.setItem(WALLET_KEY, token.wallet_address);
   localStorage.setItem('ks_token_expiry', token.expires_at);
   if (isDemo) localStorage.setItem(DEMO_FLAG, '1');
   else localStorage.removeItem(DEMO_FLAG);
+  _pushToExtension({
+    type:  'KS_TOKEN_REGISTER',
+    token: token.token,
+    user:  token.wallet_address ?? null,
+  });
 }
 
 export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
@@ -261,6 +303,80 @@ export function clearAuth() {
   localStorage.removeItem(WALLET_KEY);
   localStorage.removeItem(DEMO_FLAG);
   localStorage.removeItem('ks_token_expiry');
+  _pushToExtension({ type: 'KS_TOKEN_CLEAR' });
+  _pushToExtension({ type: 'KS_VAULT_KEY_CLEAR' });
+}
+
+export function syncTokenToExtension(): void {
+  const t = getToken();
+  if (!t) return;
+  _pushToExtension({
+    type:  'KS_TOKEN_REGISTER',
+    token: t,
+    user:  getWalletAddress(),
+  });
+}
+
+// ── Path A lite: client-side vault key derivation ──────────────────────────
+// Wallet signs the fixed message "keyshield-vault-unlock-v1". Sig bytes go
+// through HKDF-SHA256 → 32-byte AES master key → base64url → push to ext.
+// The extension uses this key to AES-GCM encrypt every API key before POST.
+
+export const EXT_VAULT_UNLOCK_MESSAGE = 'keyshield-vault-unlock-v1';
+export const EXT_VAULT_UNLOCK_MESSAGE_BYTES: Uint8Array =
+  new TextEncoder().encode(EXT_VAULT_UNLOCK_MESSAGE);
+
+const VAULT_SIG_STORAGE_KEY = 'ks_vault_sig_b64u';
+
+function _b64uEnc(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function _b64uDec(s: string): Uint8Array {
+  const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+  const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function _deriveExtVaultKey(sigBytes: Uint8Array): Promise<Uint8Array> {
+  const ikm = await crypto.subtle.importKey(
+    'raw',
+    sigBytes as BufferSource,
+    'HKDF',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(0) as BufferSource,
+      info: new TextEncoder().encode('ks-extension-vault-v1') as BufferSource,
+    },
+    ikm,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+export async function registerExtensionVaultKey(sigBytes: Uint8Array): Promise<void> {
+  try { sessionStorage.setItem(VAULT_SIG_STORAGE_KEY, _b64uEnc(sigBytes)); }
+  catch { /* sessionStorage might be unavailable; non-fatal */ }
+  const keyBytes = await _deriveExtVaultKey(sigBytes);
+  _pushToExtension({ type: 'KS_VAULT_KEY_REGISTER', keyB64: _b64uEnc(keyBytes) });
+}
+
+export async function syncVaultKeyToExtension(): Promise<void> {
+  let cached: string | null = null;
+  try { cached = sessionStorage.getItem(VAULT_SIG_STORAGE_KEY); }
+  catch { /* sessionStorage might be unavailable */ }
+  if (!cached) return;
+  const sigBytes = _b64uDec(cached);
+  const keyBytes = await _deriveExtVaultKey(sigBytes);
+  _pushToExtension({ type: 'KS_VAULT_KEY_REGISTER', keyB64: _b64uEnc(keyBytes) });
 }
 
 export function isAuthenticated(): boolean {
