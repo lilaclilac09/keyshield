@@ -383,11 +383,11 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
 
     try:
         if running_loop is not None:
-            debited = _run_async_in_thread(
+            debited, tx_sig = _run_async_in_thread(
                 mpp_onchain.submit_mpp_settle(config, ix),
             )
         else:
-            debited = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
+            debited, tx_sig = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
         _record_settle_attempt(
@@ -407,6 +407,7 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
         success=True,
         debited=int(debited),
         error=None,
+        tx_signature=tx_sig,
     )
     return int(debited)
 

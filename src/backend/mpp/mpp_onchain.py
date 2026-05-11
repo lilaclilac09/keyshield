@@ -411,15 +411,16 @@ class MppSubmitError(Exception):
     interval retries."""
 
 
-async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
+async def submit_mpp_settle(
+    config: MppConfig, ix: _SimpleInstruction
+) -> tuple[int, str]:
     """Wrap the ix in a Solana Transaction, sign with the settler
-    keypair, submit via RPC, and wait for `confirmed` commitment.
+    keypair, submit via RPC.
 
-    Returns the *requested* amount on success — on-chain may have
-    debited less if `BudgetExceeded` triggered, but the cluster would
-    have returned an error (we'd have raised). For real reconciliation
-    of partial debits, follow-up reads the on-chain
-    `payment_stream.spent_total` delta.
+    Returns `(debited_micro_usdc, tx_signature)`. The signature is the
+    base58 string the cluster returned from `sendTransaction` — caller
+    persists it in mpp_settle_attempts so operators can audit which
+    on-chain tx settled which stream.
 
     Raises MppSubmitError on any failure.
     """
@@ -527,7 +528,7 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> int:
     # succeeded. Solana's runtime would have failed the whole tx
     # otherwise.
     amount_from_data = int.from_bytes(ix.data[1:9], "little")
-    return amount_from_data
+    return amount_from_data, sig
 
 
 # ─── Spec 10 Phase 10.5: open_stream / withdraw builders ──────────────────
