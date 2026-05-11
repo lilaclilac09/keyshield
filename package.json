@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "packages/shared",
+    "packages/ui",
     "src/sdk/packages/agent-sdk",
     "src/sdk/packages/cli",
     "src/sdk/packages/goat-wallet",

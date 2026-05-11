@@ -277,3 +277,23 @@ def extend_token(token: str, extra_secs: int = 86400) -> bool:
 
 # Backward compat — server.py and tests import `session.create`
 create = create_token
+
+
+# ─── Challenge / nonce management ─────────────────────────────────────────
+# In-memory set; restarts clear it (challenges are short-lived by design).
+
+_nonces: set[str] = set()
+
+
+def _record_nonce(nonce: str) -> None:
+    _nonces.add(nonce)
+
+
+def _validate_challenge(challenge: str, nonce: str = "") -> bool:
+    """Return True if the challenge was previously issued and not yet consumed."""
+    return challenge in _nonces or (nonce and nonce in _nonces)
+
+
+def _consume_nonce(nonce: str) -> None:
+    """Mark a challenge/nonce as used (replay protection)."""
+    _nonces.discard(nonce)

@@ -3,7 +3,7 @@
 // a token is currently registered.
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8001";
-const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:8001";
+const DEFAULT_DASHBOARD_URL = "http://localhost:5173";
 
 const $ = (id) => document.getElementById(id);
 

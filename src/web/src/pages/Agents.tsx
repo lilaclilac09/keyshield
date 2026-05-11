@@ -1,16 +1,28 @@
 import { useState, useCallback } from 'react';
-import { Users, Plus, Trash2, Copy, Check, Loader2, Bot } from 'lucide-react';
+import { Users, Plus, Trash2, Copy, Check, Loader2, Bot, Zap } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Badge, Skeleton, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label } from '@keyshield/ui';
 import { useAgents } from '@keyshield/shared/hooks/use-agents';
+import { useMpp } from '@keyshield/shared/hooks/use-mpp';
 import { relTime } from '@keyshield/shared/lib/time';
 import CreateAgentSignerButton from '../components/CreateAgentSignerButton';
+import MppStreamOpener from '../components/MppStreamOpener';
 
 export default function Agents() {
-  const { agents, isLoading, register, revoke } = useAgents();
+  const { agents, isLoading, register, revoke, wallets } = useAgents();
+  const { streams } = useMpp();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
+  // Build a lookup: agent_id → on-chain pubkey
+  const pubkeyByAgentId = new Map(wallets.map((w) => [w.agent_id, w.pubkey]));
+
+  // The currently selected agent object + its pubkey/stream (if any)
+  const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId) ?? null;
+  const selectedPubkey = selectedAgentId ? (pubkeyByAgentId.get(selectedAgentId) ?? null) : null;
+  const selectedStream = streams.find((s) => s.agent_id === selectedAgentId) ?? null;
 
   async function handleRegister() {
     if (!newName.trim()) return;
@@ -76,12 +88,16 @@ export default function Agents() {
               </TableHeader>
               <TableBody>
                 {agents.map(a => (
-                  <TableRow key={a.id}>
+                  <TableRow
+                    key={a.id}
+                    onClick={() => setSelectedAgentId(a.agent_id === selectedAgentId ? null : a.agent_id)}
+                    style={{ cursor: 'pointer', background: a.agent_id === selectedAgentId ? 'rgba(99,102,241,0.08)' : undefined }}
+                  >
                     <TableCell className="font-medium text-white">{a.name}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs" style={{ color: '#6b6b7a' }}>{a.agent_id.slice(0, 12)}...</span>
-                        <button onClick={() => handleCopy(a.agent_id)} className="hover:text-white transition-colors" style={{ color: '#6b6b7a' }} title="Copy ID">
+                        <button onClick={(e) => { e.stopPropagation(); handleCopy(a.agent_id); }} className="hover:text-white transition-colors" style={{ color: '#6b6b7a' }} title="Copy ID">
                           {copiedId === a.agent_id ? <Check className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
                         </button>
                       </div>
@@ -93,7 +109,7 @@ export default function Agents() {
                       <CreateAgentSignerButton agentId={a.agent_id} />
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => handleRevoke(a.id)} disabled={revokingId === a.id}>
+                      <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleRevoke(a.id); }} disabled={revokingId === a.id}>
                         {revokingId === a.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-[#ef4444]" />}
                       </Button>
                     </TableCell>
@@ -101,6 +117,27 @@ export default function Agents() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        </div>
+      )}
+
+      {selectedAgent && selectedPubkey && (
+        <div className="ks-card" style={{ marginTop: 16 }}>
+          <div className="ks-card-content" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Zap className="h-4 w-4" style={{ color: '#a78bfa', flexShrink: 0 }} />
+            <span className="text-sm font-medium text-white" style={{ flexShrink: 0 }}>
+              Payment stream — {selectedAgent.name}
+            </span>
+            {selectedStream ? (
+              <MppStreamOpener
+                streamId={selectedStream.id}
+                agentPubkey={selectedPubkey}
+              />
+            ) : (
+              <span className="text-xs" style={{ color: '#6b6b7a' }}>
+                No stream found for this agent. Create one via the Activity page first.
+              </span>
+            )}
           </div>
         </div>
       )}

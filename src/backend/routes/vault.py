@@ -34,9 +34,20 @@ def _auth(request: Request) -> dict | None:
     return sess_mod.get(token[7:])
 
 
-def _user_id(request: Request) -> str:
+def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
+    """Resolve the authenticated user_id or return a 401.
+
+    The only exception is when the caller sets `X-Dev-Mode: 1`, which
+    falls back to the "default" bucket — intended for local dev without
+    a session token. This bypass MUST NOT be enabled in production (set
+    KEYSHIELD_DEV_MODE=0 or just never send that header in prod code).
+    """
     sess = _auth(request)
-    return sess["user_id"] if sess else "default"
+    if sess:
+        return sess["user_id"], None
+    if request.headers.get("X-Dev-Mode") == "1":
+        return "default", None
+    return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
 
 
 def _user_vault(uid: str) -> dict[str, dict]:
@@ -58,7 +69,9 @@ def _mask(value: str) -> str:
 
 @router.get("/manage/vault")
 async def vault_list(request: Request):
-    uid = _user_id(request)
+    uid, err = _require_user_id(request)
+    if err:
+        return err
     items = _user_vault(uid)
     result = []
     for item_id, item in items.items():
@@ -78,7 +91,9 @@ async def vault_list(request: Request):
 
 @router.post("/manage/store")
 async def vault_store(request: Request):
-    uid = _user_id(request)
+    uid, err = _require_user_id(request)
+    if err:
+        return err
     body = await request.json()
     item_id = body.get("id") or f"ks_{uuid.uuid4().hex[:12]}"
     now = time.time()
@@ -98,7 +113,9 @@ async def vault_store(request: Request):
 
 @router.get("/manage/decrypt/{item_id}")
 async def vault_decrypt(item_id: str, request: Request):
-    uid = _user_id(request)
+    uid, err = _require_user_id(request)
+    if err:
+        return err
     items = _user_vault(uid)
     if item_id not in items:
         return JSONResponse({"detail": "item not found"}, status_code=404)
@@ -110,7 +127,9 @@ async def vault_decrypt(item_id: str, request: Request):
 
 @router.delete("/manage/vault/{item_id}")
 async def vault_delete(item_id: str, request: Request):
-    uid = _user_id(request)
+    uid, err = _require_user_id(request)
+    if err:
+        return err
     items = _user_vault(uid)
     if item_id not in items:
         return JSONResponse({"detail": "item not found"}, status_code=404)
@@ -120,7 +139,9 @@ async def vault_delete(item_id: str, request: Request):
 
 @router.put("/manage/vault/{item_id}")
 async def vault_update(item_id: str, request: Request):
-    uid = _user_id(request)
+    uid, err = _require_user_id(request)
+    if err:
+        return err
     items = _user_vault(uid)
     if item_id not in items:
         return JSONResponse({"detail": "item not found"}, status_code=404)

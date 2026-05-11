@@ -70,13 +70,24 @@ async def agent_register_rest(request: Request):
     """POST /agents — register a new agent (RESTful alias for /agents/register)."""
     body = await request.json()
     from ..agents import agents as agents_mod
-    import secrets
 
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
     name = body.get("name", "agent")
-    # Generate a random pubkey placeholder for agents created without crypto
-    pubkey = f"agent_{secrets.token_hex(16)}"
+
+    # Accept caller-provided pubkey (e.g. client-generated Ed25519 pubkey),
+    # otherwise generate a proper random 32-byte pubkey.
+    pubkey = body.get("pubkey") or body.get("pubkeyB58")
+    if not pubkey:
+        import os
+        raw = os.urandom(32)
+        try:
+            import base58 as _base58
+            pubkey = _base58.b58encode(raw).decode("ascii")
+        except ImportError:
+            # Fallback: base64url without padding (still a valid opaque key)
+            pubkey = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
     agents_mod.register(owner, pubkey, name=name)
     return JSONResponse({"id": name, "agent_id": pubkey})
 

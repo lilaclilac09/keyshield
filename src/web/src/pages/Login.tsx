@@ -5,10 +5,13 @@ import {
   detectWallets,
   connectWalletByKey,
   signWithWallet,
-  generateSessionToken,
-  saveToken,
+  deriveVaultPassphrase,
   disconnectWallet,
-  VAULT_KEY_MESSAGE,
+  fetchChallenge,
+  walletLogin,
+  setToken,
+  setWalletAddress,
+  notifyAuthChanged,
 } from '@keyshield/shared/auth';
 
 const WALLET_ICONS: Record<string, string> = {
@@ -50,9 +53,13 @@ export default function Login() {
       const walletInfo = await connectWalletByKey(key);
       setConnectedAddress(walletInfo.address);
       setStep('signing');
-      const signatureBytes = await signWithWallet(VAULT_KEY_MESSAGE, walletInfo.provider);
-      const token = await generateSessionToken(walletInfo.address!, signatureBytes);
-      saveToken(token, true);
+      const { challenge } = await fetchChallenge();
+      const signatureBytes = await signWithWallet(challenge, walletInfo.provider);
+      const passphrase = await deriveVaultPassphrase(signatureBytes);
+      const { token } = await walletLogin(walletInfo.address!, signatureBytes, challenge, passphrase);
+      setToken(token);
+      setWalletAddress(walletInfo.address!);
+      notifyAuthChanged();
       setStep('done');
       setTimeout(() => navigate('/app'), 1000);
     } catch (err: unknown) {

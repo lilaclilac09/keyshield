@@ -134,6 +134,10 @@ def _db() -> sqlite3.Connection:
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(mpp_streams)")}
     if "tx_signature" not in existing_cols:
         conn.execute("ALTER TABLE mpp_streams ADD COLUMN tx_signature TEXT")
+    if "stream_pda" not in existing_cols:
+        conn.execute("ALTER TABLE mpp_streams ADD COLUMN stream_pda TEXT")
+    if "stream_usdc_ata" not in existing_cols:
+        conn.execute("ALTER TABLE mpp_streams ADD COLUMN stream_usdc_ata TEXT")
 
     conn.commit()
     return conn
@@ -158,7 +162,8 @@ _STREAM_COLS = (
     "rate_per_call_micro_usdc, rate_per_token_micro_usdc, "
     "settlement_interval_secs, status, opened_at, last_settled_at, "
     "closed_at, total_calls, total_tokens, "
-    "pending_micro_usdc, settled_micro_usdc, tx_signature"
+    "pending_micro_usdc, settled_micro_usdc, tx_signature, "
+    "stream_pda, stream_usdc_ata"
 )
 
 
@@ -168,6 +173,8 @@ def _row_to_stream(row: tuple) -> dict:
     # name). The dict carries both keys so legacy callers and the new
     # frontend banner both work without surprises.
     sig = row[16] if len(row) > 16 else None
+    pda = row[17] if len(row) > 17 else None
+    ata = row[18] if len(row) > 18 else None
     return {
         "id": row[0],
         "user_id": row[1],
@@ -186,6 +193,8 @@ def _row_to_stream(row: tuple) -> dict:
         "pending_micro_usdc": row[14],
         "settled_micro_usdc": row[15],
         "on_chain_signature": sig,
+        "stream_pda": pda,
+        "stream_usdc_ata": ata,
     }
 
 
@@ -410,16 +419,22 @@ _PDA_MISSING_WARNED: dict[int, bool] = {}
 
 
 def _get_stream_pda_ata(stream_id: int) -> tuple[str | None, str | None]:
-    """Look up the on-chain PDA + USDC ATA for a stream.
+    """Look up the on-chain PDA + USDC ATA for a stream from the DB.
 
-    Today the schema doesn't store these (open_stream is DB-only),
-    so this function always returns (None, None). Once the on-chain
-    open_stream wiring lands (ROADMAP P0a follow-up), this becomes a
-    real column read. Kept as a function rather than inlined so the
-    upgrade is one-edit.
+    Returns (stream_pda, stream_usdc_ata). Either may be None when the
+    frontend hasn't yet posted them via `record-tx` or `open_stream`.
     """
-    _ = stream_id
-    return (None, None)
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT stream_pda, stream_usdc_ata FROM mpp_streams WHERE id = ?",
+            (int(stream_id),),
+        ).fetchone()
+        if row is None:
+            return (None, None)
+        return (row[0] or None, row[1] or None)
+    finally:
+        conn.close()
 
 
 def _find_recent_attempt(
@@ -538,9 +553,18 @@ def open_stream(
     rate_per_token: int,
     rate_per_call: int,
     settlement_interval: int,
+    stream_pda: str | None = None,
+    stream_usdc_ata: str | None = None,
 ) -> dict:
     """Open a new MPP stream for `user_id`. Returns the stream row +
-    emits an 'open' event."""
+    emits an 'open' event.
+
+    `stream_pda` and `stream_usdc_ata` are optional on-chain addresses.
+    When the frontend computes them before calling this endpoint (e.g.
+    because it already derived the PDA locally), storing them here means
+    `settle_on_chain` can find them immediately without a separate
+    `record-tx` call.
+    """
     if not agent_pubkey:
         raise ValueError("agent_pubkey is required")
     if rate_per_token < 0 or rate_per_call < 0:
@@ -558,8 +582,9 @@ def open_stream(
             INSERT INTO mpp_streams
               (user_id, agent_pubkey, agent_name, upstream,
                rate_per_call_micro_usdc, rate_per_token_micro_usdc,
-               settlement_interval_secs, status, opened_at, last_settled_at)
-            VALUES (?,?,?,?,?,?,?, 'open', ?, ?)
+               settlement_interval_secs, status, opened_at, last_settled_at,
+               stream_pda, stream_usdc_ata)
+            VALUES (?,?,?,?,?,?,?, 'open', ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -571,6 +596,8 @@ def open_stream(
                 int(settlement_interval),
                 now,
                 now,
+                stream_pda or None,
+                stream_usdc_ata or None,
             ),
         )
         stream_id = cur.lastrowid
@@ -767,10 +794,18 @@ def close_stream(user_id: str, stream_id: int) -> dict:
         conn.close()
 
 
-def record_tx_signature(user_id: str, stream_id: int, tx_signature: str) -> dict:
+def record_tx_signature(
+    user_id: str,
+    stream_id: int,
+    tx_signature: str,
+    stream_pda: str | None = None,
+    stream_usdc_ata: str | None = None,
+) -> dict:
     """Persist the on-chain tx signature returned by the frontend wallet
     adapter after it signed+sent the `open_payment_stream` ix (or, later,
-    `withdraw_agent_wallet`). Returns the updated stream row.
+    `withdraw_agent_wallet`). Optionally also stores the stream PDA and
+    USDC ATA addresses so `settle_on_chain` can look them up.
+    Returns the updated stream row.
 
     Spec 10 Phase 10.5 wallet sign-off. The signature is opaque to us —
     we don't verify it against Solana RPC here (that's what
@@ -789,13 +824,29 @@ def record_tx_signature(user_id: str, stream_id: int, tx_signature: str) -> dict
     if not tx_signature or not tx_signature.strip():
         raise ValueError("tx_signature is required")
     sig = tx_signature.strip()
+    pda = stream_pda.strip() if stream_pda and stream_pda.strip() else None
+    ata = stream_usdc_ata.strip() if stream_usdc_ata and stream_usdc_ata.strip() else None
     conn = _db()
     try:
         # Owner check via _get_owned_stream — raises if foreign user_id.
         _get_owned_stream(conn, user_id, stream_id)
+
+        # Build update dynamically: always update tx_signature; only
+        # overwrite PDA/ATA columns when the caller provides them
+        # (don't clobber already-stored values with None).
+        sets = ["tx_signature = ?"]
+        params: list = [sig]
+        if pda is not None:
+            sets.append("stream_pda = ?")
+            params.append(pda)
+        if ata is not None:
+            sets.append("stream_usdc_ata = ?")
+            params.append(ata)
+        params.extend([stream_id, user_id])
+
         conn.execute(
-            "UPDATE mpp_streams SET tx_signature = ? WHERE id = ? AND user_id = ?",
-            (sig, stream_id, user_id),
+            f"UPDATE mpp_streams SET {', '.join(sets)} WHERE id = ? AND user_id = ?",
+            params,
         )
         stream = _get_owned_stream(conn, user_id, stream_id)
         conn.commit()
