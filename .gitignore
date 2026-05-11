@@ -91,3 +91,4 @@ src/backend/vault/
 *.enc
 .keyshield-demo/
 keyshield.db
+.gstack/

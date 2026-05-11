@@ -25,6 +25,13 @@ export async function ocrImage(fileOrUrl: File | string): Promise<{ text: string
   };
 }
 
+// ImageCapture is a WICG API not yet in TypeScript's DOM lib
+declare class ImageCapture {
+  constructor(track: MediaStreamTrack);
+  grabFrame(): Promise<ImageBitmap>;
+  takePhoto(photoSettings?: object): Promise<Blob>;
+}
+
 interface ImageCaptureWithGrab extends ImageCapture {
   grabFrame(): Promise<ImageBitmap>;
 }

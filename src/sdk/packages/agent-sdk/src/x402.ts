@@ -102,7 +102,7 @@ export class X402Client {
   }
 
   async recordUsage(streamId: number, calls = 1, tokens = 0): Promise<void> {
-    const res = await fetch(`${this.apiUrl}/mpp/streams/${streamId}/usage`, {
+    const res = await fetch(`${this.apiUrl}/mpp/streams/${streamId}/record`, {
       method: 'POST',
       headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ calls, tokens }),
