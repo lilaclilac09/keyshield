@@ -26,18 +26,11 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       chunkSizeWarningLimit: 2000,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('@solana/') || id.includes('buffer') || id.includes('borsh')) return 'solana';
-              if (id.includes('react') || id.includes('scheduler')) return 'vendor';
-              if (id.includes('lucide')) return 'icons';
-              return 'vendor-deps';
-            }
-          },
-        },
-      },
+      // No manualChunks — the previous split lumped circularly-dependent
+      // node_modules into different chunks, breaking module init order
+      // (TDZ 'Cannot access X before initialization' in production).
+      // Letting Rollup auto-split keeps circular partners in the same
+      // chunk and respects evaluation order.
     },
   };
 });

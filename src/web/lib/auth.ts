@@ -24,6 +24,14 @@ export const API_BASE: string = (() => {
   if (typeof process !== 'undefined' && process.env.KEYSHIELD_API_URL) {
     return process.env.KEYSHIELD_API_URL;
   }
+  // Runtime fallback when Vercel build env is missing: only use localhost
+  // when actually on localhost. In any other origin, point at Railway.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') {
+      return 'https://keyshield-production.up.railway.app';
+    }
+  }
   return 'http://localhost:8001';
 })();
 
