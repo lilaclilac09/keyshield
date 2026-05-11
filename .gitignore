@@ -91,3 +91,11 @@ src/backend/vault/
 *.enc
 .keyshield-demo/
 keyshield.db
+*.db-shm
+*.db-wal
+.gstack/
+
+# MPP devnet — settler keypair + env (NEVER commit)
+.env.mpp
+.keyshield-devnet/
+src/.keyshield-devnet/
