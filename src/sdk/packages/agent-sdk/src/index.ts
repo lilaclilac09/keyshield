@@ -608,3 +608,7 @@ export async function createKeyShieldAgent(
 }
 
 export default KeyShieldAgent;
+
+// Lightweight HTTP client — actually works without Solana RPC / Lit / Bonsol
+export { KeyShieldHttp } from './http-client';
+export type { KeyShieldHttpConfig, ProxyCallOptions } from './http-client';
