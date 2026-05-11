@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { Wallet, Shield, ChevronRight, Check, Key, Lock, Zap, Eye } from 'lucide-react';
+import { Wallet, Check, Loader2, AlertCircle, Fingerprint } from 'lucide-react';
 import {
   detectWallets,
   connectWalletByKey,
@@ -18,18 +18,11 @@ const WALLET_ICONS: Record<string, string> = {
   'Trust Wallet': `data:image/svg+xml,${encodeURIComponent(`<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" rx="10" fill="#3375BB"/><path d="M20 10L12 16v8l8 6 8-6v-8L20 10z" fill="white" opacity="0.9"/></svg>`)}`,
 };
 
-type LoginStep = 'select' | 'connecting' | 'signing' | 'done';
-
-const featureItems = [
-  { icon: Shield, label: 'Multi-sig custody' },
-  { icon: Key, label: 'Hardware wallet support' },
-  { icon: Lock, label: 'Zero-trust architecture' },
-  { icon: Zap, label: 'Real-time monitoring' },
-];
+type Phase = 'idle' | 'connecting' | 'signing' | 'done' | 'error';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<LoginStep>('select');
+  const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [wallets, setWallets] = useState<any[]>([]);
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
@@ -38,173 +31,136 @@ export default function Login() {
   useEffect(() => {
     const scan = () => setWallets(detectWallets());
     scan();
-    const iv = setInterval(() => { if (step === 'select') scan(); }, 1500);
+    const iv = setInterval(() => { if (phase === 'idle') scan(); }, 1500);
     return () => clearInterval(iv);
-  }, [step]);
+  }, [phase]);
 
   const handleConnect = useCallback(async (key: string) => {
     try {
       setError(null);
       setSelectedWallet(key);
-      setStep('connecting');
+      setPhase('connecting');
       const walletInfo = await connectWalletByKey(key);
       setConnectedAddress(walletInfo.address);
-      setStep('signing');
+      setPhase('signing');
       const signatureBytes = await signWithWallet(VAULT_KEY_MESSAGE, walletInfo.provider);
       const token = await generateSessionToken(walletInfo.address!, signatureBytes);
       saveToken(token, true);
-      setStep('done');
-      setTimeout(() => navigate('/app'), 1000);
+      setPhase('done');
+      setTimeout(() => navigate('/app'), 800);
     } catch (err: unknown) {
-      let msg = 'Unknown error';
-      if (err instanceof Error) msg = err.message;
-      else if (typeof err === 'string') msg = err;
+      const msg = err instanceof Error ? err.message : 'Login failed';
       console.error('[KeyShield] Login error:', err);
       setError(msg);
-      setStep('select');
+      setPhase('error');
     }
   }, [navigate]);
 
-  const handleDisconnect = useCallback(async () => {
-    await disconnectWallet();
+  const retry = useCallback(async () => {
+    await disconnectWallet().catch(() => {});
+    setError(null);
     setConnectedAddress(null);
-    setWallets(detectWallets());
+    setSelectedWallet(null);
+    setPhase('idle');
   }, []);
 
-  const shortAddress = (addr: string) => addr ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : '';
-  const available = wallets.filter((w: any) => w.isInstalled);
+  const shortAddress = (addr: string) => addr ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : '';
+  const installed = wallets.filter((w: any) => w.isInstalled);
 
   return (
-    <div className="space-y-6 min-h-screen flex flex-col items-center justify-center bg-[#030303] p-4">
-      {/* Brand header */}
-      <div className="text-center py-8">
-        <div className="inline-flex items-center justify-center mb-4">
-          <div className="w-14 h-14 rounded-xl bg-[#111] text-white flex items-center justify-center border border-[#1a1a1a]">
-            <Shield size={26} strokeWidth={1.5} />
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-black px-6">
+      <div className="w-full max-w-md flex flex-col items-center text-center">
+        {/* Brand */}
+        <div className="w-20 h-20 rounded-[3px] bg-[#0a0a0a] border border-zinc-800/50 flex items-center justify-center mb-8">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="white" strokeWidth="1.5" fill="none" />
+          </svg>
         </div>
-        <h1 className="text-3xl font-semibold tracking-wide mb-1" style={{ color: '#f8f8f8' }}>KEYSHIELD</h1>
-        <p className="text-[9px] tracking-[0.35em] uppercase text-[#4a4a4a] font-medium">Protect what matters</p>
-      </div>
+        <h1 className="text-[34px] leading-tight font-bold text-white tracking-tight uppercase">KeyShield</h1>
+        <p className="mt-3 text-[14px] leading-relaxed text-zinc-400 max-w-sm">
+          Connect your Solana wallet to access your encrypted secrets.
+        </p>
 
-      {/* Error */}
-      {error && (
-        <div className="p-4 rounded-lg bg-[#1a0808] border border-[#3b2020] max-w-md mx-auto">
-          <p className="text-sm font-medium text-[#c62232]">{error}</p>
-        </div>
-      )}
-
-      {/* Main card */}
-      <div className="rounded-lg border bg-[#080808] shadow-xl max-w-md w-full overflow-hidden" style={{ borderColor: '#0f0f0f' }}>
-        <div className="px-5 py-4 border-b" style={{ borderBottomColor: '#0f0f0f' }}>
-          <h3 className="text-lg font-semibold text-white">Connect your wallet</h3>
-          <p className="text-sm text-[#8e8e9a] mt-1">
-            {step === 'done' ? 'Successfully connected!' : step === 'connecting' ? `Connecting to ${selectedWallet}...` : 'Sign with your Solana wallet'}
-          </p>
-        </div>
-        <div className="p-5">
-          {/* Success */}
-          {step === 'done' && connectedAddress && (
-            <div className="flex flex-col items-center py-6">
-              <div className="h-14 w-14 rounded-full bg-[#ecfdf3] flex items-center justify-center mb-3">
-                <Check className="h-7 w-7 text-[#0f7b41]" />
+        {/* Body */}
+        <div className="w-full mt-10">
+          {phase === 'error' && (
+            <div className="w-full space-y-3">
+              <div className="px-4 py-3 rounded-[3px] bg-red-950/40 border border-red-900/60 flex items-start gap-3">
+                <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                <p className="text-[13px] text-red-300 leading-relaxed break-words text-left">{error}</p>
               </div>
-              <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>Wallet Connected</p>
-              <span className="text-xs font-mono mt-2 px-3 py-1 rounded bg-[#0a0a0a] border border-[#0f0f0f]" style={{ color: '#f8f8f8' }}>{shortAddress(connectedAddress)}</span>
+              <button type="button" onClick={retry} className="w-full py-2 rounded-[3px] border border-zinc-800 text-[13px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
+                Try Again
+              </button>
             </div>
           )}
 
-          {/* Loading */}
-          {(step === 'connecting' || step === 'signing') && (
-            <div className="flex flex-col items-center py-8">
-              <Shield className="h-10 w-10 mb-4 animate-pulse" style={{ color: '#f8f8f8' }} />
-              <p className="text-sm font-medium" style={{ color: '#f8f8f8' }}>
-                {step === 'connecting' ? `Opening ${selectedWallet}...` : 'Verifying signature...'}
-              </p>
+          {phase === 'done' && connectedAddress && (
+            <div className="rounded-[3px] border border-zinc-800/50 p-2 bg-[#0a0a0a]">
+              <div className="flex items-center gap-3 px-5 py-4 rounded-[3px] border border-emerald-900/60 bg-emerald-950/20 text-emerald-300">
+                <Check size={18} className="text-emerald-400 shrink-0" />
+                <span className="text-[15px] font-semibold uppercase tracking-wider">{shortAddress(connectedAddress)}</span>
+              </div>
             </div>
           )}
 
-          {/* Wallet list */}
-          {step === 'select' && (
-            <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.2em] font-medium mb-3" style={{ color: '#f8f8f8' }}>Available wallets</p>
+          {(phase === 'connecting' || phase === 'signing') && (
+            <div className="rounded-[3px] border border-zinc-800/50 p-2 bg-[#0a0a0a]">
+              <div className="flex items-center gap-3 px-5 py-4 rounded-[3px] border border-zinc-800 bg-[#050505] text-white">
+                <Loader2 size={18} className="animate-spin shrink-0" />
+                <div className="text-left">
+                  <p className="text-[14px] font-semibold uppercase tracking-wider">
+                    {phase === 'connecting' ? `Opening ${selectedWallet}…` : 'Approve signature in your wallet…'}
+                  </p>
+                  {connectedAddress && (
+                    <p className="text-[12px] text-zinc-500 mt-0.5">{shortAddress(connectedAddress)}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {phase === 'idle' && (
+            <div className="w-full space-y-3">
               {wallets.map((w: any) => {
                 const icon = WALLET_ICONS[w.name] ?? '';
                 return (
-                  <button
-                    key={w.key}
-                    onClick={() => handleConnect(w.key)}
-                    disabled={!w.isInstalled}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
-                      w.isInstalled ? 'hover:border-[#252525] hover:bg-[#0d0d0d] cursor-pointer' : 'opacity-40 cursor-not-allowed bg-[#0a0a0a]'
-                    }`}
-                    style={{ borderColor: '#0f0f0f', color: w.isInstalled ? '#808080' : '#505050' }}
-                  >
-                    <div className="h-10 w-10 rounded-lg bg-[#0d0d0d] flex items-center justify-center shrink-0 overflow-hidden" style={{ borderColor: '#141414', borderWidth: '1px' }}>
-                      {icon ? <img src={icon} alt={w.name} className="h-6 w-6" /> : <Wallet className="h-5 w-5 text-[#404040]" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm" style={{ color: '#f8f8f8' }}>{w.name}</span>
-                        {w.isConnected && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-[#ecfdf3] text-[#0f7b41] font-medium">Connected</span>
-                        )}
-                      </div>
-                      {!w.isInstalled
-                        ? <span className="text-xs" style={{ color: '#f8f8f8' }}>Not installed</span>
-                        : w.isConnected && w.address
-                          ? <span className="text-xs font-mono" style={{ color: '#f8f8f8' }}>{shortAddress(w.address)}</span>
-                          : <span className="text-xs" style={{ color: '#f8f8f8' }}>Click to connect</span>
-                      }
-                    </div>
-                    {w.isInstalled && <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#f8f8f8' }} />}
-                  </button>
+                  <div key={w.key} className="rounded-[3px] border border-zinc-800/50 p-2 bg-[#0a0a0a]">
+                    <button
+                      type="button"
+                      onClick={() => handleConnect(w.key)}
+                      disabled={!w.isInstalled}
+                      className={`w-full flex items-center gap-3 px-5 py-4 rounded-[3px] border transition-colors ${
+                        w.isInstalled
+                          ? 'border-zinc-700 bg-[#050505] hover:bg-white/5 text-white'
+                          : 'border-zinc-900 bg-[#050505] text-zinc-600 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className="flex items-center justify-center w-5 h-5 shrink-0">
+                        {icon ? <img src={icon} alt={w.name} className="h-5 w-5" /> : <Wallet size={18} />}
+                      </span>
+                      <span className="text-[15px] font-semibold uppercase tracking-wider flex-1 text-left">{w.name}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                        {w.isInstalled ? 'Connect' : 'Not installed'}
+                      </span>
+                    </button>
+                  </div>
                 );
               })}
 
-              {/* Connected wallet */}
-              {connectedAddress && step === 'select' && (
-                <>
-                  <div className="h-px my-4 bg-[#141414]" />
-                  <div className="p-3 rounded-lg bg-[#0a0a0a] flex items-center justify-between" style={{ borderColor: '#0f0f0f', borderWidth: '1px' }}>
-                    <div className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-[#0f7b41]" />
-                      <span className="text-sm font-mono" style={{ color: '#f8f8f8' }}>{shortAddress(connectedAddress)}</span>
-                    </div>
-                  </div>
-                </>
+              {installed.length === 0 && wallets.length > 0 && (
+                <p className="text-center text-[12px] text-zinc-600 pt-2">
+                  No Solana wallet detected. Install Phantom, Solflare, or Backpack to continue.
+                </p>
               )}
-
-              {available.length === 0 && (
-                <div className="text-center py-6 space-y-3">
-                  <Wallet className="h-8 w-8 mx-auto" style={{ color: '#f8f8f8' }} />
-                  <p className="font-medium text-sm" style={{ color: '#f8f8f8' }}>No wallet detected</p>
-                  <p className="text-xs" style={{ color: '#f8f8f8' }}>Install a Solana wallet extension</p>
-                </div>
-              )}
-
-              <div className="h-px bg-[#141414]" />
-            </div>
-          )}
-
-          {step === 'select' && available.length > 0 && (
-            <div className="text-center pt-2">
-              <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: '#f8f8f8', fontWeight: 500 }}>
-                Signs a message to verify ownership. No gas fee.
-              </p>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Features */}
-      <div className="grid grid-cols-2 gap-4 max-w-md w-full">
-        {featureItems.map((f) => (
-          <div key={f.label} className="flex items-center gap-2">
-            <f.icon size={14} style={{ color: '#f8f8f8' }} />
-            <span className="text-sm" style={{ color: '#f8f8f8' }}>{f.label}</span>
-          </div>
-        ))}
+        {/* Footer */}
+        <p className="mt-8 text-[11px] leading-relaxed text-zinc-700 max-w-sm">
+          AES-256-GCM · ed25519 wallet signatures · server never sees your key material
+        </p>
       </div>
     </div>
   );
