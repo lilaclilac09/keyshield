@@ -24,7 +24,7 @@ export const SharingSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [keys, setKeys] = useState<string[]>([]);
 
   const refresh = useCallback(async () => { setLoading(true); setErr(''); try { const [inc, out] = await Promise.all([listIncomingShares(), listOutgoingShares()]); setIncoming(inc); setOutgoing(out); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed'); } finally { setLoading(false); } }, []);
-  useEffect(() => { refresh(); (async () => { try { const r = await apiFetch('/manage/list'); if (r.ok) { const d = await r.json(); setKeys(d.keys ?? []); if (!keyName && (d.keys ?? []).length > 0) setKeyName((d.keys ?? [])[0]); } } catch {} })(); }, [refresh]);
+  useEffect(() => { refresh(); (async () => { try { const r = await apiFetch('/manage/vault'); if (r.ok) { const d = await r.json(); setKeys(d.keys ?? []); if (!keyName && (d.keys ?? []).length > 0) setKeyName((d.keys ?? [])[0]); } } catch {} })(); }, [refresh]);
 
   const submit = async () => { if (!keyName || !recipient || recipient === addr) return; setSubmitting(true); setErr(''); setSuccess(''); setStub(''); try { const input = { key_name: keyName, recipient_user_id: recipient, expires_at: expiresStr ? Math.floor(new Date(expiresStr).getTime() / 1000) : undefined }; const r = await grantShare(input); if (r.status === 501) { setStub(r.detail || 'Sharing not yet implemented.'); } else { setSuccess(`Shared ${keyName} with ${recipient.slice(0, 12)}\u2026`); setRecipient(''); await refresh(); } } catch (e) { setErr(e instanceof Error ? e.message : 'Share failed'); } finally { setSubmitting(false); } };
   const handleRevoke = async (id: number) => { try { await revokeShare(id); await refresh(); } catch {} };

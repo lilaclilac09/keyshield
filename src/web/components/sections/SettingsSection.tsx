@@ -8,6 +8,7 @@ import { Badge } from '../ui/Badge';
 import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../../lib/auth';
 import { getPrefs, setPrefs, type VaultPreferences } from '../../lib/preferences';
 import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
+import { AuditRetentionSettings } from '../AuditRetentionSettings';
 
 const DELETE_CONFIRMATION = 'DELETE my account';
 
@@ -89,6 +90,8 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
           )}
         </div>
       </Card>
+
+      <AuditRetentionSettings />
     </div>
   );
 };

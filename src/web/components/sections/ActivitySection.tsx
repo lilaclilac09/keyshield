@@ -70,7 +70,7 @@ export const ActivitySection: React.FC = () => {
     if (!amt || amt <= 0) return;
     setTopupBusy(true); setTopupMsg(''); setTopupOk(false);
     try {
-      const r = await apiFetch('/billing/topup-solana', { method: 'POST', body: JSON.stringify({ amount_usd: amt }) });
+      const r = await apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: amt }) });
       const d = await r.json();
       if (!r.ok) { setTopupMsg(d.detail ?? 'Topup failed'); return; }
       setTopupOk(true); setTopupMsg(`Credited $${d.credited_usd?.toFixed(4) ?? amt.toFixed(4)} \u2014 new balance: $${d.balance_usd?.toFixed(4)}`);

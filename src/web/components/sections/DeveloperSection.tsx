@@ -50,7 +50,7 @@ export const DeveloperSection: React.FC = () => {
             { m: 'GET', p: '/auth/wallet-challenge', d: 'Get one-time signing challenge' },
             { m: 'POST', p: '/auth/wallet-login', d: 'Submit signature + passphrase \u2192 token' },
             { m: 'POST', p: '/auth/logout', d: 'Revoke current session' },
-            { m: 'GET', p: '/manage/list', d: 'List stored upstream keys' },
+            { m: 'GET', p: '/manage/vault', d: 'List stored upstream keys' },
             { m: 'POST', p: '/manage/store', d: 'Encrypt & store an API key' },
             { m: 'GET', p: '/manage/decrypt/{upstream}', d: 'Decrypt a stored key' },
             { m: 'DELETE', p: '/manage/secret/{upstream}', d: 'Delete a stored key' },

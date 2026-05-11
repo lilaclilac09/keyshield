@@ -17,9 +17,12 @@ import {
 } from './vault-session';
 
 export const API_BASE: string = (() => {
-  if (typeof process !== 'undefined') {
-    const env = process.env as Record<string, string | undefined>;
-    if (env.KEYSHIELD_API_URL) return env.KEYSHIELD_API_URL;
+  // vite's `define` replaces this literal string with the build-time value.
+  // The destructure-into-local-var pattern would NOT be replaced — vite
+  // only does textual substitution of the exact `process.env.KEYSHIELD_API_URL`.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (typeof process !== 'undefined' && process.env.KEYSHIELD_API_URL) {
+    return process.env.KEYSHIELD_API_URL;
   }
   return 'http://localhost:8001';
 })();

@@ -25,14 +25,27 @@ async def billing_info(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
 
-    balance = usage_mod.get_balance(user_id)
+    # `get_balance` returns a float (USD), `get_stats` returns
+    # {"stats": [...]} keyed per-upstream. Normalize to the dashboard shape.
+    balance_usd = usage_mod.get_balance(user_id)
+    if isinstance(balance_usd, dict):
+        # Defensive: support a future dict-shaped balance.
+        balance_dict = balance_usd
+        balance_usd = balance_dict.get("balance_usd", balance_dict.get("usd_balance", 0))
+    else:
+        balance_dict = {}
+
     stats = usage_mod.get_stats(user_id)
+    stats_rows = stats.get("stats", []) if isinstance(stats, dict) else []
+
+    total_spent = sum((row.get("cost_usd") or 0) for row in stats_rows)
+    total_calls = sum((row.get("calls") or 0) for row in stats_rows)
 
     return JSONResponse({
-        "balance_sol": balance.get("sol_balance", balance.get("balance_sol", 0)),
-        "balance_usd": balance.get("usd_balance", balance.get("balance_usd", 0)),
-        "total_spent_usd": stats.get("total_spent_usd", balance.get("total_spent_usd", 0)),
-        "total_keys_proxied": stats.get("total_keys_proxied", stats.get("total_calls", 0)),
+        "balance_sol": balance_dict.get("sol_balance", balance_dict.get("balance_sol", 0)),
+        "balance_usd": round(float(balance_usd or 0), 6),
+        "total_spent_usd": round(total_spent, 6),
+        "total_keys_proxied": total_calls,
     })
 
 

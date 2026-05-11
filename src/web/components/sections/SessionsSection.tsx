@@ -23,7 +23,7 @@ export const SessionsSection: React.FC<{ onLogout: () => void }> = ({ onLogout }
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 60000); return () => window.clearInterval(id); }, []);
   void now;
 
-  const load = async () => { setLoading(true); try { const r = await apiFetch('/sessions/list'); if (r.status === 404) { setList(null); return; } if (!r.ok) return; const d = await r.json(); setList(Array.isArray(d.sessions) ? d.sessions : []); } catch {} finally { setLoading(false); } };
+  const load = async () => { setLoading(true); try { const r = await apiFetch('/sessions'); if (r.status === 404) { setList(null); return; } if (!r.ok) return; const d = await r.json(); setList(Array.isArray(d.sessions) ? d.sessions : []); } catch {} finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
 
   const current = useMemo(() => list?.find(s => s.is_current) ?? null, [list]);

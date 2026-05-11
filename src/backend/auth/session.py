@@ -275,5 +275,64 @@ def extend_token(token: str, extra_secs: int = 86400) -> bool:
         return cur.rowcount > 0
 
 
+# ─── One-time-use challenge nonces ───────────────────────────────────────
+# Used by the wallet-login / agent-login / delete-account challenge flow:
+#   1. Server records a nonce when issuing a challenge
+#   2. Client signs the challenge and posts it back along with the nonce
+#   3. Server validates the nonce was issued and not yet consumed
+#   4. Server consumes the nonce so the same challenge can't be replayed
+#
+# Stored in-memory (good enough for a single-process dev backend; nonces
+# expire after NONCE_TTL seconds either way).
+
+NONCE_TTL = 300  # 5 minutes
+_nonce_store: dict[str, int] = {}  # nonce -> created_at epoch
+
+
+def _gc_nonces(now: int | None = None) -> None:
+    """Drop expired nonces."""
+    cutoff = (now or int(time.time())) - NONCE_TTL
+    expired = [n for n, ts in _nonce_store.items() if ts < cutoff]
+    for n in expired:
+        _nonce_store.pop(n, None)
+
+
+def _record_nonce(nonce: str) -> None:
+    """Record a freshly-issued challenge nonce."""
+    if not nonce:
+        return
+    _gc_nonces()
+    _nonce_store[str(nonce)] = int(time.time())
+
+
+def _validate_challenge(challenge: str, nonce: str) -> bool:
+    """Return True if the nonce is recorded and not yet consumed.
+
+    The current flow uses ``challenge == nonce`` (see routes/auth.py),
+    so this just verifies the nonce is in the store and not stale.
+    """
+    if not nonce:
+        return False
+    _gc_nonces()
+    ts = _nonce_store.get(str(nonce))
+    if ts is None:
+        return False
+    if int(time.time()) - ts > NONCE_TTL:
+        _nonce_store.pop(str(nonce), None)
+        return False
+    # If a challenge string is also passed, require it to match the nonce
+    # (current callers always pass the same value for both).
+    if challenge and str(challenge) != str(nonce):
+        return False
+    return True
+
+
+def _consume_nonce(nonce: str) -> bool:
+    """Mark a nonce as used. Returns True if it was present."""
+    if not nonce:
+        return False
+    return _nonce_store.pop(str(nonce), None) is not None
+
+
 # Backward compat — server.py and tests import `session.create`
 create = create_token

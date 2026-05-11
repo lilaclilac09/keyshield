@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck } from 'lucide-react';
+import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
@@ -23,8 +23,10 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { DeviceVaultSection } from './components/sections/DeviceVaultSection';
 import { RevealField } from './components/ui/RevealField';
+import { ReportPage } from './components/ReportPage';
+import { X402TrustManager } from './components/X402TrustManager';
 
-type Section = 'vault' | 'device-vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs';
+type Section = 'vault' | 'device-vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'vault', label: 'Vault', icon: <Key size={14} /> },
@@ -36,6 +38,8 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
   { id: 'developer', label: 'Developer', icon: <Terminal size={14} /> },
   { id: 'docs', label: 'Docs', icon: <BookOpen size={14} /> },
+  { id: 'reports', label: 'Reports', icon: <FileText size={14} /> },
+  { id: 'trust', label: 'X402 Trust', icon: <ShieldCheck size={14} /> },
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
@@ -48,6 +52,8 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   settings: { title: 'Settings', subtitle: 'Account, security, and preferences' },
   developer: { title: 'Developer', subtitle: 'API tokens, SDK snippets, and endpoint reference' },
   docs: { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
+  reports: { title: 'Reports', subtitle: 'Vault audit log — detections, autofills, and saved keys' },
+  trust: { title: 'X402 Trust', subtitle: 'Trusted domains for x402 micropayment auto-pay' },
 };
 
 const MainContent: React.FC = () => {
@@ -105,6 +111,8 @@ const MainContent: React.FC = () => {
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
               {section === 'developer' && <DeveloperSection />}
               {section === 'docs' && <DocsSection />}
+              {section === 'reports' && <ReportPage />}
+              {section === 'trust' && <X402TrustManager />}
             </div>
           </div>
         </main>

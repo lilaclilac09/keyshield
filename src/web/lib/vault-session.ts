@@ -24,9 +24,10 @@ import { makeBearerHolder, type BearerHolder } from './sync-auth';
 import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
 
 export const SYNC_URL: string = (() => {
-  if (typeof process !== 'undefined') {
-    const env = process.env as Record<string, string | undefined>;
-    if (env.KEYSHIELD_SYNC_URL) return env.KEYSHIELD_SYNC_URL;
+  // vite's `define` replaces the literal `process.env.KEYSHIELD_SYNC_URL`
+  // at build time. Local destructure would not be replaced.
+  if (typeof process !== 'undefined' && process.env.KEYSHIELD_SYNC_URL) {
+    return process.env.KEYSHIELD_SYNC_URL;
   }
   return 'http://localhost:8787';
 })();
