@@ -252,19 +252,69 @@ impl CacheKey {
     }
 }
 
-// ─── Wire types ─────────────────────────────────────────────────────────────
+    /// Fork this client with a different API key. All other state
+    /// (caches, semaphore, HTTP client, config) is shared via `Arc`,
+    /// so this is a cheap clone — designed for multi-tenant proxies
+    /// that resolve the caller's vault-stored Helius key per request
+    /// while keeping a single warm cache across users.
+    ///
+    /// Cache safety: Helius RPC responses depend only on the JSON
+    /// `method` + `params`, not on which API key called them. Sharing
+    /// the cache across users is correct (and is the whole point of
+    /// running a single proxy with a warm cache).
+    pub fn with_api_key(&self, key: impl Into<Arc<str>>) -> Self {
+        Self {
+            http: self.http.clone(),
+            api_key: key.into(),
+            base_url: self.base_url.clone(),
+            wallet: self.wallet.clone(),
+            mem_cache: self.mem_cache.clone(),
+            disk_cache: self.disk_cache.clone(),
+            semaphore: self.semaphore.clone(),
+            config: self.config.clone(),
+        }
+    }
 
-/// Minimal `getAsset` response shape per spec 09 line 322 acceptance
-/// criterion ("define struct minimally — id, content, ownership"). Real
-/// callers will want the full DAS schema once Phase 3b expands.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct GetAssetResponse {
-    pub id: String,
-    #[serde(default)]
-    pub content: Value,
-    #[serde(default)]
-    pub ownership: Value,
-}
+    // ─── cached_call ────────────────────────────────────────────────────────
+
+    /// Generic cached + x402-aware caller used by every typed wrapper.
+    ///
+    /// Algorithm (spec 09 §"The cached_call shape"):
+    ///   1. Memory cache hit → return immediately
+    ///   2. Disk cache hit → promote to memory, return
+    ///   3. Cache miss → acquire semaphore, fire to upstream
+    ///   4. If 402 → try x402 payment + retry (max 1)
+    ///   5. Write to both cache tiers (unless TTL = 0)
+    pub(crate) async fn cached_call<T>(
+        &self,
+        method: &'static str,
+        params: Value,
+        ttl: Option<Duration>,
+    ) -> Result<T, HeliusError>
+    where
+        T: DeserializeOwned,
+    {
+        let key = CacheKey::derive(method, &params);
+        // method_ttls in config always take priority over the wrapper's hint
+        // (allows tests and operators to force TTL=0 to disable caching).
+        let ttl = if let Some(&override_ttl) = self.config.method_ttls.get(method) {
+            override_ttl
+        } else {
+            ttl.unwrap_or_else(|| self.ttl_for(method))
+        };
+
+        // 1. Memory cache hit.
+        if let Some(bytes) = self.mem_cache.get(key.as_str()) {
+            return serde_json::from_slice(&bytes).map_err(HeliusError::Json);
+        }
+
+        // 2. Disk cache hit → promote to memory.
+        if let Some(bytes) = self.disk_cache.get(&key).await? {
+            if !ttl.is_zero() {
+                self.mem_cache.set(key.as_str().to_string(), bytes.clone(), ttl);
+            }
+            return serde_json::from_slice(&bytes).map_err(HeliusError::Json);
+        }
 
 /// Single asset row from `getAssetsByOwner`. Schema mirrors
 /// `GetAssetResponse` for now — Phase 3b adds the rest of DAS's
