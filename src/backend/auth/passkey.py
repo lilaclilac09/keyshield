@@ -105,10 +105,15 @@ def _credentials_for_user(user_id: str) -> list[PublicKeyCredentialDescriptor]:
 # ─── registration ─────────────────────────────────────────────────────────────
 
 
-def registration_options(user_id: str, display_name: str) -> dict:
-    """Generate WebAuthn registration options and stash the challenge."""
+def registration_options(user_id: str, display_name: str, rp_id: str | None = None) -> dict:
+    """Generate WebAuthn registration options and stash the challenge.
+
+    rp_id should match the page origin's hostname (e.g.
+    'keyshield-sync-worker.vercel.app' for Vercel, 'localhost' for dev).
+    Falls back to the KS_RP_ID env var.
+    """
     opts = webauthn.generate_registration_options(
-        rp_id=RP_ID,
+        rp_id=rp_id or RP_ID,
         rp_name=RP_NAME,
         user_id=user_id.encode(),
         user_name=user_id,
@@ -128,7 +133,13 @@ def registration_options(user_id: str, display_name: str) -> dict:
     return json.loads(webauthn.options_to_json(opts))
 
 
-def registration_verify(user_id: str, credential: dict, name: str = "Passkey") -> dict:
+def registration_verify(
+    user_id: str,
+    credential: dict,
+    name: str = "Passkey",
+    rp_id: str | None = None,
+    expected_origin: list[str] | None = None,
+) -> dict:
     """Verify the credential from the browser and store it."""
     pending = _PENDING_REGS.pop(user_id, None)
     if not pending or pending["expires"] < time.time():
@@ -137,8 +148,8 @@ def registration_verify(user_id: str, credential: dict, name: str = "Passkey") -
     verification = webauthn.verify_registration_response(
         credential=credential,
         expected_challenge=_b64url_bytes(pending["challenge"]),
-        expected_rp_id=RP_ID,
-        expected_origin=ORIGIN,
+        expected_rp_id=rp_id or RP_ID,
+        expected_origin=expected_origin or ORIGIN,
         require_user_verification=False,
     )
 
@@ -163,10 +174,10 @@ def registration_verify(user_id: str, credential: dict, name: str = "Passkey") -
 # ─── authentication ───────────────────────────────────────────────────────────
 
 
-def authentication_options(user_id: str) -> dict:
+def authentication_options(user_id: str, rp_id: str | None = None) -> dict:
     """Generate WebAuthn authentication options and stash the challenge."""
     opts = webauthn.generate_authentication_options(
-        rp_id=RP_ID,
+        rp_id=rp_id or RP_ID,
         allow_credentials=_credentials_for_user(user_id),
         user_verification=UserVerificationRequirement.PREFERRED,
         timeout=60_000,
@@ -179,7 +190,12 @@ def authentication_options(user_id: str) -> dict:
     return json.loads(webauthn.options_to_json(opts))
 
 
-def authentication_verify(user_id: str, credential: dict) -> dict:
+def authentication_verify(
+    user_id: str,
+    credential: dict,
+    rp_id: str | None = None,
+    expected_origin: list[str] | None = None,
+) -> dict:
     """Verify the assertion from the browser and return the credential id."""
     pending = _PENDING_AUTHS.pop(user_id, None)
     if not pending or pending["expires"] < time.time():
@@ -197,8 +213,8 @@ def authentication_verify(user_id: str, credential: dict) -> dict:
         verification = webauthn.verify_authentication_response(
             credential=credential,
             expected_challenge=_b64url_bytes(pending["challenge"]),
-            expected_rp_id=RP_ID,
-            expected_origin=ORIGIN,
+            expected_rp_id=rp_id or RP_ID,
+            expected_origin=expected_origin or ORIGIN,
             credential_public_key=bytes(row["public_key"]),
             credential_current_sign_count=row["sign_count"],
             require_user_verification=False,

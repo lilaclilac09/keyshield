@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -25,6 +26,22 @@ async def _session(token: str) -> dict | None:
     if not token:
         return None
     return sess_mod.get(token)
+
+
+def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
+    """Derive WebAuthn rp_id + allowed origins from the request's Origin
+    header. WebAuthn requires rp_id to match the page hostname — for
+    multi-deployment setups (localhost + Vercel + custom domain) deriving
+    it per-request beats hardcoding a single env var. Returns (None, None)
+    if no Origin header — caller falls back to env defaults.
+    """
+    origin = request.headers.get("Origin")
+    if not origin:
+        return None, None
+    host = urlparse(origin).hostname
+    if not host:
+        return None, None
+    return host, [origin]
 
 
 # ─── Auth routes ────────────────────────────────────────────────
@@ -98,7 +115,8 @@ async def passkey_register_options(request: Request):
     if not sess:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
-    opts = pk_mod.registration_options(user_id, display_name="Device Vault")
+    rp_id, _ = _origin_rp_id(request)
+    opts = pk_mod.registration_options(user_id, display_name="Device Vault", rp_id=rp_id)
     return JSONResponse(opts)
 
 
@@ -109,9 +127,14 @@ async def passkey_register_verify(request: Request):
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
     body = await request.json()
+    rp_id, origins = _origin_rp_id(request)
     try:
         out = pk_mod.registration_verify(
-            user_id, body["credential"], body.get("name", "Passkey")
+            user_id,
+            body["credential"],
+            body.get("name", "Passkey"),
+            rp_id=rp_id,
+            expected_origin=origins,
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -119,10 +142,11 @@ async def passkey_register_verify(request: Request):
 
 
 @router.get("/auth/passkey/auth-options")
-async def passkey_auth_options(user_id: str):
+async def passkey_auth_options(user_id: str, request: Request):
     """Unauthenticated — used by login flow."""
+    rp_id, _ = _origin_rp_id(request)
     try:
-        opts = pk_mod.authentication_options(user_id)
+        opts = pk_mod.authentication_options(user_id, rp_id=rp_id)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse(opts)
@@ -132,8 +156,14 @@ async def passkey_auth_options(user_id: str):
 async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = "default"):
     """Verify the assertion and mint a session token (Path A login)."""
     body = await request.json()
+    rp_id, origins = _origin_rp_id(request)
     try:
-        pk_mod.authentication_verify(user_id, body.get("credential", body))
+        pk_mod.authentication_verify(
+            user_id,
+            body.get("credential", body),
+            rp_id=rp_id,
+            expected_origin=origins,
+        )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     token = sess_mod.create_token(user_id, passphrase)
