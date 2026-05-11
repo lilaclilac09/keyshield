@@ -1,12 +1,19 @@
 import { useState } from 'react';
-import { Key, Plus, Search, Filter, Sparkles } from 'lucide-react';
-import { Button, Input, Tabs, TabsList, TabsTrigger, Badge, Skeleton } from '@keyshield/ui';
-import { StatCard } from '../components/ui/StatCard';
+import { Key, Plus, Search } from 'lucide-react';
 import { useVault } from '@keyshield/shared/hooks/use-vault';
-import { relTime } from '@keyshield/shared/lib/time';
+import { StatCard } from '../components/ui/StatCard';
 import { VaultItemCard } from '../components/VaultItemCard';
 import { AddKeyModal } from '../components/AddKeyModal';
 import { OcrScanner } from '../components/OcrScanner';
+
+const FILTERS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'api_key', label: 'Keys' },
+  { value: 'password', label: 'Passwords' },
+  { value: 'note', label: 'Notes' },
+  { value: 'env', label: 'Env' },
+  { value: 'ssh_key', label: 'SSH' },
+];
 
 export default function Vault() {
   const { items, isLoading, refetch } = useVault();
@@ -16,7 +23,10 @@ export default function Vault() {
   const [ocrOpen, setOcrOpen] = useState(false);
 
   const filtered = items.filter(item => {
-    const matchesSearch = !search || item.name.toLowerCase().includes(search.toLowerCase()) || (item.upstream?.toLowerCase().includes(search.toLowerCase()));
+    const matchesSearch =
+      !search ||
+      item.name.toLowerCase().includes(search.toLowerCase()) ||
+      item.upstream?.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === 'all' || item.type === filter;
     return matchesSearch && matchesFilter;
   });
@@ -24,91 +34,109 @@ export default function Vault() {
   const total = items.length;
   const expiringSoon = items.filter(i => {
     if (!i.expires_at) return false;
-    const days = (new Date(i.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    const days = (new Date(i.expires_at).getTime() - Date.now()) / 86400000;
     return days <= 14 && days > 0;
   }).length;
   const recentlyUsed = items.filter(i => {
     if (!i.updated_at) return false;
-    return (Date.now() - new Date(i.updated_at).getTime()) / (1000 * 60 * 60 * 24) <= 7;
+    return (Date.now() - new Date(i.updated_at).getTime()) / 86400000 <= 7;
   }).length;
 
-  if (isLoading) return (
-    <div>
-      <div className="stat-card-grid">{[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl bg-[#111]" />)}</div>
-      <div className="grid gap-3 md:grid-cols-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-40 rounded-xl bg-[#111]" />)}</div>
-    </div>
-  );
-
   return (
-    <div>
-      {/* Page header */}
-      <div className="page-header">
-        <div>
-          <h1>Vault</h1>
-          <p className="page-header-subtitle">Encrypted secrets, keys, and credentials</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setOcrOpen(true)} className="text-[#a0a0b0]">
-            Scan
-          </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4 mr-1.5" /> Add Secret
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
-      <div className="stat-card-grid">
-        <StatCard label="Total secrets" value={total} hint="encrypted with AES-256-GCM" />
-        <StatCard label="Used this week" value={recentlyUsed} hint="across agents and apps" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />
+        <StatCard label="Used This Week" value={recentlyUsed} hint="across agents and apps" />
         <StatCard
-          label="Expiring soon"
-          value={<span className={expiringSoon > 0 ? 'text-[#f59e0b]' : 'text-[#a0a0b0]'}>{expiringSoon}</span>}
+          label="Expiring Soon"
+          value={
+            <span className={expiringSoon > 0 ? 'text-amber-500' : 'text-white'}>{expiringSoon}</span>
+          }
           hint="within 14 days"
         />
       </div>
 
       {/* Toolbar */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: '#4a4a56' }} />
-          <Input
-            className="pl-9 bg-[#111114] border-[#1e1e24] text-white placeholder:text-[#4a4a56]"
-            placeholder="Search vault\u2026"
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <input
             value={search}
             onChange={e => setSearch(e.target.value)}
+            placeholder="Search vault…"
+            className="w-full h-9 pl-9 pr-3 rounded-[3px] bg-[#0a0a0a] border border-zinc-800/50 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700"
           />
         </div>
-        <Tabs value={filter} onValueChange={setFilter}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="api_key">Keys</TabsTrigger>
-            <TabsTrigger value="password">Passwords</TabsTrigger>
-            <TabsTrigger value="note">Notes</TabsTrigger>
-            <TabsTrigger value="env">Env</TabsTrigger>
-            <TabsTrigger value="ssh_key">SSH</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex rounded-[3px] border border-zinc-800/50 bg-[#0a0a0a] p-0.5">
+          {FILTERS.map(f => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilter(f.value)}
+              className={`px-3 h-8 rounded-[2px] text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                filter === f.value
+                  ? 'bg-white text-black'
+                  : 'text-zinc-500 hover:text-white'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setOcrOpen(true)}
+          className="h-9 px-3 rounded-[3px] border border-zinc-800/50 bg-[#0a0a0a] text-[12px] uppercase tracking-wider text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+        >
+          Scan
+        </button>
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="h-9 px-4 rounded-[3px] bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors"
+        >
+          <Plus size={14} /> Add Secret
+        </button>
       </div>
 
       {/* Content */}
-      {filtered.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">
-            <Key size={20} strokeWidth={1.75} />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="h-32 rounded-[3px] border border-zinc-800/50 bg-[#0a0a0a] animate-pulse" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-[3px] border border-dashed border-zinc-800/50 py-24 flex flex-col items-center justify-center text-center">
+          <div className="w-12 h-12 rounded-[3px] bg-[#0a0a0a] border border-zinc-800/50 flex items-center justify-center mb-4">
+            <Key size={20} className="text-white" strokeWidth={1.75} />
           </div>
-          <h3>{search ? 'No matching secrets' : 'Your vault is empty'}</h3>
-          <p>{search ? 'Try adjusting your search or filter.' : 'Add your first encrypted secret to get started.'}</p>
+          <p className="text-[14px] text-zinc-300 font-medium">
+            {search ? 'No secrets match your search' : 'Your vault is empty'}
+          </p>
+          <p className="text-[12px] text-zinc-500 mt-1 mb-5">
+            {search ? '' : 'Add your first encrypted secret to get started'}
+          </p>
           {!search && (
-            <button className="ks-btn-primary" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" /> Add a secret
+            <button
+              onClick={() => setAddOpen(true)}
+              className="h-9 px-4 rounded-[2px] bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors"
+            >
+              <Plus size={14} /> Add Secret
             </button>
           )}
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map(item => (
-            <VaultItemCard key={item.id} item={item} onReveal={() => {}} onCopy={() => {}} onDelete={() => refetch()} />
+            <VaultItemCard
+              key={item.id}
+              item={item}
+              onReveal={() => {}}
+              onCopy={() => {}}
+              onDelete={() => refetch()}
+            />
           ))}
         </div>
       )}
