@@ -3,6 +3,13 @@ main = "src/index.ts"
 compatibility_date = "2026-01-15"
 compatibility_flags = ["nodejs_compat"]
 
+# Production custom domain. Add `sync.ks.aileena.xyz` to your Cloudflare
+# DNS as a proxied record (orange cloud), then wrangler will route to here.
+# Custom Domains require the zone (aileena.xyz) on the same CF account.
+routes = [
+  { pattern = "sync.ks.aileena.xyz", custom_domain = true },
+]
+
 # Encrypted-at-rest vault ciphertext, addressed by the PRF-derived
 # vault ID. Bind a real R2 bucket before `wrangler deploy`.
 [[r2_buckets]]

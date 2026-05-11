@@ -291,11 +291,16 @@ def revoke(owner_wallet: str, agent_id: int) -> bool:
     """Delete an agent registration. Returns True if found + deleted."""
     conn = _db()
     try:
-        # Also get pubkey before deleting for CRL update
-        pubkey = conn.execute(
+        # Also get pubkey before deleting for CRL update.
+        # If the row doesn't exist (or doesn't belong to this owner), bail
+        # out with False instead of crashing.
+        row = conn.execute(
             "SELECT pubkey_b58 FROM agent_keys WHERE id = ? AND owner_wallet = ?",
             (agent_id, owner_wallet),
-        ).fetchone()[0]
+        ).fetchone()
+        if row is None:
+            return False
+        pubkey = row[0]
 
         cur = conn.execute(
             "DELETE FROM agent_keys WHERE id = ? AND owner_wallet = ?",

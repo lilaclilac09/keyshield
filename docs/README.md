@@ -4,10 +4,17 @@ Operator guides, get-started flows, and architecture notes.
 
 ---
 
+## 🚀 Start here
+
+**[`API.md`](API.md)** — single reference for every endpoint + auth flow + curl/Python/JS examples + extension install. If you're calling the API or writing code against KeyShield, this is the only doc you need to open first.
+
+---
+
 ## Structure
 
 | Path | Contents |
 |------|----------|
+| **[API.md](API.md)** | **Single API reference (auth → token → vault → proxy)** |
 | [get-started/](get-started/) | CLI install, local dev, self-host, top-up with SOL, frontend integration |
 | [architecture/](architecture/) | System design + architecture overview |
 | [DEVNET.md](DEVNET.md) | Devnet deployment guide |

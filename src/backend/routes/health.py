@@ -14,9 +14,21 @@ async def health():
 
 @router.get("/install.sh")
 async def install_sh():
-    return FileResponse(Path(__file__).parent.parent / "keyshield-cli.sh")
+    path = Path(__file__).parent.parent / "keyshield-cli.sh"
+    if not path.exists():
+        return JSONResponse(
+            {"error": "install script not packaged with this build"},
+            status_code=404,
+        )
+    return FileResponse(path)
 
 
 @router.get("/static/keyshield_sdk.py")
 async def static_sdk():
-    return FileResponse(Path(__file__).parent.parent / "keyshield_sdk.py")
+    path = Path(__file__).parent.parent / "keyshield_sdk.py"
+    if not path.exists():
+        return JSONResponse(
+            {"error": "sdk not packaged with this build"},
+            status_code=404,
+        )
+    return FileResponse(path)

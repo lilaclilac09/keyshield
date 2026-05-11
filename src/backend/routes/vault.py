@@ -47,6 +47,15 @@ def _db() -> sqlite3.Connection:
             PRIMARY KEY (id, user_id)
         )
     """)
+    # Path A lite: client-side AES-GCM ciphertext columns (added late, may
+    # not exist on older DBs). ALTER TABLE is idempotent here via try/except.
+    for stmt in (
+        "ALTER TABLE vault_items ADD COLUMN cipher   TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE vault_items ADD COLUMN iv       TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE vault_items ADD COLUMN cipher_v INTEGER NOT NULL DEFAULT 0",
+    ):
+        try: conn.execute(stmt)
+        except sqlite3.OperationalError: pass   # column already exists
     conn.commit()
     return conn
 
@@ -98,6 +107,9 @@ async def vault_list(request: Request):
             "type": r["type"],
             "upstream": r["upstream"],
             "masked_value": _mask(r["value"]),
+            "cipher": r["cipher"] if "cipher" in r.keys() else "",
+            "iv": r["iv"] if "iv" in r.keys() else "",
+            "cipher_v": r["cipher_v"] if "cipher_v" in r.keys() else 0,
             "tags": _json.loads(r["tags"]),
             "created_at": _iso(r["created_at"]),
             "updated_at": _iso(r["updated_at"]),
@@ -118,11 +130,12 @@ async def vault_store(request: Request):
     expires_at = now + (expiry_days * 86400) if expiry_days else None
     with _db() as conn:
         conn.execute("""
-            INSERT INTO vault_items (id, user_id, name, type, upstream, value, tags, created_at, updated_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO vault_items (id, user_id, name, type, upstream, value, tags, created_at, updated_at, expires_at, cipher, iv, cipher_v)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id, user_id) DO UPDATE SET
                 name=excluded.name, type=excluded.type, upstream=excluded.upstream,
                 value=excluded.value, tags=excluded.tags,
+                cipher=excluded.cipher, iv=excluded.iv, cipher_v=excluded.cipher_v,
                 updated_at=excluded.updated_at, expires_at=excluded.expires_at
         """, (
             item_id, uid,
@@ -132,6 +145,9 @@ async def vault_store(request: Request):
             body.get("value", ""),
             _json.dumps(body.get("tags", [])),
             now, now, expires_at,
+            body.get("cipher", ""),
+            body.get("iv", ""),
+            int(body.get("cipher_v", 0)),
         ))
     return JSONResponse({"id": item_id})
 

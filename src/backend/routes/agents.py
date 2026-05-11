@@ -125,7 +125,10 @@ async def agent_register(request: Request):
 
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
-    agents_mod.register(owner, body["pubkeyB58"], name=body.get("name", "agent"))
+    pubkey = body.get("pubkeyB58")
+    if not pubkey:
+        return JSONResponse({"error": "pubkeyB58 required"}, status_code=400)
+    agents_mod.register(owner, pubkey, name=body.get("name", "agent"))
     return JSONResponse({"ok": True})
 
 

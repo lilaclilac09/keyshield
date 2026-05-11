@@ -2,40 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "python-backend",
-      "runtimeExecutable": "v2-mvp/.venv/bin/uvicorn",
-      "runtimeArgs": [
-        "--app-dir",
-        "v2-mvp",
-        "src.server:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8001"
-      ],
-      "port": 8001
-    },
-    {
-      "name": "rust-proxy",
-      "runtimeExecutable": "cargo",
-      "runtimeArgs": [
-        "run",
-        "--release",
-        "--manifest-path",
-        "proxy-rs/Cargo.toml",
-        "--bin",
-        "ks-proxy"
-      ],
-      "port": 8000
-    },
-    {
       "name": "frontend-vite",
+      "cwd": "/Users/aileen/Downloads/privacy_hack/keyshield/.claude/worktrees/intelligent-payne-dcc71d/src/web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
         "dev",
-        "--prefix",
-        "frontend",
         "--",
         "--host",
         "127.0.0.1",
@@ -43,6 +15,34 @@
         "5173"
       ],
       "port": 5173
+    },
+    {
+      "name": "python-backend",
+      "cwd": "/Users/aileen/Downloads/privacy_hack/keyshield/.claude/worktrees/intelligent-payne-dcc71d",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": [
+        "src.backend.app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001",
+        "--reload"
+      ],
+      "port": 8001
+    },
+    {
+      "name": "rust-proxy",
+      "cwd": "/Users/aileen/Downloads/privacy_hack/keyshield/.claude/worktrees/intelligent-payne-dcc71d",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": [
+        "run",
+        "--release",
+        "--manifest-path",
+        "src/proxy/Cargo.toml",
+        "--bin",
+        "ks-proxy"
+      ],
+      "port": 8000
     }
   ]
 }

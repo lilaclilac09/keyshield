@@ -18,6 +18,10 @@
 
 ---
 
+> 📖 **Full API reference**: [`docs/API.md`](docs/API.md) — every endpoint, every auth flow, paste-ready curl/Python/JS examples, extension install. Start there if you're integrating.
+
+---
+
 ## Overview
 
 KeyShield is an intelligent agent and custodial platform built for the agentic future. It provides zero-trust API key management, Solana-based wallet authentication, and metered payment protocols — all without ever storing plaintext secrets on any server.
