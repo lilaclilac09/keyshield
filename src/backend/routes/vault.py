@@ -72,6 +72,9 @@ async def vault_list(request: Request):
             "created_at": _iso(item["created_at"]),
             "updated_at": _iso(item["updated_at"]),
             "expires_at": _iso(item["expires_at"]) if item.get("expires_at") else None,
+            "cipher": item.get("cipher"),
+            "iv": item.get("iv"),
+            "cipher_v": item.get("cipher_v"),
         })
     return JSONResponse(result)
 
@@ -83,16 +86,20 @@ async def vault_store(request: Request):
     item_id = body.get("id") or f"ks_{uuid.uuid4().hex[:12]}"
     now = time.time()
     expiry_days = body.get("expiry_days", 30)
-    _user_vault(uid)[item_id] = {
+    item = {
         "name": body.get("name", "unnamed"),
         "type": body.get("type", "api_key"),
         "upstream": body.get("upstream", ""),
         "value": body.get("value", ""),
+        "cipher": body.get("cipher"),
+        "iv": body.get("iv"),
+        "cipher_v": body.get("cipher_v"),
         "tags": body.get("tags", []),
         "created_at": now,
         "updated_at": now,
         "expires_at": now + (expiry_days * 86400) if expiry_days else None,
     }
+    _user_vault(uid)[item_id] = item
     return JSONResponse({"id": item_id})
 
 
