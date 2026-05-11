@@ -1,0 +1,29 @@
+services:
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    ports:
+      - "8001:8001"
+    environment:
+      SERVER_SECRET: ${SERVER_SECRET:-dev-secret-32-bytes-minimum-len}
+      KS_INTERNAL_SECRET: ${KS_INTERNAL_SECRET:-dev-internal-secret}
+      PORT: "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r=httpx.get('http://localhost:8001/health'); exit(0 if r.status_code==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm ci --workspace=keyshield-web-v2 2>/dev/null || true && cd src/web && npx vite preview --port 3000 --host 0.0.0.0 2>/dev/null || npx serve dist -l 3000 2>/dev/null || true"
+    depends_on:
+      python:
+        condition: service_healthy
