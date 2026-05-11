@@ -24,6 +24,7 @@ futures = "0.3"
 http = "1"
 moka = { version = "0.12", features = ["future"] }
 pbkdf2 = "0.12"
+redb = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
