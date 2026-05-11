@@ -112,8 +112,9 @@ async fn proxy_inner(
         }
     };
 
-    // 2. Session lookup. dev-bypass mirrors server.py:330.
-    let session = match resolve_session(&state, token) {
+    // 2. Session lookup. dev-bypass mirrors server.py:330. Clone the token
+    //    so the MPP charging hook downstream can re-use it as the bearer.
+    let session = match resolve_session(&state, token.clone()) {
         Ok(s) => s,
         Err(resp) => {
             if state.stealth {
@@ -225,6 +226,20 @@ async fn proxy_inner(
         latency_ms,
         status: resp.status.as_u16(),
     });
+
+    // 9.5. Generic MPP charging hook. After a successful upstream call,
+    //     if the request carried `X-Mpp-Stream-Id: <u64>`, fire-and-forget
+    //     a POST to the Python backend's `/mpp/streams/<id>/record` so the
+    //     stream is debited. Generic across all upstreams; failures never
+    //     block the hot path (see `PythonBridge::record_mpp_call`).
+    if resp.status.as_u16() < 400 {
+        if let Some(sid_str) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) {
+            if let Ok(stream_id) = sid_str.parse::<u64>() {
+                let tokens = tok_in.saturating_add(tok_out) as u32;
+                state.bridge.record_mpp_call(stream_id, token.to_string(), tokens);
+            }
+        }
+    }
 
     let mut response = Response::builder()
         .status(resp.status)

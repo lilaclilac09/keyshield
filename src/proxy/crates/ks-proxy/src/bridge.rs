@@ -87,6 +87,35 @@ impl PythonBridge {
         Ok(value)
     }
 
+    /// Fire-and-forget MPP charging hook. After a successful upstream call,
+    /// the proxy POSTs `{calls: 1, tokens: N}` to `/mpp/streams/<id>/record`
+    /// on the Python backend with the caller's session bearer. Failures are
+    /// logged via `tracing::warn` and never block the hot path.
+    ///
+    /// The whole network roundtrip happens in a detached `tokio::spawn`;
+    /// this method returns immediately.
+    pub fn record_mpp_call(&self, stream_id: u64, bearer: String, tokens: u32) {
+        let client = self.client.clone();
+        let url = format!(
+            "{}/mpp/streams/{}/record",
+            self.base_url.trim_end_matches('/'),
+            stream_id,
+        );
+        tokio::spawn(async move {
+            let resp = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {bearer}"))
+                .json(&serde_json::json!({"calls": 1, "tokens": tokens}))
+                .send()
+                .await;
+            match resp {
+                Ok(r) if r.status().is_success() => {}
+                Ok(r) => tracing::warn!(stream_id, status = %r.status(), "mpp record_mpp_call non-2xx"),
+                Err(e) => tracing::warn!(stream_id, error = %e, "mpp record_mpp_call failed"),
+            }
+        });
+    }
+
     /// `POST /_internal/log` with `{"entries": [...]}`. Non-200 → log
     /// `warn!` and drop the batch (spec 07 "do NOT retry"). The function
     /// itself never returns `Err` for an HTTP-level failure — that would
@@ -316,5 +345,57 @@ async fn drain_loop(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn record_mpp_call_posts_to_record_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/mpp/streams/42/record"))
+            .and(header("Authorization", "Bearer session-tok"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let bridge = PythonBridge::new(server.uri(), "irrelevant".into());
+        bridge.record_mpp_call(42, "session-tok".to_string(), 1234);
+
+        // record_mpp_call is fire-and-forget — give the spawned task time
+        // to actually fire.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 1, "wiremock should have seen the record POST");
+        let r = &reqs[0];
+        assert_eq!(r.url.path(), "/mpp/streams/42/record");
+        let body: serde_json::Value =
+            serde_json::from_slice(&r.body).expect("body must be valid JSON");
+        assert_eq!(body["calls"], 1);
+        assert_eq!(body["tokens"], 1234);
+    }
+
+    #[tokio::test]
+    async fn record_mpp_call_swallows_5xx() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/mpp/streams/7/record"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let bridge = PythonBridge::new(server.uri(), "irrelevant".into());
+        // Must return immediately, never panic, never propagate the 500.
+        bridge.record_mpp_call(7, "sess".to_string(), 99);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Confirm the request was at least attempted.
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 1);
     }
 }
