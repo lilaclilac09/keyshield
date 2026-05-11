@@ -2,6 +2,12 @@
 //!
 //! Read-only client for vault files written by `v2-mvp/src/vault.py`.
 //! See `proxy-rs/specs/01-vault-format.md` for the byte layout.
+//!
+//! Also exposes `sqlite::lookup_upstream_key` for the current vault
+//! storage backend (`src/backend/data/vault_shim.db`).
+
+pub mod sqlite;
+pub use sqlite::{lookup_upstream_key, SqliteVaultError};
 
 use std::path::PathBuf;
 
