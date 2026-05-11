@@ -3,10 +3,8 @@ import { lazy } from 'react';
 import { redirect } from 'react-router';
 import RootLayout from '../layouts/RootLayout';
 import AuthLayout from '../layouts/AuthLayout';
-import { isAuthenticated } from '@keyshield/shared/auth';
 import { authLoader, protectedLoader } from './loaders';
 
-const Landing = lazy(() => import('../pages/Landing'));
 const Login = lazy(() => import('../pages/Login'));
 const Vault = lazy(() => import('../pages/Vault'));
 const DeviceVault = lazy(() => import('../pages/DeviceVault'));
@@ -24,7 +22,7 @@ export const rootRoutes: RouteObject[] = [
   {
     index: true,
     path: '/',
-    element: <Landing />,
+    loader: async () => redirect('/app/vault'),
   },
   // Redirect /vault → /app/vault for "Launch App" CTA buttons
   {
