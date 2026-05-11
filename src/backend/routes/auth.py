@@ -78,12 +78,48 @@ async def agent_challenge():
 
 @router.post("/auth/agent-login")
 async def agent_login(request: Request):
-    body = await request.json()
+    import base64
+    import logging
     from ..agents import agents as agents_mod
 
-    agent_info = agents_mod.lookup_owner(body["pubkeyB58"])
+    body = await request.json()
+    pubkey_b58: str = body.get("pubkeyB58", "")
+    challenge: str = body.get("challenge", "")
+    nonce: str = body.get("nonce", "")
+    signature: str | None = body.get("signature")
+
+    agent_info = agents_mod.lookup_owner(pubkey_b58)
     if not agent_info:
         return JSONResponse({"error": "agent not registered"}, status_code=401)
+
+    if signature is None:
+        # Dev-mode: no signature provided — allow but warn
+        logging.getLogger(__name__).warning(
+            "agent-login for %s accepted without signature verification (dev mode)",
+            pubkey_b58,
+        )
+    else:
+        if not sess_mod._validate_challenge(challenge, nonce):
+            return JSONResponse({"error": "challenge expired or not recognised"}, status_code=401)
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            from cryptography.exceptions import InvalidSignature
+            import base58 as _base58
+
+            pubkey_bytes = _base58.b58decode(pubkey_b58)
+            ed_pubkey = Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+            sig_bytes = base64.b64decode(signature)
+            ed_pubkey.verify(sig_bytes, challenge.encode("utf-8"))
+        except ImportError as exc:
+            logging.getLogger(__name__).error("Ed25519 verification dependency missing: %s", exc)
+            return JSONResponse({"error": "server crypto dependency missing"}, status_code=500)
+        except (InvalidSignature, Exception) as exc:
+            logging.getLogger(__name__).warning(
+                "agent-login signature verification failed for %s: %s", pubkey_b58, exc
+            )
+            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+        sess_mod._consume_nonce(nonce or challenge)
+
     token = sess_mod.create_token(agent_info["owner_wallet"], "default")
     return JSONResponse({"token": token})
 

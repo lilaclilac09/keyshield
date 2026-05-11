@@ -166,6 +166,11 @@ async def mpp_open_stream(request: Request):
         else body.get("settlementInterval", 60)
     )
 
+    stream_pda = (body.get("streamPda") or body.get("stream_pda") or "").strip() or None
+    stream_usdc_ata = (
+        body.get("streamUsdcAta") or body.get("stream_usdc_ata") or ""
+    ).strip() or None
+
     from ..mpp import mpp_streams
 
     try:
@@ -177,6 +182,8 @@ async def mpp_open_stream(request: Request):
             rate_per_token=int(rate_per_token or 0),
             rate_per_call=int(rate_per_call or 0),
             settlement_interval=int(settlement_interval or 60),
+            stream_pda=stream_pda,
+            stream_usdc_ata=stream_usdc_ata,
         )
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -428,10 +435,24 @@ async def mpp_record_tx(stream_id: int, request: Request):
     if not sig:
         return JSONResponse({"detail": "tx_signature is required"}, status_code=400)
 
+    # Also accept stream PDA + ATA so settle_on_chain can find them.
+    stream_pda = (
+        body.get("streamPda") or body.get("stream_pda") or ""
+    ).strip() or None
+    stream_usdc_ata = (
+        body.get("streamUsdcAta") or body.get("stream_usdc_ata") or ""
+    ).strip() or None
+
     from ..mpp import mpp_streams
 
     try:
-        stream = mpp_streams.record_tx_signature(sess["user_id"], stream_id, sig)
+        stream = mpp_streams.record_tx_signature(
+            sess["user_id"],
+            stream_id,
+            sig,
+            stream_pda=stream_pda,
+            stream_usdc_ata=stream_usdc_ata,
+        )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except ValueError as e:

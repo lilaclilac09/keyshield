@@ -305,30 +305,36 @@ def _record_nonce(nonce: str) -> None:
     _nonce_store[str(nonce)] = int(time.time())
 
 
-def _validate_challenge(challenge: str, nonce: str) -> bool:
-    """Return True if the nonce is recorded and not yet consumed.
+def _validate_challenge(challenge: str, nonce: str = "") -> bool:
+    """Return True if the challenge is recorded and not yet consumed.
 
-    The current flow uses ``challenge == nonce`` (see routes/auth.py),
-    so this just verifies the nonce is in the store and not stale.
+    Frontend may not send a separate ``nonce`` field — in the wallet-login
+    flow ``challenge == nonce`` (both come from the same /wallet-challenge
+    response), so when nonce is empty we fall back to the challenge itself
+    as the lookup key.
     """
-    if not nonce:
+    key = nonce or challenge
+    if not key:
         return False
     _gc_nonces()
-    ts = _nonce_store.get(str(nonce))
+    ts = _nonce_store.get(str(key))
     if ts is None:
         return False
     if int(time.time()) - ts > NONCE_TTL:
-        _nonce_store.pop(str(nonce), None)
+        _nonce_store.pop(str(key), None)
         return False
-    # If a challenge string is also passed, require it to match the nonce
-    # (current callers always pass the same value for both).
-    if challenge and str(challenge) != str(nonce):
+    # When both fields are explicitly passed, require them to match.
+    if challenge and nonce and str(challenge) != str(nonce):
         return False
     return True
 
 
 def _consume_nonce(nonce: str) -> bool:
-    """Mark a nonce as used. Returns True if it was present."""
+    """Mark a nonce as used. Returns True if it was present.
+
+    Accepts either the nonce string or the challenge (they're equal in
+    the current /wallet-challenge flow).
+    """
     if not nonce:
         return False
     return _nonce_store.pop(str(nonce), None) is not None
