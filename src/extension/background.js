@@ -18,8 +18,8 @@
  *     re-zipping. Defaults to localhost in dev. The popup writes this value.
  */
 
-const DEFAULT_KS_BASE       = 'http://127.0.0.1:8001';
-const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:8001';
+const DEFAULT_KS_BASE       = 'http://127.0.0.1:8001';   // FastAPI control plane
+const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:5173';   // Vite dev server (frontend)
 
 async function getApiBase() {
   const { ks_api_base, ks_dashboard_url } = await chrome.storage.local.get([
@@ -65,22 +65,27 @@ function notify(title, message, icon) {
 
 async function directStore({ upstream, value }) {
   const { token } = await getStoredToken();
-  if (!token) return { ok: false, reason: 'no-token' };
-
   const { apiBase } = await getApiBase();
+
+  // Try the request even without a token: the backend's `_auth(request)`
+  // falls back to the `"default"` user bucket when Authorization is missing,
+  // which is what we want for the local-dev / unsigned-in case. If the
+  // deployed backend later starts enforcing auth, the 401 branch below
+  // handles it cleanly.
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   try {
     const r = await fetch(`${apiBase}/manage/store`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ upstream, apiKey: value }),
+      method: 'POST',
+      headers,
+      // Field name MUST be `value` — that's what routes/vault.py:vault_store
+      // reads (`body.get("value", "")`). Sending `apiKey` silently stored
+      // an empty string.
+      body: JSON.stringify({ upstream, value, name: `${upstream} key` }),
     });
 
     if (r.status === 401) {
-      // token expired
       await clearStoredToken();
       return { ok: false, reason: 'token-expired' };
     }
@@ -96,9 +101,27 @@ async function directStore({ upstream, value }) {
 // ── SAVE_KEY (from content.js) ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Accept both the structured form ({type, payload}) and the spec form
-  // ({action: "save-key", provider, key, source_url}) so we don't break
-  // either client.
+  // ── Auxiliary: token status (gates content.js bulk-save) ──────────────────
+  if (message.type === 'GET_TOKEN_STATUS') {
+    (async () => {
+      const { token, user } = await getStoredToken();
+      sendResponse({ hasToken: !!token, user });
+    })();
+    return true;
+  }
+
+  // ── Auxiliary: open dashboard once for sign-in (bulk-save flow) ───────────
+  if (message.type === 'OPEN_DASHBOARD_FOR_SIGNIN') {
+    (async () => {
+      const { dashboardUrl } = await getApiBase();
+      chrome.tabs.create({ url: dashboardUrl });
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
+  // ── SAVE_KEY: accept both the structured form ({type, payload}) and the
+  //    spec form ({action: 'save-key', provider, key, source_url}). ─────────
   let payload = null;
   if (message.type === 'SAVE_KEY' && message.payload) {
     payload = message.payload;
@@ -121,6 +144,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (result.ok) {
       notify('KeyShield', `Saved ${upstream} key to KeyShield`);
       sendResponse({ ok: true, mode: 'direct' });
+      return;
+    }
+
+    // Silent mode (used by content.js bulk-save): report failure to the
+    // caller and let it decide UX. Skips the per-key fallback tab so the
+    // user doesn't get N dashboard tabs opened in one click.
+    if (message.silent) {
+      sendResponse({ ok: false, mode: 'silent', reason: result.reason });
       return;
     }
 

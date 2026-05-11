@@ -4,7 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@keyshield/ui';
 import { configureApi } from '@keyshield/shared/api';
-import { getToken, clearAuth, isAuthenticated } from '@keyshield/shared/auth';
+import { getToken, clearAuth, isAuthenticated, syncTokenToExtension } from '@keyshield/shared/auth';
 import '@keyshield/ui/styles';
 import { SolanaProvider } from './providers/SolanaProvider';
 import { rootRoutes } from './routes';
@@ -19,6 +19,13 @@ configureApi({
     window.location.href = '/login';
   },
 });
+
+// Push any existing session token to the KeyShield browser extension so
+// returning users (token already in localStorage) get the extension wired
+// up without having to log out and back in. New logins go through
+// saveToken() which already pushes — this only covers the "already
+// signed in last session" path. No-op when the extension isn't installed.
+syncTokenToExtension();
 
 const queryClient = new QueryClient({
   defaultOptions: {

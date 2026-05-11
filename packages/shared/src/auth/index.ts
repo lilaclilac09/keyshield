@@ -244,12 +244,60 @@ const TOKEN_KEY = 'ks_token';
 const WALLET_KEY = 'ks_wallet';
 const DEMO_FLAG = 'ks_demo';
 
+// ── KeyShield browser-extension bridge ───────────────────────────────────────
+// The extension's content script broadcasts its runtime ID on dashboard pages
+// via window.postMessage({__ks_ext_announce}). We cache it and forward every
+// saveToken/clearAuth so the extension's background.js can do authenticated
+// /manage/store calls without the user pasting a token manually.
+//
+// Safety: even if a non-dashboard page knew our extension ID, the extension's
+// `externally_connectable.matches` still gates which origins can message it,
+// so leaking the ID here is benign.
+
+let _ksExtensionId: string | null = null;
+const _pendingPushes: Array<Record<string, unknown>> = [];
+
+function _flushPending(): void {
+  if (!_ksExtensionId) return;
+  const c = (globalThis as { chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void; lastError?: unknown } } }).chrome ?? null;
+  const runtime = c?.runtime;
+  if (!runtime?.sendMessage) { _pendingPushes.length = 0; return; }
+  while (_pendingPushes.length) {
+    const p = _pendingPushes.shift()!;
+    try { runtime.sendMessage(_ksExtensionId, p, () => void runtime.lastError); }
+    catch { /* extension uninstalled / messaging blocked */ }
+  }
+}
+
+function _pushToExtension(payload: Record<string, unknown>): void {
+  _pendingPushes.push(payload);
+  _flushPending();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data) return;
+    if (typeof (e.data as { __ks_ext_announce?: unknown }).__ks_ext_announce === 'string') {
+      _ksExtensionId = (e.data as { __ks_ext_announce: string }).__ks_ext_announce;
+      _flushPending();
+    }
+  });
+  // Ask the content script to (re)announce in case it loaded after us.
+  try { window.postMessage({ __ks_ext_request: true }, window.location.origin); }
+  catch { /* noop */ }
+}
+
 export function saveToken(token: LoginToken, isDemo = false) {
   localStorage.setItem(TOKEN_KEY, token.token);
   if (token.wallet_address) localStorage.setItem(WALLET_KEY, token.wallet_address);
   localStorage.setItem('ks_token_expiry', token.expires_at);
   if (isDemo) localStorage.setItem(DEMO_FLAG, '1');
   else localStorage.removeItem(DEMO_FLAG);
+  _pushToExtension({
+    type:  'KS_TOKEN_REGISTER',
+    token: token.token,
+    user:  token.wallet_address ?? null,
+  });
 }
 
 export function getToken(): string | null { return localStorage.getItem(TOKEN_KEY); }
@@ -261,6 +309,20 @@ export function clearAuth() {
   localStorage.removeItem(WALLET_KEY);
   localStorage.removeItem(DEMO_FLAG);
   localStorage.removeItem('ks_token_expiry');
+  _pushToExtension({ type: 'KS_TOKEN_CLEAR' });
+}
+
+// Re-push the current token (if any) to the extension. Call on app boot so
+// users who were already signed in last session don't need to log out + back
+// in to wire up the extension.
+export function syncTokenToExtension(): void {
+  const t = getToken();
+  if (!t) return;
+  _pushToExtension({
+    type:  'KS_TOKEN_REGISTER',
+    token: t,
+    user:  getWalletAddress(),
+  });
 }
 
 export function isAuthenticated(): boolean {

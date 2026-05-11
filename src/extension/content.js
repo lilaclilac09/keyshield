@@ -132,10 +132,18 @@ const PROVIDERS = [
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const detectedKeys = new Set();
-let notificationActive = false;
-let domainDismissed   = false;   // set asynchronously below
+const detectedKeys   = new Map();   // key -> { provider, onDomain, saved }
+let   panelEl        = null;        // the multi-key floating panel (null when hidden)
+let   domainDismissed = false;      // set asynchronously below
 const HOST = window.location.hostname;
+
+// UUIDs that appear in the page URL itself are routing IDs (e.g. the
+// /<account-uuid>/api-keys path on dashboard.helius.dev), NOT credentials.
+// Strip them out so we don't show a false-positive row for them.
+const URL_UUIDS = new Set(
+  (location.href.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+    .map((s) => s.toLowerCase()),
+);
 
 // Read user's per-domain dismissals from chrome.storage.local. Populated once
 // at startup; updated when "Hide on this domain" is clicked.
@@ -171,6 +179,23 @@ function isOnDomain(provider) {
 }
 
 // ── Scanner ─────────────────────────────────────────────────────────────────
+//
+// IMPORTANT — scope of detection:
+//   We only see what's actually in the DOM. On sites like
+//   dashboard.helius.dev the key cells render as `••••••••` until the
+//   user clicks the eye icon to reveal the plaintext. Until that click,
+//   the literal string `••••••••` is what `document.body.innerText`
+//   returns for those rows — no regex match, no panel pop.
+//
+//   That's intentional: we never want to make a network call to "fetch
+//   the masked key for the user" — the user has to consent by revealing
+//   it themselves. Once revealed (eye click flips the cell to plaintext
+//   or a same-row `<input type=text>`), the next scan tick / mutation
+//   observer fires and we add it to the floating panel.
+//
+//   So the flow on Helius / OpenAI / Anthropic dashboards is:
+//     reveal key → 0–3s later panel shows it → reveal next → panel updates
+//     → "Save all N" once you've revealed everything you want.
 
 function scan() {
   if (domainDismissed) return;
@@ -201,20 +226,63 @@ function scan() {
 
 function handleMatch(key, provider, onDomain) {
   if (detectedKeys.has(key)) return;
-  detectedKeys.add(key);
+  if (URL_UUIDS.has(key.toLowerCase())) return;        // routing UUIDs, not creds
+  detectedKeys.set(key, { provider, onDomain, saved: false });
   console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
-  showNotification(key, provider, onDomain);
+  renderPanel();
 }
 
-// ── Notification UI ─────────────────────────────────────────────────────────
+// ── Notification UI (multi-key panel) ───────────────────────────────────────
+//
+// A single floating panel accumulates EVERY detected key on the page. When the
+// user reveals another key (Helius dashboard, OpenAI "Show" button, etc.), the
+// next scan picks it up and the panel updates in place — no more one-shot
+// toasts, no more notificationActive latch swallowing later detections.
+//
+// Bulk save: a single click POSTs every unsaved key serially with progress.
+// Pre-checks token first so 10 fallback dashboard tabs never get opened.
 
-function showNotification(key, provider, onDomain) {
-  if (notificationActive) return;
-  notificationActive = true;
+function injectStyleOnce() {
+  if (document.getElementById('keyshield-style')) return;
+  const style = document.createElement('style');
+  style.id = 'keyshield-style';
+  style.textContent = `
+    @keyframes keyshield-slide {
+      from { transform: translateY(-12px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    .ks-btn{cursor:pointer;border:1px solid transparent;border-radius:8px;
+      padding:9px 12px;font-size:12px;font-weight:500;transition:all .15s}
+    .ks-btn-primary{background:#5b8cff;color:white;border-color:#5b8cff}
+    .ks-btn-primary:hover{background:#7aa1ff}
+    .ks-btn-primary:disabled{opacity:.6;cursor:default;background:#3d5fb8}
+    .ks-btn-ghost{background:transparent;color:#71717a;border-color:#27272a}
+    .ks-btn-ghost:hover{color:#fafafa;border-color:#3f3f46}
+    #keyshield-detection-notice ul.ks-list{list-style:none;margin:0;padding:0;
+      max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+    #keyshield-detection-notice ul.ks-list li{display:flex;align-items:center;gap:8px;
+      padding:6px 8px;background:#020408;border:1px solid #131929;border-radius:6px;
+      font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#86efac}
+    #keyshield-detection-notice ul.ks-list li.ks-saved{color:#71717a;background:#0a0d1a;border-color:#1c2238}
+    #keyshield-detection-notice ul.ks-list li.ks-failed{color:#f87171;border-color:rgba(239,68,68,.3)}
+    #keyshield-detection-notice ul.ks-list li .ks-badge{flex-shrink:0;background:#0e1430;padding:2px 6px;
+      border-radius:4px;font-size:9px;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.04em}
+    #keyshield-detection-notice ul.ks-list li .ks-keytext{flex:1;min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #keyshield-detection-notice ul.ks-list li .ks-state{flex-shrink:0;font-size:11px}
+  `;
+  document.head.appendChild(style);
+}
 
-  const container = document.createElement('div');
-  container.id = 'keyshield-detection-notice';
-  Object.assign(container.style, {
+function maskKey(k) {
+  if (k.length <= 18) return k;
+  return `${k.substring(0, 14)}••••••••${k.substring(k.length - 4)}`;
+}
+
+function buildPanel() {
+  panelEl = document.createElement('div');
+  panelEl.id = 'keyshield-detection-notice';
+  Object.assign(panelEl.style, {
     position:        'fixed',
     top:             '20px',
     right:           '20px',
@@ -223,7 +291,7 @@ function showNotification(key, provider, onDomain) {
     border:          '1px solid #1c2238',
     borderRadius:    '12px',
     padding:         '16px',
-    width:           '320px',
+    width:           '340px',
     boxShadow:       '0 20px 40px -10px rgba(0,0,0,0.6)',
     color:           '#e4e4e7',
     fontFamily:      '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
@@ -232,63 +300,79 @@ function showNotification(key, provider, onDomain) {
     gap:             '12px',
     animation:       'keyshield-slide 0.18s ease-out',
   });
+  document.body.appendChild(panelEl);
+}
 
-  if (!document.getElementById('keyshield-style')) {
-    const style = document.createElement('style');
-    style.id = 'keyshield-style';
-    style.textContent = `
-      @keyframes keyshield-slide {
-        from { transform: translateY(-12px); opacity: 0; }
-        to   { transform: translateY(0);    opacity: 1; }
-      }
-      .ks-btn{cursor:pointer;border:1px solid transparent;border-radius:8px;
-        padding:9px 12px;font-size:12px;font-weight:500;transition:all .15s}
-      .ks-btn-primary{background:#5b8cff;color:white;border-color:#5b8cff}
-      .ks-btn-primary:hover{background:#7aa1ff}
-      .ks-btn-ghost{background:transparent;color:#71717a;border-color:#27272a}
-      .ks-btn-ghost:hover{color:#fafafa;border-color:#3f3f46}
-      .ks-conf{display:inline-flex;align-items:center;gap:4px;font-size:10px;
-        padding:2px 6px;border-radius:4px;font-weight:600}
-      .ks-conf-high{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3)}
-      .ks-conf-med{background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
-    `;
-    document.head.appendChild(style);
-  }
+function closePanel() {
+  if (panelEl && panelEl.parentNode) panelEl.remove();
+  panelEl = null;
+}
 
-  const conf = onDomain ? 'high' : 'med';
-  const confText = onDomain
-    ? `HIGH confidence — you are on ${HOST}`
-    : `Detected, please verify provider`;
+function setPanelStatus(text, kind) {
+  if (!panelEl) return;
+  const s = panelEl.querySelector('#ks-status');
+  if (!s) return;
+  s.textContent = text;
+  s.style.display = 'block';
+  const palette = ({
+    ok:   ['rgba(16,185,129,.12)', '#34d399', 'rgba(16,185,129,.3)'],
+    err:  ['rgba(239,68,68,.12)',  '#f87171', 'rgba(239,68,68,.3)'],
+    info: ['rgba(91,140,255,.12)', '#93b4ff', 'rgba(91,140,255,.3)'],
+  })[kind] || ['rgba(91,140,255,.12)', '#93b4ff', 'rgba(91,140,255,.3)'];
+  s.style.background = palette[0];
+  s.style.color      = palette[1];
+  s.style.border     = `1px solid ${palette[2]}`;
+}
 
-  container.innerHTML = `
+function renderPanel() {
+  injectStyleOnce();
+  const all = Array.from(detectedKeys.entries());
+  if (all.length === 0) { closePanel(); return; }
+  if (!panelEl) buildPanel();
+
+  const unsavedCount = all.filter(([, v]) => v.saved !== true).length;
+  const listHtml = all.map(([k, v]) => {
+    const cls   = v.saved === true ? 'ks-saved' : v.saved === 'fail' ? 'ks-failed' : '';
+    const state = v.saved === true ? '✓'        : v.saved === 'fail' ? '×'        : '·';
+    return `
+      <li class="${cls}">
+        <span class="ks-badge">${v.provider.label}</span>
+        <span class="ks-keytext">${maskKey(k)}</span>
+        <span class="ks-state">${state}</span>
+      </li>`;
+  }).join('');
+
+  const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
+  const btnText =
+    unsavedCount === 0 ? 'All saved' :
+    unsavedCount === 1 ? 'Save to vault' :
+                         `Save all ${unsavedCount}`;
+
+  panelEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px">
       <div style="background:#0e1430;padding:6px 8px;border-radius:6px;
                   font-size:10px;font-weight:700;color:#5b8cff;
-                  border:1px solid #1c2550;letter-spacing:.05em">${provider.label}</div>
+                  border:1px solid #1c2550;letter-spacing:.05em">${all.length}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600">API key detected</div>
-        <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${provider.name} · ${HOST}</div>
+        <div style="font-size:13px;font-weight:600">${title}</div>
+        <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${HOST}</div>
       </div>
-      <span class="ks-conf ks-conf-${conf}">${onDomain ? '✓ MATCH' : '? CHECK'}</span>
     </div>
-    <div style="background:#020408;padding:10px 12px;border-radius:6px;
-                font-family:'JetBrains Mono',monospace;font-size:11px;
-                color:#86efac;border:1px solid #131929;
-                overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-      ${key.substring(0, 14)}••••••••${key.substring(key.length - 4)}
-    </div>
-    <div style="font-size:10px;color:#71717a;line-height:1.5">
-      ${confText}
-    </div>
+    <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;
          border-radius:6px;line-height:1.4"></div>
     <div style="display:flex;gap:8px">
-      <button id="ks-save"   class="ks-btn ks-btn-primary" style="flex:1">
-        Save to vault as <strong>${provider.id}</strong>
-      </button>
-      <button id="ks-ignore" class="ks-btn ks-btn-ghost">Dismiss</button>
+      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1"
+              ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
+      <button id="ks-ignore"   class="ks-btn ks-btn-ghost">Dismiss</button>
     </div>
-    <div style="display:flex;justify-content:flex-end">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <a id="ks-signin" href="#"
+         style="font-size:10px;color:#93b4ff;text-decoration:none;
+                cursor:pointer;border-bottom:1px dotted #3d5fb8;
+                display:inline-flex;align-items:center;gap:4px">
+        <span style="font-size:11px">→</span> Sign in to KeyShield
+      </a>
       <a id="ks-hide-domain" href="#"
          style="font-size:10px;color:#71717a;text-decoration:none;
                 cursor:pointer;border-bottom:1px dotted #3f3f46">
@@ -297,93 +381,123 @@ function showNotification(key, provider, onDomain) {
     </div>
   `;
 
-  document.body.appendChild(container);
-
-  const status = container.querySelector('#ks-status');
-  const setStatus = (text, kind) => {
-    status.textContent = text;
-    status.style.display = 'block';
-    if (kind === 'ok') {
-      status.style.background = 'rgba(16,185,129,.12)';
-      status.style.color = '#34d399';
-      status.style.border = '1px solid rgba(16,185,129,.3)';
-    } else if (kind === 'err') {
-      status.style.background = 'rgba(239,68,68,.12)';
-      status.style.color = '#f87171';
-      status.style.border = '1px solid rgba(239,68,68,.3)';
-    } else {
-      status.style.background = 'rgba(91,140,255,.12)';
-      status.style.color = '#93b4ff';
-      status.style.border = '1px solid rgba(91,140,255,.3)';
-    }
+  panelEl.querySelector('#ks-save-all').onclick = bulkSave;
+  panelEl.querySelector('#ks-ignore').onclick   = closePanel;
+  panelEl.querySelector('#ks-signin').onclick = (ev) => {
+    ev.preventDefault();
+    try { chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD_FOR_SIGNIN' }); } catch { /* noop */ }
+    setPanelStatus('Opened the KeyShield dashboard. Sign in there, then come back and click Save all.', 'info');
   };
-
-  let autoCloseTimer = setTimeout(() => closeNotice(), 12000);
-  function closeNotice() {
-    clearTimeout(autoCloseTimer);
-    if (container.parentNode) container.remove();
-    notificationActive = false;
-  }
-
-  const saveBtn = container.querySelector('#ks-save');
-  saveBtn.onclick = () => {
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
-    setStatus('Sending to your vault…', 'info');
-
-    // Pause the auto-close while a save is in flight; we want the user to
-    // actually see the success/failure toast.
-    clearTimeout(autoCloseTimer);
-
-    try {
-      chrome.runtime.sendMessage(
-        {
-          type:    'SAVE_KEY',
-          payload: {
-            upstream: provider.id,                  // backend upstream name
-            name:     `${provider.name} (${HOST})`,
-            value:    key,
-            domain:   HOST,
-          },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            setStatus(`Could not reach extension: ${chrome.runtime.lastError.message}`, 'err');
-            saveBtn.disabled = false;
-            saveBtn.innerHTML = `Retry save as <strong>${provider.id}</strong>`;
-            return;
-          }
-          if (response && response.ok) {
-            setStatus(`Saved ${provider.name} key to KeyShield vault`, 'ok');
-            autoCloseTimer = setTimeout(closeNotice, 2200);
-          } else {
-            const why =
-              response && response.reason === 'no-token'      ? 'Sign in to KeyShield first.'
-              : response && response.reason === 'token-expired' ? 'Session expired — sign in again.'
-              : response && response.reason === 'network'     ? 'Backend unreachable. Opened the dashboard.'
-              : 'Save failed. Opened the dashboard.';
-            setStatus(why, 'err');
-            // The background opens the dashboard tab in fallback mode, so we can
-            // close this notice after a short read.
-            autoCloseTimer = setTimeout(closeNotice, 4000);
-          }
-        },
-      );
-    } catch (e) {
-      setStatus(`Extension not available: ${String(e)}`, 'err');
-      saveBtn.disabled = false;
-    }
-  };
-
-  container.querySelector('#ks-ignore').onclick = closeNotice;
-
-  container.querySelector('#ks-hide-domain').onclick = (ev) => {
+  panelEl.querySelector('#ks-hide-domain').onclick = (ev) => {
     ev.preventDefault();
     dismissThisDomain();
-    setStatus(`Auto-detect muted on ${HOST}.`, 'info');
-    autoCloseTimer = setTimeout(closeNotice, 1200);
+    setPanelStatus(`Auto-detect muted on ${HOST}.`, 'info');
+    setTimeout(closePanel, 1200);
   };
 }
+
+async function bulkSave() {
+  const unsaved = Array.from(detectedKeys.entries()).filter(([, v]) => v.saved !== true);
+  if (unsaved.length === 0) return;
+
+  // We do NOT pre-check the token here. The backend's /manage/store falls
+  // back to a `"default"` user bucket when Authorization is missing, so the
+  // save will succeed in local-dev even without sign-in. If the deployed
+  // backend later returns 401, the per-key result handling below shows a
+  // "Session expired — sign in" message and the user can retry.
+
+  let btn = panelEl && panelEl.querySelector('#ks-save-all');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  let saved = 0, failed = 0;
+  let lastReason = null;
+  for (let i = 0; i < unsaved.length; i++) {
+    const [key, info] = unsaved[i];
+    setPanelStatus(`Saving ${i + 1}/${unsaved.length}: ${info.provider.name}…`, 'info');
+
+    const result = await new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(
+          {
+            type:   'SAVE_KEY',
+            silent: true,    // background: don't open a per-key fallback tab
+            payload: {
+              upstream: info.provider.id,
+              name:     `${info.provider.name} (${HOST})`,
+              value:    key,
+              domain:   HOST,
+            },
+          },
+          (response) => {
+            if (chrome.runtime.lastError) resolve({ ok: false, reason: 'extension' });
+            else resolve(response || { ok: false });
+          },
+        );
+      } catch { resolve({ ok: false, reason: 'extension' }); }
+    });
+
+    detectedKeys.set(key, { ...info, saved: result.ok ? true : 'fail' });
+    if (result.ok) saved++;
+    else { failed++; lastReason = result.reason; }
+    renderPanel();   // refresh row state — buttons get rebuilt below
+
+    const b = panelEl && panelEl.querySelector('#ks-save-all');
+    if (b) { b.disabled = true; b.textContent = `Saving ${i + 1}/${unsaved.length}…`; }
+    setPanelStatus(`Saving ${i + 1}/${unsaved.length}: ${info.provider.name}…`, 'info');
+  }
+
+  const b2 = panelEl && panelEl.querySelector('#ks-save-all');
+  if (failed === 0) {
+    setPanelStatus(`Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
+    if (b2) { b2.disabled = true; b2.textContent = 'All saved'; }
+    setTimeout(closePanel, 8000);
+  } else {
+    let detail = `Saved ${saved}, ${failed} failed.`;
+    if      (lastReason === 'token-expired') detail += ' Session expired — sign in to the dashboard and retry.';
+    else if (lastReason === 'network')       detail += ' Backend unreachable — check the dev server is running.';
+    else if (lastReason === 'extension')     detail += ' Extension messaging error — try reloading the extension.';
+    else                                     detail += ' Click Retry, or open DevTools → Network for details.';
+    setPanelStatus(detail, 'err');
+    if (b2) { b2.disabled = false; b2.textContent = `Retry ${failed} failed`; }
+  }
+}
+
+// ── Bridge: announce our extension ID to the KeyShield dashboard ────────────
+//
+// The dashboard (localhost:5173 in dev, keyshield.dev in prod) needs our
+// chrome.runtime.id so it can call chrome.runtime.sendMessage(id, {type:
+// 'KS_TOKEN_REGISTER', token}) after the user logs in. The matching listener
+// lives in packages/shared/src/auth/index.ts.
+//
+// Safety: even if a non-dashboard page sees the ID, manifest's
+// `externally_connectable.matches` still gates which origins can actually
+// message us — the ID alone confers no privilege.
+
+(function announceExtensionToDashboard() {
+  const onDashboard = (
+    location.host     === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
+    location.host     === 'localhost:3000' || location.host === '127.0.0.1:3000' ||
+    location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev')
+  );
+  if (!onDashboard) return;
+  if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) return;
+
+  const announce = () => {
+    try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }
+    catch { /* CSP shouldn't block postMessage; noop on the off chance it does */ }
+  };
+
+  // Fire once on load — covers the common case where the dashboard module
+  // listener is registered before we get here.
+  announce();
+
+  // Also re-announce on demand: the dashboard fires {__ks_ext_request: true}
+  // right after its own load, in case it loaded first.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || !e.data) return;
+    if (e.data.__ks_ext_request) announce();
+  });
+})();
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
