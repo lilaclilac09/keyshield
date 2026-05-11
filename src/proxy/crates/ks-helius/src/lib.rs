@@ -643,26 +643,36 @@ impl HeliusClient {
     where
         T: serde::de::DeserializeOwned,
     {
+        self.cached_call_with_state(method, params, ttl)
+            .await
+            .map(|(v, _)| v)
+    }
+
+    /// Same as [`cached_call`] but also returns whether the result came
+    /// from the memory cache (`Hit`) or required an upstream fetch
+    /// (`Miss`). Used by the proxy hot-path to set the `x-ks-cache`
+    /// response header and to decide MPP charging.
+    pub async fn cached_call_with_state<T>(
+        &self,
+        method: &'static str,
+        params: Value,
+        ttl: Option<Duration>,
+    ) -> Result<(T, CacheState), HeliusError>
+    where
+        T: serde::de::DeserializeOwned,
+    {
         let key = CacheKey::derive(method, &params);
 
-        // 1. Memory cache hit — fastest path. moka's `Expiry` impl
-        //    (see `PerEntryTtl`) already filters expired entries out
-        //    before they reach `get`, so a Some return is guaranteed
-        //    to be a live record.
+        // 1. Memory cache hit — fastest path.
         if let Some(rec) = self.inner.mem_cache.get(&key).await {
-            return serde_json::from_slice(&rec.bytes).map_err(Into::into);
+            let v = serde_json::from_slice(&rec.bytes)?;
+            return Ok((v, CacheState::Hit));
         }
 
-        // 2. Single-flight: if another caller is already in-flight for
-        //    this key, await their `Shared<Future>` instead of firing
-        //    again. This is the path the 50-concurrent stampede test in
-        //    `tests/cache.rs` exercises — see spec 09 line 261-265.
-        let bytes_arc = match self.join_or_start_inflight(&key, method, params, ttl).await {
-            Ok(b) => b,
-            Err(e) => return Err(e),
-        };
-
-        serde_json::from_slice(&bytes_arc).map_err(Into::into)
+        // 2. Single-flight (cache miss) — fire upstream or join an in-flight share.
+        let bytes_arc = self.join_or_start_inflight(&key, method, params, ttl).await?;
+        let v = serde_json::from_slice(&bytes_arc)?;
+        Ok((v, CacheState::Miss))
     }
 
     /// Returns the cached bytes for `key`, either by joining an

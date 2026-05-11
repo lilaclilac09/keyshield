@@ -3,11 +3,18 @@ import { Card, StatCard } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { DataTable, Column } from '../ui/DataTable';
+import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/PaymentBadge';
+import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
+import { CostBadge } from '../ui/CostBadge';
 import { apiFetch } from '../../lib/auth';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
   tokens_in: number; tokens_out: number; cost_usd: number; latency_ms: number; status_code: number; ts: number;
+  /** Server-supplied payment settlement state. Falls back to inferPaymentStatus. */
+  payment_status?: PaymentStatus;
+  /** Server-supplied response source. Falls back to inferVenue. */
+  venue?: Venue;
 }
 
 interface UsageStat {
@@ -96,6 +103,9 @@ export const ActivitySection: React.FC = () => {
     { header: 'Cost', render: e => <span className={e.cost_usd > 0 ? 'text-white' : 'text-[#5e6a91]'}>{fmtCost(e.cost_usd)}</span> },
     { header: 'Latency', render: e => <span className="text-[#8a96c2]">{e.latency_ms}ms</span> },
     { header: 'Time', render: e => <span className="text-[#5e6a91]">{fmtTs(e.ts)}</span> },
+    { header: 'Payment', render: e => <PaymentBadge status={e.payment_status ?? inferPaymentStatus(e)} /> },
+    { header: 'Venue', render: e => <VenueBadge venue={e.venue ?? inferVenue(e)} /> },
+    { header: 'Call Cost', render: e => <CostBadge costUsd={e.cost_usd} /> },
   ];
 
   const statsCols: Column<UsageStat>[] = [
