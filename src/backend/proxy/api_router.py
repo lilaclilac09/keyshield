@@ -135,7 +135,7 @@ _CACHE: dict[str, tuple[Any, float]] = {}
 
 def _ck(provider: str, key: str, payload: Any) -> str:
     raw = f"{provider}:{key}:{json.dumps(payload, sort_keys=True)}"
-    return hashlib.sha1(raw.encode()).hexdigest()
+    return hashlib.blake2b(raw.encode(), digest_size=32).hexdigest()
 
 
 def _cache_get(ck: str) -> Any | None:

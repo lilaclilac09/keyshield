@@ -7,13 +7,20 @@ interface Props { onAuthenticated: () => void; }
 
 export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [trust] = useState(() => getPasskeyTrust());
-  const [useWallet, setUseWallet] = useState(!trust);
+  // Show passkey login by default if ANY passkey device record exists
+  // (trust may be null if sessionStorage was cleared, but userId in localStorage is enough)
+  const hasPasskeyDevice = !!localStorage.getItem('ks_passkey_user');
+  const [useWallet, setUseWallet] = useState(!trust && !hasPasskeyDevice);
   const [pkLoading, setPkLoading] = useState(false);
   const [pkError, setPkError] = useState('');
-  const shortAddr = trust ? `${trust.userId.slice(0, 4)}\u2026${trust.userId.slice(-4)}` : '';
+  const effectiveTrust = trust ?? (hasPasskeyDevice ? { userId: localStorage.getItem('ks_passkey_user')!, passphrase: '' } : null);
+  const shortAddr = effectiveTrust ? `${effectiveTrust.userId.slice(0, 4)}\u2026${effectiveTrust.userId.slice(-4)}` : '';
 
   const handleFaceID = async () => { setPkLoading(true); setPkError(''); try { const { token, userId } = await passkeyLogin(); setToken(token); setWalletAddress(userId); notifyAuthChanged(); onAuthenticated(); } catch (e) { setPkError(e instanceof Error ? e.message : 'Face ID failed'); } finally { setPkLoading(false); } };
   const forgetDevice = () => { clearPasskeyTrust(); setUseWallet(true); };
+
+  // Show the passkey panel when we have a device record (even if sessionStorage was cleared)
+  const showPasskeyPanel = (trust || hasPasskeyDevice) && !useWallet;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6">
@@ -22,9 +29,9 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="white" strokeWidth="1.5" fill="none" /><circle cx="11.5" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" fill="none" className="text-[#a8b3d8]" /><line x1="13" y1="12.5" x2="16" y2="15.5" stroke="currentColor" strokeWidth="1.2" className="text-[#a8b3d8]" /></svg>
         </div>
         <h1 className="text-[34px] leading-tight font-bold text-white tracking-tight uppercase">KeyShield</h1>
-        <p className="mt-3 text-[14px] leading-relaxed text-[#a8b3d8] max-w-sm">{trust && !useWallet ? `Welcome back. Sign in with Face ID, Touch ID, or your hardware key.` : `Connect your Solana wallet to access your encrypted secrets.`}</p>
+        <p className="mt-3 text-[14px] leading-relaxed text-[#a8b3d8] max-w-sm">{showPasskeyPanel ? `Welcome back. Sign in with Face ID, Touch ID, or your hardware key.` : `Connect your Solana wallet to access your encrypted secrets.`}</p>
         <div className="w-full mt-10">
-          {trust && !useWallet ? (
+          {showPasskeyPanel ? (
             <div className="w-full space-y-3">
               <div className="rounded-xl border border-[#243365]/50 p-2 bg-[#131c39]">
                 <button type="button" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
@@ -39,7 +46,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           ) : (
             <>
               <WalletConnector onConnect={onAuthenticated} />
-              {trust && <button type="button" onClick={() => setUseWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
+              {hasPasskeyDevice && <button type="button" onClick={() => setUseWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
             </>
           )}
         </div>

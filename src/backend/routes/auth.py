@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import secrets
 import time
 from urllib.parse import urlparse
 
@@ -49,13 +51,8 @@ def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
 
 @router.post("/auth/login")
 async def auth_login(request: Request):
-    body = await request.json()
-    user_id = body.get("userId")
-    if not user_id:
-        return JSONResponse({"error": "userId required"}, status_code=400)
-    password = body.get("password", "default")
-    token = sess_mod.create_token(user_id, password)
-    return JSONResponse({"token": token})
+    # Dev-only shim disabled in production — use /auth/wallet-login or /auth/passkey/auth-verify.
+    return JSONResponse({"error": "direct login disabled; use wallet or passkey"}, status_code=403)
 
 
 @router.post("/auth/logout")
@@ -68,7 +65,7 @@ async def auth_logout(request: Request):
 
 @router.get("/auth/wallet-challenge")
 async def wallet_challenge():
-    nonce = str(hash(time.time()))
+    nonce = secrets.token_hex(32)
     sess_mod._record_nonce(nonce)
     return JSONResponse({"challenge": nonce, "nonce": nonce})
 
@@ -76,19 +73,34 @@ async def wallet_challenge():
 @router.post("/auth/wallet-login")
 async def wallet_login(request: Request):
     body = await request.json()
-    wallet_addr = body["walletAddress"]
-    challenge = body["challenge"]
-    passphrase = body["passphrase"]
-    if not sess_mod._validate_challenge(challenge, str(body.get("nonce", ""))):
+    wallet_addr = body.get("walletAddress", "")
+    challenge = body.get("challenge", "")
+    passphrase = body.get("passphrase", "")
+    signature_b64 = body.get("signature", "")
+    nonce = str(body.get("nonce", challenge))
+
+    if not sess_mod._validate_challenge(challenge, nonce):
         return JSONResponse({"error": "challenge expired or used"}, status_code=400)
+
+    # Verify ed25519 signature: wallet signed the challenge bytes
+    if signature_b64 and wallet_addr:
+        try:
+            from nacl.signing import VerifyKey
+            from nacl.encoding import Base58Encoder
+            sig_bytes = base64.b64decode(signature_b64 + "==")
+            vk = VerifyKey(wallet_addr.encode(), encoder=Base58Encoder)
+            vk.verify(challenge.encode(), sig_bytes)
+        except Exception:
+            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+
     token = sess_mod.create_token(wallet_addr, passphrase)
-    sess_mod._consume_nonce(str(body.get("nonce")))
+    sess_mod._consume_nonce(nonce)
     return JSONResponse({"token": token, "userId": wallet_addr})
 
 
 @router.post("/auth/agent-challenge")
 async def agent_challenge():
-    nonce = str(hash(time.time()))
+    nonce = secrets.token_hex(32)
     sess_mod._record_nonce(nonce)
     return JSONResponse({"challenge": nonce, "nonce": nonce})
 
@@ -98,9 +110,32 @@ async def agent_login(request: Request):
     body = await request.json()
     from ..agents import agents as agents_mod
 
-    agent_info = agents_mod.lookup_owner(body["pubkeyB58"])
+    pubkey_b58 = body.get("pubkeyB58", "")
+    challenge = body.get("challenge", "")
+    signature_b64 = body.get("signature", "")
+    nonce = str(body.get("nonce", challenge))
+
+    if not sess_mod._validate_challenge(challenge, nonce):
+        return JSONResponse({"error": "challenge expired or not found"}, status_code=401)
+
+    agent_info = agents_mod.lookup_owner(pubkey_b58)
     if not agent_info:
         return JSONResponse({"error": "agent not registered"}, status_code=401)
+
+    # Verify ed25519 signature
+    if signature_b64:
+        try:
+            from nacl.signing import VerifyKey
+            from nacl.encoding import Base58Encoder
+            sig_bytes = base64.b64decode(signature_b64 + "==")
+            vk = VerifyKey(pubkey_b58.encode(), encoder=Base58Encoder)
+            vk.verify(challenge.encode(), sig_bytes)
+        except Exception:
+            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+    else:
+        return JSONResponse({"error": "signature required"}, status_code=401)
+
+    sess_mod._consume_nonce(nonce)
     token = sess_mod.create_token(agent_info["owner_wallet"], "default")
     return JSONResponse({"token": token})
 
@@ -153,9 +188,15 @@ async def passkey_auth_options(user_id: str, request: Request):
 
 
 @router.post("/auth/passkey/auth-verify")
-async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = "default"):
-    """Verify the assertion and mint a session token (Path A login)."""
+async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = ""):
+    """Verify the assertion and mint a session token (Path A login).
+
+    `passphrase` may be supplied either as a query param (legacy) or inside
+    the JSON body as `{ passphrase, credential }` — body takes precedence.
+    """
     body = await request.json()
+    # Body passphrase overrides URL query param (security: avoid leaking in logs)
+    effective_passphrase = body.get("passphrase", passphrase) or ""
     rp_id, origins = _origin_rp_id(request)
     try:
         pk_mod.authentication_verify(
@@ -166,7 +207,7 @@ async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = 
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    token = sess_mod.create_token(user_id, passphrase)
+    token = sess_mod.create_token(user_id, effective_passphrase)
     return JSONResponse({"token": token, "userId": user_id})
 
 
@@ -176,7 +217,7 @@ async def passkey_list(request: Request):
     if not sess:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
-    return JSONResponse(pk_mod.list_credentials(user_id))
+    return JSONResponse({"credentials": pk_mod.list_credentials(user_id)})
 
 
 @router.delete("/auth/passkey/{cred_id}")
@@ -197,7 +238,7 @@ async def delete_account_challenge(request: Request):
     sess = await _session(_bearer(request))
     if not sess:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
-    nonce = str(hash(time.time()))
+    nonce = secrets.token_hex(32)
     sess_mod._record_nonce(nonce)
     return JSONResponse({"challenge": nonce, "nonce": nonce})
 

@@ -87,8 +87,20 @@ async def billing_balance(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    balance = usage_mod.get_balance(user_id)
-    return JSONResponse({"balance": balance})
+    balance_usd = usage_mod.get_balance(user_id)
+    if isinstance(balance_usd, dict):
+        b = float(balance_usd.get("balance_usd", balance_usd.get("usd_balance", 0)))
+        total = float(balance_usd.get("total_spent_usd", 0))
+        free = float(balance_usd.get("free_credit_usd", 0))
+    else:
+        b = float(balance_usd or 0)
+        total = 0.0
+        free = 0.0
+    return JSONResponse({
+        "balance_usd": round(b, 6),
+        "total_spent_usd": round(total, 6),
+        "free_credit_usd": round(free, 6),
+    })
 
 
 @router.post("/billing/topup")
@@ -98,5 +110,12 @@ async def billing_topup(request: Request):
     body = await request.json()
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    new_balance = usage_mod.topup(user_id, body.get("amount_usd", 0))
-    return JSONResponse({"balance": new_balance})
+    amount_usd = float(body.get("amount_usd", 0))
+    new_balance = usage_mod.topup(user_id, amount_usd)
+    new_balance_float = float(new_balance) if not isinstance(new_balance, dict) else float(
+        new_balance.get("balance_usd", new_balance.get("usd_balance", 0))
+    )
+    return JSONResponse({
+        "credited_usd": round(amount_usd, 6),
+        "balance_usd": round(new_balance_float, 6),
+    })

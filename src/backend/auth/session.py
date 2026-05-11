@@ -61,9 +61,20 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
+_DEFAULT_SECRET = "CHANGE-ME-IN-PROD-32-BYTES-MIN!!"
+
+
 def _server_secret() -> bytes:
-    """Get the HMAC key from env or generate a deterministic default."""
-    raw = os.getenv("SERVER_SECRET", "CHANGE-ME-IN-PROD-32-BYTES-MIN!!")
+    """Get the HMAC key from env. Warns loudly if default is used."""
+    raw = os.getenv("SERVER_SECRET", "")
+    if not raw:
+        import warnings
+        warnings.warn(
+            "SERVER_SECRET env var is not set — using insecure default. "
+            "Set SERVER_SECRET to a random 32+ byte string in production.",
+            stacklevel=2,
+        )
+        raw = _DEFAULT_SECRET
     return hashlib.sha256(raw.encode()).digest()
 
 

@@ -203,6 +203,7 @@ export function setPasskeyTrust(userId: string, passphrase: string): void {
 
 export function getPasskeyTrust(): { userId: string; passphrase: string } | null {
   const u = localStorage.getItem(PASSKEY_USER);
+  if (!u) return null;
   // Migration: if passphrase was previously stored in localStorage (pre-P0 fix),
   // move it to sessionStorage and remove from localStorage on first access.
   const legacy = localStorage.getItem(PASSKEY_PP);
@@ -211,7 +212,9 @@ export function getPasskeyTrust(): { userId: string; passphrase: string } | null
     localStorage.removeItem(PASSKEY_PP);
   }
   const p = sessionStorage.getItem(PASSKEY_PP);
-  return u && p ? { userId: u, passphrase: p } : null;
+  // p may be null (sessionStorage cleared on tab close) or '' (empty passphrase).
+  // Return trust as long as userId is known — passphrase defaults to empty string.
+  return { userId: u, passphrase: p ?? '' };
 }
 
 export function clearPasskeyTrust(): void {
@@ -257,11 +260,11 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   };
 
   const verRes = await fetch(
-    `${API_BASE}/auth/passkey/auth-verify?user_id=${encodeURIComponent(userId)}&passphrase=${encodeURIComponent(passphrase)}`,
+    `${API_BASE}/auth/passkey/auth-verify?user_id=${encodeURIComponent(userId)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: credPayload }),
+      body: JSON.stringify({ credential: credPayload, passphrase }),
     },
   );
   if (!verRes.ok) {
