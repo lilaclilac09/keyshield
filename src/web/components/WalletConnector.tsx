@@ -3,7 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Wallet, Check, Loader2, AlertCircle } from 'lucide-react';
 import { clearAuth, fetchChallenge, isAuthenticated, notifyAuthChanged, setToken, setWalletAddress, walletLogin } from '../lib/auth';
-import { VAULT_KEY_MESSAGE, deriveVaultPassphrase } from '../lib/vault-key';
+import { VAULT_KEY_MESSAGE, deriveVaultPassphrase, registerExtensionVaultKey } from '../lib/vault-key';
 
 interface Props { onConnect: () => void; }
 
@@ -44,6 +44,7 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
         const passphrase = await deriveVaultPassphrase(keySig);
         setPhase('authenticating');
         const { token, userId } = await walletLogin(publicKey.toBase58(), sig, ch, passphrase);
+        await registerExtensionVaultKey(keySig);
         setToken(token); setWalletAddress(userId); notifyAuthChanged();
         advancedRef.current = true; setPhase('done'); onConnect();
       } catch (err: unknown) { const msg = err instanceof Error ? err.message : 'Login failed'; setErrorMsg(msg); setPhase('error'); }

@@ -15,6 +15,7 @@ import {
   lockVault,
   getDecryptedKey,
 } from './vault-session';
+import { clearExtensionVaultKey, syncExtensionVaultKey } from './vault-key';
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
@@ -49,12 +50,14 @@ export function getToken(): string | null {
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
   pushTokenToExtension(token);
+  syncExtensionVaultKey();
 }
 
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(WALLET_KEY);
   clearTokenInExtension();
+  clearExtensionVaultKey();
   lockVault();
 }
 

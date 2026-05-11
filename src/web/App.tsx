@@ -7,6 +7,7 @@ import { SolanaProvider } from './components/SolanaProvider';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useVaults } from './hooks/useVaults';
 import { getWalletAddress, apiFetch, clearAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
+import { syncExtensionVaultKey } from './lib/vault-key';
 import { Sidebar } from './components/ui/Sidebar';
 import { Header } from './components/ui/Header';
 import { SearchOverlay } from './components/ui/SearchOverlay';
@@ -69,6 +70,7 @@ const MainContent: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    syncExtensionVaultKey();
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') !== 'add') return;
     const domain = params.get('domain') || '';
