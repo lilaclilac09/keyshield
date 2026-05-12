@@ -8,8 +8,35 @@
 //   3. Background.js handles `OPEN_DASHBOARD_FOR_SIGNIN` and auto-corrects
 //      stale `:8001` dashboard URLs to `:5173`.
 
-const DEFAULT_API_BASE      = "http://127.0.0.1:8001";   // FastAPI control plane
-const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:5173";   // Vite frontend
+// Production defaults — the extension ships pointing at the hosted KeyShield
+// deployment so a fresh install "just works" without the user running a local
+// dev server. Local dev users override these via the Settings panel.
+const DEFAULT_API_BASE      = "https://api.ks.aileena.xyz";   // FastAPI control plane
+const DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz";   // Web dashboard
+
+// Local dev URLs — exposed via the "Reset to local" button in the settings
+// pane for users actually running the Vite + FastAPI stack on their machine.
+const LOCAL_API_BASE      = "http://127.0.0.1:8001";
+const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
+
+// Old defaults we want to silently upgrade to production on next popup open
+// so existing installs don't keep opening dead localhost tabs after the user
+// shuts down their dev server. "Reset to local" still works — we only
+// migrate URLs the user never explicitly chose.
+const STALE_DASHBOARD_DEFAULTS = [
+  "http://127.0.0.1:5173",
+  "http://localhost:5173",
+];
+const STALE_API_DEFAULTS = [
+  "http://127.0.0.1:8001",
+  "http://localhost:8001",
+  "http://127.0.0.1:8000",
+  "http://localhost:8000",
+];
+
+// Marker we set when the user explicitly opts into a non-production target so
+// the migration logic in loadSettings() doesn't fight them on every open.
+const PIN_PREF_KEY = "ks_url_pref_pinned";
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,22 +48,39 @@ function setStatus(text, kind = "ok", ms = 1500) {
 }
 
 async function loadSettings() {
-  const { ks_api_base, ks_dashboard_url, ks_token, ks_user } =
-    await chrome.storage.local.get([
-      "ks_api_base",
-      "ks_dashboard_url",
-      "ks_token",
-      "ks_user",
-    ]);
+  const stored = await chrome.storage.local.get([
+    "ks_api_base",
+    "ks_dashboard_url",
+    "ks_token",
+    "ks_user",
+    PIN_PREF_KEY,
+  ]);
+  const { ks_api_base, ks_dashboard_url, ks_token, ks_user } = stored;
+  const pinned = !!stored[PIN_PREF_KEY];
 
-  // Auto-correct a stale dashboard URL pointing at the backend port.
+  // Auto-correct stale defaults written by older versions:
+  //   - dashboard URL pointing at a backend port (`:8001`/`:8000`) — always
+  //     wrong, that's the API not the dashboard.
+  //   - dashboard or API URL pointing at a localhost dev server when the
+  //     user hasn't explicitly pinned a local target. We migrate to the
+  //     production defaults so the Sign-in button actually opens a reachable
+  //     page on a fresh install.
   let dash = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
-  if (/:800[01](\/|$)/.test(dash)) {
+  const dashIsBackendPort = /:800[01](\/|$)/.test(dash);
+  const dashIsStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
+  if (dashIsBackendPort || dashIsStaleLocal) {
     dash = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: dash }); } catch { /* noop */ }
   }
 
-  $("api").value  = ks_api_base || DEFAULT_API_BASE;
+  let api = ks_api_base || DEFAULT_API_BASE;
+  const apiIsStaleLocal = !pinned && STALE_API_DEFAULTS.some((u) => api === u || api.startsWith(u + "/"));
+  if (apiIsStaleLocal) {
+    api = DEFAULT_API_BASE;
+    try { await chrome.storage.local.set({ ks_api_base: api }); } catch { /* noop */ }
+  }
+
+  $("api").value  = api;
   $("dash").value = dash;
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
@@ -72,9 +116,15 @@ async function loadSettings() {
 async function saveSettings() {
   const apiBase      = ($("api").value  || "").trim() || DEFAULT_API_BASE;
   const dashboardUrl = ($("dash").value || "").trim() || DEFAULT_DASHBOARD_URL;
+  // If the user typed a non-production URL by hand, treat that as a pin so
+  // we don't silently revert it to production on the next popup open.
+  const isProd =
+    apiBase      === DEFAULT_API_BASE &&
+    dashboardUrl === DEFAULT_DASHBOARD_URL;
   await chrome.storage.local.set({
     ks_api_base:      apiBase,
     ks_dashboard_url: dashboardUrl,
+    [PIN_PREF_KEY]:   !isProd,
   });
   setStatus("Saved");
 }
@@ -82,13 +132,21 @@ async function saveSettings() {
 async function openDashboardForSignin() {
   const { ks_dashboard_url } = await chrome.storage.local.get(["ks_dashboard_url"]);
   let url = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
-  if (/:800[01](\/|$)/.test(url)) url = DEFAULT_DASHBOARD_URL;
+  // Treat any stale local URL (old default that points at a dev server the
+  // user might not be running) the same as a missing value, and silently
+  // migrate it to the production default.
+  const isBackendPort = /:800[01](\/|$)/.test(url);
+  const isStaleLocal  = STALE_DASHBOARD_DEFAULTS.some((u) => url === u || url.startsWith(u + "/"));
+  if (isBackendPort || isStaleLocal) {
+    url = DEFAULT_DASHBOARD_URL;
+    try { await chrome.storage.local.set({ ks_dashboard_url: url }); } catch { /* noop */ }
+  }
   try { await chrome.tabs.create({ url }); }
   catch (e) {
     setStatus(`Couldn't open tab: ${String(e)}`, "err", 3000);
     return;
   }
-  setStatus("Opened dashboard. Sign in there to register the token here.", "ok", 4000);
+  setStatus(`Opened ${url} — sign in there to register the token here.`, "ok", 4000);
   // Refresh state shortly after the user has had time to sign in.
   setTimeout(loadSettings, 1500);
 }
@@ -155,23 +213,32 @@ async function pointAtRemote() {
   }
   await chrome.storage.local.set({ ks_api_base: raw });
   // Best-effort: if the host looks like api.<domain>, infer dashboard at <domain> or app.<domain>.
+  let dashboardUrl = null;
   try {
     const u = new URL(raw);
     if (u.hostname.startsWith("api.")) {
       const dashHost = u.hostname.replace(/^api\./, "app.");
-      await chrome.storage.local.set({ ks_dashboard_url: `https://${dashHost}` });
+      dashboardUrl = `https://${dashHost}`;
+      await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl });
     }
   } catch { /* noop */ }
+  // Pin only if the chosen target isn't the production default — otherwise
+  // leave the marker untouched so future "production" upgrades still apply.
+  const isProd =
+    raw === DEFAULT_API_BASE &&
+    (dashboardUrl === null || dashboardUrl === DEFAULT_DASHBOARD_URL);
+  await chrome.storage.local.set({ [PIN_PREF_KEY]: !isProd });
   setStatus(`Pointed at ${raw}.`, "ok", 2500);
   loadSettings();
 }
 
 async function pointAtLocal() {
   await chrome.storage.local.set({
-    ks_api_base:      DEFAULT_API_BASE,
-    ks_dashboard_url: DEFAULT_DASHBOARD_URL,
+    ks_api_base:      LOCAL_API_BASE,
+    ks_dashboard_url: LOCAL_DASHBOARD_URL,
+    [PIN_PREF_KEY]:   true,    // user explicitly wants local — don't migrate
   });
-  setStatus("Reset to local backend.", "ok", 2500);
+  setStatus("Pointed at local dev (127.0.0.1).", "ok", 2500);
   loadSettings();
 }
 

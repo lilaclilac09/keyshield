@@ -32,6 +32,142 @@ import {
   isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
 } from '../../lib/vault-session';
 import type { VaultEntry } from '../../lib/vault';
+import { CodeBlock } from '../ui/CodeBlock';
+
+// ── Getting-started tutorial (collapsible, dismissible) ──────────────
+
+const GUIDE_DISMISSED_KEY = 'ks-vault-guide-dismissed';
+
+const GettingStartedGuide: React.FC = () => {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(GUIDE_DISMISSED_KEY) === '1',
+  );
+  const [expanded, setExpanded] = useState(true);
+
+  if (dismissed) return null;
+
+  const dismiss = () => {
+    localStorage.setItem(GUIDE_DISMISSED_KEY, '1');
+    setDismissed(true);
+  };
+
+  return (
+    <div className="rounded-xl border border-[#243365]/60 bg-[#131c39] overflow-hidden">
+      {/* Header — always visible */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-emerald-950/50 border border-emerald-900/40 flex items-center justify-center">
+            <ShieldCheck size={14} className="text-emerald-400" />
+          </div>
+          <div>
+            <span className="text-[13px] font-semibold text-white uppercase tracking-wider">
+              How to use Device Vault
+            </span>
+            <span className="text-[11px] text-[#5e6a91] ml-2">3 steps</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); dismiss(); }}
+            className="text-[10px] text-[#5e6a91] hover:text-white px-2 py-1 rounded border border-transparent hover:border-[#243365] transition-colors"
+          >
+            Dismiss
+          </button>
+          {expanded ? <ChevronUp size={14} className="text-[#5e6a91]" /> : <ChevronDown size={14} className="text-[#5e6a91]" />}
+        </div>
+      </button>
+
+      {/* Body — collapsible */}
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4 border-t border-[#243365]/40">
+          {/* Step 1 */}
+          <div className="flex items-start gap-3 pt-4">
+            <div className="w-7 h-7 rounded-lg bg-[#0e1631] border border-[#243365]/50 flex items-center justify-center text-[12px] text-white shrink-0 font-semibold">
+              1
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Fingerprint size={13} className="text-emerald-400" />
+                <span className="text-[13px] text-white font-medium">Enroll a passkey</span>
+              </div>
+              <p className="text-[12px] text-[#8a96c2] mt-1 leading-relaxed">
+                Click <strong className="text-white">Enroll passkey</strong> below.
+                Your browser creates a WebAuthn credential with PRF extension —
+                the master encryption key is derived on-device and never leaves this machine.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg bg-[#0e1631] border border-[#243365]/50 flex items-center justify-center text-[12px] text-white shrink-0 font-semibold">
+              2
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <KeyRound size={13} className="text-emerald-400" />
+                <span className="text-[13px] text-white font-medium">Add your API keys</span>
+              </div>
+              <p className="text-[12px] text-[#8a96c2] mt-1 leading-relaxed">
+                Click <strong className="text-white">Add</strong>, pick a provider (OpenAI, Anthropic, Groq, etc.),
+                and paste the key. It is encrypted with AES-256-GCM on this device —
+                only the ciphertext is synced to storage.
+              </p>
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg bg-[#0e1631] border border-[#243365]/50 flex items-center justify-center text-[12px] text-white shrink-0 font-semibold">
+              3
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Cpu size={13} className="text-emerald-400" />
+                <span className="text-[13px] text-white font-medium">Agents use the proxy</span>
+              </div>
+              <p className="text-[12px] text-[#8a96c2] mt-1 leading-relaxed">
+                Your agent calls <code className="text-white text-[11px]">/proxy/openai/...</code> with a session token.
+                The decrypted key is injected per-request via a one-shot header —
+                the agent never sees the raw API key.
+              </p>
+              <div className="mt-2">
+                <CodeBlock code={`from keyshield_sdk import KeyShield
+ks = KeyShield(token=os.environ["KS_TOKEN"])
+client = ks.openai_client()   # key injected automatically
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Hello"}],
+)`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Flow diagram */}
+          <div className="rounded-lg border border-[#243365]/40 bg-[#0e1631] px-4 py-3">
+            <div className="flex items-center justify-center gap-2 text-[11px] text-[#8a96c2] flex-wrap">
+              <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Passkey PRF</span>
+              <ArrowRight size={11} className="text-[#3e4a72]" />
+              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">AES-256-GCM encrypt</span>
+              <ArrowRight size={11} className="text-[#3e4a72]" />
+              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Ciphertext to sync storage</span>
+              <ArrowRight size={11} className="text-[#3e4a72]" />
+              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Proxy injects per-request</span>
+            </div>
+            <p className="text-center text-[10px] text-[#5e6a91] mt-2">
+              Server is zero-knowledge — it never sees your plaintext keys
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface ShimEntry {
   id: string;
@@ -515,6 +651,8 @@ export const DeviceVaultSection: React.FC = () => {
           )}
         </div>
       </div>
+
+      <GettingStartedGuide />
 
       {err && (
         <div className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-900/60 flex items-start gap-2">

@@ -18,8 +18,19 @@
  *     re-zipping. Defaults to localhost in dev. The popup writes this value.
  */
 
-const DEFAULT_KS_BASE       = 'http://127.0.0.1:8001';   // FastAPI control plane
-const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:5173';   // Vite dashboard
+// Production defaults — extension ships pointing at the hosted KeyShield
+// deployment so a fresh install works without a local dev server. Mirrors
+// popup.js. Local-dev users override these via the popup's settings panel.
+const DEFAULT_KS_BASE       = 'https://api.ks.aileena.xyz';   // FastAPI control plane
+const DEFAULT_DASHBOARD_URL = 'https://app.ks.aileena.xyz';   // Web dashboard
+
+// Stale URLs we silently upgrade to production when seen in storage so the
+// Sign-in tab actually opens a reachable page after dev servers are stopped.
+const STALE_DASHBOARD_DEFAULTS = [
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+];
+const PIN_PREF_KEY = 'ks_url_pref_pinned';
 
 // ── base64url helpers ───────────────────────────────────────────────────────
 function _b64uEnc(bytes) {

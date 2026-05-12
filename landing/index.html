@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="description" content="KeyShield: your AI agent needs API keys to think, pay, and act. But every key you hand over is a liability. We fix that." />
+  <meta name="description" content="KeyShield — one vault for you and your agents. Dashboard for humans, SDK &amp; CLI for agents. Store once, plug in anywhere, calls get accelerated." />
   <meta name="theme-color" content="#05060d" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="KeyShield — API keys for the age of agents" />
-  <meta property="og:description" content="Your agent thinks, pays, acts. Your keys stay locked. Solana settles the bill." />
+  <meta property="og:title" content="KeyShield — One vault for you and your agents." />
+  <meta property="og:description" content="Dashboard for humans, SDK &amp; CLI for agents. Store API keys once, plug in anywhere, calls get accelerated." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="KeyShield" />
-  <meta name="twitter:description" content="Your agent thinks, pays, acts. Your keys stay locked. Solana settles the bill." />
-  <title>KeyShield — API keys for the age of agents</title>
+  <meta name="twitter:description" content="iCloud Keychain for API keys. Store once, plug in anywhere, calls get accelerated." />
+  <title>KeyShield — Stop copy-pasting API keys.</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b8cff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,8 +40,8 @@
     }
     .hero-glow {
       background:
-        radial-gradient(55% 50% at 50% 0%, rgba(91,140,255,0.20) 0%, transparent 70%),
-        radial-gradient(35% 35% at 75% 20%, rgba(52,211,153,0.08) 0%, transparent 70%);
+        radial-gradient(55% 50% at 50% 0%, rgba(91,140,255,0.18) 0%, transparent 70%),
+        radial-gradient(35% 35% at 75% 20%, rgba(52,211,153,0.07) 0%, transparent 70%);
     }
     .grid-bg {
       background-image:
@@ -78,6 +78,7 @@
     .cmp-table td { padding: 12px 16px; border-bottom: 1px solid #111830; color: #a4abc2; }
     .cmp-table tr:hover td { background: rgba(91,140,255,0.03); }
     .cmp-table td:first-child { color: #cdd3e4; font-weight: 500; }
+    .quote-mark { font-size: 72px; line-height: 1; color: rgba(91,140,255,0.15); font-family: Georgia, serif; }
     ::selection { background: rgba(91,140,255,0.35); color: #fff; }
     @media (max-width: 640px) { .code-bl { font-size: 11.5px; padding: 14px; } }
   </style>
@@ -94,7 +95,7 @@
       <nav class="flex items-center gap-1 text-[13.5px]">
         <a href="#problem" class="px-3 py-1.5 rounded-md text-[#a4abc2] hover:text-white hover:bg-[#0e1430] transition-colors hidden sm:block">Problem</a>
         <a href="#solution" class="px-3 py-1.5 rounded-md text-[#a4abc2] hover:text-white hover:bg-[#0e1430] transition-colors hidden sm:block">Solution</a>
-        <a href="#moat" class="px-3 py-1.5 rounded-md text-[#a4abc2] hover:text-white hover:bg-[#0e1430] transition-colors">Moat</a>
+        <a href="#moat" class="px-3 py-1.5 rounded-md text-[#a4abc2] hover:text-white hover:bg-[#0e1430] transition-colors">Why us</a>
         <a href="#proof" class="px-3 py-1.5 rounded-md text-[#a4abc2] hover:text-white hover:bg-[#0e1430] transition-colors">Proof</a>
         <a href="https://app.ks.aileena.xyz" class="ml-1 px-4 py-1.5 rounded-lg bg-[#5b8cff]/10 text-[#7aa1ff] hover:bg-[#5b8cff]/20 transition-colors font-medium">Dashboard</a>
       </nav>
@@ -114,18 +115,18 @@
             privacy hack 2026 &middot; live on solana devnet
           </div>
 
-          <h1 class="text-[42px] sm:text-[56px] lg:text-[64px] font-extrabold tracking-[-0.03em] leading-[1.05] text-white">
-            Your AI agent needs<br/>API keys to work.<br/>
-            <span class="bg-gradient-to-r from-[#5b8cff] to-[#34d399] bg-clip-text text-transparent">Every key you hand over<br/>is a loaded gun.</span>
+          <h1 class="text-[40px] sm:text-[54px] lg:text-[62px] font-extrabold tracking-[-0.03em] leading-[1.08] text-white">
+            One vault for<br/>
+            <span class="bg-gradient-to-r from-[#5b8cff] to-[#34d399] bg-clip-text text-transparent">you and your agents.</span>
           </h1>
 
           <p class="mt-7 text-[18px] sm:text-[20px] text-[#a4abc2] leading-relaxed max-w-2xl">
-            KeyShield lets your agent <strong class="text-white">think</strong>, <strong class="text-white">pay</strong>, and <strong class="text-white">act</strong> &mdash; without ever seeing a raw API key. Zero-knowledge encryption. Solana wallet auth. On-chain billing. One proxy.
+            We've all been there &mdash; copy-pasting API keys into .env, into CI, into every project. Each time, you're one leak away from a $4,500 bill. <strong class="text-white">Collect your API keys the way iCloud Keychain collects your passwords.</strong> You use the dashboard. Your agents use the SDK. Same vault. Same security.
           </p>
 
           <div class="mt-9 flex flex-wrap items-center gap-3">
             <a href="https://app.ks.aileena.xyz" class="btn-p inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#5b8cff] text-white font-semibold text-[15px] shadow-[0_12px_40px_-10px_rgba(91,140,255,0.55)]">
-              Try the Dashboard
+              Try It Free
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
             </a>
             <a href="https://github.com/lilaclilac09/keyshield" target="_blank" rel="noopener noreferrer" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#1c2238] text-[#cdd3e4] font-medium text-[15px]">
@@ -137,24 +138,34 @@
       </div>
     </section>
 
-    <!-- ━━━ THE PROBLEM ━━━ -->
+    <!-- ━━━ THE PROBLEM — we've all been there ━━━ -->
     <section id="problem" class="border-t border-[#1c2238]">
       <div class="max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
-        <div class="max-w-2xl mb-12 reveal">
-          <p class="text-[11px] uppercase tracking-[0.2em] text-[#f43f5e] font-semibold mb-3">The problem</p>
+        <div class="max-w-3xl mb-14 reveal">
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#f43f5e] font-semibold mb-3">We've all been there</p>
           <h2 class="text-3xl sm:text-[40px] font-bold tracking-tight text-white leading-tight">
-            You're building AI agents.<br/>Here's what keeps breaking.
+            You write great code.<br/>Then this happens.
           </h2>
         </div>
 
         <div class="grid sm:grid-cols-3 gap-5">
           <article class="pain-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
             <div class="w-12 h-12 rounded-xl bg-[#f43f5e]/10 border border-[#f43f5e]/20 flex items-center justify-center mb-5">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+            <h3 class="text-[17px] font-bold text-white mb-2">Copy-paste everywhere.</h3>
+            <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
+              Every new project, every CI pipeline, every teammate &mdash; you're copying <span class="font-mono text-[13px] text-[#cdd3e4]">sk-proj-...</span> into yet another <span class="font-mono text-[13px] text-[#cdd3e4]">.env</span> file. By the third project, your key lives in a dozen places you can't track.
+            </p>
+          </article>
+
+          <article class="pain-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
+            <div class="w-12 h-12 rounded-xl bg-[#f43f5e]/10 border border-[#f43f5e]/20 flex items-center justify-center mb-5">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             </div>
-            <h3 class="text-[17px] font-bold text-white mb-2">Keys leak.</h3>
+            <h3 class="text-[17px] font-bold text-white mb-2">One leak. Big bill.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              You put <span class="font-mono text-[13px] text-[#cdd3e4]">OPENAI_API_KEY</span> in .env. It shows up in logs, CI artifacts, crash dumps, <span class="font-mono text-[13px] text-[#cdd3e4]">ps aux</span>. One leaked key costs $4,500 on average. It happens every day.
+              It shows up in logs, in crash dumps, in <span class="font-mono text-[13px] text-[#cdd3e4]">git history</span>. Someone scrapes it. You wake up to a $4,500 bill from OpenAI. Rotating the key means touching every project again.
             </p>
           </article>
 
@@ -162,135 +173,173 @@
             <div class="w-12 h-12 rounded-xl bg-[#f43f5e]/10 border border-[#f43f5e]/20 flex items-center justify-center mb-5">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
             </div>
-            <h3 class="text-[17px] font-bold text-white mb-2">Agents can't pay.</h3>
+            <h3 class="text-[17px] font-bold text-white mb-2">Agents make it worse.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              Your agent calls OpenAI 10K times a day. Who pays? You pre-fund a credit card? OAuth assumes a human clicking "approve." Your agent isn't one. There's no native payment rail.
+              Now your AI agent needs keys too. But it can't click "approve." It can't swipe a credit card. And once you hand it a key, there's no spending cap, no scope limit, no kill switch.
             </p>
           </article>
+        </div>
 
-          <article class="pain-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
-            <div class="w-12 h-12 rounded-xl bg-[#f43f5e]/10 border border-[#f43f5e]/20 flex items-center justify-center mb-5">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><line x1="12" y1="3" x2="12" y2="4"/></svg>
-            </div>
-            <h3 class="text-[17px] font-bold text-white mb-2">You lose control.</h3>
-            <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              Once you hand a key to your agent, it has your full access forever. No spending cap. No scope limit. No kill switch. If the agent goes rogue, the key is already in the wild.
-            </p>
-          </article>
+        <!-- The feeling -->
+        <div class="reveal mt-14 max-w-2xl mx-auto text-center">
+          <p class="quote-mark">&ldquo;</p>
+          <p class="text-[20px] sm:text-[22px] text-white font-medium leading-relaxed -mt-8">
+            I just want to build software.<br/>
+            Why is managing API keys <em class="text-[#f43f5e] not-italic font-semibold">still</em> this painful?
+          </p>
+          <p class="mt-4 text-[14px] text-[#6b7494]">&mdash; every developer, eventually</p>
         </div>
       </div>
     </section>
 
-    <!-- ━━━ THE SOLUTION ━━━ -->
+    <!-- ━━━ THE SOLUTION — 10x smoother ━━━ -->
     <section id="solution" class="border-t border-[#1c2238] bg-[#070912]/60">
       <div class="max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
         <div class="max-w-2xl mb-14 reveal">
-          <p class="text-[11px] uppercase tracking-[0.2em] text-[#34d399] font-semibold mb-3">The solution</p>
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#34d399] font-semibold mb-3">10&times; smoother</p>
           <h2 class="text-3xl sm:text-[40px] font-bold tracking-tight text-white leading-tight">
-            Don't give your agent the key.<br/>Give it a wallet.
+            iCloud Keychain for your API keys.
           </h2>
-          <p class="mt-5 text-[17px] text-[#a4abc2] leading-relaxed">
-            KeyShield is a proxy between your agent and every API it calls. Your keys are encrypted on your device and never leave. The proxy injects them per-request. Solana handles billing.
+          <p class="mt-5 text-[18px] text-[#a4abc2] leading-relaxed">
+            You already collect passwords and accounts in iCloud Keychain. <strong class="text-white">What if you could do the same with API keys?</strong> Store them once, securely. Whenever you're building software, just plug in our vault. The API calls will be accelerated. That's it.
           </p>
         </div>
 
-        <!-- How it works — vertical flow -->
+        <!-- How it works — three steps -->
         <div class="max-w-xl space-y-8 reveal">
           <div class="flow-line flex items-start gap-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b8cff]/15 border border-[#5b8cff]/30 flex items-center justify-center text-[#5b8cff] font-bold text-[14px]">1</div>
             <div>
-              <h3 class="text-[16px] font-bold text-white">You store your keys once.</h3>
-              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Encrypted on your device with your Solana wallet signature. AES-256-GCM. The server stores ciphertext it literally cannot read.</p>
+              <h3 class="text-[16px] font-bold text-white">Collect your keys in one vault.</h3>
+              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">OpenAI, Anthropic, Helius, any provider. Add them once. They're encrypted on your device with your own wallet &mdash; we literally can't read them. Same security as iCloud Keychain.</p>
             </div>
           </div>
           <div class="flow-line flex items-start gap-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b8cff]/15 border border-[#5b8cff]/30 flex items-center justify-center text-[#5b8cff] font-bold text-[14px]">2</div>
             <div>
-              <h3 class="text-[16px] font-bold text-white">Your agent calls the proxy.</h3>
-              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Same OpenAI / Anthropic / Helius SDK. Same code. The proxy decrypts the key in memory, forwards the request, throws the key away. Agent never sees it.</p>
+              <h3 class="text-[16px] font-bold text-white">Plug in our vault. Write your code.</h3>
+              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Same OpenAI SDK. Same code you already write. Three lines and your app is connected. No .env files. No copy-pasting. Rotate a key from the dashboard &mdash; every project picks it up instantly.</p>
             </div>
           </div>
           <div class="flow-line flex items-start gap-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b8cff]/15 border border-[#5b8cff]/30 flex items-center justify-center text-[#5b8cff] font-bold text-[14px]">3</div>
             <div>
-              <h3 class="text-[16px] font-bold text-white">Solana settles the bill.</h3>
-              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Your agent gets its own on-chain wallet with a spending cap you set. 10K API calls batch into one Solana transaction every 60 seconds. USDC. Transparent. Revocable.</p>
+              <h3 class="text-[16px] font-bold text-white">Calls get accelerated. That's it.</h3>
+              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Our Rust proxy with Helius accelerator caches Solana RPC calls, deduplicates identical requests, and delivers 50&ndash;80ms reads. Your code runs faster without you changing a line.</p>
             </div>
           </div>
         </div>
 
-        <!-- Code snippet -->
-        <div class="mt-14 max-w-xl reveal">
-          <p class="text-[11px] uppercase tracking-[0.15em] text-[#6b7494] font-medium mb-3">Three lines. That's it.</p>
-          <div class="code-bl">
+        <!-- Dual panel: Human vs Agent -->
+        <div class="mt-16 reveal">
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#7aa1ff] font-semibold mb-6">Same vault. Two interfaces.</p>
+          <div class="grid sm:grid-cols-2 gap-5">
+
+            <!-- HUMAN panel -->
+            <div class="rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
+              <div class="flex items-center gap-3 mb-5">
+                <div class="w-10 h-10 rounded-xl bg-[#5b8cff]/10 border border-[#5b8cff]/20 flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#5b8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-[16px] font-bold text-white">For You</h3>
+                  <p class="text-[12px] text-[#6b7494]">Dashboard &middot; Chrome Extension</p>
+                </div>
+              </div>
+              <ul class="space-y-3 text-[14.5px] text-[#a4abc2] leading-relaxed">
+                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> Add keys visually in the web dashboard</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> One-click rotate &mdash; every project picks it up</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> See usage, costs, and audit logs</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> Share keys with teammates (scoped, revocable)</li>
+              </ul>
+              <div class="mt-5 code-bl text-[13px]" style="font-size:13px;">
+<span class="c"># Or use the CLI if you prefer terminal</span>
+<span class="f">source</span> keyshield-cli.sh
+<span class="f">ks_store</span> openai <span class="s">"sk-proj-..."</span>
+<span class="f">ks_store</span> helius <span class="s">"your-key"</span>
+              </div>
+            </div>
+
+            <!-- AGENT panel -->
+            <div class="rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
+              <div class="flex items-center gap-3 mb-5">
+                <div class="w-10 h-10 rounded-xl bg-[#34d399]/10 border border-[#34d399]/20 flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-[16px] font-bold text-white">For Your Agent</h3>
+                  <p class="text-[12px] text-[#6b7494]">Python SDK &middot; CLI &middot; REST API</p>
+                </div>
+              </div>
+              <ul class="space-y-3 text-[14.5px] text-[#a4abc2] leading-relaxed">
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Session token &mdash; agent never sees the raw key</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Spending cap per agent (SOL micropayments)</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Scope limits &amp; kill switch from your dashboard</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Works with Cursor, OpenClaw, Hermes, any bot</li>
+              </ul>
+              <div class="mt-5 code-bl text-[13px]" style="font-size:13px;">
 <span class="k">from</span> keyshield <span class="k">import</span> KeyShield
 
-ks = <span class="f">KeyShield</span>(token=<span class="s">"ksv2_..."</span>)
-openai = ks.<span class="f">openai_client</span>()   <span class="c"># your key never touches agent memory</span>
-
-resp = openai.chat.completions.<span class="f">create</span>(
-    model=<span class="s">"gpt-4o"</span>,
-    messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"hello"</span>}]
-)
+ks = <span class="f">KeyShield</span>(token=os.environ[<span class="s">"KS_TOKEN"</span>])
+client = ks.<span class="f">openai_client</span>()  <span class="c"># zero raw keys</span>
+              </div>
+            </div>
           </div>
+          <p class="mt-5 text-center text-[14px] text-[#6b7494]">Human stores the key. Agent gets a scoped token. No .env anywhere.</p>
         </div>
       </div>
     </section>
 
-    <!-- ━━━ THE MOAT ━━━ -->
+    <!-- ━━━ WHY US / MOAT ━━━ -->
     <section id="moat" class="border-t border-[#1c2238]">
       <div class="max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
         <div class="max-w-2xl mb-12 reveal">
-          <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">What makes us different</p>
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">Why we're different</p>
           <h2 class="text-3xl sm:text-[40px] font-bold tracking-tight text-white leading-tight">
-            Not another secrets manager.<br/>This is infrastructure.
+            Not another secrets manager.<br/>Built for the age of agents.
           </h2>
         </div>
 
         <div class="grid sm:grid-cols-2 gap-5">
-          <!-- Moat 1 -->
           <article class="moat-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-10 h-10 rounded-lg bg-[#5b8cff]/10 border border-[#5b8cff]/30 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#5b8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               </div>
-              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">iCloud Keychain grade</span>
+              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">zero knowledge</span>
             </div>
-            <h3 class="text-[18px] font-bold text-white mb-2">The server can't read your keys.</h3>
+            <h3 class="text-[18px] font-bold text-white mb-2">We can't read your keys. By design.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              Your Solana wallet signature derives an AES-256-GCM key. Encryption happens in your browser. The server only stores ciphertext. Even if we get hacked, your keys are safe. Same security model as iCloud Keychain &mdash; but for API keys, built for agents.
+              Your wallet signature derives an AES-256-GCM key. Encryption happens in your browser. Our server only stores ciphertext. Even if we get breached, your keys are safe. Same model as iCloud Keychain &mdash; built for API keys.
             </p>
           </article>
 
-          <!-- Moat 2 -->
           <article class="moat-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-10 h-10 rounded-lg bg-[#5b8cff]/10 border border-[#5b8cff]/30 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#5b8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
-              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">on-chain USDC</span>
+              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">agent wallet</span>
             </div>
-            <h3 class="text-[18px] font-bold text-white mb-2">Your agent has its own wallet.</h3>
+            <h3 class="text-[18px] font-bold text-white mb-2">Give your agent a wallet, not a key.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              You mint an Ephemeral Signer on Solana. Top it up with USDC. Set a spending cap the chain enforces. Your agent pays API providers directly &mdash; no credit card, no human approval, and it can't outspend the limit because the blockchain says no.
+              Mint an on-chain wallet for your agent. Top it up with USDC. Set a spending cap the blockchain enforces. Your agent pays for API calls directly &mdash; no credit card, no human in the loop, and it physically can't overspend.
             </p>
           </article>
 
-          <!-- Moat 3 -->
           <article class="moat-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-10 h-10 rounded-lg bg-[#5b8cff]/10 border border-[#5b8cff]/30 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#5b8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
               </div>
-              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">200&times; cheaper</span>
+              <span class="font-mono text-[11px] px-2.5 py-1 rounded-md bg-[#34d399]/10 text-[#34d399] border border-[#34d399]/20">batch billing</span>
             </div>
-            <h3 class="text-[18px] font-bold text-white mb-2">10K calls. One transaction.</h3>
+            <h3 class="text-[18px] font-bold text-white mb-2">10,000 calls. One transaction.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              x402 charges per API call &mdash; too expensive for real agents. Our Metered Payment Protocol records calls off-chain at microsecond speed and settles once every 60 seconds on Solana. One batch. One fee. Streaming actually works.
+              Paying per API call is too expensive for real agents. Our Metered Payment Protocol batches thousands of calls and settles once every 60 seconds on Solana. One fee. Streaming that actually scales.
             </p>
           </article>
 
-          <!-- Moat 4 -->
           <article class="moat-card reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-10 h-10 rounded-lg bg-[#5b8cff]/10 border border-[#5b8cff]/30 flex items-center justify-center">
@@ -300,7 +349,7 @@ resp = openai.chat.completions.<span class="f">create</span>(
             </div>
             <h3 class="text-[18px] font-bold text-white mb-2">Rust proxy. Helius accelerator.</h3>
             <p class="text-[14.5px] text-[#a4abc2] leading-relaxed">
-              The hot path is six Rust crates with two-tier caching. Solana RPC calls go through our HeliusClient with memory + disk cache and single-flight dedup &mdash; 50 identical calls fire upstream once. Your agent gets 30&ndash;80ms Solana reads.
+              The hot path is compiled Rust with two-tier caching. Solana RPC calls go through our HeliusClient: memory cache + disk fallback + single-flight dedup. 50 identical calls hit the network once. Your reads: 50&ndash;80ms.
             </p>
           </article>
         </div>
@@ -311,9 +360,9 @@ resp = openai.chat.completions.<span class="f">create</span>(
     <section class="border-t border-[#1c2238] bg-[#070912]/60">
       <div class="max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
         <div class="max-w-2xl mb-10 reveal">
-          <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">Comparison</p>
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">Side by side</p>
           <h2 class="text-3xl sm:text-[36px] font-bold tracking-tight text-white leading-tight">
-            iCloud Keychain security. Agent superpowers.
+            iCloud Keychain security.<br/>Agent superpowers on top.
           </h2>
         </div>
         <div class="reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] overflow-x-auto">
@@ -324,7 +373,7 @@ resp = openai.chat.completions.<span class="f">create</span>(
               <tr><td>Encryption</td><td>AES-256-GCM</td><td>AES-256-GCM</td></tr>
               <tr><td>Key derivation</td><td>Secure Enclave</td><td>Wallet sig &rarr; HKDF-SHA256</td></tr>
               <tr><td>Cross-device sync</td><td>iCloud E2E</td><td class="text-[#34d399]">Same wallet = same key</td></tr>
-              <tr><td>Auto-fill</td><td>Safari only</td><td class="text-[#34d399]">Chrome extension on any site</td></tr>
+              <tr><td>Auto-fill</td><td>Safari only</td><td class="text-[#34d399]">Chrome extension, any site</td></tr>
               <tr><td>Agent delegation</td><td class="text-[#f43f5e]">Not possible</td><td class="text-[#34d399]">Scoped access + instant revoke</td></tr>
               <tr><td>Spending cap</td><td class="text-[#f43f5e]">N/A</td><td class="text-[#34d399]">On-chain enforced per agent</td></tr>
               <tr><td>Payment rail</td><td class="text-[#f43f5e]">N/A</td><td class="text-[#34d399]">USDC on Solana, batch-settled</td></tr>
@@ -340,7 +389,7 @@ resp = openai.chat.completions.<span class="f">create</span>(
         <div class="max-w-2xl mb-10 reveal">
           <p class="text-[11px] uppercase tracking-[0.2em] text-[#34d399] font-semibold mb-3">Not a pitch. A proof.</p>
           <h2 class="text-3xl sm:text-[40px] font-bold tracking-tight text-white leading-tight">
-            Live on Solana devnet.<br/>Every tx is clickable.
+            Live on Solana devnet.<br/>Click any transaction.
           </h2>
           <p class="mt-4 text-[15px] text-[#a4abc2]">
             Program <span class="font-mono text-[13px] text-[#cdd3e4]">41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j</span>
@@ -375,7 +424,7 @@ resp = openai.chat.completions.<span class="f">create</span>(
       </div>
     </section>
 
-    <!-- ━━━ WHAT'S LIVE ━━━ -->
+    <!-- ━━━ WHAT'S SHIPPED ━━━ -->
     <section class="border-t border-[#1c2238] bg-[#070912]/60">
       <div class="max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
         <div class="max-w-2xl mb-10 reveal">
@@ -391,6 +440,8 @@ resp = openai.chat.completions.<span class="f">create</span>(
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">HeliusClient</strong> &mdash; two-tier cache + single-flight dedup + multi-tenant</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Chrome Extension</strong> &mdash; auto-fill, cross-device sync, encrypted backup</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Agent Delegation</strong> &mdash; scoped access, CRL revocation, key sharing</span></div>
+          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Python SDK</strong> &mdash; <span class="font-mono text-[13px]">keyshield_sdk</span> &mdash; 3 lines to connect any agent</span></div>
+          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">CLI</strong> &mdash; <span class="font-mono text-[13px]">keyshield-cli.sh</span> &mdash; store, login, rotate from terminal</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Rust Proxy</strong> &mdash; 6 crates, 78 oracle tests, 50&ndash;80ms median</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Production hosts</strong> &mdash; Vercel + Railway + Cloudflare Workers</span></div>
         </div>
@@ -402,10 +453,11 @@ resp = openai.chat.completions.<span class="f">create</span>(
       <div class="absolute inset-0 hero-glow pointer-events-none opacity-70"></div>
       <div class="relative max-w-5xl mx-auto px-5 sm:px-8 py-24 sm:py-32 text-center reveal">
         <h2 class="text-[38px] sm:text-[48px] font-extrabold tracking-[-0.02em] text-white leading-[1.1]">
-          Stop handing out keys.<br/>Start handing out wallets.
+          You use the dashboard.<br/>
+          <span class="bg-gradient-to-r from-[#5b8cff] to-[#34d399] bg-clip-text text-transparent">Your agent uses the SDK.</span>
         </h2>
         <p class="mt-5 text-[17px] text-[#a4abc2] max-w-xl mx-auto leading-relaxed">
-          Mint an agent wallet. Fund it with $5 devnet USDC. Watch your first on-chain inference settle.
+          One vault. Two interfaces. Store your API keys once. Plug in anywhere &mdash; dashboard, CLI, or SDK. Calls get accelerated. That's it.
         </p>
         <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
           <a href="https://app.ks.aileena.xyz" class="btn-p inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#5b8cff] text-white font-semibold text-[15px] shadow-[0_12px_40px_-10px_rgba(91,140,255,0.55)]">
@@ -418,6 +470,10 @@ resp = openai.chat.completions.<span class="f">create</span>(
           </a>
           <a href="https://github.com/lilaclilac09/keyshield/blob/main/docs/API.md" target="_blank" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#1c2238] text-[#cdd3e4] font-medium text-[15px]">
             API Docs
+          </a>
+          <a href="https://github.com/lilaclilac09/keyshield/tree/main/src/sdk" target="_blank" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#34d399]/30 text-[#34d399] font-medium text-[15px]">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+            Agent SDK
           </a>
         </div>
       </div>
