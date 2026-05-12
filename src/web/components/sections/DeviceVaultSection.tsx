@@ -27,7 +27,7 @@ import {
   X, Check, Trash2,
 } from 'lucide-react';
 
-import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, API_BASE, getToken } from '../../lib/auth';
+import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken } from '../../lib/auth';
 import {
   isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
 } from '../../lib/vault-session';
@@ -435,8 +435,9 @@ export const DeviceVaultSection: React.FC = () => {
     setErr('');
     try {
       await registerPasskey('Device Vault');
+      const addr = getWalletAddress();
+      if (addr) setPasskeyTrust(addr, '');
       refresh();
-      // Newly registered users still need to unlock to load the empty vault.
       setPhaseMsg('Unlocking…');
       await requestVaultUnlock();
       refresh();
