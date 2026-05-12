@@ -606,7 +606,8 @@ function ksScanForInputs() {
 (function ksInitFillUI() {
   // Best-effort: dashboard pages shouldn't get the fill button.
   if (location.host === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
-      location.hostname === 'keyshield.dev' || location.hostname.endsWith('.keyshield.dev')) {
+      location.hostname === 'keyshield.dev' || location.hostname.endsWith('.keyshield.dev') ||
+      location.hostname === 'app.ks.aileena.xyz' || location.hostname.endsWith('.ks.aileena.xyz')) {
     ksFillEnabled = false;
     return;
   }
@@ -631,7 +632,8 @@ function ksScanForInputs() {
   const onDashboard = (
     location.host     === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
     location.host     === 'localhost:3000' || location.host === '127.0.0.1:3000' ||
-    location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev')
+    location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev') ||
+    location.hostname === 'app.ks.aileena.xyz' || location.hostname.endsWith('.ks.aileena.xyz')
   );
   if (!onDashboard) return;
   if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) return;

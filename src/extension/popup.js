@@ -6,7 +6,9 @@
 //   2. Settings + manual token (collapsed) → override API/dashboard URLs,
 //      manually paste a token if the bridge isn't working, or sign out.
 //   3. Background.js handles `OPEN_DASHBOARD_FOR_SIGNIN` and auto-corrects
-//      stale `:8001` dashboard URLs to `:5173`.
+//      stale dashboard URLs (old `:5173`/`:8001` defaults from earlier
+//      builds) to the production dashboard at app.ks.aileena.xyz, unless
+//      the user has explicitly pinned a non-production target.
 
 // Production defaults — the extension ships pointing at the hosted KeyShield
 // deployment so a fresh install "just works" without the user running a local

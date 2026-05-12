@@ -12,6 +12,9 @@ import {
   enrollVault,
   unlockVault,
   getCfChallenge,
+  getCfChallengeForVaultId,
+  getCachedVaultId,
+  clearCachedVaultId,
   lockVault,
   getDecryptedKey,
 } from './vault-session';
@@ -59,6 +62,7 @@ export function clearAuth(): void {
   clearTokenInExtension();
   clearExtensionVaultKey();
   lockVault();
+  clearCachedVaultId();
 }
 
 export function isAuthenticated(): boolean {
@@ -326,28 +330,32 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
 
   // Path A dual-register: tell the CF Worker about this credential so
   // subsequent unlocks can issue a vault JWT. PRF output is in extensions
-  // results — without it we can't derive the vault id, so this is best-effort
-  // (older browsers without PRF degrade to non-zero-knowledge mode).
+  // results — without it we can't derive the vault id at all, which makes
+  // the whole Path A vault unusable, so we fail loudly instead of pretending
+  // enrollment succeeded.
   const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const prfOutput = ext?.prf?.results?.first;
-  if (prfOutput) {
-    try {
-      await enrollVault(prfOutput, {
-        id: credential.id,
-        rawId: _bufferToB64url(credential.rawId),
-        type: credential.type,
-        response: {
-          attestationObject: _bufferToB64url(response.attestationObject),
-          clientDataJSON: _bufferToB64url(response.clientDataJSON),
-        },
-        clientExtensionResults: { prf: { enabled: true } },
-      }, challengeB64url);
-    } catch (e) {
-      console.warn('CF Worker enroll failed (vault will need manual unlock):', e);
-    }
-  } else {
-    console.warn('Passkey created without PRF — vault crypto unavailable on this device');
+  if (!prfOutput) {
+    throw new Error(
+      'Passkey created without PRF extension — this browser/authenticator ' +
+      'does not support the vault crypto KeyShield needs. Try Chrome/Safari ' +
+      'on a recent OS with platform authenticator support.',
+    );
   }
+  // Surface CF Worker failures: previously this was swallowed by console.warn,
+  // which made the UI report success even though the vault was never registered.
+  // That looked like "passkey 无法存储" because subsequent unlock had no row to
+  // find on the worker side.
+  await enrollVault(prfOutput, {
+    id: credential.id,
+    rawId: _bufferToB64url(credential.rawId),
+    type: credential.type,
+    response: {
+      attestationObject: _bufferToB64url(response.attestationObject),
+      clientDataJSON: _bufferToB64url(response.clientDataJSON),
+    },
+    clientExtensionResults: { prf: { enabled: true } },
+  }, challengeB64url);
 
   return result;
 }
@@ -373,14 +381,51 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
   if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
   const opts = await optsRes.json();
 
-  // Probe ceremony: derive vaultId from PRF first (no server interaction
-  // beyond the challenge), so the second ceremony has the right vaultId for
-  // CF Worker /auth/challenge.
   const salt = await prfSalt();
+  const allowCreds = (opts.allowCredentials ?? []).map((c: { id: string }) => ({
+    ...c, id: _b64urlToBuffer(c.id),
+  }));
+
+  // Fast path: vaultId was cached at enroll/unlock time → ask CF Worker for
+  // a challenge bound to that vaultId and do a single WebAuthn ceremony.
+  // Single Face ID prompt, no probe ceremony.
+  //
+  // Slow path: no cache (e.g. cleared, fresh browser profile) → do the probe
+  // ceremony to derive vaultId from PRF, then a second ceremony with the
+  // CF-issued challenge. 2 Face ID prompts.
+  const cached = getCachedVaultId();
+  if (cached) {
+    const cfChallenge = await getCfChallengeForVaultId(cached);
+    const realOpts = {
+      ...opts,
+      challenge: _b64urlToBuffer(cfChallenge),
+      allowCredentials: allowCreds,
+      extensions: { prf: { eval: { first: salt } } },
+    };
+    const credential = await navigator.credentials.get({ publicKey: realOpts }) as PublicKeyCredential;
+    const realExt = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+    const prfOutput = realExt?.prf?.results?.first;
+    if (!prfOutput) throw new Error('Passkey did not return PRF — device unsupported for Path A vault');
+    const resp = credential.response as AuthenticatorAssertionResponse;
+    const assertion = {
+      id: credential.id,
+      rawId: _bufferToB64url(credential.rawId),
+      type: credential.type,
+      response: {
+        authenticatorData: _bufferToB64url(resp.authenticatorData),
+        clientDataJSON: _bufferToB64url(resp.clientDataJSON),
+        signature: _bufferToB64url(resp.signature),
+        userHandle: resp.userHandle ? _bufferToB64url(resp.userHandle) : undefined,
+      },
+    };
+    return await unlockVault(prfOutput, assertion);
+  }
+
+  // Probe ceremony — only runs once per device (until cache is cleared).
   const probeOpts = {
     ...opts,
     challenge: _b64urlToBuffer(opts.challenge),
-    allowCredentials: (opts.allowCredentials ?? []).map((c: { id: string }) => ({ ...c, id: _b64urlToBuffer(c.id) })),
+    allowCredentials: allowCreds,
     extensions: { prf: { eval: { first: salt } } },
   };
   const probe = await navigator.credentials.get({ publicKey: probeOpts }) as PublicKeyCredential;
@@ -388,12 +433,11 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
   const prfOutput = probeExt?.prf?.results?.first;
   if (!prfOutput) throw new Error('Passkey did not return PRF — device unsupported for Path A vault');
 
-  // Now get a CF-issued challenge and run the real ceremony against it.
   const cfChallenge = await getCfChallenge(prfOutput);
   const realOpts = {
     ...opts,
     challenge: _b64urlToBuffer(cfChallenge),
-    allowCredentials: (opts.allowCredentials ?? []).map((c: { id: string }) => ({ ...c, id: _b64urlToBuffer(c.id) })),
+    allowCredentials: allowCreds,
     extensions: { prf: { eval: { first: salt } } },
   };
   const credential = await navigator.credentials.get({ publicKey: realOpts }) as PublicKeyCredential;

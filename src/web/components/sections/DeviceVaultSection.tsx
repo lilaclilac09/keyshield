@@ -53,11 +53,19 @@ const GettingStartedGuide: React.FC = () => {
 
   return (
     <div className="rounded-xl border border-[#243365]/60 bg-[#131c39] overflow-hidden">
-      {/* Header — always visible */}
-      <button
-        type="button"
+      {/* Header — always visible. Outer is a div (not button) so the inner
+          Dismiss button is valid HTML; we still expose role=button for a11y. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors cursor-pointer select-none"
       >
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-emerald-950/50 border border-emerald-900/40 flex items-center justify-center">
@@ -80,7 +88,7 @@ const GettingStartedGuide: React.FC = () => {
           </button>
           {expanded ? <ChevronUp size={14} className="text-[#5e6a91]" /> : <ChevronDown size={14} className="text-[#5e6a91]" />}
         </div>
-      </button>
+      </div>
 
       {/* Body — collapsible */}
       {expanded && (

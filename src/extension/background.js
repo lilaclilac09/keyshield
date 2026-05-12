@@ -228,7 +228,7 @@ async function directStore({ upstream, value }) {
       cipher_v: 1,
     });
   } else {
-    console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at 127.0.0.1:5173 to enable client-side encryption.');
+    console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
     body = JSON.stringify({ upstream, value, name: `${upstream} key` });
   }
 
@@ -426,13 +426,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // Auxiliary: open dashboard once for sign-in (bulk-save flow). Auto-correct
-  // a stale stored value that points at :8001 (FastAPI, no frontend) — old
-  // popups defaulted there before we split backend vs dashboard ports.
+  // a stale stored value that:
+  //   - points at :8001/:8000 (FastAPI control-plane port, never the dashboard)
+  //   - points at a localhost dev server when the user hasn't pinned a local
+  //     target — old extensions defaulted to 127.0.0.1:5173 which 404s on
+  //     every fresh install once the user stops `npm run dev`.
   if (message.type === 'OPEN_DASHBOARD_FOR_SIGNIN') {
     (async () => {
-      let { dashboardUrl } = await getApiBase();
-      const looksLikeBackend = /:8001(\/|$)/.test(dashboardUrl) || /:8000(\/|$)/.test(dashboardUrl);
-      if (looksLikeBackend || !dashboardUrl) {
+      const stored = await chrome.storage.local.get(['ks_dashboard_url', PIN_PREF_KEY]);
+      let dashboardUrl = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
+      const pinned = !!stored[PIN_PREF_KEY];
+      const looksLikeBackend = /:800[01](\/|$)/.test(dashboardUrl);
+      const looksStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some(
+        (u) => dashboardUrl === u || dashboardUrl.startsWith(u + '/'),
+      );
+      if (looksLikeBackend || looksStaleLocal || !dashboardUrl) {
         dashboardUrl = DEFAULT_DASHBOARD_URL;
         try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
       }

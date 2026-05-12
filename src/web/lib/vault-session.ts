@@ -32,6 +32,39 @@ export const SYNC_URL: string = (() => {
   return 'http://localhost:8787';
 })();
 
+// Why cache vaultId in localStorage: it's derived from PRF output, which we
+// can only obtain from a WebAuthn ceremony (Face ID / TouchID prompt). Caching
+// the non-secret derived id lets the unlock path skip the "probe ceremony"
+// that exists solely to learn the vaultId before calling /auth/challenge.
+// This collapses unlock from 2 prompts → 1.
+const VAULT_ID_CACHE_KEY = 'ks_vault_id';
+
+export function getCachedVaultId(): string | null {
+  try { return localStorage.getItem(VAULT_ID_CACHE_KEY); } catch { return null; }
+}
+
+function setCachedVaultId(id: string): void {
+  try { localStorage.setItem(VAULT_ID_CACHE_KEY, id); } catch { /* ignore quota */ }
+}
+
+export function clearCachedVaultId(): void {
+  try { localStorage.removeItem(VAULT_ID_CACHE_KEY); } catch { /* ignore */ }
+}
+
+/** Wrap a fetch error so the user sees an actionable hint instead of a raw
+ *  "Failed to fetch" / TypeError. CORS+netfail both surface as TypeError in
+ *  the browser, and the most common cause in dev is "worker not started". */
+function describeNetError(e: unknown, op: string): Error {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (e instanceof TypeError || /fetch|network/i.test(msg)) {
+    return new Error(
+      `Sync worker unreachable at ${SYNC_URL} (${op}). ` +
+      `Start it with:  cd src/infra/sync-worker && npm run dev`,
+    );
+  }
+  return e instanceof Error ? e : new Error(msg);
+}
+
 interface SessionState {
   vaultId: string;
   masterKey: CryptoKey;
@@ -49,6 +82,8 @@ export function isVaultUnlocked(): boolean {
 export function lockVault(): void {
   _state?.bearer.clear();
   _state = null;
+  // Intentionally NOT clearing the cached vaultId: it's non-secret and
+  // letting the next unlock skip the probe ceremony is the whole point.
 }
 
 /** First-run on a device: register vault with CF Worker (no JWT yet). */
@@ -58,16 +93,22 @@ export async function enrollVault(
   expectedChallenge: string,
 ): Promise<{ vaultId: string }> {
   const vaultId = await deriveVaultId(prfOutput);
-  const res = await fetch(`${SYNC_URL}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vaultId, attestation, expectedChallenge }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${SYNC_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vaultId, attestation, expectedChallenge }),
+    });
+  } catch (e) {
+    throw describeNetError(e, 'register');
+  }
   // 409 = already registered = OK (cross-device race or re-enrollment)
   if (!res.ok && res.status !== 409) {
     const err = await res.json().catch(() => ({ error: `register failed (${res.status})` }));
     throw new Error((err as { error?: string }).error ?? `register failed (${res.status})`);
   }
+  setCachedVaultId(vaultId);
   return { vaultId };
 }
 
@@ -79,11 +120,16 @@ export async function unlockVault(
   const vaultId = await deriveVaultId(prfOutput);
   const masterKey = await deriveMasterKey(prfOutput);
 
-  const exchangeRes = await fetch(`${SYNC_URL}/auth/exchange`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vaultId, assertion }),
-  });
+  let exchangeRes: Response;
+  try {
+    exchangeRes = await fetch(`${SYNC_URL}/auth/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vaultId, assertion }),
+    });
+  } catch (e) {
+    throw describeNetError(e, 'exchange');
+  }
   if (!exchangeRes.ok) {
     const err = await exchangeRes.json().catch(() => ({ error: `exchange failed (${exchangeRes.status})` }));
     throw new Error((err as { error?: string }).error ?? `exchange failed (${exchangeRes.status})`);
@@ -98,17 +144,29 @@ export async function unlockVault(
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
 
   _state = { vaultId, masterKey, bearer, sync, plaintext };
+  setCachedVaultId(vaultId);
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
 
-/** Get a fresh challenge from CF Worker for the unlock ceremony. */
+/** Get a fresh challenge from CF Worker for the unlock ceremony.
+ *  Two entry points so the unlock flow can use the cached vaultId
+ *  and skip the probe ceremony entirely. */
 export async function getCfChallenge(prfOutput: ArrayBuffer): Promise<string> {
   const vaultId = await deriveVaultId(prfOutput);
-  const res = await fetch(`${SYNC_URL}/auth/challenge`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vaultId }),
-  });
+  return getCfChallengeForVaultId(vaultId);
+}
+
+export async function getCfChallengeForVaultId(vaultId: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`${SYNC_URL}/auth/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vaultId }),
+    });
+  } catch (e) {
+    throw describeNetError(e, 'challenge');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `challenge failed (${res.status})` }));
     throw new Error((err as { error?: string }).error ?? `challenge failed (${res.status})`);

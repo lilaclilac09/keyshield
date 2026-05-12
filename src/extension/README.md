@@ -18,9 +18,22 @@ src/extension/
 
 ## Backend
 
-The extension talks to the KeyShield backend at `http://127.0.0.1:8001` by default. Make sure it's running before installing.
+By default the extension talks to the hosted KeyShield deployment:
 
-The base URL can be overridden at runtime from the popup (it's stored in `chrome.storage.local.ks_api_base`).
+- API base: `https://api.ks.aileena.xyz`
+- Dashboard: `https://app.ks.aileena.xyz`
+
+Both URLs can be overridden at runtime from the popup's **Settings & manual
+token** panel (stored in `chrome.storage.local.ks_api_base` and
+`chrome.storage.local.ks_dashboard_url`). The popup also exposes a
+**Use local dev** button that flips both back to
+`http://127.0.0.1:8001` / `http://127.0.0.1:5173` for working against the
+local Vite + FastAPI stack.
+
+Existing installs that were defaulted to old localhost URLs are migrated to
+the production defaults the next time the popup or background opens the
+dashboard, unless the user explicitly saved a non-production URL (tracked
+via `chrome.storage.local.ks_url_pref_pinned`).
 
 ## Install — Chrome / Edge / Brave / Arc
 
@@ -50,6 +63,7 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Sign in to the dashboard at `http://127.0.0.1:8001`. The dashboard registers a token with the extension via `chrome.runtime.sendMessage`.
-- **Backend unreachable:** Confirm the backend is running on port 8001 and that `http://127.0.0.1:8001/*` is in `host_permissions` (it is, by default).
+- **"No token" badge in popup:** Click **→ Sign in to KeyShield** in the popup. It opens `https://app.ks.aileena.xyz` (or your configured dashboard) and the dashboard registers a token with the extension via `chrome.runtime.sendMessage`.
+- **Sign-in link doesn't open / opens a dead localhost tab:** You're on an old build that defaulted to `http://127.0.0.1:5173`. Open the popup once — the migration logic will rewrite the stored dashboard URL to `https://app.ks.aileena.xyz` automatically (unless you've explicitly pinned a custom URL via Settings).
+- **Backend unreachable:** Confirm the configured API base is reachable. The default `https://api.ks.aileena.xyz` and the local dev fallbacks (`http://127.0.0.1:8001`, `http://localhost:8001`) are all listed in `host_permissions`.
 - **Manifest changes:** After editing `manifest.json`, click the **Reload** circle on the extension card in `chrome://extensions/`.
