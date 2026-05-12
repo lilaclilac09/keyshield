@@ -79,7 +79,7 @@
     .cmp-table tr:hover td { background: rgba(91,140,255,0.03); }
     .cmp-table td:first-child { color: #cdd3e4; font-weight: 500; }
     .quote-mark { font-size: 72px; line-height: 1; color: rgba(91,140,255,0.15); font-family: Georgia, serif; }
-    ::selection { background: rgba(91,140,255,0.35); color: #fff; }
+    #why-10x { scroll-margin-top: 5.5rem; }
     @media (max-width: 640px) { .code-bl { font-size: 11.5px; padding: 14px; } }
   </style>
 </head>
@@ -455,8 +455,10 @@ client = ks.<span class="f">openai_client</span>()  <span class="c"># zero raw k
       <div class="relative max-w-5xl mx-auto px-5 sm:px-8 py-24 sm:py-32 text-center reveal">
         <h2 class="text-[38px] sm:text-[48px] font-extrabold tracking-[-0.02em] text-white leading-[1.12]">
           Match your API calls to<br/>
-          <span class="bg-gradient-to-r from-[#5b8cff] to-[#34d399] bg-clip-text text-transparent">your digital creation &mdash; without hesitation.</span>
-          <span class="inline-block ml-1.5 sm:ml-2 text-[0.45em] sm:text-[0.42em] align-middle opacity-95 select-none" aria-hidden="true">🌼</span>
+          <span class="inline-flex flex-wrap items-baseline justify-center gap-x-1.5 gap-y-0 max-w-[min(100%,42rem)] mx-auto">
+            <span class="bg-gradient-to-r from-[#5b8cff] to-[#34d399] bg-clip-text text-transparent">your digital creation &mdash; without hesitation.</span>
+            <span class="text-[0.55em] sm:text-[0.5em] leading-none opacity-95 select-none inline-block" aria-hidden="true">🌼</span>
+          </span>
         </h2>
         <p class="mt-5 text-[15px] sm:text-[16px] text-[#7b8399] max-w-[34rem] mx-auto leading-relaxed font-medium tracking-[-0.01em]">
           Match your stack to your flow, or wire the path that best fits how you ship. Keys stay in your vault, calls run through a fast lane, comfy trust all day long.
@@ -475,36 +477,42 @@ client = ks.<span class="f">openai_client</span>()  <span class="c"># zero raw k
           </a>
         </div>
 
-        <p class="mt-8 text-[12px] uppercase tracking-[0.2em] text-[#6b7494] font-semibold">Why each 10&times; is grounded in the stack</p>
+        <div id="why-10x" class="mt-12 max-w-5xl mx-auto">
+          <div class="max-w-3xl mx-auto text-center sm:text-left">
+            <h3 class="text-[13px] sm:text-[15px] font-semibold text-white tracking-[-0.02em]">
+              Why each 10&times; is grounded in the stack
+            </h3>
+            <p class="mt-2 text-[12px] sm:text-[13px] text-[#6b7494] leading-relaxed">
+              Three product pillars &mdash; extension capture, Path A vault, HeliusClient &mdash; map directly to the claims above.
+            </p>
+          </div>
 
-        <div id="why-10x" class="mt-6 grid sm:grid-cols-3 gap-5 text-left max-w-5xl mx-auto">
+          <div class="mt-8 grid sm:grid-cols-3 gap-5 text-left">
           <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#5b8cff]/15 text-[#7aa1ff] border border-[#5b8cff]/25">10&times; smoother</span>
-            </div>
-            <h3 class="text-[16px] font-bold text-white mb-2">Chrome extension + dashboard</h3>
-            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
-              The extension sits on the sites you already use: it detects API-style fields, shows a one-tap <span class="text-[#cdd3e4]">🔑 capture</span>, and encrypts with your vault key before the backend sees anything. Rotations flow from the dashboard so every project picks up the new secret &mdash; fewer tabs, fewer <span class="font-mono text-[12px] text-[#8b92a8]">.env</span> edits, less copy-paste fatigue.
+            <h4 class="text-[15px] sm:text-[16px] font-bold text-white leading-snug">
+              10&times; smoother &mdash; Chrome extension + dashboard
+            </h4>
+            <p class="mt-3 text-[14px] text-[#a4abc2] leading-relaxed">
+              Detect API-style fields, one-tap 🔑 capture, encrypt before the backend sees data; dashboard rotations propagate everywhere; fewer <span class="font-mono text-[12px] text-[#8b92a8]">.env</span> / copy-paste loops.
             </p>
           </article>
           <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#34d399]/15 text-[#34d399] border border-[#34d399]/25">10&times; vault security</span>
-            </div>
-            <h3 class="text-[16px] font-bold text-white mb-2">Self-custody, zero-knowledge</h3>
-            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
-              Path A crypto runs in <strong class="text-[#cdd3e4]">your browser</strong>: WebAuthn PRF / wallet signature &rarr; HKDF &rarr; AES-256-GCM. Plaintext keys <strong class="text-[#cdd3e4]">never leave your device</strong> in the clear; Cloudflare sync and our API only ever handle ciphertext. We're architecturally unable to read your vault &mdash; true self-custody, not &ldquo;trust our vault.&rdquo;
+            <h4 class="text-[15px] sm:text-[16px] font-bold text-white leading-snug">
+              10&times; vault security &mdash; Self-custody, zero-knowledge
+            </h4>
+            <p class="mt-3 text-[14px] text-[#a4abc2] leading-relaxed">
+              Path A in the browser: WebAuthn PRF / wallet &rarr; HKDF &rarr; AES-256-GCM; plaintext never leaves the device; sync/API only see ciphertext.
             </p>
           </article>
           <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#fb923c]/15 text-[#fb923c] border border-[#fb923c]/25">10&times; call speed</span>
-            </div>
-            <h3 class="text-[16px] font-bold text-white mb-2">HeliusClient in the Rust proxy</h3>
-            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
-              Upstream APIs (Helius RPC and friends) ride through a compiled hot path with <strong class="text-[#cdd3e4]">two-tier caching</strong> (memory + disk) and <strong class="text-[#cdd3e4]">single-flight dedup</strong>: fifty identical <span class="font-mono text-[12px] text-[#8b92a8]">getBalance</span> calls collapse to one network round-trip. That cuts latency and rate-limit pain so your agents feel genuinely snappier.
+            <h4 class="text-[15px] sm:text-[16px] font-bold text-white leading-snug">
+              10&times; call speed &mdash; HeliusClient in the Rust proxy
+            </h4>
+            <p class="mt-3 text-[14px] text-[#a4abc2] leading-relaxed">
+              Two-tier cache + single-flight dedup; duplicate RPCs share one upstream hop (example: <span class="font-mono text-[12px] text-[#8b92a8]">getBalance</span>).
             </p>
           </article>
+          </div>
         </div>
 
         <p class="mt-10 text-[17px] text-[#a4abc2] max-w-2xl mx-auto leading-relaxed">
