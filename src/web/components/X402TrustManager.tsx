@@ -9,31 +9,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Loader2, AlertCircle, Check, Zap, Globe } from 'lucide-react';
 import { TrustList } from '../lib/x402-trust';
+import { API_BASE, getToken } from '../lib/auth';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-async function sendMsg<T>(msg: object): Promise<T> {
-  return new Promise((resolve, reject) => {
-    // Check if chrome.runtime is available (extension context)
-    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
-      // In web dashboard context, try localStorage-based fallback
-      reject(new Error('Chrome extension not available'));
-      return;
-    }
-    chrome.runtime.sendMessage(msg, (resp) => {
-      // @ts-ignore
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(resp as T);
-    });
-  });
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  const t = getToken();
+  if (t) h['Authorization'] = `Bearer ${t}`;
+  return h;
 }
 
 async function fetchTrustList(): Promise<TrustList> {
   try {
-    const resp = await sendMsg<{ list: TrustList }>({ type: 'GET_X402_TRUST' });
-    return resp?.list ?? {};
+    const res = await fetch(`${API_BASE}/x402/trust`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('server fetch failed');
+    const data = await res.json();
+    const list: TrustList = {};
+    for (const row of data.trust_list ?? []) {
+      list[row.domain] = {
+        threshold_usd: (row.max_micro ?? 100000) / 1_000_000,
+        enabled: !!row.enabled,
+        added_at: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+      };
+    }
+    return list;
   } catch {
-    // Fallback: read from localStorage directly (when running outside extension)
     try {
       const raw = localStorage.getItem('ks_x402_trust_list_web');
       return raw ? JSON.parse(raw) : {};
@@ -41,6 +42,34 @@ async function fetchTrustList(): Promise<TrustList> {
       return {};
     }
   }
+}
+
+async function serverAddTrust(domain: string, threshold_usd: number, enabled: boolean): Promise<void> {
+  await fetch(`${API_BASE}/x402/trust`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      domain,
+      max_micro: Math.round(threshold_usd * 1_000_000),
+      daily_cap: 10_000_000,
+      enabled: enabled ? 1 : 0,
+    }),
+  });
+}
+
+async function serverRemoveTrust(domain: string): Promise<void> {
+  await fetch(`${API_BASE}/x402/trust/${encodeURIComponent(domain)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+}
+
+async function serverToggleTrust(domain: string, enabled: boolean): Promise<void> {
+  await fetch(`${API_BASE}/x402/trust/${encodeURIComponent(domain)}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ enabled: enabled ? 1 : 0 }),
+  });
 }
 
 async function getCurrentTabHostname(): Promise<string | null> {
@@ -125,25 +154,13 @@ export const X402TrustManager: React.FC = () => {
     setAdding(true);
     setErr('');
     try {
-      await sendMsg({ type: 'UPDATE_X402_TRUST', action: 'add', hostname: host, threshold_usd: amt });
+      await serverAddTrust(host, amt, true);
       setOk(`${host} added — auto-pay up to $${amt.toFixed(2)}`);
       setNewDomain('');
       setNewThreshold('1');
       await load();
-    } catch {
-      // Fallback: use localStorage directly
-      try {
-        const raw = localStorage.getItem('ks_x402_trust_list_web');
-        const list: TrustList = raw ? JSON.parse(raw) : {};
-        list[host] = { threshold_usd: amt, enabled: list[host]?.enabled ?? true, added_at: list[host]?.added_at ?? Date.now() };
-        localStorage.setItem('ks_x402_trust_list_web', JSON.stringify(list));
-        setOk(`${host} added — auto-pay up to $${amt.toFixed(2)}`);
-        setNewDomain('');
-        setNewThreshold('1');
-        await load();
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : 'Failed to add domain');
-      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to add domain');
     } finally {
       setAdding(false);
     }
@@ -153,53 +170,28 @@ export const X402TrustManager: React.FC = () => {
     setRemovingKey(hostname);
     setErr('');
     try {
-      await sendMsg({ type: 'UPDATE_X402_TRUST', action: 'remove', hostname });
+      await serverRemoveTrust(hostname);
       setTrustList(prev => {
         const next = { ...prev };
         delete next[hostname];
         return next;
       });
-    } catch {
-      // Fallback: localStorage
-      try {
-        const raw = localStorage.getItem('ks_x402_trust_list_web');
-        const list: TrustList = raw ? JSON.parse(raw) : {};
-        delete list[hostname];
-        localStorage.setItem('ks_x402_trust_list_web', JSON.stringify(list));
-        setTrustList(prev => {
-          const next = { ...prev };
-          delete next[hostname];
-          return next;
-        });
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : 'Failed to remove domain');
-      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to remove domain');
     } finally {
       setRemovingKey(null);
     }
   };
 
   const handleToggle = async (hostname: string, enabled: boolean) => {
-    // Optimistic update
     setTrustList(prev => ({
       ...prev,
       [hostname]: { ...prev[hostname], enabled },
     }));
     try {
-      await sendMsg({ type: 'UPDATE_X402_TRUST', action: 'toggle', hostname, enabled });
+      await serverToggleTrust(hostname, enabled);
     } catch {
-      // Fallback: localStorage
-      try {
-        const raw = localStorage.getItem('ks_x402_trust_list_web');
-        const list: TrustList = raw ? JSON.parse(raw) : {};
-        if (list[hostname]) {
-          list[hostname] = { ...list[hostname], enabled };
-          localStorage.setItem('ks_x402_trust_list_web', JSON.stringify(list));
-        }
-      } catch {
-        // Revert on failure
-        await load();
-      }
+      await load();
     }
   };
 

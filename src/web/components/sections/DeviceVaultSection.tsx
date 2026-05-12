@@ -27,11 +27,34 @@ import {
   X, Check, Trash2,
 } from 'lucide-react';
 
-import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust } from '../../lib/auth';
+import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, API_BASE, getToken } from '../../lib/auth';
 import {
   isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
 } from '../../lib/vault-session';
 import type { VaultEntry } from '../../lib/vault';
+
+interface ShimEntry {
+  id: string;
+  name: string;
+  upstream: string;
+  masked_value: string;
+  created_at: string;
+  source: 'extension';
+}
+
+async function fetchExtensionKeys(): Promise<ShimEntry[]> {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/manage/vault`, { headers });
+    if (!res.ok) return [];
+    const items = await res.json();
+    return (items as ShimEntry[]).map((it: ShimEntry) => ({ ...it, source: 'extension' as const }));
+  } catch {
+    return [];
+  }
+}
 
 // ── Provider catalog (mirror of AddKeyModal's, scoped to API-key types) ──
 const PROVIDERS: { id: string; name: string; placeholder: string }[] = [
@@ -186,11 +209,22 @@ const AddDeviceKeyModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdded }
 // `proxyFetch(upstream, path, options)` pulls the plaintext from
 // vault-session internally and injects it as `X-Upstream-API-Key`. The
 // caller never touches the plaintext string here.
-const ACTIONS: Record<string, { label: string; path: string }> = {
+interface ProxyAction {
+  label: string;
+  path: string;
+  method?: string;
+  body?: unknown;
+}
+const ACTIONS: Record<string, ProxyAction> = {
   openai:    { label: 'List models', path: 'v1/models' },
   anthropic: { label: 'List models', path: 'v1/models' },
   groq:      { label: 'List models', path: 'openai/v1/models' },
-  helius:    { label: 'getHealth',   path: '' },
+  helius:    {
+    label: 'getSlot (JSON-RPC)',
+    path: '',
+    method: 'POST',
+    body: { jsonrpc: '2.0', id: 1, method: 'getSlot', params: [] },
+  },
   mistral:   { label: 'List models', path: 'v1/models' },
   cohere:    { label: 'List models', path: 'v1/models' },
 };
@@ -216,7 +250,9 @@ const UsePanel: React.FC<UsePanelProps> = ({ entry }) => {
     setBusy(true); setErr(''); setStatus(null); setLatency(null); setBody('');
     try {
       const t0 = performance.now();
-      const res = await proxyFetch(entry.upstream, action.path, { method: 'GET' });
+      const fetchOpts: RequestInit = { method: action.method ?? 'GET' };
+      if (action.body) fetchOpts.body = JSON.stringify(action.body);
+      const res = await proxyFetch(entry.upstream, action.path, fetchOpts);
       const t1 = performance.now();
       setStatus(res.status);
       setLatency(Math.round(t1 - t0));
@@ -271,6 +307,97 @@ const UsePanel: React.FC<UsePanelProps> = ({ entry }) => {
   );
 };
 
+// ── "Use" panel for extension-stored keys (fetches key from /manage shim) ──
+
+const ExtUsePanel: React.FC<{ entry: ShimEntry }> = ({ entry }) => {
+  const [busy, setBusy]       = useState(false);
+  const [status, setStatus]   = useState<number | null>(null);
+  const [latency, setLatency] = useState<number | null>(null);
+  const [body, setBody]       = useState('');
+  const [err, setErr]         = useState('');
+  const [open, setOpen]       = useState(false);
+
+  const action = ACTIONS[entry.upstream];
+  if (!action) {
+    return <span className="text-[11px] text-[#5e6a91]">No demo action for {entry.upstream}</span>;
+  }
+
+  const run = async () => {
+    setBusy(true); setErr(''); setStatus(null); setLatency(null); setBody('');
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const decRes = await fetch(`${API_BASE}/manage/decrypt/${entry.id}`, { headers });
+      if (!decRes.ok) throw new Error('Failed to decrypt extension key');
+      const { value: apiKey } = await decRes.json();
+
+      const reqHeaders = new Headers(headers);
+      reqHeaders.set('X-Upstream-API-Key', apiKey);
+      const method = action.method ?? 'GET';
+      const fetchOpts: RequestInit = { method, headers: reqHeaders };
+      if (action.body) fetchOpts.body = JSON.stringify(action.body);
+
+      const t0 = performance.now();
+      const res = await fetch(
+        `${API_BASE}/proxy/${entry.upstream}/${action.path.replace(/^\//, '')}`,
+        fetchOpts,
+      );
+      const t1 = performance.now();
+      setStatus(res.status);
+      setLatency(Math.round(t1 - t0));
+      const txt = await res.text();
+      setBody(txt.slice(0, 1500));
+      setOpen(true);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Request failed');
+      setOpen(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className="h-7 px-3 rounded-lg border border-blue-900/50 hover:border-blue-700 text-[11px] uppercase tracking-wider text-blue-300 hover:text-blue-200 inline-flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+      >
+        {busy ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+        {busy ? 'Calling…' : action.label}
+      </button>
+      {open && (status !== null || err) && (
+        <div className="rounded-lg border border-[#243365]/60 bg-[#0e1631] p-3 space-y-1.5">
+          {err ? (
+            <div className="flex items-start gap-2 text-[12px] text-red-300">
+              <AlertCircle size={12} className="shrink-0 mt-0.5" />
+              <span>{err}</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 text-[11px]">
+                <span className={status && status < 400 ? 'text-emerald-400' : 'text-amber-400'}>
+                  HTTP {status}
+                </span>
+                <span className="text-[#5e6a91]">{latency}ms</span>
+                <span className="text-blue-400/70">
+                  proxied via extension key
+                </span>
+              </div>
+              <pre className="text-[11px] text-[#a8b3d8] overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-48">
+                {body}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main section ────────────────────────────────────────────────────
 type Phase = 'idle' | 'busy';
 
@@ -278,6 +405,7 @@ export const DeviceVaultSection: React.FC = () => {
   const [trust, setTrust]       = useState(() => getPasskeyTrust());
   const [unlocked, setUnlocked] = useState<boolean>(() => isVaultUnlocked());
   const [entries, setEntries]   = useState<VaultEntry[]>(() => (isVaultUnlocked() ? listEntries() : []));
+  const [extKeys, setExtKeys]   = useState<ShimEntry[]>([]);
   const [phase, setPhase]       = useState<Phase>('idle');
   const [phaseMsg, setPhaseMsg] = useState('');
   const [err, setErr]           = useState('');
@@ -287,6 +415,7 @@ export const DeviceVaultSection: React.FC = () => {
     setUnlocked(isVaultUnlocked());
     setEntries(isVaultUnlocked() ? listEntries() : []);
     setTrust(getPasskeyTrust());
+    fetchExtensionKeys().then(setExtKeys);
   }, []);
 
   // Re-sync state if some other surface (e.g. AuthScreen) just unlocked.
@@ -487,6 +616,40 @@ export const DeviceVaultSection: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Extension-stored keys (from /manage/vault shim) */}
+      {extKeys.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-blue-900/60 bg-blue-950/30 text-blue-400 text-[10.5px] font-semibold uppercase tracking-wider">
+              <KeyRound size={11} />
+              Extension-stored keys
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {extKeys
+              .filter((ek) => !entries.some((ve) => ve.upstream === ek.upstream))
+              .map((ek) => {
+                const meta = PROVIDERS.find((p) => p.id === ek.upstream);
+                const name = meta?.name ?? ek.name ?? ek.upstream;
+                return (
+                  <div
+                    key={ek.id}
+                    className="rounded-xl border border-blue-900/40 bg-[#131c39] p-4 space-y-2"
+                  >
+                    <div>
+                      <p className="text-[13px] text-white font-medium">{name}</p>
+                      <p className="text-[11px] text-[#5e6a91] mt-0.5">
+                        {ek.masked_value} &middot; via extension
+                      </p>
+                    </div>
+                    <ExtUsePanel entry={ek} />
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
 
