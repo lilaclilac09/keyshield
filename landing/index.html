@@ -226,7 +226,7 @@
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b8cff]/15 border border-[#5b8cff]/30 flex items-center justify-center text-[#5b8cff] font-bold text-[14px]">3</div>
             <div>
               <h3 class="text-[16px] font-bold text-white">Calls get accelerated. That's it.</h3>
-              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Our Rust proxy with Helius accelerator caches Solana RPC calls, deduplicates identical requests, and delivers 50&ndash;80ms reads. Your code runs faster without you changing a line.</p>
+              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Traffic goes through our Rust proxy's <strong class="text-[#cdd3e4]">HeliusClient</strong>: in-memory cache, disk-backed fallback, and single-flight dedup &mdash; duplicate RPCs share one upstream hop. Typical Solana reads land in the <strong class="text-[#cdd3e4]">50&ndash;80ms</strong> band without you changing client code.</p>
             </div>
           </div>
         </div>
@@ -248,7 +248,7 @@
                 </div>
               </div>
               <ul class="space-y-3 text-[14.5px] text-[#a4abc2] leading-relaxed">
-                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> Add keys visually in the web dashboard</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> Add keys in the dashboard or <strong class="text-[#cdd3e4]">capture from any site</strong> via the extension (one-tap 🔑 on detected fields)</li>
                 <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> One-click rotate &mdash; every project picks it up</li>
                 <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> See usage, costs, and audit logs</li>
                 <li class="flex items-start gap-2.5"><span class="text-[#5b8cff] mt-0.5">&#10003;</span> Share keys with teammates (scoped, revocable)</li>
@@ -464,19 +464,51 @@ client = ks.<span class="f">openai_client</span>()  <span class="c"># zero raw k
 
         <!-- 10x pillars -->
         <div class="mt-10 flex flex-wrap justify-center gap-4 text-[15px]">
-          <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#5b8cff]/25 bg-[#5b8cff]/5 text-[#7aa1ff]">
+          <a href="#why-10x" class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#5b8cff]/25 bg-[#5b8cff]/5 text-[#7aa1ff] hover:border-[#5b8cff]/45 transition-colors">
             <span class="font-bold text-white">10&times;</span> smoother experience
-          </span>
-          <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#34d399]/25 bg-[#34d399]/5 text-[#34d399]">
+          </a>
+          <a href="#why-10x" class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#34d399]/25 bg-[#34d399]/5 text-[#34d399] hover:border-[#34d399]/45 transition-colors">
             <span class="font-bold text-white">10&times;</span> more secure self-custody vault
-          </span>
-          <span class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#fb923c]/25 bg-[#fb923c]/5 text-[#fb923c]">
+          </a>
+          <a href="#why-10x" class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#fb923c]/25 bg-[#fb923c]/5 text-[#fb923c] hover:border-[#fb923c]/45 transition-colors">
             <span class="font-bold text-white">10&times;</span> faster API calls
-          </span>
+          </a>
         </div>
 
-        <p class="mt-7 text-[17px] text-[#a4abc2] max-w-xl mx-auto leading-relaxed">
-          Store your API keys once. Plug in anywhere. Your code runs faster, your keys stay yours, and your agents stay on a leash.
+        <p class="mt-8 text-[12px] uppercase tracking-[0.2em] text-[#6b7494] font-semibold">Why each 10&times; is grounded in the stack</p>
+
+        <div id="why-10x" class="mt-6 grid sm:grid-cols-3 gap-5 text-left max-w-5xl mx-auto">
+          <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#5b8cff]/15 text-[#7aa1ff] border border-[#5b8cff]/25">10&times; smoother</span>
+            </div>
+            <h3 class="text-[16px] font-bold text-white mb-2">Chrome extension + dashboard</h3>
+            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
+              The extension sits on the sites you already use: it detects API-style fields, shows a one-tap <span class="text-[#cdd3e4]">🔑 capture</span>, and encrypts with your vault key before the backend sees anything. Rotations flow from the dashboard so every project picks up the new secret &mdash; fewer tabs, fewer <span class="font-mono text-[12px] text-[#8b92a8]">.env</span> edits, less copy-paste fatigue.
+            </p>
+          </article>
+          <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#34d399]/15 text-[#34d399] border border-[#34d399]/25">10&times; vault security</span>
+            </div>
+            <h3 class="text-[16px] font-bold text-white mb-2">Self-custody, zero-knowledge</h3>
+            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
+              Path A crypto runs in <strong class="text-[#cdd3e4]">your browser</strong>: WebAuthn PRF / wallet signature &rarr; HKDF &rarr; AES-256-GCM. Plaintext keys <strong class="text-[#cdd3e4]">never leave your device</strong> in the clear; Cloudflare sync and our API only ever handle ciphertext. We're architecturally unable to read your vault &mdash; true self-custody, not &ldquo;trust our vault.&rdquo;
+            </p>
+          </article>
+          <article class="moat-card rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#fb923c]/15 text-[#fb923c] border border-[#fb923c]/25">10&times; call speed</span>
+            </div>
+            <h3 class="text-[16px] font-bold text-white mb-2">HeliusClient in the Rust proxy</h3>
+            <p class="text-[14px] text-[#a4abc2] leading-relaxed">
+              Upstream APIs (Helius RPC and friends) ride through a compiled hot path with <strong class="text-[#cdd3e4]">two-tier caching</strong> (memory + disk) and <strong class="text-[#cdd3e4]">single-flight dedup</strong>: fifty identical <span class="font-mono text-[12px] text-[#8b92a8]">getBalance</span> calls collapse to one network round-trip. That cuts latency and rate-limit pain so your agents feel genuinely snappier.
+            </p>
+          </article>
+        </div>
+
+        <p class="mt-10 text-[17px] text-[#a4abc2] max-w-2xl mx-auto leading-relaxed">
+          Store your API keys once. Plug in anywhere &mdash; extension, CLI, SDK, or dashboard. Smoother collection, keys that never live on our disks in plaintext, and accelerated upstream calls through the Helius stack. Your agents stay on a scoped leash.
         </p>
 
         <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
