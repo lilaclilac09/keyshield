@@ -193,57 +193,59 @@ function notify(title, message, icon) {
 // ── Direct store (no tab) ───────────────────────────────────────────────────
 
 async function directStore({ upstream, value }) {
-  const { token } = await getStoredToken();
-  const { apiBase } = await getApiBase();
-
-  // Backend's vault.py shim requires either a Bearer token OR an explicit
-  // X-Dev-Mode header. We always send X-Dev-Mode so unsigned-in users can
-  // still save (lands in the "default" bucket); Authorization is added on
-  // top when available so signed-in users land in their own bucket.
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-Dev-Mode':   '1',
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  // Path A lite: if a vault key is registered (dashboard pushed it after
-  // wallet sign), encrypt the value here with AES-256-GCM; the server only
-  // ever sees ciphertext. Field name MUST be `value` (or cipher/iv/cipher_v),
-  // backend reads body.get("value") — NOT "apiKey".
-  let body;
-  const keyBytes = await _getVaultKeyBytes();
-  if (keyBytes) {
-    const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = new Uint8Array(await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      aesKey,
-      new TextEncoder().encode(value),
-    ));
-    body = JSON.stringify({
-      upstream,
-      name:     `${upstream} key`,
-      cipher:   _b64uEnc(ct),
-      iv:       _b64uEnc(iv),
-      cipher_v: 1,
-    });
-  } else {
-    console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
-    body = JSON.stringify({ upstream, value, name: `${upstream} key` });
-  }
-
   try {
-    const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
-    if (r.status === 401) {
-      await clearStoredToken();
-      return { ok: false, reason: 'token-expired' };
+    const { token } = await getStoredToken();
+    const { apiBase } = await getApiBase();
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Dev-Mode':   '1',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let body;
+    const keyBytes = await _getVaultKeyBytes();
+    if (keyBytes) {
+      try {
+        const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = new Uint8Array(await crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv },
+          aesKey,
+          new TextEncoder().encode(String(value ?? '')),
+        ));
+        body = JSON.stringify({
+          upstream,
+          name:     `${upstream} key`,
+          cipher:   _b64uEnc(ct),
+          iv:       _b64uEnc(iv),
+          cipher_v: 1,
+        });
+      } catch (encErr) {
+        console.warn('[KeyShield] client encrypt failed — falling back to plaintext:', encErr);
+        body = JSON.stringify({ upstream, value, name: `${upstream} key` });
+      }
+    } else {
+      console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
+      body = JSON.stringify({ upstream, value: String(value ?? ''), name: `${upstream} key` });
     }
-    if (!r.ok) {
-      return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
+
+    try {
+      const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
+      if (r.status === 401) {
+        await clearStoredToken();
+        return { ok: false, reason: 'token-expired' };
+      }
+      if (!r.ok) {
+        return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: 'network', detail: String(e) };
     }
-    return { ok: true };
   } catch (e) {
-    return { ok: false, reason: 'network', detail: String(e) };
+    console.error('[KeyShield] directStore exception:', e);
+    return { ok: false, reason: 'exception', detail: String(e) };
   }
 }
 
@@ -353,9 +355,76 @@ async function importVault(jsonStr) {
   return { ok: true, imported, skipped, warnFingerprint, errors };
 }
 
-// ── SAVE_KEY (from content.js) ──────────────────────────────────────────────
+// ── x402 Trust Store helpers (mirrors lib/x402-trust.ts) — before onMessage ──
+const X402_STORAGE_KEY = 'ks_x402_trust_list';
+async function x402LoadList() { const r = await chrome.storage.local.get(X402_STORAGE_KEY); return r[X402_STORAGE_KEY] ?? {}; }
+async function x402SaveList(list) { await chrome.storage.local.set({ [X402_STORAGE_KEY]: list }); }
+async function x402IsTrusted(h) { const l = await x402LoadList(); const e = l[h]; return !!e && e.enabled; }
+async function x402GetThreshold(h) { const l = await x402LoadList(); const e = l[h]; if (!e || !e.enabled) return Infinity; return e.threshold_usd; }
+async function x402AddDomain(h, t) { const l = await x402LoadList(); l[h] = { threshold_usd: t, enabled: l[h]?.enabled ?? true, added_at: l[h]?.added_at ?? Date.now() }; await x402SaveList(l); }
+async function x402RemoveDomain(h) { const l = await x402LoadList(); delete l[h]; await x402SaveList(l); }
+async function x402ToggleDomain(h, enabled) { const l = await x402LoadList(); if (!l[h]) return; l[h] = { ...l[h], enabled }; await x402SaveList(l); }
+
+// ── Internal messages (content / popup): single listener ─────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // x402 — keep in same listener so SAVE_KEY/async paths aren't racing a split handler.
+  if (message.type === 'X402_CHECK_TRUST') {
+    (async () => {
+      try {
+        const { hostname, amount_usd } = message;
+        const trusted = await x402IsTrusted(hostname);
+        const threshold = await x402GetThreshold(hostname);
+        sendResponse({ autoPayApproved: trusted && typeof amount_usd === 'number' && amount_usd < threshold });
+      } catch (e) {
+        sendResponse({ autoPayApproved: false, detail: String(e) });
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'INITIATE_X402_PAYMENT') {
+    (async () => {
+      try {
+        const { amount_usd, hostname, payTo, network, resource } = message;
+        await chrome.storage.session.set({ ks_x402_pending: {
+          amount_usd, hostname, payTo, network, resource, initiated_at: Date.now(),
+        } });
+        try { await chrome.action.openPopup(); } catch { /* noop */ }
+        sendResponse({ initiated: true });
+      } catch (e) {
+        sendResponse({ initiated: false, detail: String(e) });
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'GET_X402_TRUST') {
+    (async () => {
+      try { sendResponse({ list: await x402LoadList() }); }
+      catch (e) { sendResponse({ list: {}, detail: String(e) }); }
+    })();
+    return true;
+  }
+  if (message.type === 'UPDATE_X402_TRUST') {
+    (async () => {
+      try {
+        const { action, hostname, threshold_usd, enabled } = message;
+        if (action === 'add') await x402AddDomain(hostname, threshold_usd);
+        if (action === 'remove') await x402RemoveDomain(hostname);
+        if (action === 'toggle') await x402ToggleDomain(hostname, enabled);
+        sendResponse({ ok: true });
+      } catch (e) {
+        sendResponse({ ok: false, detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  // MV3 wake: content script primes the service worker before bulk save.
+  if (message.type === 'KS_BG_READY') {
+    sendResponse({ ok: true });
+    return true;
+  }
+
   // Backup: export encrypted vault as JSON (decryption needs wallet, file is safe).
   if (message.type === 'EXPORT_VAULT') {
     (async () => {
@@ -465,40 +534,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!payload) return false;
 
   (async () => {
-    const { upstream, name, value, domain } = payload;
+    try {
+      const { upstream, name, value, domain } = payload;
 
-    const result = await directStore({ upstream, value });
-    if (result.ok) {
-      notify('KeyShield', `Saved ${upstream} key to KeyShield`);
-      sendResponse({ ok: true, mode: 'direct' });
-      return;
+      const result = await directStore({ upstream, value });
+      if (result.ok) {
+        notify('KeyShield', `Saved ${upstream} key to KeyShield`);
+        sendResponse({ ok: true, mode: 'direct' });
+        return;
+      }
+
+      // Silent mode (bulk save): return error to caller, don't open per-key tab
+      if (message.silent) {
+        sendResponse({ ok: false, mode: 'silent', reason: result.reason, detail: result.detail });
+        return;
+      }
+
+      // Fallback: open dashboard prefill (single save UX)
+      const reasonMsg = {
+        'no-token':      'Sign in to KeyShield first',
+        'token-expired': 'Session expired — sign in again',
+        'network':       'Backend unreachable — opening dashboard',
+      }[result.reason] || `Error: ${result.reason}`;
+
+      const { dashboardUrl } = await getApiBase();
+      const params = new URLSearchParams({
+        action:   'add',
+        upstream: upstream || 'openai',
+        name:     name     || '',
+        value:    value    || '',
+        domain:   domain   || '',
+      });
+
+      notify('KeyShield', reasonMsg);
+      chrome.tabs.create({ url: `${dashboardUrl}/?${params}` });
+      sendResponse({ ok: false, mode: 'fallback', reason: result.reason, detail: result.detail });
+    } catch (e) {
+      console.error('[KeyShield] SAVE_KEY:', e);
+      sendResponse({
+        ok:     false,
+        mode:   message.silent ? 'silent' : 'fallback',
+        reason: 'exception',
+        detail: String(e),
+      });
     }
-
-    // Silent mode (bulk save): return error to caller, don't open per-key tab
-    if (message.silent) {
-      sendResponse({ ok: false, mode: 'silent', reason: result.reason });
-      return;
-    }
-
-    // Fallback: open dashboard prefill (single save UX)
-    const reasonMsg = {
-      'no-token':      'Sign in to KeyShield first',
-      'token-expired': 'Session expired — sign in again',
-      'network':       'Backend unreachable — opening dashboard',
-    }[result.reason] || `Error: ${result.reason}`;
-
-    const { dashboardUrl } = await getApiBase();
-    const params = new URLSearchParams({
-      action:   'add',
-      upstream: upstream || 'openai',
-      name:     name     || '',
-      value:    value    || '',
-      domain:   domain   || '',
-    });
-
-    notify('KeyShield', reasonMsg);
-    chrome.tabs.create({ url: `${dashboardUrl}/?${params}` });
-    sendResponse({ ok: false, mode: 'fallback', reason: result.reason });
   })();
 
   return true;
@@ -580,30 +659,3 @@ async function _purgeAuditLogInline() {
   await chrome.storage.local.set({ [AUDIT_LOG_KEY]: afterCap });
   return { deletedByAge, deletedByCap };
 }
-
-// ── x402 Trust Store helpers (mirrors lib/x402-trust.ts) ────────────────────
-const X402_STORAGE_KEY = 'ks_x402_trust_list';
-async function x402LoadList() { const r = await chrome.storage.local.get(X402_STORAGE_KEY); return r[X402_STORAGE_KEY] ?? {}; }
-async function x402SaveList(list) { await chrome.storage.local.set({ [X402_STORAGE_KEY]: list }); }
-async function x402IsTrusted(h) { const l = await x402LoadList(); const e = l[h]; return !!e && e.enabled; }
-async function x402GetThreshold(h) { const l = await x402LoadList(); const e = l[h]; if (!e || !e.enabled) return Infinity; return e.threshold_usd; }
-async function x402AddDomain(h, t) { const l = await x402LoadList(); l[h] = { threshold_usd: t, enabled: l[h]?.enabled ?? true, added_at: l[h]?.added_at ?? Date.now() }; await x402SaveList(l); }
-async function x402RemoveDomain(h) { const l = await x402LoadList(); delete l[h]; await x402SaveList(l); }
-async function x402ToggleDomain(h, enabled) { const l = await x402LoadList(); if (!l[h]) return; l[h] = { ...l[h], enabled }; await x402SaveList(l); }
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === 'X402_CHECK_TRUST') {
-    (async () => { const { hostname, amount_usd } = message; const trusted = await x402IsTrusted(hostname); const threshold = await x402GetThreshold(hostname); sendResponse({ autoPayApproved: trusted && typeof amount_usd === 'number' && amount_usd < threshold }); })();
-    return true;
-  }
-  if (message.type === 'INITIATE_X402_PAYMENT') {
-    (async () => { const { amount_usd, hostname, payTo, network, resource } = message; await chrome.storage.session.set({ ks_x402_pending: { amount_usd, hostname, payTo, network, resource, initiated_at: Date.now() } }); try { await chrome.action.openPopup(); } catch {} sendResponse({ initiated: true }); })();
-    return true;
-  }
-  if (message.type === 'GET_X402_TRUST') { (async () => { sendResponse({ list: await x402LoadList() }); })(); return true; }
-  if (message.type === 'UPDATE_X402_TRUST') {
-    (async () => { const { action, hostname, threshold_usd, enabled } = message; if (action === 'add') await x402AddDomain(hostname, threshold_usd); if (action === 'remove') await x402RemoveDomain(hostname); if (action === 'toggle') await x402ToggleDomain(hostname, enabled); sendResponse({ ok: true }); })();
-    return true;
-  }
-  return false;
-});

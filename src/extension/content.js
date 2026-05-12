@@ -327,6 +327,38 @@ function renderPanel() {
   };
 }
 
+/** MV3: background may be cold; Chrome yields lastError — retry after short backoff. */
+async function sendToBackground(message) {
+  const recoverable = /Receiving end does not exist|The message port closed|Extension context invalidated/i;
+  let lastDetail = '';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    /* eslint-disable no-await-in-loop */
+    const response = await new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ __err: chrome.runtime.lastError.message || 'chrome.runtime.lastError' });
+            return;
+          }
+          resolve(resp);
+        });
+      } catch (e) {
+        resolve({ __err: String(e) });
+      }
+    });
+    if (response && typeof response === 'object' && '__err' in response) {
+      lastDetail = response.__err;
+      if (recoverable.test(lastDetail) && attempt < 4) {
+        await new Promise((r) => setTimeout(r, 120 + attempt * 120));
+        continue;
+      }
+      return { ok: false, reason: 'extension', detail: lastDetail };
+    }
+    return response !== undefined && response !== null ? response : { ok: false };
+  }
+  return { ok: false, reason: 'extension', detail: lastDetail || 'no response' };
+}
+
 async function bulkSave() {
   const unsaved = Array.from(detectedKeys.entries()).filter(([, v]) => v.saved !== true);
   if (unsaved.length === 0) return;
@@ -334,29 +366,26 @@ async function bulkSave() {
   let btn = panelEl && panelEl.querySelector('#ks-save-all');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
-  let saved = 0, failed = 0, lastReason = null;
+  await sendToBackground({ type: 'KS_BG_READY' });
+
+  let saved = 0, failed = 0, lastReason = null, lastExtra = '';
   for (let i = 0; i < unsaved.length; i++) {
     const [key, info] = unsaved[i];
     setPanelStatus(`Saving ${i + 1}/${unsaved.length}: ${info.provider.name}…`, 'info');
 
-    const result = await new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage(
-          { type: 'SAVE_KEY', silent: true, payload: {
-              upstream: info.provider.id,
-              name: `${info.provider.name} (${HOST})`,
-              value: key, domain: HOST,
-          }},
-          (response) => {
-            if (chrome.runtime.lastError) resolve({ ok: false, reason: 'extension' });
-            else resolve(response || { ok: false });
-          },
-        );
-      } catch { resolve({ ok: false, reason: 'extension' }); }
+    const result = await sendToBackground({
+      type: 'SAVE_KEY',
+      silent: true,
+      payload: {
+        upstream: info.provider.id,
+        name:     `${info.provider.name} (${HOST})`,
+        value:    key,
+        domain:   HOST,
+      },
     });
 
     detectedKeys.set(key, { ...info, saved: result.ok ? true : 'fail' });
-    if (result.ok) saved++; else { failed++; lastReason = result.reason; }
+    if (result.ok) saved++; else { failed++; lastReason = result.reason; if (result.detail) lastExtra = String(result.detail); }
     renderPanel();
     const b = panelEl && panelEl.querySelector('#ks-save-all');
     if (b) { b.disabled = true; b.textContent = `Saving ${i + 1}/${unsaved.length}…`; }
@@ -372,7 +401,8 @@ async function bulkSave() {
     let detail = `Saved ${saved}, ${failed} failed.`;
     if      (lastReason === 'token-expired') detail += ' Session expired — sign in again.';
     else if (lastReason === 'network')       detail += ' Backend unreachable.';
-    else if (lastReason === 'extension')     detail += ' Extension messaging error.';
+    else if (lastReason === 'extension')     detail += ` Extension messaging error${lastExtra ? ` (${lastExtra})` : ''}.`;
+    else if (lastReason)                     detail += ` (${lastReason})`;
     else                                     detail += ' Click Retry or open DevTools.';
     setPanelStatus(detail, 'err');
     if (b2) { b2.disabled = false; b2.textContent = `Retry ${failed} failed`; }
@@ -437,26 +467,14 @@ function ksSetValue(el, value) {
 function ksRequestKeys() {
   const now = Date.now();
   if (ksCachedKeys && (now - ksCachedKeys.fetchedAt) < KS_KEYS_TTL_MS) {
-    return Promise.resolve(ksCachedKeys);
+    return Promise.resolve({ ok: true, keys: ksCachedKeys.keys });
   }
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendMessage(
-        { type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname },
-        (response) => {
-          if (chrome.runtime.lastError || !response) {
-            resolve({ ok: false, reason: 'extension' });
-            return;
-          }
-          if (response.ok) {
-            ksCachedKeys = { keys: response.keys, fetchedAt: Date.now() };
-          }
-          resolve(response);
-        },
-      );
-    } catch {
-      resolve({ ok: false, reason: 'extension' });
+  return sendToBackground({ type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname }).then((response) => {
+    if (!response || !response.ok) {
+      return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
     }
+    ksCachedKeys = { keys: response.keys, fetchedAt: Date.now() };
+    return { ok: true, keys: response.keys };
   });
 }
 
