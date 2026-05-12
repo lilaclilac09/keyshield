@@ -24,7 +24,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Lock, Unlock, ShieldCheck, KeyRound, Loader2, AlertCircle, Plus, Play,
-  X, Check, Trash2,
+  X, Check, Trash2, ChevronDown, ChevronUp, Fingerprint, ArrowRight, Cpu,
 } from 'lucide-react';
 
 import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken } from '../../lib/auth';
