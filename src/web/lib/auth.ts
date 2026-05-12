@@ -19,24 +19,40 @@ import {
   getDecryptedKey,
 } from './vault-session';
 import { clearExtensionVaultKey, syncExtensionVaultKey } from './vault-key';
+import {
+  isAileenaProdDashboardHost,
+  isLocalhostUrl,
+  PROD_API_BASE,
+} from './host-deploy';
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
   // The destructure-into-local-var pattern would NOT be replaced — vite
   // only does textual substitution of the exact `process.env.KEYSHIELD_API_URL`.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  if (typeof process !== 'undefined' && process.env.KEYSHIELD_API_URL) {
-    return process.env.KEYSHIELD_API_URL;
-  }
-  // Runtime fallback when Vercel build env is missing: only use localhost
-  // when actually on localhost. In any other origin, point at Railway.
+  const fromBuild =
+    typeof process !== 'undefined' && process.env.KEYSHIELD_API_URL
+      ? process.env.KEYSHIELD_API_URL
+      : '';
+
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0') {
-      return 'https://keyshield-production.up.railway.app';
+    // Must match the extension default (https://api.ks.aileena.xyz) or every
+    // bearer token minted by the dashboard targets a different issuer than
+    // the extension POSTs to → 401 on /manage/store + "signed in" desync.
+    if (isAileenaProdDashboardHost(host)) {
+      return PROD_API_BASE;
     }
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
+      return fromBuild || 'http://localhost:8001';
+    }
+    if (fromBuild && !isLocalhostUrl(fromBuild)) {
+      return fromBuild;
+    }
+    return 'https://keyshield-production.up.railway.app';
   }
-  return 'http://localhost:8001';
+
+  return fromBuild || 'http://localhost:8001';
 })();
 
 const TOKEN_KEY = 'ks_token';

@@ -22,14 +22,30 @@ import {
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
 import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
+import {
+  isAileenaProdDashboardHost,
+  PROD_SYNC_URL,
+} from './host-deploy';
 
 export const SYNC_URL: string = (() => {
   // vite's `define` replaces the literal `process.env.KEYSHIELD_SYNC_URL`
-  // at build time. Local destructure would not be replaced.
-  if (typeof process !== 'undefined' && process.env.KEYSHIELD_SYNC_URL) {
-    return process.env.KEYSHIELD_SYNC_URL;
+  // at build time. Without CI env, bundles can still bake localhost:8787 —
+  // override on the real production dashboard host so Path A unlock works.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const fromBuild =
+    typeof process !== 'undefined' && process.env.KEYSHIELD_SYNC_URL
+      ? process.env.KEYSHIELD_SYNC_URL
+      : 'http://localhost:8787';
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (isAileenaProdDashboardHost(host)) {
+      return PROD_SYNC_URL;
+    }
+    return fromBuild;
   }
-  return 'http://localhost:8787';
+
+  return fromBuild;
 })();
 
 // Why cache vaultId in localStorage: it's derived from PRF output, which we

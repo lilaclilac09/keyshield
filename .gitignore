@@ -100,3 +100,6 @@ keyshield.db
 .keyshield-devnet/
 src/.keyshield-devnet/
 .vercel
+
+# Cloudflare Wrangler local dev/cache (never commit)
+**/.wrangler/
