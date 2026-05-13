@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="description" content="KeyShield — a self-custody vault for API keys on the web. Dashboard + Chrome extension: capture keys on device, ciphertext only on our side, faster Solana reads through Helius." />
+  <meta name="description" content="KeyShield — one vault for you and your agents. Dashboard for humans, SDK &amp; CLI for agents. Store once, plug in anywhere, calls get accelerated." />
   <meta name="theme-color" content="#05060d" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="KeyShield — API keys stay in your vault." />
-  <meta property="og:description" content="Encrypted on your device: dashboard + extension capture, proxy + Helius accelerator. Plug in via HTTP when you need it — docs in the repo." />
+  <meta property="og:title" content="KeyShield — One vault for you and your agents." />
+  <meta property="og:description" content="Dashboard for humans, SDK &amp; CLI for agents. Store API keys once, plug in anywhere, calls get accelerated." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="KeyShield" />
-  <meta name="twitter:description" content="Encrypted API key vault — dashboard &amp; Chrome extension on device; proxy + Helius for faster reads. REST-first when you integrate." />
+  <meta name="twitter:description" content="iCloud Keychain for API keys. Store once, plug in anywhere, calls get accelerated." />
   <title>KeyShield — Stop copy-pasting API keys.</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b8cff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -267,8 +267,8 @@
           <div class="flow-line flex items-start gap-5">
             <div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b8cff]/15 border border-[#5b8cff]/30 flex items-center justify-center text-[#5b8cff] font-bold text-[14px]">2</div>
             <div>
-              <h3 class="text-[16px] font-bold text-white">Plug through KeyShield.</h3>
-              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Use a short-lived <strong class="text-[#cdd3e4]">Developer</strong> session token plus our HTTP proxy — upstream stays familiar provider APIs without pasting raw <span class="font-mono text-[12px] text-[#8b92a8]">sk-</span> strings into every repo or VM. Rotate in the vault; callers pick up the latest ciphertext automatically.</p>
+              <h3 class="text-[16px] font-bold text-white">Plug in our vault. Write your code.</h3>
+              <p class="mt-1 text-[14.5px] text-[#a4abc2] leading-relaxed">Same OpenAI SDK. Same code you already write. Three lines and your app is connected. No .env files. No copy-pasting. Rotate a key from the dashboard &mdash; every project picks it up instantly.</p>
             </div>
           </div>
           <div class="flow-line flex items-start gap-5">
@@ -280,9 +280,9 @@
           </div>
         </div>
 
-        <!-- Dual panel: human surface vs programmatic access -->
+        <!-- Dual panel: Human vs Agent -->
         <div class="mt-16 reveal">
-          <p class="text-[11px] uppercase tracking-[0.2em] text-[#7aa1ff] font-semibold mb-6">Same vault. Browser-first, HTTP when you automate.</p>
+          <p class="text-[11px] uppercase tracking-[0.2em] text-[#7aa1ff] font-semibold mb-6">Same vault. Two interfaces.</p>
           <div class="grid sm:grid-cols-2 gap-5">
 
             <!-- HUMAN panel -->
@@ -310,33 +310,32 @@
               </div>
             </div>
 
-            <!-- Programmatic / scripts panel -->
+            <!-- AGENT panel -->
             <div class="rounded-2xl border border-[#1c2238] bg-[#0a0e1e] p-7">
               <div class="flex items-center gap-3 mb-5">
                 <div class="w-10 h-10 rounded-xl bg-[#34d399]/10 border border-[#34d399]/20 flex items-center justify-center">
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
                 </div>
                 <div>
-                  <h3 class="text-[16px] font-bold text-white">For scripts &amp; backends</h3>
-                  <p class="text-[12px] text-[#6b7494]">REST + Bearer token &middot; optional CLI</p>
+                  <h3 class="text-[16px] font-bold text-white">For Your Agent</h3>
+                  <p class="text-[12px] text-[#6b7494]">Python SDK &middot; CLI &middot; REST API</p>
                 </div>
               </div>
               <ul class="space-y-3 text-[14.5px] text-[#a4abc2] leading-relaxed">
-                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> <strong class="text-[#cdd3e4]">docs/API.md</strong> is the contract &mdash; any language, any HTTP client</li>
-                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Session token from the dashboard &mdash; caller never pastes the raw provider key</li>
-                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Optional spending caps &amp; delegation when you register automation keys</li>
-                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Optional Python package in-repo &mdash; convenience, not required</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Session token &mdash; agent never sees the raw key</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Spending cap per agent (SOL micropayments)</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Scope limits &amp; kill switch from your dashboard</li>
+                <li class="flex items-start gap-2.5"><span class="text-[#34d399] mt-0.5">&#10003;</span> Works with Cursor, OpenClaw, Hermes, any bot</li>
               </ul>
               <div class="mt-5 code-bl text-[13px]" style="font-size:13px;">
-<span class="c"># Example: OpenAI-compatible path (see API.md for full routes)</span>
-curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
-  -H <span class="s">"Authorization: Bearer $KS_TOKEN"</span> \\
-  -H <span class="s">"Content-Type: application/json"</span> \\
-  -d <span class="s">'{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'</span>
+<span class="k">from</span> keyshield <span class="k">import</span> KeyShield
+
+ks = <span class="f">KeyShield</span>(token=os.environ[<span class="s">"KS_TOKEN"</span>])
+client = ks.<span class="f">openai_client</span>()  <span class="c"># zero raw keys</span>
               </div>
             </div>
           </div>
-          <p class="mt-5 text-center text-[14px] text-[#6b7494]">You curate keys in the vault. Anything that calls our API uses a scoped token &mdash; not a copied <span class="font-mono text-[12px]">sk-</span>.</p>
+          <p class="mt-5 text-center text-[14px] text-[#6b7494]">Human stores the key. Agent gets a scoped token. No .env anywhere.</p>
         </div>
       </div>
     </section>
@@ -347,7 +346,7 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
         <div class="max-w-2xl mb-12 reveal">
           <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">Why we're different</p>
           <h2 class="text-3xl sm:text-[40px] font-bold tracking-tight text-white leading-tight">
-            Not another secrets manager.<br/>Built for builders who live in the browser.
+            Not another secrets manager.<br/>Built for the age of agents.
           </h2>
         </div>
 
@@ -413,7 +412,7 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
         <div class="max-w-2xl mb-10 reveal">
           <p class="text-[11px] uppercase tracking-[0.2em] text-[#5b8cff] font-semibold mb-3">Side by side</p>
           <h2 class="text-3xl sm:text-[36px] font-bold tracking-tight text-white leading-tight">
-            iCloud Keychain security.<br/>Automation &amp; payments when you need them.
+            iCloud Keychain security.<br/>Agent superpowers on top.
           </h2>
         </div>
         <div class="reveal rounded-2xl border border-[#1c2238] bg-[#0a0e1e] overflow-x-auto">
@@ -425,8 +424,8 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
               <tr><td>Key derivation</td><td>Secure Enclave</td><td>Wallet sig &rarr; HKDF-SHA256</td></tr>
               <tr><td>Cross-device sync</td><td>iCloud E2E</td><td class="text-[#34d399]">Same wallet = same key</td></tr>
               <tr><td>Auto-fill</td><td>Safari only</td><td class="text-[#34d399]">Chrome extension, any site</td></tr>
-              <tr><td>Delegation &amp; caps</td><td class="text-[#f43f5e]">Not built for API keys</td><td class="text-[#34d399]">Scoped tokens + optional on-chain caps</td></tr>
-              <tr><td>Metered billing</td><td class="text-[#f43f5e]">N/A</td><td class="text-[#34d399]">Batch-settled (e.g. MPP on Solana)</td></tr>
+              <tr><td>Agent delegation</td><td class="text-[#f43f5e]">Not possible</td><td class="text-[#34d399]">Scoped access + instant revoke</td></tr>
+              <tr><td>Spending cap</td><td class="text-[#f43f5e]">N/A</td><td class="text-[#34d399]">On-chain enforced per agent</td></tr>
               <tr><td>Payment rail</td><td class="text-[#f43f5e]">N/A</td><td class="text-[#34d399]">USDC on Solana, batch-settled</td></tr>
             </tbody>
           </table>
@@ -490,8 +489,9 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">MPP Streaming</strong> &mdash; open / record / settle / close, devnet-verified</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">HeliusClient</strong> &mdash; two-tier cache + single-flight dedup + multi-tenant</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Chrome Extension</strong> &mdash; auto-fill, cross-device sync, encrypted backup</span></div>
-          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Delegated automation</strong> &mdash; optional scoped tokens, CRL revocation, key sharing</span></div>
-          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">REST + helpers</strong> &mdash; <span class="font-mono text-[13px]">docs/API.md</span>; optional Python (<span class="font-mono text-[13px]">python-sdk/</span>) &amp; <span class="font-mono text-[13px]">keyshield-cli.sh</span></span></div>
+          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Agent Delegation</strong> &mdash; scoped access, CRL revocation, key sharing</span></div>
+          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Python SDK</strong> &mdash; <span class="font-mono text-[13px]">keyshield_sdk</span> &mdash; 3 lines to connect any agent</span></div>
+          <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">CLI</strong> &mdash; <span class="font-mono text-[13px]">keyshield-cli.sh</span> &mdash; store, login, rotate from terminal</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Rust Proxy</strong> &mdash; 6 crates, 78 oracle tests, 50&ndash;80ms median</span></div>
           <div class="flex items-start gap-3 py-2"><span class="text-[#34d399] mt-0.5 flex-shrink-0">&#x2713;</span><span class="text-[15px] text-[#cdd3e4]"><strong class="text-white">Production hosts</strong> &mdash; Vercel + Railway + Cloudflare Workers</span></div>
         </div>
@@ -503,7 +503,7 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
       <div class="absolute inset-0 hero-glow pointer-events-none opacity-70"></div>
       <div class="relative max-w-5xl mx-auto px-5 sm:px-8 py-20 sm:py-24 text-center reveal">
         <p class="text-[17px] text-[#a4abc2] max-w-2xl mx-auto leading-relaxed">
-          Store your API keys once in the vault &mdash; extension, dashboard, or terminal helpers. Reach for plain HTTP (<span class="font-mono text-[13px] text-[#8b92a8]">docs/API.md</span>) when you wire servers or cron jobs; optional Python wrappers are gravy, not a requirement.
+          Store your API keys once. Plug in anywhere &mdash; extension, CLI, SDK, or dashboard. Smoother collection, keys that never live on our disks in plaintext, and accelerated upstream calls through the Helius stack. Your agents stay on a scoped leash.
         </p>
 
         <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -518,8 +518,9 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
           <a href="https://github.com/lilaclilac09/keyshield/blob/main/docs/API.md" target="_blank" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#1c2238] text-[#cdd3e4] font-medium text-[15px]">
             API Docs
           </a>
-          <a href="https://github.com/lilaclilac09/keyshield/blob/main/python-sdk/README.md" target="_blank" rel="noopener noreferrer" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#34d399]/30 text-[#34d399] font-medium text-[15px]">
-            Optional Python
+          <a href="https://github.com/lilaclilac09/keyshield/tree/main/src/sdk" target="_blank" class="btn-s inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-[#34d399]/30 text-[#34d399] font-medium text-[15px]">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+            Agent SDK
           </a>
         </div>
       </div>
@@ -533,7 +534,7 @@ curl -s <span class="s">"$KS_BASE/proxy/openai/v1/chat/completions"</span> \\
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#5b8cff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         <span class="text-[13px] text-[#6b7494] font-medium">KeyShield</span>
       </div>
-      <p class="text-[12.5px] text-[#6b7494] font-mono">Privacy Hack 2026 &middot; MIT &middot; KeyShield contributors</p>
+      <p class="text-[12.5px] text-[#6b7494] font-mono">Privacy Hack 2026 &middot; MIT &middot; Aileen + agents</p>
     </div>
   </footer>
 
