@@ -21,6 +21,8 @@ Operator guides, get-started flows, and architecture notes.
 | [EXTENSION.md](EXTENSION.md) | Browser extension build + install |
 | [OPERATOR.md](OPERATOR.md) | Operator runbook |
 | [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | x402 + MPP payment flow walkthrough |
+| [technical/cryptography.md](technical/cryptography.md) | Crypto map: Path A PRF, extension HKDF/AES-GCM, proxy hot path |
+| [technical/SYNC_VAULT_ARCHITECTURE.md](technical/SYNC_VAULT_ARCHITECTURE.md) | Path A sync vault (wire format, JWT, CAS) |
 
 ## Repo root
 
