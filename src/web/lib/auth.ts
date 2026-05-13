@@ -44,7 +44,13 @@ export const API_BASE: string = (() => {
       return PROD_API_BASE;
     }
     if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
-      return fromBuild || 'http://localhost:8001';
+      // Vite bakes KEYSHIELD_API_URL into the bundle. If it points at prod while you
+      // open the dashboard on localhost, fetch() hits a dead or blocked API and
+      // wallet login shows "API unreachable at https://api.ks..." — use a local
+      // control plane by default; only honor build-time URL when it is still local
+      // (custom port / 127.0.0.1).
+      if (fromBuild && isLocalhostUrl(fromBuild)) return fromBuild;
+      return 'http://127.0.0.1:8001';
     }
     if (fromBuild && !isLocalhostUrl(fromBuild)) {
       return fromBuild;
