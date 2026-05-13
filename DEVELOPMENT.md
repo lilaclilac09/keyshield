@@ -84,7 +84,7 @@ No docker-compose. Each tier is on its native PaaS:
 - **API** (`src/backend/`) → Railway (uses `Dockerfile.python` + `railway.json`)
 
 Step-by-step + env matrix + DNS in
-[`docs/get-started/deploy-production.md`](docs/get-started/deploy-production.md).
+[`DEPLOY.md`](DEPLOY.md).
 
 ## Known gotchas
 
