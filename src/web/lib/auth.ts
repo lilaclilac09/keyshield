@@ -55,6 +55,20 @@ export const API_BASE: string = (() => {
   return fromBuild || 'http://localhost:8001';
 })();
 
+/** Same idea as vault-session's describeNetError — dead API in dev yields a
+ *  useless "Failed to fetch" / TypeError; point people at uvicorn + port. */
+function describeApiNetError(e: unknown, hint: string): Error {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (e instanceof TypeError || /fetch|network/i.test(msg)) {
+    return new Error(
+      `API unreachable at ${API_BASE} (${hint}). ` +
+      'From the repo root:  python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001  ' +
+      '(or  npm run dev:api)',
+    );
+  }
+  return e instanceof Error ? e : new Error(msg);
+}
+
 const TOKEN_KEY = 'ks_token';
 const WALLET_KEY = 'ks_wallet';
 const PASSKEY_USER = 'ks_passkey_user';
@@ -159,7 +173,12 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (e) {
+    throw describeApiNetError(e, path);
+  }
   if (res.status === 401 && !path.startsWith('/auth/')) {
     clearAuth();
     clearPasskeyTrust();
@@ -185,13 +204,25 @@ export async function proxyFetch(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('X-Upstream-API-Key', apiKey);
-  return fetch(`${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`, { ...options, headers });
+  try {
+    return await fetch(
+      `${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`,
+      { ...options, headers },
+    );
+  } catch (e) {
+    throw describeApiNetError(e, `/proxy/${upstream}`);
+  }
 }
 
 // ── Wallet challenge/login ────────────────────────────────────────────────
 
 export async function fetchChallenge(): Promise<{ challenge: string; nonce: string }> {
-  const res = await fetch(`${API_BASE}/auth/wallet-challenge`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/wallet-challenge`);
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/wallet-challenge');
+  }
   if (!res.ok) throw new Error('Failed to fetch challenge');
   return res.json();
 }
@@ -203,11 +234,16 @@ export async function walletLogin(
   passphrase: string,
 ): Promise<{ token: string; userId: string }> {
   const signature = btoa(String.fromCharCode(...signatureBytes));
-  const res = await fetch(`${API_BASE}/auth/wallet-login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ walletAddress, signature, challenge, passphrase }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/wallet-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress, signature, challenge, passphrase }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/wallet-login');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Login failed' }));
     throw new Error((err as { detail: string }).detail ?? 'Login failed');
@@ -251,7 +287,14 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   if (!trust) throw new Error('No passkey registered on this device');
   const { userId, passphrase } = trust;
 
-  const optsRes = await fetch(`${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`);
+  let optsRes: Response;
+  try {
+    optsRes = await fetch(
+      `${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`,
+    );
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/passkey/auth-options');
+  }
   if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
   const opts = await optsRes.json();
 
@@ -282,14 +325,19 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
     },
   };
 
-  const verRes = await fetch(
-    `${API_BASE}/auth/passkey/auth-verify?user_id=${encodeURIComponent(userId)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: credPayload, passphrase }),
-    },
-  );
+  let verRes: Response;
+  try {
+    verRes = await fetch(
+      `${API_BASE}/auth/passkey/auth-verify?user_id=${encodeURIComponent(userId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: credPayload, passphrase }),
+      },
+    );
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/passkey/auth-verify');
+  }
   if (!verRes.ok) {
     const err = await verRes.json().catch(() => ({ detail: 'Passkey login failed' }));
     throw new Error((err as { detail: string }).detail ?? 'Passkey login failed');
@@ -393,7 +441,14 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
   // Reuse Python's options endpoint just to learn allowed credential IDs;
   // the challenge we'll use is the CF Worker's, so the assertion verifies
   // there. We discard Python's challenge.
-  const optsRes = await fetch(`${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`);
+  let optsRes: Response;
+  try {
+    optsRes = await fetch(
+      `${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`,
+    );
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/passkey/auth-options');
+  }
   if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
   const opts = await optsRes.json();
 

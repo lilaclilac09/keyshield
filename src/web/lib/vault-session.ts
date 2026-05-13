@@ -185,7 +185,14 @@ export async function getCfChallengeForVaultId(vaultId: string): Promise<string>
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `challenge failed (${res.status})` }));
-    throw new Error((err as { error?: string }).error ?? `challenge failed (${res.status})`);
+    const msg = (err as { error?: string }).error ?? `challenge failed (${res.status})`;
+    const unregistered = res.status === 404 && /vault not registered/i.test(msg);
+    if (unregistered) clearCachedVaultId();
+    throw new Error(
+      unregistered
+        ? `${msg} — stale browser cache cleared. Enroll passkey again (local wrangler resets wipe vault rows).`
+        : msg,
+    );
   }
   const { challenge } = await res.json() as { challenge: string };
   return challenge;
