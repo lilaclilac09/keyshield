@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, AlertCircle, Zap, Key, DollarSign, FileText, ArrowRight } from 'lucide-react';
+import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, AlertCircle, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
@@ -16,13 +16,36 @@ export const DocsSection: React.FC = () => {
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Quickstart</h2>
-        <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute.</p>
+        <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute — or install the browser extension (next card) to save keys detected on provider sites while signed in here.</p>
       </div>
 
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Run this in your terminal</span></div>
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#0e1631] border border-[#243365]"><code className="flex-1 text-[13px] font-mono text-zinc-200 break-all">{installCmd}</code><Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(installCmd)}>Copy</Button></div>
         <p className="text-[11px] text-[#8a96c2] mt-3">The installer creates a Python venv, downloads the SDK, generates an ed25519 keypair for the agent, and writes a ready-to-use <code className="text-white">.env</code> file.</p>
+      </Card>
+
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-3">
+          <Puzzle size={14} className="text-[#93b4ff]" />
+          <span className="text-[13px] font-semibold uppercase tracking-wider">Browser extension (this dashboard)</span>
+        </div>
+        <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
+          Use the unpacked extension while signed in here (<code className="text-white">app.ks.aileena.xyz</code>). The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below.
+        </p>
+        <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
+          <li>Clone or download the repo: <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">GitHub</a> — or open the extension folder directly: <a href={`${REPO_URL}/tree/main/src/extension`} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">src/extension</a>.</li>
+          <li>Open <code className="text-white">chrome://extensions</code> (Chrome, Edge, Brave, Arc, or other Chromium).</li>
+          <li>Turn on <strong className="text-white">Developer mode</strong>, then click <strong className="text-white">Load unpacked</strong>.</li>
+          <li>Select the <code className="text-white">src/extension</code> directory (the one that contains <code className="text-white">manifest.json</code>).</li>
+          <li>Pin the KeyShield icon. Open this tab again, sign in with wallet + passkey — the extension should show a token (use the popup if you see &quot;No token&quot;).</li>
+        </ol>
+        <p className="text-[11px] text-[#8a96c2] mt-3">
+          <strong className="text-[#a8b3d8]">Firefox:</strong> <code className="text-white">about:debugging</code> → This Firefox → Load Temporary Add-on → choose <code className="text-white">manifest.firefox.json</code> under the same folder. Temporary loads clear when you quit the browser.
+        </p>
+        <p className="text-[11px] text-[#8a96c2] mt-2">
+          After changing <code className="text-white">manifest.json</code>, press <strong className="text-[#a8b3d8]">Reload</strong> on the extension card in <code className="text-white">chrome://extensions</code>.
+        </p>
       </Card>
 
       {/* Core concepts */}

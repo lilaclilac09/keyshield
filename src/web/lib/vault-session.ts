@@ -75,7 +75,7 @@ function describeNetError(e: unknown, op: string): Error {
   if (e instanceof TypeError || /fetch|network/i.test(msg)) {
     return new Error(
       `Sync worker unreachable at ${SYNC_URL} (${op}). ` +
-      `Start it with:  cd src/infra/sync-worker && npm run dev`,
+      `From the repo root:  npm install  then  npm run dev:worker  (runs wrangler on :8787).`,
     );
   }
   return e instanceof Error ? e : new Error(msg);
