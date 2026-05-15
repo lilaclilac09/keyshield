@@ -84,25 +84,6 @@ jobs:
           file: ./src/backend/coverage.xml
           fail_ci_if_error: false
 
-  uat:
-    name: User Acceptance Tests
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install deps
-        run: pip install --upgrade pip && pip install pytest "httpx[http2]" cryptography pynacl base58 fastapi pydantic webauthn
-
-      - name: Run UAT suite
-        working-directory: src/backend
-        run: |
-          pytest tests/ -v --tb=short \
-            -m "uat" \
-            --cov=. \
-            --cov-report=xml:coverage.xml
+  # uat job removed — no @pytest.mark.uat markers in src/backend/tests/
+  # exist, so this job collected 0 tests then errored on --cov flags.
+  # Restore here if UAT tests are added back.
