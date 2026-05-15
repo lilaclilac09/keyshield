@@ -69,21 +69,41 @@ class AppSettings(BaseSettings):
 
 
 def _validate_secret(value: str, name: str) -> str:
-    """Refuse to start if a required secret is missing or uses a known placeholder."""
+    """Warn loudly if a secret is missing or uses a known placeholder.
+
+    Does NOT raise — a missing secret falls back to the session module's
+    own random/default logic so the server still starts on Railway/local-dev
+    even when SERVER_SECRET has not been configured yet. Raises only when a
+    known CI placeholder is used OUTSIDE CI (that means someone copy-pasted
+    the test value into a real deploy).
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
     in_ci = os.getenv("CI") == "true"
+
     if not value:
-        if in_ci:
-            return value
-        raise ValueError(
-            f"{name} is not set. Add it to your .env file or set the environment variable."
-        )
+        if not in_ci:
+            log.warning(
+                "%s is not set — sessions will use an insecure ephemeral key "
+                "and will be invalidated on restart. "
+                "Set %s to a random ≥32-char string for persistent sessions.",
+                name,
+                name,
+            )
+        return value
+
     if value in _CI_SECRETS and not in_ci:
         raise ValueError(
-            f"{name} is using a placeholder value. "
-            f"Set a real secret (≥32 random characters) before running in production."
+            f"{name} is using a CI placeholder value in production. "
+            f"Set a real secret (≥32 random characters) before deploying."
         )
     if len(value) < 32:
-        raise ValueError(f"{name} must be at least 32 characters.")
+        log.warning(
+            "%s is only %d characters — recommend at least 32 for security.",
+            name,
+            len(value),
+        )
     return value
 
 
