@@ -51,7 +51,9 @@ def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
 @router.post("/auth/login")
 async def auth_login(request: Request):
     # Dev-only shim disabled in production — use /auth/wallet-login or /auth/passkey/auth-verify.
-    return JSONResponse({"error": "direct login disabled; use wallet or passkey"}, status_code=403)
+    return JSONResponse(
+        {"error": "direct login disabled; use wallet or passkey"}, status_code=403
+    )
 
 
 @router.post("/auth/logout")
@@ -86,11 +88,14 @@ async def wallet_login(request: Request):
         try:
             from nacl.signing import VerifyKey
             from nacl.encoding import Base58Encoder
+
             sig_bytes = base64.b64decode(signature_b64 + "==")
             vk = VerifyKey(wallet_addr.encode(), encoder=Base58Encoder)
             vk.verify(challenge.encode(), sig_bytes)
         except Exception:
-            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+            return JSONResponse(
+                {"error": "signature verification failed"}, status_code=401
+            )
 
     token = sess_mod.create_token(wallet_addr, passphrase)
     sess_mod._consume_nonce(nonce)
@@ -115,7 +120,9 @@ async def agent_login(request: Request):
     nonce = str(body.get("nonce", challenge))
 
     if not sess_mod._validate_challenge(challenge, nonce):
-        return JSONResponse({"error": "challenge expired or not found"}, status_code=401)
+        return JSONResponse(
+            {"error": "challenge expired or not found"}, status_code=401
+        )
 
     agent_info = agents_mod.lookup_owner(pubkey_b58)
     if not agent_info:
@@ -126,11 +133,14 @@ async def agent_login(request: Request):
         try:
             from nacl.signing import VerifyKey
             from nacl.encoding import Base58Encoder
+
             sig_bytes = base64.b64decode(signature_b64 + "==")
             vk = VerifyKey(pubkey_b58.encode(), encoder=Base58Encoder)
             vk.verify(challenge.encode(), sig_bytes)
         except Exception:
-            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+            return JSONResponse(
+                {"error": "signature verification failed"}, status_code=401
+            )
     else:
         return JSONResponse({"error": "signature required"}, status_code=401)
 
@@ -150,7 +160,9 @@ async def passkey_register_options(request: Request):
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
     rp_id, _ = _origin_rp_id(request)
-    opts = pk_mod.registration_options(user_id, display_name="Device Vault", rp_id=rp_id)
+    opts = pk_mod.registration_options(
+        user_id, display_name="Device Vault", rp_id=rp_id
+    )
     return JSONResponse(opts)
 
 

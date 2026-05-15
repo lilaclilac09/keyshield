@@ -53,15 +53,17 @@ async def agent_list_rest(request: Request):
     # Normalize to the shape the frontend expects
     agents = []
     for a in ag_list:
-        agents.append({
-            "id": str(a["id"]),
-            "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
-            "name": a["name"],
-            "pubkey": a["pubkey_b58"],
-            "is_active": True,
-            "last_seen_at": a.get("last_used_at"),
-            "created_at": a["created_at"],
-        })
+        agents.append(
+            {
+                "id": str(a["id"]),
+                "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
+                "name": a["name"],
+                "pubkey": a["pubkey_b58"],
+                "is_active": True,
+                "last_seen_at": a.get("last_used_at"),
+                "created_at": a["created_at"],
+            }
+        )
     return JSONResponse(agents)
 
 
@@ -189,7 +191,9 @@ async def agent_wallet_build_tx(agent_id: str, request: Request):
         owner_pubkey = str(body["ownerPubkey"]).strip()
         agent_pubkey = str(body.get("agentPubkey") or agent_id).strip()
         ephemeral_pubkey = str(body["ephemeralPubkey"]).strip()
-        allowed_actions = int(body.get("allowedActions", agent_wallet.AllowedActions.PAY_AND_PROXY))
+        allowed_actions = int(
+            body.get("allowedActions", agent_wallet.AllowedActions.PAY_AND_PROXY)
+        )
         expiry_seconds = int(body.get("expirySeconds", 0))
     except (KeyError, TypeError, ValueError) as e:
         return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
@@ -225,7 +229,9 @@ async def agent_wallet_build_tx(agent_id: str, request: Request):
             keyshield_program_id=program_id,
             usdc_mint="",
             vault_pda=vault_pda,
-            rpc_url=os.environ.get("KS_SOLANA_RPC_URL", "https://api.devnet.solana.com").strip(),
+            rpc_url=os.environ.get(
+                "KS_SOLANA_RPC_URL", "https://api.devnet.solana.com"
+            ).strip(),
         )
 
     if not config.vault_pda:
@@ -255,12 +261,14 @@ async def agent_wallet_build_tx(agent_id: str, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
-    return JSONResponse({
-        **_ix_to_response(ix),
-        "programId": config.keyshield_program_id,
-        "rpcUrl": config.rpc_url,
-        "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
-    })
+    return JSONResponse(
+        {
+            **_ix_to_response(ix),
+            "programId": config.keyshield_program_id,
+            "rpcUrl": config.rpc_url,
+            "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
+        }
+    )
 
 
 @router.delete("/agents/{agent_id}/wallet")

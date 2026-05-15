@@ -22,8 +22,10 @@ def test_routes_register() -> None:
 
     paths = {r.path for r in app.routes if hasattr(r, "path")}
     # Spot-check that the architectural surface is wired.
-    assert "/health" in paths or "/health/" in paths or any(
-        p.startswith("/health") for p in paths
+    assert (
+        "/health" in paths
+        or "/health/" in paths
+        or any(p.startswith("/health") for p in paths)
     ), "expected /health endpoint registered"
 
 

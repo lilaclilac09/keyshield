@@ -34,9 +34,9 @@ def test_manage_store_preserves_cipher_fields():
     items = list_resp.json()
     assert isinstance(items, list)
     assert any(
-        item.get("upstream") == "openai" and
-        item.get("cipher") == "testcipher" and
-        item.get("iv") == "testiv" and
-        item.get("cipher_v") == 1
+        item.get("upstream") == "openai"
+        and item.get("cipher") == "testcipher"
+        and item.get("iv") == "testiv"
+        and item.get("cipher_v") == 1
         for item in items
     )

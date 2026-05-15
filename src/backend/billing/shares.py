@@ -25,6 +25,7 @@ _AAD = b"ks-share"  # additional authenticated data
 
 # ─── DB init ──────────────────────────────────────────────────────────────────
 
+
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(DB_PATH))
@@ -50,6 +51,7 @@ def _conn() -> sqlite3.Connection:
 
 # ─── crypto helpers ────────────────────────────────────────────────────────────
 
+
 def _encrypt(token_bytes: bytes, plaintext: str) -> tuple[str, str]:
     """Returns (nonce_hex, enc_hex)."""
     nonce = secrets.token_bytes(12)
@@ -60,9 +62,7 @@ def _encrypt(token_bytes: bytes, plaintext: str) -> tuple[str, str]:
 
 def _decrypt(token_bytes: bytes, nonce_hex: str, enc_hex: str) -> str:
     aes = AESGCM(token_bytes)
-    return aes.decrypt(
-        bytes.fromhex(nonce_hex), bytes.fromhex(enc_hex), _AAD
-    ).decode()
+    return aes.decrypt(bytes.fromhex(nonce_hex), bytes.fromhex(enc_hex), _AAD).decode()
 
 
 def _token_hash(token_bytes: bytes) -> str:
@@ -70,6 +70,7 @@ def _token_hash(token_bytes: bytes) -> str:
 
 
 # ─── public API ───────────────────────────────────────────────────────────────
+
 
 def create_share(
     owner_id: str,
@@ -100,8 +101,15 @@ def create_share(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             """,
             (
-                share_id, owner_id, upstream, enc_hex, nonce_hex,
-                _token_hash(token_bytes), now, expires_at, max_views,
+                share_id,
+                owner_id,
+                upstream,
+                enc_hex,
+                nonce_hex,
+                _token_hash(token_bytes),
+                now,
+                expires_at,
+                max_views,
             ),
         )
 
@@ -179,9 +187,7 @@ def list_shares(owner_id: str) -> list[dict]:
 
     result = []
     for row in rows:
-        exhausted = (
-            row["max_views"] != -1 and row["view_count"] >= row["max_views"]
-        )
+        exhausted = row["max_views"] != -1 and row["view_count"] >= row["max_views"]
         result.append(
             {
                 "id": row["id"],

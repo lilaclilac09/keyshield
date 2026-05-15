@@ -105,7 +105,9 @@ def _credentials_for_user(user_id: str) -> list[PublicKeyCredentialDescriptor]:
 # ─── registration ─────────────────────────────────────────────────────────────
 
 
-def registration_options(user_id: str, display_name: str, rp_id: str | None = None) -> dict:
+def registration_options(
+    user_id: str, display_name: str, rp_id: str | None = None
+) -> dict:
     """Generate WebAuthn registration options and stash the challenge.
 
     rp_id should match the page origin's hostname (e.g.

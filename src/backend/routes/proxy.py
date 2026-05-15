@@ -47,6 +47,7 @@ def _get_x402_interceptor():
     if kp and hk:
         try:
             from ..proxy.x402_interceptor import ManualKeypairInterceptor
+
             _x402_interceptor = ManualKeypairInterceptor(kp, hk)
             logger.info("x402 ManualKeypairInterceptor loaded")
         except Exception as exc:
@@ -117,7 +118,9 @@ async def proxy_route(upstream: str, path: str, request: Request):
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
     try:
-        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
+        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(
+            upstream, content
+        )
         usage_mod.log_call(
             user_id=user_id,
             upstream=upstream,
@@ -134,9 +137,15 @@ async def proxy_route(upstream: str, path: str, request: Request):
         pass
 
     try:
-        data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
+        data = (
+            json.loads(content) if isinstance(content, (bytes, bytearray)) else content
+        )
     except Exception:
-        data = {"raw": content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)}
+        data = {
+            "raw": content.decode("utf-8", errors="replace")
+            if isinstance(content, bytes)
+            else str(content)
+        }
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
@@ -210,33 +219,51 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
                 interceptor=interceptor,
             )
     except PaymentRequired as exc:
-        return JSONResponse({"error": "payment_required", "x402": exc.raw}, status_code=402)
+        return JSONResponse(
+            {"error": "payment_required", "x402": exc.raw}, status_code=402
+        )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
     try:
-        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
+        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(
+            upstream, content
+        )
         usage_mod.log_call(
-            user_id=user_id, upstream=upstream, key_type="vault",
-            method=str(request.method), path=f"/{path}",
-            tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost_usd,
-            latency_ms=latency_ms, status_code=status,
+            user_id=user_id,
+            upstream=upstream,
+            key_type="vault",
+            method=str(request.method),
+            path=f"/{path}",
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost_usd,
+            latency_ms=latency_ms,
+            status_code=status,
         )
     except Exception:
         pass
 
     try:
-        data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
+        data = (
+            json.loads(content) if isinstance(content, (bytes, bytearray)) else content
+        )
     except Exception:
-        data = {"raw": content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)}
+        data = {
+            "raw": content.decode("utf-8", errors="replace")
+            if isinstance(content, bytes)
+            else str(content)
+        }
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
     resp.headers["x-ks-key-type"] = "vault"
     return resp
 
 
-async def _proxy_helius(api_router, upstream, path, body, api_key, request, interceptor):
+async def _proxy_helius(
+    api_router, upstream, path, body, api_key, request, interceptor
+):
     """Route Helius calls: JSON-RPC bodies go through call_helius() for
     smart sub-provider routing + caching; everything else falls through
     to call_rest on helius-rpc."""
@@ -254,7 +281,11 @@ async def _proxy_helius(api_router, upstream, path, body, api_key, request, inte
         result, cache_status = await api_router.call_helius(
             rpc_method, rpc_params, api_key, rpc_id, interceptor=interceptor
         )
-        return json.dumps(result).encode(), result.get("error") and 400 or 200, cache_status
+        return (
+            json.dumps(result).encode(),
+            result.get("error") and 400 or 200,
+            cache_status,
+        )
 
     # Non-JSON-RPC: fall through to REST on the specific helius sub-provider
     provider = upstream if upstream.startswith("helius-") else "helius-rpc"
