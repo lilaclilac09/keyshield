@@ -20,9 +20,9 @@ import {
 } from './vault-session';
 import { clearExtensionVaultKey, syncExtensionVaultKey } from './vault-key';
 import {
-  isAileenaProdDashboardHost,
   isLocalhostUrl,
   PROD_API_BASE,
+  usePublicControlPlaneFallback,
 } from './host-deploy';
 
 export const API_BASE: string = (() => {
@@ -37,10 +37,8 @@ export const API_BASE: string = (() => {
 
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    // Must match the extension default (https://api.ks.aileena.xyz) or every
-    // bearer token minted by the dashboard targets a different issuer than
-    // the extension POSTs to → 401 on /manage/store + "signed in" desync.
-    if (isAileenaProdDashboardHost(host)) {
+    // Hosted dashboard but bundle still has localhost API → public control plane.
+    if (usePublicControlPlaneFallback(host, fromBuild)) {
       return PROD_API_BASE;
     }
     if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') {
@@ -55,10 +53,10 @@ export const API_BASE: string = (() => {
     if (fromBuild && !isLocalhostUrl(fromBuild)) {
       return fromBuild;
     }
-    return 'https://keyshield-production.up.railway.app';
+    return PROD_API_BASE;
   }
 
-  return fromBuild || 'http://localhost:8001';
+  return fromBuild || 'http://127.0.0.1:8001';
 })();
 
 /** Same idea as vault-session's describeNetError — dead API in dev yields a

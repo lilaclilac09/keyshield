@@ -22,10 +22,7 @@ import {
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
 import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
-import {
-  isAileenaProdDashboardHost,
-  PROD_SYNC_URL,
-} from './host-deploy';
+import { PROD_SYNC_URL, usePublicControlPlaneFallback } from './host-deploy';
 
 export const SYNC_URL: string = (() => {
   // vite's `define` replaces the literal `process.env.KEYSHIELD_SYNC_URL`
@@ -39,8 +36,8 @@ export const SYNC_URL: string = (() => {
 
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (isAileenaProdDashboardHost(host)) {
-      return PROD_SYNC_URL;
+    if (usePublicControlPlaneFallback(host, fromBuild)) {
+      if (PROD_SYNC_URL) return PROD_SYNC_URL;
     }
     return fromBuild;
   }
