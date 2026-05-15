@@ -22,7 +22,7 @@ from .keyshield_sdk import KeyShield, AsyncKeyShield, AgentKeyShield
 from .config import AppSettings, get_settings, reset_settings
 
 # ─── Errors ───────────────────────────────────────────────────────────
-from .errors import (
+from .errors import (  # noqa: F401
     KeyShieldError,
     VaultError,
     KeyNotFound,
