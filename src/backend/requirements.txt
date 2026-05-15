@@ -18,5 +18,9 @@ aiosqlite>=0.21
 python-dotenv>=1.0
 requests>=2.32
 
+# Solana on-chain operations (mpp_onchain.py, agent_wallet.py)
+# soft-imported so the module loads without them, but needed for real tx submission
+solders>=0.21
+
 # Trading dependencies
 pydantic-settings>=2.7
