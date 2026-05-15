@@ -200,6 +200,14 @@ def main() -> int:
     # have KS_X402_HOT_KEYPAIR_B58 + HELIUS_API_KEY set and the hot wallet
     # to be funded with USDC on mainnet.
     step(7, "Owner: trust an x402 domain for auto-pay (caps in micro-USDC)")
+    probe = httpx.get(
+        f"{KS_API}/x402/trust",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        timeout=10,
+    )
+    if probe.status_code == 404:
+        print("  /x402/trust route not deployed yet on this server — skipping")
+        return 0
     trust = _post(
         "/x402/trust",
         token=owner_token,
