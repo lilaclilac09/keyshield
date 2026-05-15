@@ -1,0 +1,21 @@
+# CODEOWNERS — auto-assign reviewers on every PR.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all changes require owner review
+*                   @lilaclilac09
+
+# Solana on-chain program — owner only
+programs/           @lilaclilac09
+
+# Python backend
+src/backend/        @lilaclilac09
+
+# Rust proxy
+src/proxy/          @lilaclilac09
+proxy-rs/           @lilaclilac09
+
+# CI / deployment config — owner must review
+.github/            @lilaclilac09
+Dockerfile*         @lilaclilac09
+docker-compose*     @lilaclilac09
+railway.json        @lilaclilac09
