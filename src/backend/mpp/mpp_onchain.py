@@ -240,11 +240,9 @@ def load_mpp_config() -> Optional[MppConfig]:
         settler_pubkey=settler_pubkey,
         platform_usdc_ata=platform_ata,
         keyshield_program_id=program_id,
-        usdc_mint=os.environ.get("KS_USDC_MINT", USDC_MINT_MAINNET).strip()
-        or USDC_MINT_MAINNET,
+        usdc_mint=os.environ.get("KS_USDC_MINT", USDC_MINT_MAINNET).strip() or USDC_MINT_MAINNET,
         vault_pda=(os.environ.get("KS_VAULT_PDA", "").strip() or None),
-        rpc_url=os.environ.get("KS_SOLANA_RPC_URL", DEFAULT_RPC_URL).strip()
-        or DEFAULT_RPC_URL,
+        rpc_url=os.environ.get("KS_SOLANA_RPC_URL", DEFAULT_RPC_URL).strip() or DEFAULT_RPC_URL,
     )
 
 
@@ -291,9 +289,7 @@ def build_mpp_settle_ix_data(amount_micro_usdc: int) -> bytes:
         raise ValueError("amount_micro_usdc must be non-negative")
     if amount_micro_usdc > 0xFFFFFFFFFFFFFFFF:
         raise ValueError("amount_micro_usdc exceeds u64 range")
-    return bytes([MPP_SETTLE_DISCRIMINATOR]) + int(amount_micro_usdc).to_bytes(
-        8, "little"
-    )
+    return bytes([MPP_SETTLE_DISCRIMINATOR]) + int(amount_micro_usdc).to_bytes(8, "little")
 
 
 @dataclass(frozen=True)
@@ -411,9 +407,7 @@ class MppSubmitError(Exception):
     interval retries."""
 
 
-async def submit_mpp_settle(
-    config: MppConfig, ix: _SimpleInstruction
-) -> tuple[int, str]:
+async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> tuple[int, str]:
     """Wrap the ix in a Solana Transaction, sign with the settler
     keypair, submit via RPC.
 
@@ -568,8 +562,7 @@ def derive_agent_payment_stream_pda(
     """
     if not _HAS_SOLDERS:
         raise MppSubmitError(
-            "solders not installed — cannot derive PDA. Install via "
-            "`pip install solders`.",
+            "solders not installed — cannot derive PDA. Install via `pip install solders`.",
         )
     try:
         agent_pk = Pubkey.from_string(agent_pubkey)  # type: ignore[union-attr]
@@ -600,8 +593,7 @@ def derive_associated_token_address(
     """
     if not _HAS_SOLDERS:
         raise MppSubmitError(
-            "solders not installed — cannot derive ATA. Install via "
-            "`pip install solders`.",
+            "solders not installed — cannot derive ATA. Install via `pip install solders`.",
         )
     try:
         owner_pk = Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
@@ -642,9 +634,7 @@ def build_create_ata_idempotent_ix(
         _SimpleAccountMeta(pubkey=ata_pubkey, is_signer=False, is_writable=True),
         _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=False, is_writable=False),
         _SimpleAccountMeta(pubkey=mint_pubkey, is_signer=False, is_writable=False),
-        _SimpleAccountMeta(
-            pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False
-        ),
+        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
         _SimpleAccountMeta(pubkey=TOKEN_PROGRAM_ID, is_signer=False, is_writable=False),
     )
     return _SimpleInstruction(
@@ -718,9 +708,7 @@ def build_open_payment_stream_ix_data(
     if not 0 <= bump <= 0xFF:
         raise ValueError("bump must fit u8 (0..=255)")
     if max_total_micro_usdc <= 0:
-        raise ValueError(
-            "max_total_micro_usdc must be positive (matches on-chain check)"
-        )
+        raise ValueError("max_total_micro_usdc must be positive (matches on-chain check)")
     for name, val, max_val in (
         ("max_total_micro_usdc", max_total_micro_usdc, 0xFFFFFFFFFFFFFFFF),
         ("cost_per_unit_micro_usdc", cost_per_unit_micro_usdc, 0xFFFFFFFFFFFFFFFF),
@@ -783,12 +771,8 @@ def build_open_payment_stream_ix(
         _SimpleAccountMeta(pubkey=config.usdc_mint, is_signer=False, is_writable=False),
         _SimpleAccountMeta(pubkey=usdc_ata, is_signer=False, is_writable=False),
         _SimpleAccountMeta(pubkey=agent_pubkey, is_signer=False, is_writable=False),
-        _SimpleAccountMeta(
-            pubkey=config.settler_pubkey, is_signer=False, is_writable=False
-        ),
-        _SimpleAccountMeta(
-            pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False
-        ),
+        _SimpleAccountMeta(pubkey=config.settler_pubkey, is_signer=False, is_writable=False),
+        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
     )
     return _SimpleInstruction(
         program_id=config.keyshield_program_id,
@@ -818,9 +802,9 @@ def build_withdraw_agent_wallet_ix_data(withdraw_amount_micro_usdc: int) -> byte
         raise ValueError("withdraw_amount_micro_usdc must be non-negative")
     if withdraw_amount_micro_usdc > 0xFFFFFFFFFFFFFFFF:
         raise ValueError("withdraw_amount_micro_usdc exceeds u64 range")
-    return bytes([WITHDRAW_AGENT_WALLET_DISCRIMINATOR]) + int(
-        withdraw_amount_micro_usdc
-    ).to_bytes(8, "little")
+    return bytes([WITHDRAW_AGENT_WALLET_DISCRIMINATOR]) + int(withdraw_amount_micro_usdc).to_bytes(
+        8, "little"
+    )
 
 
 def build_withdraw_agent_wallet_ix(

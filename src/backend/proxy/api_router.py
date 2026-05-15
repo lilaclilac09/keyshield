@@ -153,9 +153,7 @@ def _cache_set(ck: str, data: Any, ttl: float) -> None:
 
 
 # ─── Auth header builder ──────────────────────────────────────────────────────
-def _build_url_and_headers(
-    provider_name: str, path: str, api_key: str
-) -> tuple[str, dict]:
+def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple[str, dict]:
     cfg = PROVIDERS[provider_name]
     headers: dict[str, str] = dict(cfg.get("extra_headers", {}))
 
@@ -210,9 +208,7 @@ async def call_helius(
     url, headers = _build_url_and_headers(provider, "/", api_key)
 
     async def _fire(extra_headers: dict[str, str]) -> tuple[int, bytes, dict]:
-        resp = await _CLIENTS[provider].post(
-            url, json=body, headers={**headers, **extra_headers}
-        )
+        resp = await _CLIENTS[provider].post(url, json=body, headers={**headers, **extra_headers})
         return resp.status_code, resp.content, dict(resp.headers)
 
     if method in _HELIUS_WRITES:

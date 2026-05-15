@@ -74,9 +74,7 @@ class PriceSignal:
 class MarketDataAgent:
     """Market data agent — subscribes to Pyth/Hermes SSE, fires callbacks."""
 
-    def __init__(
-        self, feeds: list[PriceFeed], ks_token: str = "", use_proxy: bool = False
-    ):
+    def __init__(self, feeds: list[PriceFeed], ks_token: str = "", use_proxy: bool = False):
         self.feeds = feeds
         self._callbacks: list[Callable] = []
         self._running = False

@@ -47,6 +47,7 @@ def _get_x402_interceptor():
     if kp and hk:
         try:
             from ..proxy.x402_interceptor import ManualKeypairInterceptor
+
             _x402_interceptor = ManualKeypairInterceptor(kp, hk)
             logger.info("x402 ManualKeypairInterceptor loaded")
         except Exception as exc:
@@ -136,10 +137,117 @@ async def proxy_route(upstream: str, path: str, request: Request):
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
     except Exception:
-        data = {"raw": content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)}
+        data = {
+            "raw": content.decode("utf-8", errors="replace")
+            if isinstance(content, bytes)
+            else str(content)
+        }
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
+    return resp
+
+
+# ─── /vproxy/{upstream}/{path} — vault-key auto-resolve ───────────────────
+# Companion route: Bearer token identifies the caller; the upstream API key
+# is looked up from the user's vault (vault_items SQLite table) so the
+# client never has to send X-Upstream-API-Key. Same path/method semantics
+# as /proxy/*, just one less header.
+#
+# This is the route that the Rust hot-path proxy (ks-proxy) shadows for
+# helius via `helius_fast_path`, and that pay.sh's `value_from_env` gateway
+# auth pattern routes to. Schema reads `vault_items` written by
+# /manage/store — see routes/vault.py.
+@router.api_route(
+    "/vproxy/{upstream}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
+)
+async def vault_proxy_route(upstream: str, path: str, request: Request):
+    from ..proxy import api_router
+    from ..proxy.x402_interceptor import PaymentRequired
+    from .vault import _DB_PATH as _VAULT_DB
+    import sqlite3
+
+    token = _bearer(request)
+    sess = sess_mod.get(token) if token else None
+    user_id = (sess or {}).get("user_id") or (sess or {}).get("userId")
+    if not user_id:
+        # Dev fallback — same opt-in header /manage/* uses.
+        if request.headers.get("X-Dev-Mode") == "1":
+            user_id = "default"
+        elif not token:
+            return JSONResponse({"error": "authorization required"}, status_code=401)
+        else:
+            return JSONResponse({"error": "invalid token"}, status_code=401)
+
+    _VAULT_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_VAULT_DB))
+    try:
+        row = conn.execute(
+            "SELECT value FROM vault_items "
+            "WHERE user_id = ? AND upstream = ? AND value != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (user_id, upstream),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row[0]:
+        return JSONResponse(
+            {"error": f"no {upstream} key in vault — POST /manage/store first"},
+            status_code=422,
+        )
+    api_key = row[0]
+    body = await request.body()
+    interceptor = _get_x402_interceptor()
+    t0 = time.perf_counter()
+
+    try:
+        if _is_helius(upstream):
+            content, status, cache_status = await _proxy_helius(
+                api_router, upstream, path, body, api_key, request, interceptor
+            )
+        else:
+            content, status, cache_status = await api_router.call_rest(
+                upstream,
+                str(request.method),
+                f"/{path}",
+                body,
+                api_key,
+                interceptor=interceptor,
+            )
+    except PaymentRequired as exc:
+        return JSONResponse({"error": "payment_required", "x402": exc.raw}, status_code=402)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+    try:
+        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
+        usage_mod.log_call(
+            user_id=user_id,
+            upstream=upstream,
+            key_type="vault",
+            method=str(request.method),
+            path=f"/{path}",
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost_usd,
+            latency_ms=latency_ms,
+            status_code=status,
+        )
+    except Exception:
+        pass
+
+    try:
+        data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
+    except Exception:
+        data = {
+            "raw": content.decode("utf-8", errors="replace")
+            if isinstance(content, bytes)
+            else str(content)
+        }
+    resp = JSONResponse(data, status_code=status)
+    resp.headers["x-ks-cache"] = cache_status
+    resp.headers["x-ks-key-type"] = "vault"
     return resp
 
 
@@ -161,7 +269,11 @@ async def _proxy_helius(api_router, upstream, path, body, api_key, request, inte
         result, cache_status = await api_router.call_helius(
             rpc_method, rpc_params, api_key, rpc_id, interceptor=interceptor
         )
-        return json.dumps(result).encode(), result.get("error") and 400 or 200, cache_status
+        return (
+            json.dumps(result).encode(),
+            result.get("error") and 400 or 200,
+            cache_status,
+        )
 
     # Non-JSON-RPC: fall through to REST on the specific helius sub-provider
     provider = upstream if upstream.startswith("helius-") else "helius-rpc"

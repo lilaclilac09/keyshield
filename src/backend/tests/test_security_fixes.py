@@ -60,7 +60,9 @@ class TestVault:
             load("alice", "openai", password="pw")
 
 
-@pytest.mark.skip(reason="legacy: src.session removed in Path A; rewrite against src.backend.auth.session")
+@pytest.mark.skip(
+    reason="legacy: src.session removed in Path A; rewrite against src.backend.auth.session"
+)
 class TestSession:
     """Tests for session.py."""
 
@@ -100,13 +102,15 @@ class TestSession:
         from src.session import create_token, delete_all_for_user, get
 
         t1 = create_token("alice", "pw")
-        t2 = create_token("alice", "pw")
+        create_token("alice", "pw")
         count = delete_all_for_user("alice")
         assert count >= 2
         assert get(t1) is None
 
 
-@pytest.mark.skip(reason="legacy: agent CRL surface changed in src.backend.agents.agents; rewrite against new API")
+@pytest.mark.skip(
+    reason="legacy: agent CRL surface changed in src.backend.agents.agents; rewrite against new API"
+)
 class TestAgentRevocation:
     """Tests for agents.py."""
 
@@ -123,7 +127,7 @@ class TestAgentRevocation:
         from src.agents import register, revoke_agent
 
         register("owner1", "9WzDX...", name="bot1")
-        agent_id = [a["id"] for a in []][0]  # placeholder
+        [a["id"] for a in []][0]  # placeholder
         result = revoke_agent("owner1", "9WzDX...")
         assert result is True
 
@@ -135,7 +139,9 @@ class TestAgentRevocation:
             revoke_agent("owner1", "9WzDX...")
 
 
-@pytest.mark.skip(reason="legacy: x402_verify signature changed (PaymentRequirements object now); rewrite against new API")
+@pytest.mark.skip(
+    reason="legacy: x402_verify signature changed (PaymentRequirements object now); rewrite against new API"
+)
 class TestX402:
     """Tests for x402_verify.py."""
 
@@ -155,7 +161,9 @@ class TestX402:
             asyncio.run(verify_on_chain(None, "", 1.0))
 
 
-@pytest.mark.skip(reason="legacy: end-to-end client fixture needs rebuilt against current FastAPI app + new auth flow")
+@pytest.mark.skip(
+    reason="legacy: end-to-end client fixture needs rebuilt against current FastAPI app + new auth flow"
+)
 class TestAuthFlow:
     """End-to-end auth tests."""
 

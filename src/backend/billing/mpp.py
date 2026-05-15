@@ -31,6 +31,7 @@ MICRO_USDC_PER_USDC = 1_000_000
 
 # ── DB setup ───────────────────────────────────────────────────────────────────
 
+
 def _db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
@@ -79,24 +80,25 @@ def _db() -> sqlite3.Connection:
 
 # ── Row serialisation ─────────────────────────────────────────────────────────
 
+
 def _stream_row_to_dict(row: tuple) -> dict:
     return {
-        "id":                        row[0],
-        "user_id":                   row[1],
-        "agent_pubkey":              row[2],
-        "agent_name":                row[3],
-        "upstream":                  row[4],
-        "rate_per_call_micro_usdc":  row[5],
+        "id": row[0],
+        "user_id": row[1],
+        "agent_pubkey": row[2],
+        "agent_name": row[3],
+        "upstream": row[4],
+        "rate_per_call_micro_usdc": row[5],
         "rate_per_token_micro_usdc": row[6],
-        "settlement_interval_secs":  row[7],
-        "status":                    row[8],
-        "opened_at":                 row[9],
-        "last_settled_at":           row[10],
-        "closed_at":                 row[11],
-        "total_calls":               row[12],
-        "total_tokens":              row[13],
-        "pending_micro_usdc":        row[14],
-        "settled_micro_usdc":        row[15],
+        "settlement_interval_secs": row[7],
+        "status": row[8],
+        "opened_at": row[9],
+        "last_settled_at": row[10],
+        "closed_at": row[11],
+        "total_calls": row[12],
+        "total_tokens": row[13],
+        "pending_micro_usdc": row[14],
+        "settled_micro_usdc": row[15],
     }
 
 
@@ -111,32 +113,34 @@ _STREAM_COLS = (
 def _event_row_to_dict(row: tuple) -> dict:
     cost_usd = row[6] / MICRO_USDC_PER_USDC
     return {
-        "id":           row[0],
-        "stream_id":    row[1],
-        "kind":         row[3],
-        "calls":        row[4],
-        "tokens":       row[5],
-        "micro_usdc":   row[6],
-        "cost_usd":     round(cost_usd, 6),
-        "ts":           row[7],
-        "upstream":     row[8],
-        "agent_name":   row[9],
+        "id": row[0],
+        "stream_id": row[1],
+        "kind": row[3],
+        "calls": row[4],
+        "tokens": row[5],
+        "micro_usdc": row[6],
+        "cost_usd": round(cost_usd, 6),
+        "ts": row[7],
+        "upstream": row[8],
+        "agent_name": row[9],
         "agent_pubkey": row[10],
     }
 
 
 # ── Helper: compute pending amount from rates ─────────────────────────────────
 
+
 def _compute_pending(stream: dict) -> int:
     """Re-derive pending_micro_usdc from totals and rates."""
     gross = (
         stream["total_tokens"] * stream["rate_per_token_micro_usdc"]
-        + stream["total_calls"]  * stream["rate_per_call_micro_usdc"]
+        + stream["total_calls"] * stream["rate_per_call_micro_usdc"]
     )
     return max(0, gross - stream["settled_micro_usdc"])
 
 
 # ── Helper: write a settlement into the DB (reusable) ─────────────────────────
+
 
 def _do_settle(
     conn: sqlite3.Connection,
@@ -151,60 +155,84 @@ def _do_settle(
     if pending <= 0:
         return 0
 
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE mpp_streams
         SET settled_micro_usdc = settled_micro_usdc + ?,
             pending_micro_usdc = 0,
             last_settled_at    = ?
         WHERE id = ?
-    """, (pending, now, stream["id"]))
+    """,
+        (pending, now, stream["id"]),
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO mpp_events
           (stream_id, user_id, kind, calls, tokens, micro_usdc, ts,
            upstream, agent_name, agent_pubkey)
         VALUES (?, ?, 'settle', 0, 0, ?, ?, ?, ?, ?)
-    """, (
-        stream["id"], stream["user_id"], pending, now,
-        stream["upstream"], stream["agent_name"], stream["agent_pubkey"],
-    ))
+    """,
+        (
+            stream["id"],
+            stream["user_id"],
+            pending,
+            now,
+            stream["upstream"],
+            stream["agent_name"],
+            stream["agent_pubkey"],
+        ),
+    )
     return pending
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+
 def open_stream(
-    user_id:                  str,
-    agent_pubkey:             str,
-    agent_name:               str,
-    upstream:                 str,
+    user_id: str,
+    agent_pubkey: str,
+    agent_name: str,
+    upstream: str,
     rate_per_token_micro_usdc: int,
-    rate_per_call_micro_usdc:  int,
-    settlement_interval_secs:  int,
+    rate_per_call_micro_usdc: int,
+    settlement_interval_secs: int,
 ) -> dict:
     """Open a new MPP stream. Returns the stream dict."""
     now = int(time.time())
     conn = _db()
     try:
-        cur = conn.execute("""
+        cur = conn.execute(
+            """
             INSERT INTO mpp_streams
               (user_id, agent_pubkey, agent_name, upstream,
                rate_per_call_micro_usdc, rate_per_token_micro_usdc,
                settlement_interval_secs, status, opened_at, last_settled_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-        """, (
-            user_id, agent_pubkey, agent_name[:64], upstream,
-            rate_per_call_micro_usdc, rate_per_token_micro_usdc,
-            settlement_interval_secs, now, now,
-        ))
+        """,
+            (
+                user_id,
+                agent_pubkey,
+                agent_name[:64],
+                upstream,
+                rate_per_call_micro_usdc,
+                rate_per_token_micro_usdc,
+                settlement_interval_secs,
+                now,
+                now,
+            ),
+        )
         stream_id = cur.lastrowid
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO mpp_events
               (stream_id, user_id, kind, calls, tokens, micro_usdc, ts,
                upstream, agent_name, agent_pubkey)
             VALUES (?, ?, 'open', 0, 0, 0, ?, ?, ?, ?)
-        """, (stream_id, user_id, now, upstream, agent_name[:64], agent_pubkey))
+        """,
+            (stream_id, user_id, now, upstream, agent_name[:64], agent_pubkey),
+        )
 
         conn.commit()
 
@@ -218,9 +246,9 @@ def open_stream(
 
 def record(
     stream_id: int,
-    user_id:   str,
-    tokens:    int,
-    calls:     int,
+    user_id: str,
+    tokens: int,
+    calls: int,
 ) -> tuple[dict, int | None]:
     """
     Record token/call usage on a stream. Auto-settles if interval has elapsed.
@@ -241,36 +269,48 @@ def record(
             raise ValueError("stream is not open")
 
         new_tokens = stream["total_tokens"] + tokens
-        new_calls  = stream["total_calls"]  + calls
+        new_calls = stream["total_calls"] + calls
         gross_pending = (
             new_tokens * stream["rate_per_token_micro_usdc"]
-            + new_calls  * stream["rate_per_call_micro_usdc"]
+            + new_calls * stream["rate_per_call_micro_usdc"]
             - stream["settled_micro_usdc"]
         )
         new_pending = max(0, gross_pending)
 
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE mpp_streams
             SET total_tokens       = ?,
                 total_calls        = ?,
                 pending_micro_usdc = ?
             WHERE id = ?
-        """, (new_tokens, new_calls, new_pending, stream_id))
+        """,
+            (new_tokens, new_calls, new_pending, stream_id),
+        )
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO mpp_events
               (stream_id, user_id, kind, calls, tokens, micro_usdc, ts,
                upstream, agent_name, agent_pubkey)
             VALUES (?, ?, 'record', ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            stream_id, user_id, calls, tokens,
-            new_pending - _compute_pending(stream),   # delta this record added
-            now, stream["upstream"], stream["agent_name"], stream["agent_pubkey"],
-        ))
+        """,
+            (
+                stream_id,
+                user_id,
+                calls,
+                tokens,
+                new_pending - _compute_pending(stream),  # delta this record added
+                now,
+                stream["upstream"],
+                stream["agent_name"],
+                stream["agent_pubkey"],
+            ),
+        )
 
         # Reload stream dict with updated totals for settle calculation.
-        stream["total_tokens"]       = new_tokens
-        stream["total_calls"]        = new_calls
+        stream["total_tokens"] = new_tokens
+        stream["total_calls"] = new_calls
         stream["pending_micro_usdc"] = new_pending
 
         # Auto-settle if interval elapsed.
@@ -344,22 +384,32 @@ def close_stream(stream_id: int, user_id: str) -> dict:
         stream["pending_micro_usdc"] = _compute_pending(stream)
         _do_settle(conn, stream, now)
 
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE mpp_streams
             SET status    = 'closed',
                 closed_at = ?
             WHERE id = ?
-        """, (now, stream_id))
+        """,
+            (now, stream_id),
+        )
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO mpp_events
               (stream_id, user_id, kind, calls, tokens, micro_usdc, ts,
                upstream, agent_name, agent_pubkey)
             VALUES (?, ?, 'close', 0, 0, 0, ?, ?, ?, ?)
-        """, (
-            stream_id, user_id, now,
-            stream["upstream"], stream["agent_name"], stream["agent_pubkey"],
-        ))
+        """,
+            (
+                stream_id,
+                user_id,
+                now,
+                stream["upstream"],
+                stream["agent_name"],
+                stream["agent_pubkey"],
+            ),
+        )
 
         conn.commit()
 
@@ -385,19 +435,19 @@ def list_streams(user_id: str) -> tuple[list[dict], dict]:
         ).fetchall()
         streams = [_stream_row_to_dict(r) for r in rows]
 
-        streams_open    = sum(1 for s in streams if s["status"] == "open")
-        tokens_total    = sum(s["total_tokens"]        for s in streams)
-        calls_total     = sum(s["total_calls"]         for s in streams)
-        settled_usdc    = sum(s["settled_micro_usdc"]  for s in streams) / MICRO_USDC_PER_USDC
-        pending_usdc    = sum(_compute_pending(s)      for s in streams) / MICRO_USDC_PER_USDC
+        streams_open = sum(1 for s in streams if s["status"] == "open")
+        tokens_total = sum(s["total_tokens"] for s in streams)
+        calls_total = sum(s["total_calls"] for s in streams)
+        settled_usdc = sum(s["settled_micro_usdc"] for s in streams) / MICRO_USDC_PER_USDC
+        pending_usdc = sum(_compute_pending(s) for s in streams) / MICRO_USDC_PER_USDC
 
         summary = {
             "streams_total": len(streams),
-            "streams_open":  streams_open,
-            "tokens_total":  tokens_total,
-            "calls_total":   calls_total,
-            "settled_usd":   round(settled_usdc, 6),
-            "pending_usd":   round(pending_usdc, 6),
+            "streams_open": streams_open,
+            "tokens_total": tokens_total,
+            "calls_total": calls_total,
+            "settled_usd": round(settled_usdc, 6),
+            "pending_usd": round(pending_usdc, 6),
         }
         return streams, summary
     finally:
@@ -408,14 +458,17 @@ def list_events(user_id: str, limit: int = 20) -> list[dict]:
     """Return recent MPP events for a user, newest-first."""
     conn = _db()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, stream_id, user_id, kind, calls, tokens, micro_usdc, ts,
                    upstream, agent_name, agent_pubkey
             FROM mpp_events
             WHERE user_id = ?
             ORDER BY ts DESC
             LIMIT ?
-        """, (user_id, min(limit, 200))).fetchall()
+        """,
+            (user_id, min(limit, 200)),
+        ).fetchall()
         return [_event_row_to_dict(r) for r in rows]
     finally:
         conn.close()

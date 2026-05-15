@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-import os
 import sqlite3
 from pathlib import Path
 
 router = APIRouter()
 
 # ─── Auth helper ────────────────────────────────────────────────────────────
+
 
 def _auth(request: Request) -> dict | None:
     from ..auth import session as sess_mod
@@ -57,6 +57,7 @@ def _db() -> sqlite3.Connection:
 
 # ─── GET /x402/trust ────────────────────────────────────────────────────────
 
+
 @router.get("/x402/trust")
 async def list_x402_trust(request: Request):
     """
@@ -85,6 +86,7 @@ async def list_x402_trust(request: Request):
 
 
 # ─── POST /x402/trust ───────────────────────────────────────────────────────
+
 
 @router.post("/x402/trust")
 async def add_x402_trust(request: Request):
@@ -128,12 +130,15 @@ async def add_x402_trust(request: Request):
             (user_id, domain, max_micro, daily_cap, enabled),
         )
         conn.commit()
-        return JSONResponse({
-            "domain": domain,
-            "max_micro": max_micro,
-            "daily_cap": daily_cap,
-            "enabled": enabled,
-        }, status_code=201)
+        return JSONResponse(
+            {
+                "domain": domain,
+                "max_micro": max_micro,
+                "daily_cap": daily_cap,
+                "enabled": enabled,
+            },
+            status_code=201,
+        )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
@@ -141,6 +146,7 @@ async def add_x402_trust(request: Request):
 
 
 # ─── PUT /x402/trust/{domain} ───────────────────────────────────────────────
+
 
 @router.put("/x402/trust/{domain}")
 async def update_x402_trust(request: Request, domain: str):
@@ -208,6 +214,7 @@ async def update_x402_trust(request: Request, domain: str):
 
 # ─── DELETE /x402/trust/{domain} ────────────────────────────────────────────
 
+
 @router.delete("/x402/trust/{domain}")
 async def delete_x402_trust(request: Request, domain: str):
     """
@@ -239,6 +246,7 @@ async def delete_x402_trust(request: Request, domain: str):
 
 # ─── GET /x402/spend/{domain} ───────────────────────────────────────────────
 
+
 @router.get("/x402/spend/{domain}")
 async def get_x402_spend(request: Request, domain: str):
     """
@@ -266,6 +274,7 @@ async def get_x402_spend(request: Request, domain: str):
         else:
             # Get spend for today
             from datetime import date
+
             today = str(date.today())
             cursor = conn.execute(
                 "SELECT spent_micro FROM x402_spend_tracker WHERE user_id = ? AND domain = ? AND date = ?",
@@ -282,12 +291,14 @@ async def get_x402_spend(request: Request, domain: str):
 
 # ─── Record 402 spend (internal helper) ──────────────────────────────────────
 
+
 def record_x402_spend(user_id: str, domain: str, amount_micro: int) -> None:
     """
     Internal helper: record a 402 payment to the spend tracker.
     Called from x402_interceptor.py after successful payment.
     """
     from datetime import date
+
     today = str(date.today())
     conn = _db()
     try:

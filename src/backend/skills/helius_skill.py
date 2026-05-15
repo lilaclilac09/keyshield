@@ -108,9 +108,7 @@ async def transactions(wallet: str, api_key: str, limit: int = 10) -> list[dict]
     Decoded transaction history via Helius Enhanced API.
     Returns up to `limit` transactions with type, source, and amount info.
     """
-    result, _ = await api_router.call_helius(
-        "getTransactions", [wallet, {"limit": limit}], api_key
-    )
+    result, _ = await api_router.call_helius("getTransactions", [wallet, {"limit": limit}], api_key)
     raw_txs = result.get("result", [])
     out = []
     for tx in raw_txs:
@@ -276,9 +274,7 @@ async def priority_fee(
     if transaction:
         request["transaction"] = transaction
 
-    result, _ = await api_router.call_helius(
-        "getPriorityFeeEstimate", [request], api_key
-    )
+    result, _ = await api_router.call_helius("getPriorityFeeEstimate", [request], api_key)
     return result.get("result", {})
 
 

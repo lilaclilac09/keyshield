@@ -95,9 +95,7 @@ USDC_BASE_MAINNET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 DEFAULT_MIN_CONFIRMATIONS = 5
 
 # ERC-20 Transfer event topic0 = keccak256("Transfer(address,address,uint256)")
-ERC20_TRANSFER_TOPIC = (
-    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-)
+ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 
 @dataclass(frozen=True)
@@ -353,8 +351,7 @@ async def _verify_on_chain_real(
         head_block = int(head_body["result"], 16)
         if head_block - tx_block < config.min_confirmations:
             raise VerifyError(
-                f"only {head_block - tx_block} confirmations, "
-                f"need {config.min_confirmations}",
+                f"only {head_block - tx_block} confirmations, need {config.min_confirmations}",
             )
 
     # 3-5. Decode logs (no network — pure parsing)
@@ -395,8 +392,7 @@ def _verify_transfer_log(
             return (True, "real")
         else:
             raise VerifyError(
-                f"USDC transfer amount {amount / 1e6:.6f} < expected "
-                f"{expected_amount_usd:.6f}",
+                f"USDC transfer amount {amount / 1e6:.6f} < expected {expected_amount_usd:.6f}",
             )
 
     raise VerifyError(

@@ -27,9 +27,7 @@ class ModelRouter:
     Falls back automatically if primary model fails.
     """
 
-    def __init__(
-        self, ks_token: str = "", cache: bool = True, budget_usd: float = 100.0
-    ):
+    def __init__(self, ks_token: str = "", cache: bool = True, budget_usd: float = 100.0):
         self.ks_token = ks_token
         self.cache = cache
         self.budget_usd = budget_usd
@@ -71,9 +69,7 @@ class ModelRouter:
 
         return response
 
-    async def _route_to_model(
-        self, prompt: str, task: TaskType, max_tokens: int
-    ) -> dict:
+    async def _route_to_model(self, prompt: str, task: TaskType, max_tokens: int) -> dict:
         """Route to the appropriate model and return response."""
         # In production, this would:
         # 1. Select model based on TaskType
@@ -100,9 +96,7 @@ class ModelRouter:
             "latency_ms": 150,
         }
 
-    async def parallel(
-        self, prompts: list[str], task: TaskType = TaskType.ANALYSIS
-    ) -> list[dict]:
+    async def parallel(self, prompts: list[str], task: TaskType = TaskType.ANALYSIS) -> list[dict]:
         """Analyze multiple signals in parallel."""
         import asyncio
 

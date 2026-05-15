@@ -1,0 +1,30 @@
+# Ruff config for the Python backend.
+# Lint scope: src/backend/ (see .github/workflows/python.yml — runs from that dir).
+
+line-length = 100
+target-version = "py310"
+
+[lint]
+# Default Ruff selectors: E (pycodestyle), F (Pyflakes) — keep stable + sane.
+select = ["E", "F", "W"]
+# F401 in __init__.py is the standard re-export pattern; suppressing avoids
+# adding redundant `# noqa` to every public API import.
+# F841 in tests catches placeholder vars that are intentionally unused —
+# noisy across the existing test files; relax until those tests are pruned.
+# F841: unused-variable noisy in legacy tests.
+# E402: top-of-file imports collide with intentional after-app-mount imports
+#       (app.py: `from .routes import register_routes` AFTER `app = FastAPI(...)`).
+# E501: long-string handling — ruff format won't break strings.
+ignore = ["F841", "E402", "E501"]
+
+# E501 (line too long) collides with `ruff format` which won't wrap strings;
+# allow up to 120 in case the formatter decides to.
+[lint.pycodestyle]
+max-line-length = 120
+
+[lint.per-file-ignores]
+# __init__.py re-exports = unused imports by design.
+"__init__.py" = ["F401"]
+# Tests often have intentional unused values (challenge tokens, etc.).
+"tests/*" = ["F401", "F841"]
+"**/test_*.py" = ["F401", "F841"]

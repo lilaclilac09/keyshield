@@ -53,15 +53,17 @@ async def agent_list_rest(request: Request):
     # Normalize to the shape the frontend expects
     agents = []
     for a in ag_list:
-        agents.append({
-            "id": str(a["id"]),
-            "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
-            "name": a["name"],
-            "pubkey": a["pubkey_b58"],
-            "is_active": True,
-            "last_seen_at": a.get("last_used_at"),
-            "created_at": a["created_at"],
-        })
+        agents.append(
+            {
+                "id": str(a["id"]),
+                "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
+                "name": a["name"],
+                "pubkey": a["pubkey_b58"],
+                "is_active": True,
+                "last_seen_at": a.get("last_used_at"),
+                "created_at": a["created_at"],
+            }
+        )
     return JSONResponse(agents)
 
 
@@ -117,7 +119,13 @@ async def agent_register(request: Request):
     pubkey = body.get("pubkeyB58")
     if not pubkey:
         return JSONResponse({"error": "pubkeyB58 required"}, status_code=400)
-    agents_mod.register(owner, pubkey, name=body.get("name", "agent"))
+    try:
+        agents_mod.register(owner, pubkey, name=body.get("name", "agent"))
+    except ValueError as e:
+        # Pubkey already registered for this owner — return 409 with the
+        # existing record so re-running the demo is idempotent instead of
+        # 500-ing inside the SQLite UNIQUE constraint.
+        return JSONResponse({"error": str(e), "ok": True, "duplicate": True}, status_code=409)
     return JSONResponse({"ok": True})
 
 
@@ -255,12 +263,14 @@ async def agent_wallet_build_tx(agent_id: str, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
-    return JSONResponse({
-        **_ix_to_response(ix),
-        "programId": config.keyshield_program_id,
-        "rpcUrl": config.rpc_url,
-        "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
-    })
+    return JSONResponse(
+        {
+            **_ix_to_response(ix),
+            "programId": config.keyshield_program_id,
+            "rpcUrl": config.rpc_url,
+            "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
+        }
+    )
 
 
 @router.delete("/agents/{agent_id}/wallet")

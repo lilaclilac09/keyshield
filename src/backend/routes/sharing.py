@@ -18,10 +18,12 @@ def _auth(request: Request) -> dict | None:
 
 # ─── RESTful endpoints (frontend dashboard compat) ─────────────────────
 
+
 @router.get("/sharing")
 async def sharing_list(request: Request):
     """GET /sharing — returns {incoming, outgoing} for the dashboard."""
     from ..sharing import sharing as sharing_mod
+
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
 
@@ -32,22 +34,27 @@ async def sharing_list(request: Request):
         return {
             "id": str(share["id"]),
             "vault_key_id": share["key_name"],
-            "grantee_address": share["recipient_id"] if "recipient_id" in share else share.get("owner_id", ""),
+            "grantee_address": share["recipient_id"]
+            if "recipient_id" in share
+            else share.get("owner_id", ""),
             "expires_at": share.get("expires_at"),
             "is_active": True,
             "created_at": share.get("created_at"),
         }
 
-    return JSONResponse({
-        "incoming": [_normalize(s) for s in incoming],
-        "outgoing": [_normalize(s) for s in outgoing],
-    })
+    return JSONResponse(
+        {
+            "incoming": [_normalize(s) for s in incoming],
+            "outgoing": [_normalize(s) for s in outgoing],
+        }
+    )
 
 
 @router.post("/sharing")
 async def sharing_grant(request: Request):
     """POST /sharing — grant a share."""
     from ..sharing import sharing as sharing_mod
+
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
     body = await request.json()
@@ -72,6 +79,7 @@ async def sharing_grant(request: Request):
 async def sharing_delete_rest(share_id: str, request: Request):
     """DELETE /sharing/{id} — revoke a share."""
     from ..sharing import sharing as sharing_mod
+
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
     try:
@@ -83,6 +91,7 @@ async def sharing_delete_rest(share_id: str, request: Request):
 
 
 # ─── Legacy endpoints (keep for backward compat) ────────────────────────
+
 
 @router.post("/share/grant")
 async def share_grant(request: Request):
@@ -110,10 +119,21 @@ async def share_incoming(request: Request):
     sess = _auth(request)
     recipient = sess["user_id"] if sess else "default"
     shares = sharing_mod.list_incoming(recipient)
-    return JSONResponse({"shares": [
-        {"id": str(s["id"]), "vault_key_id": s["key_name"], "grantee_address": s["recipient_id"], "expires_at": s.get("expires_at"), "is_active": True, "created_at": s.get("created_at")}
-        for s in shares
-    ]})
+    return JSONResponse(
+        {
+            "shares": [
+                {
+                    "id": str(s["id"]),
+                    "vault_key_id": s["key_name"],
+                    "grantee_address": s["recipient_id"],
+                    "expires_at": s.get("expires_at"),
+                    "is_active": True,
+                    "created_at": s.get("created_at"),
+                }
+                for s in shares
+            ]
+        }
+    )
 
 
 @router.get("/share/outgoing")
@@ -123,10 +143,21 @@ async def share_outgoing(request: Request):
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
     shares = sharing_mod.list_outgoing(owner)
-    return JSONResponse({"shares": [
-        {"id": str(s["id"]), "vault_key_id": s["key_name"], "grantee_address": s["recipient_id"], "expires_at": s.get("expires_at"), "is_active": True, "created_at": s.get("created_at")}
-        for s in shares
-    ]})
+    return JSONResponse(
+        {
+            "shares": [
+                {
+                    "id": str(s["id"]),
+                    "vault_key_id": s["key_name"],
+                    "grantee_address": s["recipient_id"],
+                    "expires_at": s.get("expires_at"),
+                    "is_active": True,
+                    "created_at": s.get("created_at"),
+                }
+                for s in shares
+            ]
+        }
+    )
 
 
 @router.delete("/share/{share_id}")
