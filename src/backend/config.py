@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 
 # Handle pydantic v2 where BaseSettings moved to pydantic_settings
 try:
@@ -15,6 +17,12 @@ except (ImportError, Exception):
 
 
 BaseSettings = _BaseSettings
+
+_CI_SECRETS = {
+    "CI-SMOKE-TEST-SECRET-32-BYTES-MIN",
+    "UAT-CHANGE-ME-32-BYTES-MIN",
+    "CHANGE-ME-IN-PROD-32-BYTES-MIN!!",
+}
 
 
 class AppSettings(BaseSettings):
@@ -31,7 +39,7 @@ class AppSettings(BaseSettings):
 
     # ─── Session ─────────────────────────────────────────────
     session_ttl: int = 86400  # 24 hours in seconds
-    server_secret: str = "CHANGE-ME-IN-PROD-32-BYTES-MIN!!"
+    server_secret: str = ""
 
     # ─── Auth ────────────────────────────────────────────────
     challenge_ttl: int = 300  # 5 minutes for challenges
@@ -60,6 +68,25 @@ class AppSettings(BaseSettings):
     model_config = {"env_prefix": "", "env_file": ".env"}
 
 
+def _validate_secret(value: str, name: str) -> str:
+    """Refuse to start if a required secret is missing or uses a known placeholder."""
+    in_ci = os.getenv("CI") == "true"
+    if not value:
+        if in_ci:
+            return value
+        raise ValueError(
+            f"{name} is not set. Add it to your .env file or set the environment variable."
+        )
+    if value in _CI_SECRETS and not in_ci:
+        raise ValueError(
+            f"{name} is using a placeholder value. "
+            f"Set a real secret (≥32 random characters) before running in production."
+        )
+    if len(value) < 32:
+        raise ValueError(f"{name} must be at least 32 characters.")
+    return value
+
+
 # Module-level singleton
 _settings: AppSettings | None = None
 
@@ -68,7 +95,9 @@ def get_settings() -> AppSettings:
     """Get or create the global settings instance (singleton)."""
     global _settings
     if _settings is None:
-        _settings = AppSettings()
+        s = AppSettings()
+        _validate_secret(s.server_secret, "SERVER_SECRET")
+        _settings = s
     return _settings
 
 

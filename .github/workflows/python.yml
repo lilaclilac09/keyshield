@@ -11,11 +11,11 @@ on:
       - "conftest.py"
       - "pyproject.toml"
       - ".github/workflows/python.yml"
+  # Run on every PR so that required status checks (Lint, Test) are always
+  # created — even for frontend-only PRs. Without this, frontend PRs are
+  # blocked because GitHub marks required checks as "missing" rather than
+  # "passing" when the workflow doesn't trigger.
   pull_request:
-    paths:
-      - "src/backend/**"
-      - "conftest.py"
-      - "pyproject.toml"
 
 env:
   SERVER_SECRET: "CHANGE-ME-IN-PROD-32-BYTES-MIN"

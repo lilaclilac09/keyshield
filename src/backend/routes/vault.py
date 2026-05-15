@@ -100,17 +100,18 @@ def _auth(request: Request) -> dict | None:
     return sess_mod.get(token[7:])
 
 
-def _require_user_id(request: Request) -> "tuple[str, None]":
-    """Backward-compatible: returns the bearer-resolved user_id when a
-    session exists, else falls back to "default" so the local-dev and
-    test paths keep working unchanged. The 2-tuple shape is kept so the
-    callers can preserve their early-return error pattern.
+def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
+    """Resolve the caller. Bearer session wins; otherwise X-Dev-Mode:1
+    opts into the local "default" user. Returns 401 if neither.
 
-    For routes that need real auth, check session existence explicitly."""
+    The 2-tuple shape is kept so callers can early-return on error.
+    """
     sess = _auth(request)
     if sess:
         return sess["user_id"], None
-    return "default", None
+    if request.headers.get("X-Dev-Mode") == "1":
+        return "default", None
+    return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
 
 
 def _iso(ts: float | None) -> str | None:
