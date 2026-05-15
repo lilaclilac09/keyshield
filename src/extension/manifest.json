@@ -19,9 +19,8 @@
     "http://localhost:3000/*",
     "https://api.keyshield.dev/*",
     "https://*.keyshield.dev/*",
-    "https://app.ks.aileena.xyz/*",
-    "https://api.ks.aileena.xyz/*",
-    "https://*.ks.aileena.xyz/*"
+    "https://keyshield-production.up.railway.app/*",
+    "https://*.up.railway.app/*"
   ],
 
   "action": {
@@ -47,8 +46,8 @@
       "http://127.0.0.1:5173/*",
       "https://keyshield.dev/*",
       "https://*.keyshield.dev/*",
-      "https://app.ks.aileena.xyz/*",
-      "https://*.ks.aileena.xyz/*"
+      "https://keyshield-production.up.railway.app/*",
+      "https://*.up.railway.app/*"
     ]
   }
 }

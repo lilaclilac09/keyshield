@@ -76,6 +76,8 @@ app.use(
       'http://127.0.0.1:5173',
       'https://ks.aileena.xyz',
       'https://app.ks.aileena.xyz',
+      'https://keyshield.dev',
+      'https://app.keyshield.dev',
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],

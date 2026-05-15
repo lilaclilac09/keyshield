@@ -18,12 +18,12 @@ src/extension/
 
 ## Backend
 
-By default the extension talks to the hosted KeyShield deployment:
+By default the extension talks to the **OSS-oriented** public defaults in the popup/background sources:
 
-- API base: `https://api.ks.aileena.xyz`
-- Dashboard: `https://app.ks.aileena.xyz`
+- API base: `https://keyshield-production.up.railway.app` (FastAPI control plane)
+- Dashboard: `https://keyshield.dev`
 
-Both URLs can be overridden at runtime from the popup's **Settings & manual
+Forks should replace these with **your own** deployment URLs (or use local dev). Both URLs can be overridden at runtime from the popup's **Settings & manual
 token** panel (stored in `chrome.storage.local.ks_api_base` and
 `chrome.storage.local.ks_dashboard_url`). The popup also exposes a
 **Use local dev** button that flips both back to
@@ -33,7 +33,8 @@ local Vite + FastAPI stack.
 Existing installs that were defaulted to old localhost URLs are migrated to
 the production defaults the next time the popup or background opens the
 dashboard, unless the user explicitly saved a non-production URL (tracked
-via `chrome.storage.local.ks_url_pref_pinned`).
+via `chrome.storage.local.ks_url_pref_pinned`). Older builds that pointed at
+maintainer-specific `*.ks.aileena.xyz` hosts are also migrated away unless pinned.
 
 ## Install — Chrome / Edge / Brave / Arc
 
@@ -63,7 +64,7 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Click **→ Sign in to KeyShield** in the popup. It opens `https://app.ks.aileena.xyz` (or your configured dashboard) and the dashboard registers a token with the extension via `chrome.runtime.sendMessage`.
-- **Sign-in link doesn't open / opens a dead localhost tab:** You're on an old build that defaulted to `http://127.0.0.1:5173`. Open the popup once — the migration logic will rewrite the stored dashboard URL to `https://app.ks.aileena.xyz` automatically (unless you've explicitly pinned a custom URL via Settings).
-- **Backend unreachable:** Confirm the configured API base is reachable. The default `https://api.ks.aileena.xyz` and the local dev fallbacks (`http://127.0.0.1:8001`, `http://localhost:8001`) are all listed in `host_permissions`.
+- **"No token" badge in popup:** Click **→ Sign in to KeyShield** in the popup. It opens your configured dashboard (default `https://keyshield.dev`) and the dashboard registers a token with the extension via `chrome.runtime.sendMessage`.
+- **Sign-in link doesn't open / opens a dead localhost tab:** You're on an old build that defaulted to `http://127.0.0.1:5173`. Open the popup once — the migration logic will rewrite the stored dashboard URL to the current default automatically (unless you've explicitly pinned a custom URL via Settings).
+- **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
 - **Manifest changes:** After editing `manifest.json`, click the **Reload** circle on the extension card in `chrome://extensions/`.

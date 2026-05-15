@@ -31,7 +31,7 @@ export const DocsSection: React.FC = () => {
           <span className="text-[13px] font-semibold uppercase tracking-wider">Browser extension (this dashboard)</span>
         </div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
-          Use the unpacked extension while signed in here (<code className="text-white">app.ks.aileena.xyz</code>). The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below.
+          Use the unpacked extension while signed in here (<code className="text-white">keyshield.dev</code> or your self-hosted dashboard). The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below.
         </p>
         <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
           <li>Clone or download the repo: <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">GitHub</a> — or open the extension folder directly: <a href={`${REPO_URL}/tree/main/src/extension`} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">src/extension</a>.</li>

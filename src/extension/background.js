@@ -21,8 +21,8 @@
 // Production defaults — extension ships pointing at the hosted KeyShield
 // deployment so a fresh install works without a local dev server. Mirrors
 // popup.js. Local-dev users override these via the popup's settings panel.
-const DEFAULT_KS_BASE       = 'https://api.ks.aileena.xyz';   // FastAPI control plane
-const DEFAULT_DASHBOARD_URL = 'https://app.ks.aileena.xyz';   // Web dashboard
+const DEFAULT_KS_BASE       = 'https://keyshield-production.up.railway.app';
+const DEFAULT_DASHBOARD_URL = 'https://keyshield.dev';
 
 // Stale URLs we silently upgrade to production when seen in storage so the
 // Sign-in tab actually opens a reachable page after dev servers are stopped.
@@ -30,6 +30,9 @@ const STALE_DASHBOARD_DEFAULTS = [
   'http://127.0.0.1:5173',
   'http://localhost:5173',
 ];
+// Older builds defaulted to a maintainer-owned host; migrate unless the user pinned custom URLs.
+const LEGACY_API_BASES = ['https://api.ks.aileena.xyz'];
+const LEGACY_DASHBOARD_URLS = ['https://app.ks.aileena.xyz'];
 const PIN_PREF_KEY = 'ks_url_pref_pinned';
 
 // ── base64url helpers ───────────────────────────────────────────────────────
@@ -151,14 +154,35 @@ async function getKeysForDomain(domain) {
 }
 
 async function getApiBase() {
-  const { ks_api_base, ks_dashboard_url } = await chrome.storage.local.get([
+  const stored = await chrome.storage.local.get([
     'ks_api_base',
     'ks_dashboard_url',
+    PIN_PREF_KEY,
   ]);
-  return {
-    apiBase:      ks_api_base      || DEFAULT_KS_BASE,
-    dashboardUrl: ks_dashboard_url || DEFAULT_DASHBOARD_URL,
-  };
+  const pinned = !!stored[PIN_PREF_KEY];
+  let api = stored.ks_api_base || DEFAULT_KS_BASE;
+  let dash = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
+  let changed = false;
+  if (
+    !pinned &&
+    LEGACY_API_BASES.some((u) => api === u || api.startsWith(`${u}/`))
+  ) {
+    api = DEFAULT_KS_BASE;
+    changed = true;
+  }
+  if (
+    !pinned &&
+    LEGACY_DASHBOARD_URLS.some((u) => dash === u || dash.startsWith(`${u}/`))
+  ) {
+    dash = DEFAULT_DASHBOARD_URL;
+    changed = true;
+  }
+  if (changed) {
+    try {
+      await chrome.storage.local.set({ ks_api_base: api, ks_dashboard_url: dash });
+    } catch { /* noop */ }
+  }
+  return { apiBase: api, dashboardUrl: dash };
 }
 
 // ── Storage helpers ─────────────────────────────────────────────────────────
@@ -226,7 +250,7 @@ async function directStore({ upstream, value }) {
         body = JSON.stringify({ upstream, value, name: `${upstream} key` });
       }
     } else {
-      console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
+      console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at keyshield.dev to enable client-side encryption.');
       body = JSON.stringify({ upstream, value: String(value ?? ''), name: `${upstream} key` });
     }
 
@@ -509,7 +533,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const looksStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some(
         (u) => dashboardUrl === u || dashboardUrl.startsWith(u + '/'),
       );
-      if (looksLikeBackend || looksStaleLocal || !dashboardUrl) {
+      const looksLegacyDash  = !pinned && LEGACY_DASHBOARD_URLS.some(
+        (u) => dashboardUrl === u || dashboardUrl.startsWith(`${u}/`),
+      );
+      if (looksLikeBackend || looksStaleLocal || looksLegacyDash || !dashboardUrl) {
         dashboardUrl = DEFAULT_DASHBOARD_URL;
         try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
       }

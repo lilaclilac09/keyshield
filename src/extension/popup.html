@@ -222,10 +222,10 @@
     <summary>Settings &amp; manual token</summary>
 
     <label for="api">Backend API base URL</label>
-    <input type="text" id="api" placeholder="https://api.ks.aileena.xyz" />
+    <input type="text" id="api" placeholder="https://keyshield-production.up.railway.app" />
 
     <label for="dash">Dashboard URL</label>
-    <input type="text" id="dash" placeholder="https://app.ks.aileena.xyz" />
+    <input type="text" id="dash" placeholder="https://keyshield.dev" />
 
     <div class="row">
       <button id="save" class="secondary">Save settings</button>
@@ -253,14 +253,14 @@
     <div id="fingerprint" class="fingerprint">—</div>
 
     <label for="remote">Remote API base (for deployed backend)</label>
-    <input type="text" id="remote" placeholder="https://api.ks.aileena.xyz" />
+    <input type="text" id="remote" placeholder="https://keyshield-production.up.railway.app" />
     <div class="row">
       <button id="point-remote" class="secondary">Point at remote</button>
       <button id="point-local"  class="secondary">Use local dev</button>
     </div>
 
     <div class="info-block subtle">
-      Default: <code>https://api.ks.aileena.xyz</code> — hosted KeyShield
+      Default: <code>https://keyshield-production.up.railway.app</code> — public
       backend, ciphertext synced via the Cloudflare worker.
       Local: <code>http://127.0.0.1:8001</code> — ciphertext lives in your
       machine's SQLite (only useful while you're running the dev stack).
