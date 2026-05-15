@@ -45,17 +45,13 @@ async def fetch_sol_usd_price(
     fetch_impl: Any = None,
 ) -> SolUsdPrice:
     """Pull the latest SOL/USD price from Pyth Hermes."""
-    client_ctx = (
-        _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=8)
-    )
+    client_ctx = _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=8)
     async with client_ctx as client:
         url = f"{hermes_base}/v2/updates/price/latest"
         params = {"ids[]": PYTH_SOL_USD_FEED, "parsed": "true"}
         resp = await client.get(url, params=params)
         if resp.status_code != 200:
-            raise PaymentVerificationError(
-                f"pyth hermes returned HTTP {resp.status_code}"
-            )
+            raise PaymentVerificationError(f"pyth hermes returned HTTP {resp.status_code}")
         body = resp.json()
     parsed = body.get("parsed") or []
     if not parsed:
@@ -116,15 +112,11 @@ async def get_transaction(
             },
         ],
     }
-    client_ctx = (
-        _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=10)
-    )
+    client_ctx = _ManualClient(fetch_impl) if fetch_impl else httpx.AsyncClient(timeout=10)
     async with client_ctx as client:
         resp = await client.post(rpc_url, json=body)
         if resp.status_code != 200:
-            raise PaymentVerificationError(
-                f"solana rpc returned HTTP {resp.status_code}"
-            )
+            raise PaymentVerificationError(f"solana rpc returned HTTP {resp.status_code}")
         out = resp.json()
     if "error" in out:
         raise PaymentVerificationError(

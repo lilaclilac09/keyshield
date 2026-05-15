@@ -228,9 +228,7 @@ class KeyShield:
         hdrs = {"Authorization": f"Bearer {self._token}"}
         if headers:
             hdrs.update(headers)
-        return self._client.request(
-            method=method.upper(), url=full_path, json=json, headers=hdrs
-        )
+        return self._client.request(method=method.upper(), url=full_path, json=json, headers=hdrs)
 
     # ── Batch ─────────────────────────────────────────────────────────────────
 
@@ -266,9 +264,9 @@ class KeyShield:
         Example:
           result = ks.helius_run("portfolio", {"wallet": "9WzDX..."})
         """
-        return self._authed_post(
-            "/skill/helius/run", {"tool": tool, "inputs": inputs or {}}
-        )["result"]
+        return self._authed_post("/skill/helius/run", {"tool": tool, "inputs": inputs or {}})[
+            "result"
+        ]
 
     # ── Passkeys ──────────────────────────────────────────────────────────────
 
@@ -328,9 +326,7 @@ class KeyShield:
         try:
             import anthropic
         except ImportError as exc:
-            raise ImportError(
-                "anthropic_client() requires: pip install anthropic"
-            ) from exc
+            raise ImportError("anthropic_client() requires: pip install anthropic") from exc
         return anthropic.Anthropic(
             base_url=self.proxy_url("anthropic"),
             api_key="keyshield-proxy",
@@ -341,9 +337,7 @@ class KeyShield:
 
     def _require_token(self) -> str:
         if not self._token:
-            raise KeyShieldError(
-                401, "Not authenticated. Call login() or wallet_login() first."
-            )
+            raise KeyShieldError(401, "Not authenticated. Call login() or wallet_login() first.")
         return self._token
 
     def _raise(self, r: httpx.Response) -> None:
@@ -401,9 +395,7 @@ class AsyncKeyShield:
         )
 
     async def login(self, user_id: str, password: str) -> str:
-        r = await self._client.post(
-            "/auth/login", json={"userId": user_id, "password": password}
-        )
+        r = await self._client.post("/auth/login", json={"userId": user_id, "password": password})
         _raise(r)
         self._token = r.json()["token"]
         return self._token
@@ -457,9 +449,7 @@ class AsyncKeyShield:
             self._token = None
 
     async def store(self, upstream: str, api_key: str) -> None:
-        await self._authed_post(
-            "/manage/store", {"upstream": upstream, "apiKey": api_key}
-        )
+        await self._authed_post("/manage/store", {"upstream": upstream, "apiKey": api_key})
 
     async def list_keys(self) -> list[str]:
         data = await self._authed("GET", "/manage/list")
@@ -500,9 +490,7 @@ class AsyncKeyShield:
         return data["results"]
 
     async def helius_run(self, tool: str, inputs: dict | None = None) -> Any:
-        data = await self._authed_post(
-            "/skill/helius/run", {"tool": tool, "inputs": inputs or {}}
-        )
+        data = await self._authed_post("/skill/helius/run", {"tool": tool, "inputs": inputs or {}})
         return data["result"]
 
     async def passkey_list(self) -> list[dict]:
@@ -607,9 +595,7 @@ class AgentKeyShield:
         self._owner = owner_wallet or os.getenv("KS_OWNER_WALLET", "")
         self._key_hex = private_key_hex or os.getenv("KS_AGENT_KEY", "")
         self._pass = vault_passphrase or os.getenv("KS_VAULT_PASS", "")
-        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8000")).rstrip(
-            "/"
-        )
+        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8000")).rstrip("/")
         self._token: str | None = None
         self._client = httpx.Client(
             base_url=self._base,
@@ -635,9 +621,7 @@ class AgentKeyShield:
         try:
             from nacl.signing import SigningKey
         except ImportError as exc:
-            raise ImportError(
-                "generate_keypair() requires pynacl: pip install pynacl"
-            ) from exc
+            raise ImportError("generate_keypair() requires pynacl: pip install pynacl") from exc
         sk = SigningKey.generate()
         return {
             "private_key_hex": sk.encode().hex(),
@@ -667,22 +651,14 @@ class AgentKeyShield:
         try:
             from nacl.signing import SigningKey
         except ImportError as exc:
-            raise ImportError(
-                "AgentKeyShield requires pynacl: pip install pynacl"
-            ) from exc
+            raise ImportError("AgentKeyShield requires pynacl: pip install pynacl") from exc
 
         if not self._owner:
-            raise KeyShieldError(
-                400, "owner_wallet not set — pass it or set KS_OWNER_WALLET"
-            )
+            raise KeyShieldError(400, "owner_wallet not set — pass it or set KS_OWNER_WALLET")
         if not self._key_hex:
-            raise KeyShieldError(
-                400, "private_key_hex not set — pass it or set KS_AGENT_KEY"
-            )
+            raise KeyShieldError(400, "private_key_hex not set — pass it or set KS_AGENT_KEY")
         if not self._pass:
-            raise KeyShieldError(
-                400, "vault_passphrase not set — pass it or set KS_VAULT_PASS"
-            )
+            raise KeyShieldError(400, "vault_passphrase not set — pass it or set KS_VAULT_PASS")
 
         # 1. Fetch challenge
         r = self._client.get("/auth/agent-challenge")
@@ -771,9 +747,7 @@ class AgentKeyShield:
 
     # ── Agent management helpers (owner operations) ───────────────────────────
 
-    def agent_register(
-        self, pubkey_b58: str, name: str = "agent", scopes: str = "*"
-    ) -> dict:
+    def agent_register(self, pubkey_b58: str, name: str = "agent", scopes: str = "*") -> dict:
         """Register an agent pubkey under this client's vault. Requires owner token."""
         return self._authed_post(
             "/agents/register",

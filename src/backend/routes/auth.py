@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import secrets
-import time
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
@@ -87,6 +86,7 @@ async def wallet_login(request: Request):
         try:
             from nacl.signing import VerifyKey
             from nacl.encoding import Base58Encoder
+
             sig_bytes = base64.b64decode(signature_b64 + "==")
             vk = VerifyKey(wallet_addr.encode(), encoder=Base58Encoder)
             vk.verify(challenge.encode(), sig_bytes)
@@ -127,6 +127,7 @@ async def agent_login(request: Request):
         try:
             from nacl.signing import VerifyKey
             from nacl.encoding import Base58Encoder
+
             sig_bytes = base64.b64decode(signature_b64 + "==")
             vk = VerifyKey(pubkey_b58.encode(), encoder=Base58Encoder)
             vk.verify(challenge.encode(), sig_bytes)

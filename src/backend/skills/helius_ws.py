@@ -36,9 +36,7 @@ _ATLAS_WS = "wss://atlas-mainnet.helius-rpc.com"
 
 
 class HeliusWS:
-    def __init__(
-        self, api_key: str, *, atlas: bool = False, ping_interval: float = 20.0
-    ):
+    def __init__(self, api_key: str, *, atlas: bool = False, ping_interval: float = 20.0):
         base = _ATLAS_WS if atlas else _RPC_WS
         self._url = f"{base}/?api-key={api_key}"
         self._ping_interval = ping_interval
@@ -104,9 +102,7 @@ class HeliusWS:
             except Exception as exc:  # noqa: BLE001
                 if self._closed:
                     return
-                logger.warning(
-                    "helius_ws disconnected: %s; reconnecting in %.1fs", exc, backoff
-                )
+                logger.warning("helius_ws disconnected: %s; reconnecting in %.1fs", exc, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
                 try:
@@ -126,9 +122,7 @@ class HeliusWS:
         old = list(self._resub.items())
         self._resub.clear()
         old_handle_to_queue = {
-            h: self._subs.pop(h)
-            for cid, h in self._sub_handle.items()
-            if h in self._subs
+            h: self._subs.pop(h) for cid, h in self._sub_handle.items() if h in self._subs
         }
         self._sub_handle.clear()
         for cid, (method, params) in old:
@@ -147,9 +141,7 @@ class HeliusWS:
         fut: asyncio.Future = loop.create_future()
         self._pending[rid] = fut
         await self._ws.send(
-            json.dumps(
-                {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
-            )
+            json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         )
         return await fut
 

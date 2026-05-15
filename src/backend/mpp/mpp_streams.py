@@ -628,9 +628,9 @@ def record_usage(
         if stream["status"] != "open":
             raise StreamClosed(stream_id)
 
-        added = int(tokens) * int(stream["rate_per_token_micro_usdc"]) + int(
-            calls
-        ) * int(stream["rate_per_call_micro_usdc"])
+        added = int(tokens) * int(stream["rate_per_token_micro_usdc"]) + int(calls) * int(
+            stream["rate_per_call_micro_usdc"]
+        )
         conn.execute(
             """
             UPDATE mpp_streams
@@ -656,10 +656,7 @@ def record_usage(
 
         just_settled = 0
         elapsed = now - stream["last_settled_at"]
-        if (
-            stream["pending_micro_usdc"] > 0
-            and elapsed >= stream["settlement_interval_secs"]
-        ):
+        if stream["pending_micro_usdc"] > 0 and elapsed >= stream["settlement_interval_secs"]:
             stream, just_settled = _settle_locked(conn, user_id, stream, now)
 
         conn.commit()
@@ -848,8 +845,7 @@ def list_streams(user_id: str) -> dict:
     conn = _db()
     try:
         rows = conn.execute(
-            f"SELECT {_STREAM_COLS} FROM mpp_streams "
-            f"WHERE user_id = ? ORDER BY opened_at DESC",
+            f"SELECT {_STREAM_COLS} FROM mpp_streams WHERE user_id = ? ORDER BY opened_at DESC",
             (user_id,),
         ).fetchall()
         streams = [_row_to_stream(r) for r in rows]

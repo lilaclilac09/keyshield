@@ -51,12 +51,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: src/web/package-lock.json
+          # No package-lock.json in src/web/ (Vite app installs fresh each
+          # build). Skip the npm cache to avoid "specified paths not
+          # resolved" hard failure on the cache action.
 
       - name: Install (web-v2/)
         working-directory: src/web
-        run: npm ci
+        run: npm install
 
       - name: Typecheck
         # src/web has component-level TS errors from in-progress refactor

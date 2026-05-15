@@ -64,9 +64,7 @@ def _import_grpc():
 
 
 class LaserStream:
-    def __init__(
-        self, api_key: str, *, network: str = "mainnet", endpoint: str | None = None
-    ):
+    def __init__(self, api_key: str, *, network: str = "mainnet", endpoint: str | None = None):
         self.api_key = api_key
         if endpoint:
             self.endpoint = endpoint

@@ -121,8 +121,7 @@ def create_server_wallet(owner_id: str, agent_id: str) -> tuple[str, str]:
     conn = _db()
     try:
         existing = conn.execute(
-            "SELECT pubkey_b58 FROM server_wallets "
-            "WHERE owner_wallet = ? AND agent_id = ?",
+            "SELECT pubkey_b58 FROM server_wallets WHERE owner_wallet = ? AND agent_id = ?",
             (owner_id, agent_id),
         ).fetchone()
         if existing:
@@ -186,8 +185,7 @@ def get_signing_key(owner_id: str, agent_id: str) -> SigningKey | None:
     conn = _db()
     try:
         row = conn.execute(
-            "SELECT enc_seed FROM server_wallets "
-            "WHERE owner_wallet = ? AND agent_id = ?",
+            "SELECT enc_seed FROM server_wallets WHERE owner_wallet = ? AND agent_id = ?",
             (owner_id, agent_id),
         ).fetchone()
         if not row:

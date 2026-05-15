@@ -143,9 +143,7 @@ class ExecutionAgent:
       5. Monitor for confirmation
     """
 
-    def __init__(
-        self, zerox: Optional[ZeroXRouter] = None, titan: Optional[TitanExecutor] = None
-    ):
+    def __init__(self, zerox: Optional[ZeroXRouter] = None, titan: Optional[TitanExecutor] = None):
         self.zerox = zerox or ZeroXRouter()
         self.titan = titan or TitanExecutor()
         self._monitor_tasks: list[str] = []

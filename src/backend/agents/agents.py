@@ -99,9 +99,7 @@ def register(
         conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
     except sqlite3.IntegrityError:
-        raise ValueError(
-            f"Agent pubkey {pubkey_b58[:16]}… already registered for this wallet"
-        )
+        raise ValueError(f"Agent pubkey {pubkey_b58[:16]}… already registered for this wallet")
     finally:
         conn.close()
 
@@ -342,10 +340,7 @@ def purge_user(user_id: str) -> dict:
     conn = _db()
     try:
         agent_n = (
-            conn.execute(
-                "DELETE FROM agent_keys WHERE owner_wallet = ?", (user_id,)
-            ).rowcount
-            or 0
+            conn.execute("DELETE FROM agent_keys WHERE owner_wallet = ?", (user_id,)).rowcount or 0
         )
         revoked_n = (
             conn.execute(

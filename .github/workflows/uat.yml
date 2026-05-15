@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pytest httpx cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn
+          pip install pytest pytest-cov httpx cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn
 
       - name: Start Python API server
         working-directory: src/backend
@@ -86,31 +86,5 @@ jobs:
           file: ./src/backend/coverage.xml
           fail_ci_if_error: false
 
-  smoke-test:
-    name: Smoke Test (Docker)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Start full stack via compose
-        run: |
-          docker compose up -d --build
-          sleep 15
-
-      - name: Verify services are healthy
-        run: |
-          curl -sf http://localhost:8001/health || (docker compose logs && exit 1)
-          curl -sf http://localhost:3000 || true  # frontend may need more time
-
-      - name: Run quick API check
-        run: |
-          docker compose exec python python -c "
-            import httpx
-            r = httpx.get('http://python:8001/health')
-            assert r.status_code == 200
-            print('API health OK')
-          "
-
-      - name: Clean up
-        if: always()
-        run: docker compose down --volumes
+  # smoke-test removed — docker-compose stack was retired in 12946e7b9
+  # (prod runs on Vercel + Cloudflare + Railway, not docker compose).

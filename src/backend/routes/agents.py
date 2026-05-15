@@ -53,15 +53,17 @@ async def agent_list_rest(request: Request):
     # Normalize to the shape the frontend expects
     agents = []
     for a in ag_list:
-        agents.append({
-            "id": str(a["id"]),
-            "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
-            "name": a["name"],
-            "pubkey": a["pubkey_b58"],
-            "is_active": True,
-            "last_seen_at": a.get("last_used_at"),
-            "created_at": a["created_at"],
-        })
+        agents.append(
+            {
+                "id": str(a["id"]),
+                "agent_id": f"agent_{a['id']:06d}_{a['pubkey_b58'][:8]}",
+                "name": a["name"],
+                "pubkey": a["pubkey_b58"],
+                "is_active": True,
+                "last_seen_at": a.get("last_used_at"),
+                "created_at": a["created_at"],
+            }
+        )
     return JSONResponse(agents)
 
 
@@ -261,12 +263,14 @@ async def agent_wallet_build_tx(agent_id: str, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
-    return JSONResponse({
-        **_ix_to_response(ix),
-        "programId": config.keyshield_program_id,
-        "rpcUrl": config.rpc_url,
-        "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
-    })
+    return JSONResponse(
+        {
+            **_ix_to_response(ix),
+            "programId": config.keyshield_program_id,
+            "rpcUrl": config.rpc_url,
+            "cluster": "devnet" if "devnet" in config.rpc_url else "mainnet",
+        }
+    )
 
 
 @router.delete("/agents/{agent_id}/wallet")

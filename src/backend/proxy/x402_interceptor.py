@@ -140,8 +140,7 @@ class ManualKeypairInterceptor:
             from solders.keypair import Keypair  # type: ignore
         except ImportError as exc:
             raise ImportError(
-                "ManualKeypairInterceptor requires solders + solana-py: "
-                "pip install solders solana"
+                "ManualKeypairInterceptor requires solders + solana-py: pip install solders solana"
             ) from exc
 
         self._kp = Keypair.from_base58_string(keypair_b58)
@@ -150,17 +149,13 @@ class ManualKeypairInterceptor:
         self._max_total = max_total_micro
         self._spent_total = 0
         self._lock = asyncio.Lock()
-        self._rpc_url = (
-            rpc_url or f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
-        )
+        self._rpc_url = rpc_url or f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
 
     @classmethod
     def from_env(cls, helius_api_key: str | None = None) -> "ManualKeypairInterceptor":
         kp = os.getenv("KS_X402_HOT_KEYPAIR_B58")
         if not kp:
-            raise RuntimeError(
-                "Set KS_X402_HOT_KEYPAIR_B58 (base58 64-byte secret key)"
-            )
+            raise RuntimeError("Set KS_X402_HOT_KEYPAIR_B58 (base58 64-byte secret key)")
         helius_api_key = helius_api_key or os.getenv("HELIUS_API_KEY")
         if not helius_api_key:
             raise RuntimeError("Set HELIUS_API_KEY for x402 retry submission")
@@ -201,9 +196,7 @@ class ManualKeypairInterceptor:
         )
         return PaymentProof(signature=sig, network=envelope.network)
 
-    async def _submit_usdc_transfer(
-        self, recipient: str, micro_amount: int, mint: str
-    ) -> str:
+    async def _submit_usdc_transfer(self, recipient: str, micro_amount: int, mint: str) -> str:
         """Build + send SPL Token transfer_checked. Returns base58 tx signature."""
         from solders.pubkey import Pubkey  # type: ignore
         from solders.transaction import Transaction  # type: ignore

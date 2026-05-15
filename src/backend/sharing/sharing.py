@@ -42,12 +42,8 @@ def _db() -> sqlite3.Connection:
             UNIQUE(owner_id, recipient_id, key_name)
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_shares_owner     ON vault_shares(owner_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_shares_recipient ON vault_shares(recipient_id)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_owner     ON vault_shares(owner_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_recipient ON vault_shares(recipient_id)")
     conn.commit()
     return conn
 

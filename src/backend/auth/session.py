@@ -69,6 +69,7 @@ def _server_secret() -> bytes:
     raw = os.getenv("SERVER_SECRET", "")
     if not raw:
         import warnings
+
         warnings.warn(
             "SERVER_SECRET env var is not set — using insecure default. "
             "Set SERVER_SECRET to a random 32+ byte string in production.",
@@ -270,9 +271,7 @@ def mark_deleted(user_id: str) -> None:
 
 def is_deleted(user_id: str) -> bool:
     with _db() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM deleted_users WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM deleted_users WHERE user_id = ?", (user_id,)).fetchone()
     return row is not None
 
 

@@ -72,9 +72,7 @@ def _init_db() -> None:
                 name        TEXT    DEFAULT 'Passkey'
             )
         """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS pk_user ON passkey_credentials(user_id)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS pk_user ON passkey_credentials(user_id)")
 
 
 _init_db()
@@ -237,9 +235,7 @@ def list_credentials(user_id: str) -> list[dict]:
             "SELECT id, name, created_at FROM passkey_credentials WHERE user_id = ? ORDER BY created_at",
             (user_id,),
         ).fetchall()
-    return [
-        {"id": r["id"], "name": r["name"], "createdAt": r["created_at"]} for r in rows
-    ]
+    return [{"id": r["id"], "name": r["name"], "createdAt": r["created_at"]} for r in rows]
 
 
 def delete_credential(user_id: str, cred_id: str) -> None:

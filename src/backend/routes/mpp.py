@@ -299,9 +299,7 @@ async def mpp_build_open_tx(stream_id: int, request: Request):
     # passes 0 — keeps the on-chain ix consistent with what we
     # already committed off-chain.
     settlement_interval = (
-        interval_override
-        if interval_override > 0
-        else int(stream["settlement_interval_secs"])
+        interval_override if interval_override > 0 else int(stream["settlement_interval_secs"])
     )
 
     # ── ATA redesign (commit 9974a8e85) ──────────────────────────────
