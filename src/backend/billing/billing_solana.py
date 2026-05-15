@@ -237,7 +237,7 @@ def find_usdc_transfer(
     )
 
 
-import secrets
+import secrets  # noqa: E402
 
 _TOPUP_MEMOS: dict[str, tuple[float, str]] = {}
 

@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pytest httpx cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn
+          pip install pytest pytest-cov pytest-asyncio httpx cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn webauthn pyyaml pydantic-settings aiohttp
 
       - name: Start Python API server
         working-directory: src/backend

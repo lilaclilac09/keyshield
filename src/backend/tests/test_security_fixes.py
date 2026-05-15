@@ -100,7 +100,7 @@ class TestSession:
         from src.session import create_token, delete_all_for_user, get
 
         t1 = create_token("alice", "pw")
-        t2 = create_token("alice", "pw")
+        _ = create_token("alice", "pw")
         count = delete_all_for_user("alice")
         assert count >= 2
         assert get(t1) is None
@@ -123,7 +123,7 @@ class TestAgentRevocation:
         from src.agents import register, revoke_agent
 
         register("owner1", "9WzDX...", name="bot1")
-        agent_id = [a["id"] for a in []][0]  # placeholder
+        _ = [a["id"] for a in []][0]  # placeholder
         result = revoke_agent("owner1", "9WzDX...")
         assert result is True
 

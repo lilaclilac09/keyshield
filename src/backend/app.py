@@ -38,7 +38,7 @@ app = FastAPI(title="KeyShield v2", version="2.0", lifespan=_lifespan)
 
 # ─── Register routes ─────────────────────────────────────────────────
 
-from .routes import register_routes
+from .routes import register_routes  # noqa: E402
 
 register_routes(app)
 

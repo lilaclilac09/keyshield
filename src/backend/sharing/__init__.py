@@ -7,6 +7,6 @@ from .sharing import (
     list_incoming,
     purge_user,
 )
-from .sharing import DB_PATH, CRYPTO_REWRAP_AVAILABLE
+from .sharing import DB_PATH, CRYPTO_REWRAP_AVAILABLE  # noqa: F401
 
 __all__ = ["grant", "revoke", "list_outgoing", "list_incoming", "purge_user", "DB_PATH"]

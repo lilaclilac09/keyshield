@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-import os
 import sqlite3
 from pathlib import Path
 

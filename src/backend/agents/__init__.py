@@ -11,7 +11,7 @@ from .agents import (
     list_revoked,
     un_revoke_agent,
 )
-from .agents import DB_PATH as AGENTS_DB_PATH
+from .agents import DB_PATH as AGENTS_DB_PATH  # noqa: F401
 
 __all__ = [
     "register",

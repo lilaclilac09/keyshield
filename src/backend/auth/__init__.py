@@ -10,7 +10,7 @@ from .session import (
     is_deleted,
     extend_token,
 )
-from .session import _db as _session_db
+from .session import _db as _session_db  # noqa: F401
 from .session import create  # backward compat alias
 from .passkey import (
     registration_options,

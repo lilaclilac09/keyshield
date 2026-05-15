@@ -47,10 +47,10 @@ from .errors import (  # noqa: F401
 
 # ─── Trading ──────────────────────────────────────────────────────────
 from .trading.orchestrator import TradingOrchestrator
-from .trading.market_data import MarketDataAgent, PriceFeed, PriceSignal
+from .trading.market_data import MarketDataAgent, PriceFeed, PriceSignal  # noqa: F401
 from .trading.risk import RiskAgent
 from .trading.analysis import AnalysisAgent, ModelRouter, TaskType
-from .trading.execution import ExecutionAgent, ZeroXRouter, TitanExecutor
+from .trading.execution import ExecutionAgent, ZeroXRouter, TitanExecutor  # noqa: F401
 from .trading.models import TradingState, RiskPolicy
 from .trading.market_data import PriceFeedConfig
 
@@ -65,11 +65,11 @@ from .agents.agents import (
     revoke_agent,
     list_agents,
 )
-from .agents.agent_wallet import build_create_ephemeral_signer_ix
+from .agents.agent_wallet import build_create_ephemeral_signer_ix  # noqa: F401
 
 # ─── Billing ──────────────────────────────────────────────────────────
 from .billing.usage import get_balance, topup, get_stats, get_history
-from .billing import billing_solana
+from .billing import billing_solana  # noqa: F401
 
 # ─── Proxy ────────────────────────────────────────────────────────────
 from .proxy.api_router import (
@@ -79,7 +79,7 @@ from .proxy.api_router import (
     batch_rest,
     cache_stats,
 )
-from .proxy.x402_verify import _verify_transfer_log as verify_payment_proof, has_claim
+from .proxy.x402_verify import _verify_transfer_log as verify_payment_proof, has_claim  # noqa: F401
 
 # ─── Sharing ──────────────────────────────────────────────────────────
 from .sharing.sharing import grant, revoke as revoke_share, list_outgoing, list_incoming

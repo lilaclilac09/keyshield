@@ -20,7 +20,7 @@ from .mpp_onchain import (
     USDC_MINT_MAINNET,
     DEFAULT_RPC_URL,
 )
-from . import mpp_streams
+from . import mpp_streams  # noqa: F401
 
 __all__ = [
     "MppConfig",
