@@ -95,7 +95,10 @@ jobs:
       - name: Start full stack via compose
         run: |
           docker compose up -d --build
-          sleep 15
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8001/health >/dev/null && break
+            sleep 2
+          done
 
       - name: Verify services are healthy
         run: |
@@ -105,9 +108,9 @@ jobs:
       - name: Run quick API check
         run: |
           docker compose exec python python -c "
-            import httpx
-            r = httpx.get('http://python:8001/health')
-            assert r.status_code == 200
+            import urllib.request
+            r = urllib.request.urlopen('http://localhost:8000/health')
+            assert r.status == 200
             print('API health OK')
           "
 

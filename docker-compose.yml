@@ -1,0 +1,42 @@
+name: keyshield
+
+services:
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    ports:
+      - "8001:8000"
+    environment:
+      SERVER_SECRET: ${SERVER_SECRET:-change-me-to-a-32-byte-dev-secret-xx}
+      KS_INTERNAL_SECRET: ${KS_INTERNAL_SECRET:-dev-internal-secret}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://keyshield:keyshield@postgres:5432/keyshield}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: keyshield
+      POSTGRES_PASSWORD: keyshield
+      POSTGRES_DB: keyshield
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "keyshield"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
