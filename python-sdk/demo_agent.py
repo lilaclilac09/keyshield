@@ -57,12 +57,19 @@ def _sign_b64(sk: SigningKey, message: str) -> str:
     return base64.b64encode(sk.sign(message.encode()).signature).decode()
 
 
-def _post(path: str, *, token: str | None = None, json_body: dict | None = None) -> dict:
+def _post(
+    path: str,
+    *,
+    token: str | None = None,
+    json_body: dict | None = None,
+    ok_statuses: tuple[int, ...] = (200, 201),
+) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     r = httpx.post(f"{KS_API}{path}", headers=headers, json=json_body or {}, timeout=30)
-    r.raise_for_status()
+    if r.status_code not in ok_statuses:
+        r.raise_for_status()
     return r.json()
 
 
@@ -129,12 +136,13 @@ def main() -> int:
     agent_pk = _pubkey_b58(agent)
     print(f"  agent pubkey: {agent_pk}")
 
-    _post(
+    reg = _post(
         "/agents/register",
         token=owner_token,
         json_body={"pubkeyB58": agent_pk, "name": "demo-agent"},
+        ok_statuses=(200, 409),  # 409 = already registered (re-run)
     )
-    print("  registered ✓")
+    print("  registered ✓" if not reg.get("duplicate") else "  already registered ✓")
 
     # 4. Agent self-auth ───────────────────────────────────────────────
     step(4, "Agent: challenge + sign + login")
@@ -162,27 +170,26 @@ def main() -> int:
     step(6, "Agent: call upstream through KeyShield proxy")
     if not upstream_key:
         print("  (skipped — set OPENAI_API_KEY to demo the upstream hop)")
-        return 0
-
-    r = httpx.post(
-        f"{KS_API}/vproxy/{upstream_name}/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {agent_token}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": "Reply with one word: pong."}],
-        },
-        timeout=60,
-    )
-    print(f"  status: {r.status_code}")
-    print(f"  cache: {r.headers.get('x-ks-cache')}  key-type: {r.headers.get('x-ks-key-type')}")
-    body = r.json()
-    if r.status_code == 200 and isinstance(body, dict) and body.get("choices"):
-        print(f"  reply:  {body['choices'][0]['message']['content']!r}")
     else:
-        print(f"  body:   {json.dumps(body)[:300]}")
+        r = httpx.post(
+            f"{KS_API}/vproxy/{upstream_name}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {agent_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "Reply with one word: pong."}],
+            },
+            timeout=60,
+        )
+        print(f"  status: {r.status_code}")
+        print(f"  cache: {r.headers.get('x-ks-cache')}  key-type: {r.headers.get('x-ks-key-type')}")
+        body = r.json()
+        if r.status_code == 200 and isinstance(body, dict) and body.get("choices"):
+            print(f"  reply:  {body['choices'][0]['message']['content']!r}")
+        else:
+            print(f"  body:   {json.dumps(body)[:300]}")
 
     # 7. x402 trust: pre-authorize a paid upstream for auto-pay ────────
     #
