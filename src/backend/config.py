@@ -75,8 +75,7 @@ def _validate_secret(value: str, name: str) -> str:
         if in_ci:
             return value
         raise ValueError(
-            f"{name} is not set. "
-            f"Add it to your .env file or set the environment variable."
+            f"{name} is not set. Add it to your .env file or set the environment variable."
         )
     if value in _CI_SECRETS and not in_ci:
         raise ValueError(
