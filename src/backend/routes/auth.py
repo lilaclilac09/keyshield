@@ -85,13 +85,14 @@ async def wallet_login(request: Request):
     if signature_b64 and wallet_addr:
         try:
             from nacl.signing import VerifyKey
-            from nacl.encoding import Base58Encoder
+            import base58 as _b58
 
             sig_bytes = base64.b64decode(signature_b64 + "==")
-            vk = VerifyKey(wallet_addr.encode(), encoder=Base58Encoder)
+            # Decode base58 pubkey → raw 32 bytes, then build VerifyKey
+            vk = VerifyKey(_b58.b58decode(wallet_addr))
             vk.verify(challenge.encode(), sig_bytes)
-        except Exception:
-            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+        except Exception as _e:
+            return JSONResponse({"error": f"signature verification failed: {_e}"}, status_code=401)
 
     token = sess_mod.create_token(wallet_addr, passphrase)
     sess_mod._consume_nonce(nonce)
@@ -126,13 +127,13 @@ async def agent_login(request: Request):
     if signature_b64:
         try:
             from nacl.signing import VerifyKey
-            from nacl.encoding import Base58Encoder
+            import base58 as _b58
 
             sig_bytes = base64.b64decode(signature_b64 + "==")
-            vk = VerifyKey(pubkey_b58.encode(), encoder=Base58Encoder)
+            vk = VerifyKey(_b58.b58decode(pubkey_b58))
             vk.verify(challenge.encode(), sig_bytes)
-        except Exception:
-            return JSONResponse({"error": "signature verification failed"}, status_code=401)
+        except Exception as _e:
+            return JSONResponse({"error": f"signature verification failed: {_e}"}, status_code=401)
     else:
         return JSONResponse({"error": "signature required"}, status_code=401)
 
