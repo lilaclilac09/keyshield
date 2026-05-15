@@ -43,6 +43,7 @@ async def health_mpp():
     # Try loading mpp config to see if it succeeds
     try:
         from ..mpp import mpp_onchain
+
         cfg = mpp_onchain.load_mpp_config()
         mpp_ok = cfg is not None
         program_id = cfg.keyshield_program_id if cfg else None
@@ -50,11 +51,13 @@ async def health_mpp():
         mpp_ok = False
         program_id = str(e)
 
-    return JSONResponse({
-        "mpp_config_loaded": mpp_ok,
-        "active_program_id": program_id,
-        "env_vars": present,
-    })
+    return JSONResponse(
+        {
+            "mpp_config_loaded": mpp_ok,
+            "active_program_id": program_id,
+            "env_vars": present,
+        }
+    )
 
 
 @router.get("/install.sh")
