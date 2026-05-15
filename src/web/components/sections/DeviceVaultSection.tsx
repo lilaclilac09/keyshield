@@ -27,7 +27,7 @@ import {
   X, Check, Trash2, ChevronDown, ChevronUp, Fingerprint, ArrowRight, Cpu,
 } from 'lucide-react';
 
-import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken } from '../../lib/auth';
+import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
 import {
   isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
 } from '../../lib/vault-session';
@@ -586,7 +586,22 @@ export const DeviceVaultSection: React.FC = () => {
       await requestVaultUnlock();
       refresh();
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Enrollment failed');
+      if (e2 instanceof PasskeyAlreadyEnrolledError) {
+        // Passkey exists on this authenticator already — set local trust so
+        // requestVaultUnlock() can find the userId, then run the unlock flow
+        // directly. One extra Face ID prompt instead of a dead-end error.
+        const addr = getWalletAddress();
+        if (addr && !getPasskeyTrust()) setPasskeyTrust(addr, '');
+        setPhaseMsg('Unlocking with existing passkey…');
+        try {
+          await requestVaultUnlock();
+          refresh();
+        } catch (e3) {
+          setErr(e3 instanceof Error ? e3.message : 'Unlock failed');
+        }
+      } else {
+        setErr(e2 instanceof Error ? e2.message : 'Enrollment failed');
+      }
     } finally {
       setPhase('idle');
       setPhaseMsg('');

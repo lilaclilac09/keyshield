@@ -73,6 +73,16 @@ function describeApiNetError(e: unknown, hint: string): Error {
   return e instanceof Error ? e : new Error(msg);
 }
 
+/** Thrown when navigator.credentials.create() hits InvalidStateError: the
+ *  authenticator already has a credential registered for this user/RP. The
+ *  UI should route the user into the unlock flow instead of retrying. */
+export class PasskeyAlreadyEnrolledError extends Error {
+  constructor() {
+    super('A passkey is already enrolled for this account on this device — tap to unlock instead of enrolling again.');
+    this.name = 'PasskeyAlreadyEnrolledError';
+  }
+}
+
 const TOKEN_KEY = 'ks_token';
 const WALLET_KEY = 'ks_wallet';
 const PASSKEY_USER = 'ks_passkey_user';
@@ -372,7 +382,17 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
   const salt = await prfSalt();
   opts.extensions = { ...(opts.extensions ?? {}), prf: { eval: { first: salt } } };
 
-  const credential = await navigator.credentials.create({ publicKey: opts }) as PublicKeyCredential;
+  let credential: PublicKeyCredential;
+  try {
+    credential = await navigator.credentials.create({ publicKey: opts }) as PublicKeyCredential;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'InvalidStateError') {
+      // Authenticator already has a credential for this user/RP — the caller
+      // should switch to the unlock flow instead of enrolling a duplicate.
+      throw new PasskeyAlreadyEnrolledError();
+    }
+    throw e;
+  }
   if (!credential) throw new Error('Passkey creation cancelled');
 
   const response = credential.response as AuthenticatorAttestationResponse;
