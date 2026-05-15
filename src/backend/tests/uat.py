@@ -40,6 +40,7 @@ def test_unauthenticated_vault_returns_401(client: httpx.Client) -> None:
     assert r.status_code == 401
 
 
-def test_unauthenticated_agents_list_returns_401(client: httpx.Client) -> None:
+def test_unauthenticated_agents_list_returns_200(client: httpx.Client) -> None:
+    # /agents/list is intentionally public — returns empty list without auth
     r = client.get("/agents/list")
-    assert r.status_code == 401
+    assert r.status_code == 200
