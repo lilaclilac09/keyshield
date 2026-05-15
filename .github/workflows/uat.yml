@@ -57,12 +57,11 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio "httpx[http2]" cryptography pynacl base58 fastapi pydantic aiosqlite uvicorn webauthn pyyaml pydantic-settings aiohttp
 
       - name: Start Python API server
-        working-directory: src/backend
         run: |
           SERVER_SECRET=${{ env.SERVER_SECRET }} \
             KS_INTERNAL_SECRET=${{ env.KS_INTERNAL_SECRET }} \
             DATABASE_URL=postgresql://keyshield:keyshield@localhost:5432/keyshield \
-            python -m uvicorn app:app --host 0.0.0.0 --port 8001 &
+            python -m uvicorn src.backend.app:app --host 0.0.0.0 --port 8001 &
           # Wait for server to be ready
           for i in $(seq 1 30); do
             curl -s http://localhost:8001/health >/dev/null && break
