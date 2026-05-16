@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keyshield-mcp"
+version = "0.1.0"
+description = "MCP server for KeyShield — vault and agent management tools for Claude"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "KeyShield" }]
+keywords = ["keyshield", "mcp", "claude", "agents", "vault", "api-keys"]
+dependencies = [
+    "mcp>=1.0",
+    "httpx>=0.25",
+]
+
+[project.scripts]
+keyshield-mcp = "keyshield_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/lilaclilac09/keyshield"
+Repository = "https://github.com/lilaclilac09/keyshield"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["keyshield_mcp*"]
