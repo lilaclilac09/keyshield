@@ -71,7 +71,7 @@ This is **not** E2E between your agent and OpenAI: the **KeyShield API** necessa
 
 Registered **agents** use **ed25519** keypairs: `_auth/agent-login` flow mints a scoped token. Cryptographically separate from the vault PRF chain; authorization is **server policy** (which agent may debit which vault / balance).
 
-Details: **`python-sdk/README.md`**, **`docs/API.md`**.
+Details: **`packages/sdk-py/README.md`**, **`docs/API.md`**.
 
 ---
 

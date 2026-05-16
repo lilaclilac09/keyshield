@@ -76,9 +76,9 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | `src/extension/` | Browser extension — save-to-vault prompts |
 | `src/infra/sync-worker/` | Cloudflare Worker — encrypted vault sync (R2) |
 | `packages/shared/` | Shared types and utilities |
-| `python-sdk/` | Python SDK — `pip install keyshield` |
-| `proxy-rs/` | Helius-specific Rust proxy crate |
-| `landing/` | Marketing site |
+| `packages/sdk-py/` | Python SDK — `pip install keyshield` |
+| `proxy-helius/` | Helius-specific Rust proxy crate |
+| `sites/landing/` | Marketing site |
 | `docs/` | Architecture, API reference, deployment, setup |
 
 ---
