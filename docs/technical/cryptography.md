@@ -94,5 +94,4 @@ Details: **`python-sdk/README.md`**, **`docs/API.md`**.
 | [`SYNC_VAULT_ARCHITECTURE.md`](./SYNC_VAULT_ARCHITECTURE.md) | Path A JWT, R2, CAS, WebAuthn exchange |
 | [`docs/API.md`](../API.md) | Auth modes, `/manage/store`, `/proxy` |
 | [`src/extension/README.md`](../../src/extension/README.md) | Extension install, troubleshooting |
-| [`docs/zh/path-a-plain-language.md`](../zh/path-a-plain-language.md) | Path A 通俗版（中文） |
 | [`docs/architecture/system-design.md`](../architecture/system-design.md) | System split: storage vs control plane |

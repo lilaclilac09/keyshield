@@ -89,7 +89,7 @@ FIXTURES = [
         "user_id": "dave",
         "upstream": "groq",
         "password": "пароль-с-юникодом",
-        "expected_plaintext": "gsk_AçÉ_测试_🔑_done",
+        "expected_plaintext": "gsk_AçÉ_test_🔑_done",
     },
     {
         "user_id": "erin",

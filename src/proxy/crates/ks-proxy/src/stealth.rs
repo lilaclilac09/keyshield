@@ -1,6 +1,6 @@
 //! Stealth mode — make the proxy look like a stock nginx server to anyone
 //! without a valid bearer token. Inspired by maxlv's https_proxy article
-//! ("对外看起来就是一台普通的 nginx 服务器").
+//! ("externally it looks just like a stock nginx server").
 //!
 //! Toggle: `KS_STEALTH=1` (default 0). Read once at startup.
 //!

@@ -432,7 +432,7 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
   }
   // Surface CF Worker failures: previously this was swallowed by console.warn,
   // which made the UI report success even though the vault was never registered.
-  // That looked like "passkey 无法存储" because subsequent unlock had no row to
+  // That caused a "passkey cannot be saved" error because subsequent unlock had no row to
   // find on the worker side.
   await enrollVault(prfOutput, {
     id: credential.id,
