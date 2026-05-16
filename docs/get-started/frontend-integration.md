@@ -59,8 +59,8 @@ TypeScript modules under `src/web-v2/lib/` — they're the source of truth.
   `https://keyshield-sync.<account>.workers.dev`. Get one by
   following [self-host.md § Deploy the worker](./self-host.md#step-2--deploy-the-cloudflare-worker-vault-storage).
 - **Your own deployed Python API.** You need a URL like
-  `https://api.ks.aileena.xyz` (or a Railway *.up.railway.app
-  domain). Get one by following [self-host.md § Deploy the Python
+  `https://keyshield-production.up.railway.app` (or your own
+  custom domain). Get one by following [self-host.md § Deploy the Python
   API](./self-host.md#step-3--deploy-the-python-api-vault-usage).
 - **A Solana RPC URL.** The popup hits Solana for session grants.
   - **Recommended:** Helius, Triton, or QuickNode — these are paid
@@ -115,7 +115,7 @@ config:
 VITE_KEYSHIELD_SYNC_URL=https://keyshield-sync.your-account.workers.dev
 
 # Python FastAPI for vault usage (proxy, billing, agents, sharing)
-KEYSHIELD_API_URL=https://api.ks.aileena.xyz
+KEYSHIELD_API_URL=https://keyshield-production.up.railway.app
 
 # Your Solana RPC. If you have a Helius API key:
 VITE_SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY

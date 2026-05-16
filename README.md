@@ -88,8 +88,15 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | Surface | URL |
 |---|---|
 | App (vault + developer token) | https://app.ks.aileena.xyz |
-| API (proxy + auth) | https://api.ks.aileena.xyz |
+| API (proxy + auth) | https://keyshield-production.up.railway.app |
 | Marketing | https://ks.aileena.xyz |
+
+## On-chain (Solana devnet)
+
+| What | Address |
+|---|---|
+| KeyShield program | `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` |
+| USDC mint (devnet) | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 
 ---
 
