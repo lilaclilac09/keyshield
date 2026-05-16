@@ -21,6 +21,14 @@ KeyShield lets users store upstream provider secrets in an encrypted vault while
 
 **Why it matters:** most agent systems pass raw secrets directly into tools or runtimes. KeyShield separates secret custody from capability usage — humans keep control, agents get limited, revocable access.
 
+### Why KeyShield
+
+| | What you get |
+|---|---|
+| **10x consumer experience** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and saves them to your vault in one click — like iCloud Keychain for developer secrets. |
+| **Keychain-grade security** | Every key is AES-256-GCM encrypted in the browser with a passkey-derived master key before it leaves the device. The server only ever holds ciphertext — physical guarantee, not a policy promise. At least as strong as 1Password's zero-knowledge model. |
+| **10x faster API calls** | Rust proxy with in-memory response caching (5s–300s TTL by method). Hot-path RPC calls like `getBalance` or `getAsset` resolve from cache at <50ms p99 instead of round-tripping to the provider every time. |
+
 ```
 Human  ──► Vault (encrypted)  ──► mint session token
                                         │
