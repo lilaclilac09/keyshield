@@ -13,7 +13,7 @@ const http = require('http');
 
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
-║     KeyShield Streaming (流式传输) Architecture Demo           ║
+║     KeyShield Streaming Architecture Demo           ║
 ║                    Real-time Vault Sync                        ║
 ╚════════════════════════════════════════════════════════════════╝
 

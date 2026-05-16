@@ -211,9 +211,9 @@ export interface SessionManagerConfig {
 
 /**
  * SessionManager orchestrates the key operations from
- * docs/technical/LOCAL_VAULT_ARCHITECTURE.md section 七:
- *   - grantSession    (流程 3)
- *   - renewSession    (流程 5)
+ * docs/technical/LOCAL_VAULT_ARCHITECTURE.md section 7:
+ *   - grantSession    (flow 3)
+ *   - renewSession    (flow 5)
  *   - revokeSession   (one device)
  *   - listActiveSessions (for the session-management UI)
  *

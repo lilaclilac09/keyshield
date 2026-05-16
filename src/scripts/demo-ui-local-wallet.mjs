@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * 本地钱包集成演示
+ * Local wallet integration demo
  * 
- * 演示在 Web UI 中使用本地钱包：
- * ✓ 自动加载本地钱包
- * ✓ 创建并保存加密密钥
- * ✓ 签名交易
- * ✓ 完整的端到端流程
+ * Demo using a local wallet in the Web UI:
+ * ✓ Auto-load local wallet
+ * ✓ Create and save encrypted key
+ * ✓ Sign transactions
+ * ✓ Full end-to-end flow
  */
 
 import fetch from 'node-fetch';
@@ -16,32 +16,32 @@ const BASE_URL = 'http://localhost:5173/api';
 
 console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║       🔑 本地钱包集成演示                                ║
+║       🔑 Local wallet integration demo                                ║
 ╚════════════════════════════════════════════════════════════╝
 `);
 
 async function demonstrateLocalWallet() {
   try {
-    console.log('📝 第 1 步：获取本地钱包信息');
+    console.log('📝 Step 1: Get local wallet info');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const walletResponse = await fetch(`${BASE_URL}/wallet/local`);
     const walletData = await walletResponse.json();
 
     if (!walletResponse.ok || !walletData.success) {
-      throw new Error('获取本地钱包失败');
+      throw new Error('Failed to get local wallet');
     }
 
     const wallet = walletData.wallet;
-    console.log(`✅ 本地钱包已加载！`);
-    console.log(`   地址: ${wallet.address}`);
-    console.log(`   网络: ${wallet.network}`);
+    console.log(`✅ Local wallet loaded!`);
+    console.log(`   Address: ${wallet.address}`);
+    console.log(`   Network: ${wallet.network}`);
     console.log(`   RPC: ${wallet.rpcUrl}`);
-    console.log(`   程序: ${wallet.programId}`);
+    console.log(`   Program: ${wallet.programId}`);
     console.log('');
 
     // Step 2: Test connection
-    console.log('🔗 第 2 步：测试钱包连接');
+    console.log('🔗 Step 2: Test wallet connection');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const connResponse = await fetch(`${BASE_URL}/wallet/sign`, {
@@ -52,15 +52,15 @@ async function demonstrateLocalWallet() {
     const connData = await connResponse.json();
 
     if (connData.success) {
-      console.log(`✅ 钱包连接测试通过！`);
-      console.log(`   钱包状态: ${connData.wallet.status}`);
+      console.log(`✅ Wallet connection test passed!`);
+      console.log(`   Wallet status: ${connData.wallet.status}`);
     } else {
-      throw new Error('连接测试失败');
+      throw new Error('Connection test failed');
     }
     console.log('');
 
     // Step 3: Create encrypted secret
-    console.log('🔐 第 3 步：创建加密密钥');
+    console.log('🔐 Step 3: Create encrypted key');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const secretData = {
@@ -83,16 +83,16 @@ async function demonstrateLocalWallet() {
       },
     };
 
-    console.log(`✅ 密钥已创建！`);
-    console.log(`   名称: ${secretData.name}`);
-    console.log(`   提供者: ${secretData.provider}`);
-    console.log(`   加密: ${secretData.encryption.algorithm}`);
-    console.log(`   所有者: ${secretData.owner}`);
-    console.log(`   密文: ${secretData.encryption.ciphertext.substring(0, 20)}...`);
+    console.log(`✅ Key created!`);
+    console.log(`   Name: ${secretData.name}`);
+    console.log(`   Provider: ${secretData.provider}`);
+    console.log(`   Encryption: ${secretData.encryption.algorithm}`);
+    console.log(`   Owner: ${secretData.owner}`);
+    console.log(`   Ciphertext: ${secretData.encryption.ciphertext.substring(0, 20)}...`);
     console.log('');
 
     // Step 4: Simulate wallet save
-    console.log('💾 第 4 步：通过钱包保存到区块链');
+    console.log('💾 Step 4: Save to blockchain via wallet');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const saveData = {
@@ -113,25 +113,25 @@ async function demonstrateLocalWallet() {
       },
     };
 
-    console.log(`✅ 保存流程已准备！`);
-    console.log(`   钱包签名: ✓ 需要`);
-    console.log(`   交易指令: ${saveData.transaction.instruction}`);
-    console.log(`   程序 ID: ${saveData.transaction.programId}`);
+    console.log(`✅ Save flow ready!`);
+    console.log(`   Wallet signature: ✓ required`);
+    console.log(`   Transaction instruction: ${saveData.transaction.instruction}`);
+    console.log(`   Program ID: ${saveData.transaction.programId}`);
     console.log('');
 
     // Step 5: Show complete flow
-    console.log('🔄 第 5 步：完整流程总结');
+    console.log('🔄 Step 5: Full flow summary');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     const flowSteps = [
-      { step: '1. UI 初始化', status: '✅', time: '< 100ms' },
-      { step: '2. 加载本地钱包', status: '✅', time: '< 50ms' },
-      { step: '3. 创建密钥对象', status: '✅', time: '< 100ms' },
-      { step: '4. 加密数据', status: '✅', time: '< 100ms' },
-      { step: '5. 用户签名', status: '⏳', time: '由用户确认' },
-      { step: '6. 发送交易', status: '⏳', time: '< 5s' },
-      { step: '7. 链上存储', status: '⏳', time: '< 2s' },
-      { step: '8. 审计日志', status: '✅', time: '实时' },
+      { step: '1. UI init', status: '✅', time: '< 100ms' },
+      { step: '2. Load local wallet', status: '✅', time: '< 50ms' },
+      { step: '3. Create key object', status: '✅', time: '< 100ms' },
+      { step: '4. Encrypt data', status: '✅', time: '< 100ms' },
+      { step: '5. User signature', status: '⏳', time: 'awaiting user' },
+      { step: '6. Send transaction', status: '⏳', time: '< 5s' },
+      { step: '7. On-chain storage', status: '⏳', time: '< 2s' },
+      { step: '8. Audit log', status: '✅', time: 'real-time' },
     ];
 
     flowSteps.forEach(({ step, status, time }) => {
@@ -141,69 +141,69 @@ async function demonstrateLocalWallet() {
 
     // Final Summary
     console.log('╔════════════════════════════════════════════════════════════╗');
-    console.log('║      ✅ 本地钱包集成演示完成！                            ║');
+    console.log('║      ✅ Local wallet integration demo complete!            ║');
     console.log('╚════════════════════════════════════════════════════════════╝');
     console.log(`
-📊 演示结果
+📊 Demo results
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔑 本地钱包
-   地址:      ${wallet.address}
-   网络:      ${wallet.network}
+🔑 Local wallet
+   Address:      ${wallet.address}
+   Network:      ${wallet.network}
    RPC:       ${wallet.rpcUrl}
-   状态:      ✓ 已连接
+   Status:    ✓ Connected
 
-🔐 密钥加密
-   算法:      ${secretData.encryption.algorithm}
-   所有者:    ${wallet.address}
-   密文:      ${secretData.encryption.ciphertext.substring(0, 32)}...
+🔐 Key encryption
+   Algorithm: ${secretData.encryption.algorithm}
+   Owner:    ${wallet.address}
+   Ciphertext:      ${secretData.encryption.ciphertext.substring(0, 32)}...
    Nonce:     ${secretData.encryption.nonce}
 
-🏛️  区块链集成
-   程序 ID:   ${wallet.programId}
-   指令:      StoreVault
+🏛️  Blockchain integration
+   Program ID:   ${wallet.programId}
+   Instruction: StoreVault
    Network:   localhost (localhost:8899)
 
-✨ 功能演示
-   ✓ 自动加载本地钱包
-   ✓ 创建和加密密钥
-   ✓ 钱包连接验证
-   ✓ 链上保存准备
-   ✓ 完整的审计日志
+✨ Feature demo
+   ✓ Auto-load local wallet
+   ✓ Create and encrypt key
+   ✓ Wallet connection verified
+   ✓ On-chain save ready
+   ✓ Full audit log
 
-🚀 在 Web UI 中的使用
+🚀 Using in Web UI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. 打开 http://localhost:5173/dashboard
-2. 导航到 "Secrets Vault"
-3. 点击 "Add Secret"
-4. 输入密钥信息
-5. 系统将自动：
-   ✓ 使用本地钱包
-   ✓ 加密数据
-   ✓ 请求签名
-   ✓ 发送到区块链
-   ✓ 保存审计日志
+1. Open http://localhost:5173/dashboard
+2. Navigate to "Secrets Vault"
+3. Click "Add Secret"
+4. Enter key info
+5. System will automatically:
+   ✓ Use local wallet
+   ✓ Encrypt data
+   ✓ Request signature
+   ✓ Send to blockchain
+   ✓ Save audit log
 
-📝 API 端点
+📝 API endpoints
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 GET /api/wallet/local
-  获取本地钱包信息
+  Get local wallet info
 
 POST /api/wallet/sign
-  - operation: "testConnection" - 测试连接
-  - operation: "signMessage" - 签名消息
-  - operation: "signTransaction" - 签名交易
+  - operation: "testConnection" — test connection
+  - operation: "signMessage" — sign message
+  - operation: "signTransaction" — sign transaction
 
-🎉 本地钱包模式已完全集成！
+🎉 Local wallet mode fully integrated!
 
-所有功能已准备好在生产环境中使用。
-要在 Web UI 中测试，可以现在添加一个密钥。
+All features ready for production use.
+To test in Web UI, add a key now.
     `);
 
   } catch (error) {
-    console.error('❌ 演示失败:', error);
+    console.error('❌ Demo failed:', error);
     process.exit(1);
   }
 }

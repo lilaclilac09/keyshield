@@ -27,10 +27,12 @@ Operator guides, get-started flows, and architecture notes.
 ## Repo root
 
 - [README.md](../README.md) — project overview + quick start
-- [ROADMAP.md](../ROADMAP.md) — current roadmap
 - [AGENTS.md](../AGENTS.md) — agent design guide
 - [DEVELOPMENT.md](../DEVELOPMENT.md) — dev environment setup
-- [USAGE.md](../USAGE.md) — end-user usage guide
+
+## Internal
+
+- [internal/](internal/) — roadmap, status, todos, migration history, demo scripts
 
 ## Engineering specs
 
