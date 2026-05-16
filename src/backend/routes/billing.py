@@ -1,10 +1,40 @@
-"""Usage and billing routes."""
+"""Usage, billing, and pricing routes."""
+
+import sqlite3
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 
 router = APIRouter()
+
+# ─── Pricing store (simple SQLite) ────────────────────────────────────────
+
+_PRICING_DB = Path(__file__).parent.parent / "data" / "pricing.db"
+
+_VALID_UPSTREAMS = {
+    "openai", "anthropic", "groq", "mistral", "cohere",
+    "helius", "alchemy", "0x", "titan", "pyth",
+}
+
+
+def _pricing_db() -> sqlite3.Connection:
+    _PRICING_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_PRICING_DB), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pricing (
+            user_id   TEXT NOT NULL,
+            upstream  TEXT NOT NULL,
+            price_usd REAL NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, upstream)
+        )
+    """)
+    conn.commit()
+    return conn
 
 
 def _auth(request: Request) -> dict | None:
@@ -74,7 +104,7 @@ async def usage_stats(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     stats = usage_mod.get_stats(user_id)
-    return JSONResponse({"stats": stats})
+    return JSONResponse(stats)
 
 
 @router.get("/usage/history")
@@ -131,3 +161,66 @@ async def billing_topup(request: Request):
             "balance_usd": round(new_balance_float, 6),
         }
     )
+
+
+# ─── Pricing CRUD ─────────────────────────────────────────────────────────
+
+
+@router.get("/billing/pricing")
+async def pricing_list(request: Request):
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    conn = _pricing_db()
+    try:
+        rows = conn.execute(
+            "SELECT upstream, price_usd, updated_at FROM pricing WHERE user_id = ? ORDER BY upstream",
+            (user_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return JSONResponse({
+        "pricing": [
+            {"upstream": r[0], "price_usd": r[1], "updated_at": r[2]}
+            for r in rows
+        ]
+    })
+
+
+@router.put("/billing/pricing/{upstream}")
+async def pricing_set(upstream: str, request: Request):
+    if upstream not in _VALID_UPSTREAMS:
+        return JSONResponse({"error": f"unknown upstream: {upstream}"}, status_code=404)
+    body = await request.json()
+    price = body.get("price_usd")
+    if price is None or float(price) < 0:
+        return JSONResponse({"error": "price_usd must be >= 0"}, status_code=400)
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    conn = _pricing_db()
+    try:
+        conn.execute(
+            "INSERT INTO pricing (user_id, upstream, price_usd, updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id, upstream) DO UPDATE SET price_usd=excluded.price_usd, updated_at=excluded.updated_at",
+            (user_id, upstream, float(price), int(time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return JSONResponse({"ok": True, "upstream": upstream, "price_usd": float(price)})
+
+
+@router.delete("/billing/pricing/{upstream}")
+async def pricing_clear(upstream: str, request: Request):
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    conn = _pricing_db()
+    try:
+        conn.execute(
+            "DELETE FROM pricing WHERE user_id = ? AND upstream = ?",
+            (user_id, upstream),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return JSONResponse({"ok": True})

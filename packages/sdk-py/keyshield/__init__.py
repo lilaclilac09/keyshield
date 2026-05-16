@@ -196,7 +196,7 @@ class KeyShield:
         return self._authed("GET", "/manage/list").get("items", [])
 
     def decrypt_key(self, upstream: str) -> str:
-        return self._authed("GET", f"/manage/decrypt/{upstream}")["key"]
+        return self._authed("GET", f"/manage/decrypt/by-upstream/{upstream}")["key"]
 
     def delete_key(self, upstream: str) -> None:
         self._authed("DELETE", f"/manage/secret/{upstream}")
@@ -298,13 +298,17 @@ class KeyShield:
     def proxy_url(self, upstream: str) -> str:
         return f"{self.base_url}/proxy/{upstream}/"
 
+    def vproxy_url(self, upstream: str) -> str:
+        """Vault-proxy URL: server resolves the API key from the vault."""
+        return f"{self.base_url}/vproxy/{upstream}/"
+
     def openai_client(self) -> Any:
         try:
             import openai
         except ImportError as exc:  # pragma: no cover
             raise ImportError("openai_client() requires: pip install openai") from exc
         return openai.OpenAI(
-            base_url=self.proxy_url("openai"),
+            base_url=self.vproxy_url("openai"),
             api_key="keyshield-proxy",
             default_headers={"Authorization": f"Bearer {self._require_token()}"},
         )
@@ -317,9 +321,27 @@ class KeyShield:
                 "anthropic_client() requires: pip install anthropic"
             ) from exc
         return anthropic.Anthropic(
-            base_url=self.proxy_url("anthropic"),
+            base_url=self.vproxy_url("anthropic"),
             api_key="keyshield-proxy",
             default_headers={"Authorization": f"Bearer {self._require_token()}"},
+        )
+
+    def helius_client(self) -> Any:
+        """Return an httpx.Client pre-configured to proxy Helius RPC calls
+        through the vault. Use it like:
+
+            client = ks.helius_client()
+            resp = client.post("", json={"jsonrpc": "2.0", "id": 1,
+                               "method": "getBalance",
+                               "params": ["<address>"]})
+        """
+        self._require_token()
+        return httpx.Client(
+            base_url=self.vproxy_url("helius"),
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+            },
         )
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
@@ -419,7 +441,7 @@ class AsyncKeyShield:
         return (await self._authed("GET", "/manage/list"))["keys"]
 
     async def decrypt_key(self, upstream: str) -> str:
-        return (await self._authed("GET", f"/manage/decrypt/{upstream}"))["key"]
+        return (await self._authed("GET", f"/manage/decrypt/by-upstream/{upstream}"))["key"]
 
     async def delete_key(self, upstream: str) -> None:
         await self._authed("DELETE", f"/manage/secret/{upstream}")
@@ -496,6 +518,9 @@ class AsyncKeyShield:
     # lifecycle
     def proxy_url(self, upstream: str) -> str:
         return f"{self.base_url}/proxy/{upstream}/"
+
+    def vproxy_url(self, upstream: str) -> str:
+        return f"{self.base_url}/vproxy/{upstream}/"
 
     def _require_token(self) -> str:
         if not self._token:
@@ -669,6 +694,9 @@ class AgentKeyShield:
 
     def proxy_url(self, upstream: str) -> str:
         return f"{self._base}/proxy/{upstream}/"
+
+    def vproxy_url(self, upstream: str) -> str:
+        return f"{self._base}/vproxy/{upstream}/"
 
     # internals
     def _ensure_token(self) -> None:

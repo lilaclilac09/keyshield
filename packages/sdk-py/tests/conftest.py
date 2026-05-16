@@ -20,37 +20,41 @@ import httpx
 import pytest
 
 
-# Make `import src.server` work without installing v2-mvp as a package.
+# Make `from src.backend.app import app` work without installing as a package.
 REPO_ROOT = Path(__file__).resolve().parents[2]
-V2_MVP = REPO_ROOT / "v2-mvp"
-if str(V2_MVP) not in sys.path:
-    sys.path.insert(0, str(V2_MVP))
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+# Also add repo root for `from src.backend` imports
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 @pytest.fixture(autouse=True)
 def isolate_dbs(tmp_path, monkeypatch):
-    from src import vault as vault_mod
-    from src import session as session_mod
-    from src import agents as agents_mod
-    from src import usage as usage_mod
-    from src import pricing as pricing_mod
+    from src.backend.auth import session as session_mod
+    from src.backend.routes import vault as vault_mod
+    from src.backend.routes import billing as billing_mod
+    from src.backend.agents import agents as agents_mod
+    from src.backend.billing import usage as usage_mod
 
-    monkeypatch.setattr(vault_mod, "VAULT_DIR", Path(tmp_path / "vault"))
     monkeypatch.setattr(session_mod, "DB_PATH", Path(tmp_path / "sessions.db"))
+    monkeypatch.setattr(vault_mod, "_DB_PATH", Path(tmp_path / "vault_shim.db"))
     monkeypatch.setattr(agents_mod, "DB_PATH", Path(tmp_path / "data" / "agents.db"))
     monkeypatch.setattr(usage_mod, "DB_PATH", Path(tmp_path / "data" / "usage.db"))
-    monkeypatch.setattr(pricing_mod, "DB_PATH", Path(tmp_path / "data" / "pricing.db"))
+    monkeypatch.setattr(billing_mod, "_PRICING_DB", Path(tmp_path / "data" / "pricing.db"))
+    monkeypatch.setenv("SERVER_SECRET", "test-secret-for-sdk-tests-32bytes!")
     yield
 
 
 @pytest.fixture
 def asgi_app():
     """Fresh FastAPI app per test (cache + nonce store wiped)."""
-    from src import server
+    from src.backend.app import app
+    from src.backend.proxy import api_router
 
-    server._NONCES.clear()
-    server._CACHE.clear()
-    return server.app
+    api_router._CACHE.clear()
+    return app
 
 
 @pytest.fixture

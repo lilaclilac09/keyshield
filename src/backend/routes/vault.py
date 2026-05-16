@@ -205,7 +205,7 @@ async def vault_store(request: Request):
                 body.get("name") or "unnamed",
                 body.get("type") or "api_key",
                 body.get("upstream") or "",
-                body.get("value") or "",
+                body.get("value") or body.get("apiKey") or "",
                 tags_json,
                 now,
                 now,
@@ -216,6 +216,29 @@ async def vault_store(request: Request):
             ),
         )
     return JSONResponse({"id": item_id})
+
+
+@router.get("/manage/list")
+async def vault_list_keys(request: Request):
+    """SDK-compat: return list of upstream names stored in the vault."""
+    uid, err = _require_user_id(request)
+    if err:
+        return err
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT upstream FROM vault_items WHERE user_id = ? AND upstream != '' "
+            "ORDER BY upstream",
+            (uid,),
+        ).fetchall()
+    keys = [r["upstream"] for r in rows]
+    items = []
+    with _db() as conn:
+        all_rows = conn.execute(
+            "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC",
+            (uid,),
+        ).fetchall()
+    items = [_row_to_dict(r) for r in all_rows]
+    return JSONResponse({"keys": keys, "items": items})
 
 
 @router.get("/manage/decrypt/{item_id}")
@@ -248,6 +271,40 @@ async def vault_delete(item_id: str, request: Request):
         )
     if cur.rowcount == 0:
         return JSONResponse({"detail": "item not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/manage/decrypt/by-upstream/{upstream}")
+async def vault_decrypt_by_upstream(upstream: str, request: Request):
+    """SDK-compat: decrypt the most recent key for an upstream."""
+    uid, err = _require_user_id(request)
+    if err:
+        return err
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT value FROM vault_items "
+            "WHERE user_id = ? AND upstream = ? AND value != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (uid, upstream),
+        ).fetchone()
+    if not row:
+        return JSONResponse({"detail": f"no {upstream} key found"}, status_code=404)
+    return JSONResponse({"key": row["value"]})
+
+
+@router.delete("/manage/secret/{upstream}")
+async def vault_delete_by_upstream(upstream: str, request: Request):
+    """SDK-compat: delete all keys for an upstream."""
+    uid, err = _require_user_id(request)
+    if err:
+        return err
+    with _db() as conn:
+        cur = conn.execute(
+            "DELETE FROM vault_items WHERE user_id = ? AND upstream = ?",
+            (uid, upstream),
+        )
+    if cur.rowcount == 0:
+        return JSONResponse({"detail": f"no {upstream} key found"}, status_code=404)
     return JSONResponse({"ok": True})
 
 

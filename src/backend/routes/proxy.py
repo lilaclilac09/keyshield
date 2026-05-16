@@ -64,6 +64,22 @@ def _is_helius(upstream: str) -> bool:
     return upstream in ("helius", "helius-rpc", "helius-das", "helius-enhanced")
 
 
+def _check_balance(user_id: str) -> JSONResponse | None:
+    """Return a 402 response if the user's prepaid balance is depleted."""
+    if user_id == "anonymous":
+        return None
+    balance = usage_mod.get_balance(user_id)
+    if balance <= 0:
+        return JSONResponse(
+            {
+                "error": "insufficient_balance",
+                "detail": "Your prepaid balance is depleted. Top up at /billing/topup.",
+                "balance_usd": balance,
+            },
+            status_code=402,
+        )
+
+
 @router.api_route(
     "/proxy/{upstream}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
 )
@@ -88,6 +104,10 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     sess = sess_mod.get(_bearer(request) or "") or {}
     user_id = sess.get("user_id") or sess.get("userId") or "anonymous"
+
+    blocked = _check_balance(user_id)
+    if blocked:
+        return blocked
 
     body = await request.body()
     interceptor = _get_x402_interceptor()
@@ -178,6 +198,10 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
             return JSONResponse({"error": "authorization required"}, status_code=401)
         else:
             return JSONResponse({"error": "invalid token"}, status_code=401)
+
+    blocked = _check_balance(user_id)
+    if blocked:
+        return blocked
 
     _VAULT_DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(_VAULT_DB))
