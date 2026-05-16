@@ -119,8 +119,14 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 
 | What | Address |
 |---|---|
-| KeyShield program | `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` |
-| USDC mint (devnet) | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
+| KeyShield program | [`41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet) |
+| MPP stream PDA | [`E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR`](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
+| USDC token account | [`6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH`](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet) |
+
+**Verified transactions:**
+- [Open MPP payment stream](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) — stream opened, settle round-trip verified
+
+7 on-chain instructions: `CreateUniversalVault`, `GrantAgentAccess`, `RevokeAgentAccess`, `UpdateVaultConfig`, `OpenStream`, `MppSettle`, `CloseStream`.
 
 ---
 
