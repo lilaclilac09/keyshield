@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * 本地钱包模式 - 完整交互测试
+ * Local wallet mode — full interaction test
  * 
- * 测试以下功能：
- * ✓ 钱包余额查询（空投后）
- * ✓ 签名和发送交易
- * ✓ 与 KeyShield 程序交互
- * ✓ 存储加密 vault 数据到区块链
+ * Tests the following:
+ * ✓ Wallet balance query (after airdrop)
+ * ✓ Sign and send transactions
+ * ✓ Interact with KeyShield program
+ * ✓ Store encrypted vault data on-chain
  */
 
 import { 
@@ -25,7 +25,7 @@ const PROGRAM_ID = '8wReT75ACg6uhKAUy7DuEDyFE6bzawhQvRziWhSUDc1H';
 
 console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║      🔑 本地钱包模式 - 完整交互演示                      ║
+║      🔑 Local wallet mode — full interaction demo                      ║
 ╚════════════════════════════════════════════════════════════╝
 `);
 
@@ -36,7 +36,7 @@ async function demonstrateWalletWithBalance() {
     // Load wallet from the test file we created
     const walletFiles = fs.readdirSync('.keyshield-demo').filter(f => f.startsWith('local-wallet-'));
     if (walletFiles.length === 0) {
-      console.log('❌ 未找到本地钱包文件');
+      console.log('❌ Local wallet file not found');
       return;
     }
     
@@ -48,26 +48,26 @@ async function demonstrateWalletWithBalance() {
     const wallet = Keypair.fromSecretKey(secretKeyArray);
     const walletAddress = wallet.publicKey.toString();
     
-    console.log(`\n📍 使用钱包: ${walletAddress}`);
-    console.log(`   文件: ${latestWalletFile}\n`);
+    console.log(`\n📍 Using wallet: ${walletAddress}`);
+    console.log(`   File: ${latestWalletFile}\n`);
 
     // Step 1: Check balance after airdrop
-    console.log('💰 第 1 步：查询余额（空投后）');
+    console.log('💰 Step 1: Query balance (after airdrop)');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const balance = await connection.getBalance(wallet.publicKey);
     const solBalance = balance / 1e9;
     
-    console.log(`✅ 余额查询成功！`);
-    console.log(`   余额: ${solBalance} SOL (${balance} lamports)`);
+    console.log(`✅ Balance query successful!`);
+    console.log(`   Balance: ${solBalance} SOL (${balance} lamports)`);
     
     if (solBalance >= 0.1) {
-      console.log(`   ✓ 有足够的余额进行交易`);
+      console.log(`   ✓ Sufficient balance for transactions`);
     }
     console.log('');
 
     // Step 2: Send a test transaction
-    console.log('📤 第 2 步：发送测试交易');
+    console.log('📤 Step 2: Send test transaction');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     try {
@@ -86,48 +86,48 @@ async function demonstrateWalletWithBalance() {
         { commitment: 'confirmed' }
       );
       
-      console.log(`✅ 交易发送成功！`);
-      console.log(`   签名: ${sig}`);
-      console.log(`   金额: 1000000 lamports (0.001 SOL)`);
-      console.log(`   状态: 已确认`);
+      console.log(`✅ Transaction sent!`);
+      console.log(`   Signature: ${sig}`);
+      console.log(`   Amount: 1000000 lamports (0.001 SOL)`);
+      console.log(`   Status: confirmed`);
     } catch (error) {
-      console.error(`❌ 交易失败: ${error.message}`);
+      console.error(`❌ Transaction failed: ${error.message}`);
     }
     console.log('');
 
     // Step 3: Query updated balance
-    console.log('💰 第 3 步：查询更新后的余额');
+    console.log('💰 Step 3: Query updated balance');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const newBalance = await connection.getBalance(wallet.publicKey);
     const newSolBalance = newBalance / 1e9;
     const diff = solBalance - newSolBalance;
     
-    console.log(`✅ 余额已更新！`);
-    console.log(`   新余额: ${newSolBalance} SOL`);
-    console.log(`   消耗: ${diff} SOL (包括手续费)`);
+    console.log(`✅ Balance updated!`);
+    console.log(`   New balance: ${newSolBalance} SOL`);
+    console.log(`   Spent: ${diff} SOL (including fees)`);
     console.log('');
 
     // Step 4: Get transaction history
-    console.log('📜 第 4 步：查询交易历史');
+    console.log('📜 Step 4: Query transaction history');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     try {
       const signatures = await connection.getSignaturesForAddress(wallet.publicKey, { limit: 5 });
       
-      console.log(`✅ 找到 ${signatures.length} 笔交易`);
+      console.log(`✅ Found ${signatures.length} transactions`);
       
       signatures.forEach((sig, index) => {
         const status = sig.confirmationStatus === 'finalized' ? '✓' : '⏳';
         console.log(`   ${index + 1}. ${status} ${sig.signature.substring(0, 20)}...`);
       });
     } catch (error) {
-      console.error(`❌ 查询失败: ${error.message}`);
+      console.error(`❌ Query failed: ${error.message}`);
     }
     console.log('');
 
     // Step 5: Demonstrate vault encryption and storage
-    console.log('🔐 第 5 步：演示加密 Vault 存储');
+    console.log('🔐 Step 5: Demo encrypted Vault storage');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     // Simulate an encrypted API key vault
@@ -168,15 +168,15 @@ async function demonstrateWalletWithBalance() {
       ],
     };
     
-    console.log(`✅ 创建加密 Vault 记录`);
+    console.log(`✅ Encrypted Vault record created`);
     console.log(`   Vault ID: ${walletAddress}`);
-    console.log(`   加密算法: ${vaultData.encryption.algorithm}`);
-    console.log(`   访问控制: ${vaultData.metadata.accessControl.allowedUsers.length} 个用户`);
-    console.log(`   审计日志: ${vaultData.auditLog.length} 条记录`);
+    console.log(`   Encryption: ${vaultData.encryption.algorithm}`);
+    console.log(`   Access control: ${vaultData.metadata.accessControl.allowedUsers.length} users`);
+    console.log(`   Audit log: ${vaultData.auditLog.length} entries`);
     console.log('');
 
     // Step 6: Save wallet state
-    console.log('💾 第 6 步：保存钱包状态');
+    console.log('💾 Step 6: Save wallet state');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const walletState = {
@@ -193,64 +193,64 @@ async function demonstrateWalletWithBalance() {
       },
       vault: vaultData,
       capabilities: [
-        '✓ 创建本地钱包',
-        '✓ 签名交易',
-        '✓ 发送和确认交易',
-        '✓ 查询余额和历史',
-        '✓ 与 Solana 程序交互',
-        '✓ 加密数据存储',
-        '✓ 访问控制管理',
-        '✓ 审计日志跟踪',
+        '✓ Create local wallet',
+        '✓ Sign transactions',
+        '✓ Send and confirm transactions',
+        '✓ Query balance and history',
+        '✓ Interact with Solana program',
+        '✓ Encrypted data storage',
+        '✓ Access control management',
+        '✓ Audit log tracking',
       ],
     };
     
     const stateFile = `.keyshield-demo/wallet-state-${Date.now()}.json`;
     fs.writeFileSync(stateFile, JSON.stringify(walletState, null, 2));
     
-    console.log(`✅ 钱包状态已保存！`);
-    console.log(`   文件: ${stateFile}`);
+    console.log(`✅ Wallet state saved!`);
+    console.log(`   File: ${stateFile}`);
     console.log('');
 
     // Final Summary
     console.log('╔════════════════════════════════════════════════════════════╗');
-    console.log('║      ✅ 本地钱包完整交互演示成功！                        ║');
+    console.log('║      ✅ Local wallet full interaction demo successful!     ║');
     console.log('╚════════════════════════════════════════════════════════════╝');
     console.log(`
-📊 功能演示完成
+📊 Feature demo complete
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔑 钱包信息
-   地址: ${walletAddress}
-   余额: ${newSolBalance} SOL
-   状态: ✓ 活跃
+🔑 Wallet info
+   Address: ${walletAddress}
+   Balance: ${newSolBalance} SOL
+   Status: ✓ Active
 
-💳 交易信息
-   已发送: 1 笔交易
-   已确认: 1 笔交易
-   总消耗: ${diff.toFixed(6)} SOL
+💳 Transaction info
+   Sent: 1 transactions
+   Confirmed: 1 transactions
+   Total spent: ${diff.toFixed(6)} SOL
 
-🏛️  网络信息
-   网络: Localhost (Solana Test Validator)
+🏛️  Network info
+   Network: Localhost (Solana Test Validator)
    RPC: ${LOCALHOST_RPC}
-   版本: 3.0.13
+   Version: 3.0.13
 
-🔐 安全功能
-   ✓ 钱包密钥管理（Keypair）
-   ✓ 交易签名（Ed25519）
-   ✓ 加密数据存储（AES-256-GCM）
-   ✓ 访问控制（多签）
-   ✓ 审计日志（完整跟踪）
+🔐 Security features
+   ✓ Wallet key management (Keypair)
+   ✓ Transaction signing (Ed25519)
+   ✓ Encrypted data storage (AES-256-GCM)
+   ✓ Access control (multi-sig)
+   ✓ Audit log (full tracking)
 
-🚀 下一步建议
-   1. 集成到 Web UI（已准备好）
-   2. 实现完整的 Vault 合约
-   3. 添加多签支持
-   4. 配置生产环境
+🚀 Next steps
+   1. Integrate into Web UI (ready)
+   2. Implement full Vault contract
+   3. Add multi-sig support
+   4. Configure production environment
 
     `);
 
   } catch (error) {
-    console.error('❌ 演示失败:', error);
+    console.error('❌ Demo failed:', error);
     process.exit(1);
   }
 }

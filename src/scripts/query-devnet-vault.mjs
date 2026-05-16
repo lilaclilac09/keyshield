@@ -3,7 +3,7 @@
 /**
  * Query Solana Devnet for Stored Vault Records
  * 
- * 在 Solana devnet 上查询存储的 Vault 记录
+ * Query stored Vault records on Solana devnet
  */
 
 import * as web3 from '@solana/web3.js';
@@ -18,11 +18,11 @@ const WALLET_PUBKEY = new web3.PublicKey('9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBu
 const VAULT_ID = '467af138e4a858fe68368e123ff56733';
 
 console.log('\n╔════════════════════════════════════════════════════════════╗');
-console.log('║        🔍 Solana Devnet Vault Query 查询工具              ║');
+console.log('║        🔍 Solana Devnet Vault Query Tool                  ║');
 console.log('╚════════════════════════════════════════════════════════════╝\n');
 
 // Step 1: Connect to Devnet
-console.log('📡 Step 1: 连接到 Solana Devnet...');
+console.log('📡 Step 1: Connecting to Solana Devnet...');
 const connection = new web3.Connection(DEVNET_RPC, 'confirmed');
 
 console.log(`   RPC: ${DEVNET_RPC}`);
@@ -30,25 +30,25 @@ console.log(`   Wallet: ${WALLET_PUBKEY.toBase58()}`);
 console.log(`   Vault ID: ${VAULT_ID}\n`);
 
 // Step 2: Check wallet balance (shows devnet connectivity)
-console.log('💰 Step 2: 检查钱包余额...');
+console.log('💰 Step 2: Check wallet balance...');
 try {
   const balance = await connection.getBalance(WALLET_PUBKEY);
-  console.log(`   ✅ 钱包余额: ${balance} lamports (${(balance / 1e9).toFixed(4)} SOL)`);
+  console.log(`   ✅ Wallet balance: ${balance} lamports (${(balance / 1e9).toFixed(4)} SOL)`);
   if (balance === 0) {
-    console.log('   ⚠️  余额为 0，请从 faucet 获取 devnet SOL: https://faucet.solana.com/\n');
+    console.log('   ⚠️  Balance is 0 — get devnet SOL from faucet: https://faucet.solana.com/\n');
   } else {
-    console.log('   ✅ 已连接到 devnet！\n');
+    console.log('   ✅ Connected to devnet!\n');
   }
 } catch (error) {
-  console.error(`   ❌ 连接失败: ${error.message}`);
+  console.error(`   ❌ Connection failed: ${error.message}`);
   process.exit(1);
 }
 
 // Step 3: Look for vault accounts
-console.log('🔎 Step 3: 搜索链上 Vault 记录...\n');
+console.log('🔎 Step 3: Searching on-chain Vault records...\n');
 
-console.log('   📋 查询方法：\n');
-console.log('   方法 A: 通过钱包查询所有账户');
+console.log('   📋 Query methods:\n');
+console.log('   Method A: Query all accounts by wallet');
 console.log('   ────────────────────────────────');
 
 try {
@@ -61,39 +61,39 @@ try {
     }
   );
   
-  console.log(`   找到 ${accounts.length} 个账户\n`);
+  console.log(`   Found ${accounts.length} accounts\n`);
   
   if (accounts.length === 0) {
-    console.log('   ℹ️  未找到与该钱包关联的账户（可能还未部署到主程序）\n');
+    console.log('   ℹ️  No accounts found for this wallet (may not be deployed to main program yet)\n');
   }
 } catch (error) {
-  console.log(`   ℹ️  账户查询: ${error.message}\n`);
+  console.log(`   ℹ️  Account query: ${error.message}\n`);
 }
 
-console.log('   方法 B: 通过钱包历史记录查询');
+console.log('   Method B: Query via wallet transaction history');
 console.log('   ────────────────────────────────\n');
 
 try {
   const signatures = await connection.getSignaturesForAddress(WALLET_PUBKEY, { limit: 10 });
   
-  console.log(`   💾 最近的交易记录 (最多10条):\n`);
+  console.log(`   💾 Recent transactions (up to 10):\n`);
   
   if (signatures.length === 0) {
-    console.log('   ℹ️  暂无交易记录\n');
+    console.log('   ℹ️  No transactions yet\n');
   } else {
     for (let i = 0; i < signatures.length; i++) {
       const sig = signatures[i];
       console.log(`   ${i + 1}. ${sig.signature} (${sig.slot})`);
-      console.log(`      状态: ${sig.err ? '❌ 失败' : '✅ 成功'}`);
+      console.log(`      Status: ${sig.err ? '❌ Failed' : '✅ Success'}`);
     }
     console.log('');
   }
 } catch (error) {
-  console.log(`   ℹ️  历史查询暂不可用: ${error.message}\n`);
+  console.log(`   ℹ️  History query unavailable: ${error.message}\n`);
 }
 
 // Step 4: Show local vault file
-console.log('📁 Step 4: 检查本地 Vault 文件...');
+console.log('📁 Step 4: Check local Vault file...');
 console.log('   ────────────────────────────────\n');
 
 const localVaultPath = path.join(
@@ -104,47 +104,47 @@ const localVaultPath = path.join(
 );
 
 if (fs.existsSync(localVaultPath)) {
-  console.log(`   ✅ 找到本地 Vault 文件: ${localVaultPath}\n`);
+  console.log(`   ✅ Found local Vault file: ${localVaultPath}\n`);
   
   const vaultData = JSON.parse(fs.readFileSync(localVaultPath, 'utf-8'));
   
-  console.log('   📋 Vault 信息：');
+  console.log('   📋 Vault info：');
   console.log(`   ├─ Owner: ${vaultData.owner}`);
   console.log(`   ├─ Created: ${new Date(vaultData.createdAt * 1000).toISOString()}`);
   console.log(`   ├─ Encrypted: ${vaultData.keyMetadata.encrypted}`);
   console.log(`   ├─ Encryption: ${vaultData.keyMetadata.encryptionMethod}`);
   console.log(`   ├─ Ciphertext: ${vaultData.encryptedData.ciphertext.substring(0, 32)}...`);
-  console.log(`   └─ Audit Log: ${vaultData.auditLog.length} 条记录\n`);
+  console.log(`   └─ Audit Log: ${vaultData.auditLog.length} entries\n`);
 } else {
-  console.log(`   ❌ 未找到本地文件: ${localVaultPath}\n`);
+  console.log(`   ❌ Local file not found: ${localVaultPath}\n`);
 }
 
 // Step 5: Deployment guide
-console.log('📦 Step 5: 部署到 Devnet 的步骤\n');
+console.log('📦 Step 5: Steps to deploy to Devnet\n');
 
-console.log(`   1️⃣  构建 Solana 程序：
+console.log(`   1️⃣  Build Solana program:
       cd programs/keyshield
       cargo build-sbf
    
-   2️⃣  部署到 devnet：
+   2️⃣  Deploy to devnet:
       solana program deploy target/sbpf-solana-solana/release/keyshield.so --url devnet
    
-   3️⃣  获取程序 ID：
+   3️⃣  Get program ID:
       solana address -k target/deploy/keyshield-keypair.json
    
-   4️⃣  更新程序 ID：
-      编辑此脚本的 PROGRAM_ID 变量
+   4️⃣  Update program ID:
+      Edit the PROGRAM_ID variable in this script
    
-   5️⃣  存储 Vault：
+   5️⃣  Store Vault:
       node scripts/demo-on-chain-storage.mjs --network devnet
    
-   6️⃣  查询 Vault：
+   6️⃣  Query Vault:
       node scripts/query-devnet-vault.mjs
 \n`);
 
 // Step 6: Status summary
 console.log('════════════════════════════════════════════════════════════\n');
-console.log('📊 当前状态：\n');
+console.log('📊 Current status:\n');
 
 const summary = {
   network: 'devnet',
@@ -154,27 +154,27 @@ const summary = {
   rpcConnected: true,
   timestamp: new Date().toISOString(),
   nextSteps: [
-    '从 faucet 获取 devnet SOL',
-    '部署 KeyShield 程序到 devnet',
-    '执行链上存储交易',
-    '查询并验证存储的数据'
+    'Get devnet SOL from faucet',
+    'Deploy KeyShield program to devnet',
+    'Execute on-chain storage transaction',
+    'Query and verify stored data'
   ]
 };
 
-console.log(`  ✅ RPC 连接: 成功`);
-console.log(`  ✅ 本地文件: ${summary.localStorageExists ? '已创建' : '不存在'}`);
-console.log(`  ⏳ 链上部署: 待进行`);
-console.log(`  📍 网络: ${summary.network}`);
-console.log(`  👤 钱包: ${summary.wallet}`);
-console.log(`\n📋 下一步:\n`);
+console.log(`  ✅ RPC connection: ok`);
+console.log(`  ✅ Local file: ${summary.localStorageExists ? 'created' : 'not found'}`);
+console.log(`  ⏳ On-chain deploy: pending`);
+console.log(`  📍 Network: ${summary.network}`);
+console.log(`  👤 Wallet: ${summary.wallet}`);
+console.log(`\n📋 Next steps:\n`);
 
 summary.nextSteps.forEach((step, i) => {
   console.log(`  ${i + 1}. ${step}`);
 });
 
-console.log('\n✨ 完成！\n');
+console.log('\n✨ Done!\n');
 
 // Write summary to file
 const summaryPath = path.join(process.cwd(), 'scripts', '.keyshield-demo', 'devnet-query-summary.json');
 fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
-console.log(`📄 查询结果已保存: ${summaryPath}\n`);
+console.log(`📄 Query result saved: ${summaryPath}\n`);

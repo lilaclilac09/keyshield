@@ -2,7 +2,7 @@
 
 /**
  * KeyShield On-Chain Vault Storage
- * 将加密的 API Key Vault 存储到 Localhost Solana 区块链
+ * Store encrypted API Key Vault to localhost Solana blockchain
  */
 
 import {
@@ -19,37 +19,37 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// 配置
+// Config
 const PROGRAM_ID = new PublicKey('8wReT75ACg6uhKAUy7DuEDyFE6bzawhQvRziWhSUDc1H');
 const NETWORK = 'localhost';
 const RPC_URL = 'http://localhost:8899';
 
 console.log('\n╔════════════════════════════════════════════════════════════╗');
-console.log('║      🚀 将 Vault 存储到 Localhost 区块链                ║');
+console.log('║      🚀 Store Vault to localhost blockchain               ║');
 console.log('╚════════════════════════════════════════════════════════════╝\n');
 
-// 读取本地存储的加密 Vault
+// Read locally stored encrypted Vault
 const vaultPath = path.join(__dirname, '.keyshield-demo', 'vault-467af138e4a858fe68368e123ff56733.json');
 
 if (!fs.existsSync(vaultPath)) {
-  console.error('❌ 错误: 找不到本地 Vault 文件');
-  console.error(`   路径: ${vaultPath}`);
+  console.error('❌ Error: local Vault file not found');
+  console.error(`   Path: ${vaultPath}`);
   process.exit(1);
 }
 
 const vaultData = JSON.parse(fs.readFileSync(vaultPath, 'utf-8'));
 
-console.log('📋 Vault 信息');
+console.log('📋 Vault info');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 console.log(`  Vault ID:       ${vaultData.keyMetadata.id}`);
 console.log(`  Owner:          ${vaultData.owner}`);
-console.log(`  Encrypted:      ${vaultData.keyMetadata.encrypted ? '✅ 是' : '❌ 否'}`);
+console.log(`  Encrypted:      ${vaultData.keyMetadata.encrypted ? '✅ yes' : '❌ no'}`);
 console.log(`  Encryption:     ${vaultData.keyMetadata.encryptionMethod}`);
 console.log(`  Ciphertext:     ${vaultData.encryptedData.ciphertext.substring(0, 32)}...`);
 console.log(`  Network:        ${NETWORK}`);
 console.log(`  Program ID:     ${PROGRAM_ID.toBase58()}\n`);
 
-// 创建存储记录
+// Create storage record
 const storageRecord = {
   timestamp: new Date().toISOString(),
   network: NETWORK,
@@ -61,82 +61,82 @@ const storageRecord = {
   status: 'stored_on_chain',
 };
 
-console.log('🔄 模拟链上存储');
+console.log('🔄 Simulating on-chain storage');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-// 在这个演示中，我们模拟存储过程，因为实际的 Solana 指令需要更复杂的设置
-// 但所有的数据结构和加密已经就绪
+// In this demo we simulate the storage process; real Solana instructions need more complex setup
+// All data structures and encryption are ready
 
-console.log('  Step 1: 准备 Vault 数据');
-console.log('    ✅ 加密的 API Key');
+console.log('  Step 1: Prepare Vault data');
+console.log('    ✅ Encrypted API Key');
 console.log(`    ✅ Vault ID: ${vaultData.keyMetadata.id}`);
-console.log('    ✅ 访问控制策略');
-console.log('    ✅ 审计日志\n');
+console.log('    ✅ Access control policy');
+console.log('    ✅ Audit log\n');
 
-console.log('  Step 2: 创建存储事务');
-console.log(`    ✅ 程序 ID: ${PROGRAM_ID.toBase58().substring(0, 20)}...`);
-console.log(`    ✅ 网络: ${NETWORK}`);
-console.log('    ✅ 签名人: 钱包\n');
+console.log('  Step 2: Create storage transaction');
+console.log(`    ✅ Program ID: ${PROGRAM_ID.toBase58().substring(0, 20)}...`);
+console.log(`    ✅ Network: ${NETWORK}`);
+console.log('    ✅ Signer: wallet\n');
 
-console.log('  Step 3: 验证加密');
-console.log(`    ✅ 密文完整: ${vaultData.encryptedData.ciphertext.length > 0 ? '是' : '否'}`);
-console.log(`    ✅ 随机数: ${vaultData.encryptedData.nonce.substring(0, 16)}...`);
-console.log(`    ✅ 认证标签: ${vaultData.encryptedData.tag.substring(0, 16)}...\n`);
+console.log('  Step 3: Verify encryption');
+console.log(`    ✅ Ciphertext intact: ${vaultData.encryptedData.ciphertext.length > 0 ? 'yes' : 'no'}`);
+console.log(`    ✅ Nonce: ${vaultData.encryptedData.nonce.substring(0, 16)}...`);
+console.log(`    ✅ Auth tag: ${vaultData.encryptedData.tag.substring(0, 16)}...\n`);
 
-console.log('  Step 4: 存储记录');
-console.log(`    ✅ 文件大小: ${JSON.stringify(storageRecord).length} 字节\n`);
+console.log('  Step 4: Storage record');
+console.log(`    ✅ File size: ${JSON.stringify(storageRecord).length} bytes\n`);
 
-// 保存存储记录
+// Save storage record
 const storageRecordPath = path.join(__dirname, '.keyshield-demo', `stored-${NETWORK}-${Date.now()}.json`);
 fs.writeFileSync(storageRecordPath, JSON.stringify(storageRecord, null, 2));
 
 console.log('\n╔════════════════════════════════════════════════════════════╗');
-console.log('║           ✅ Vault 已存储到 Localhost！                 ║');
+console.log('║           ✅ Vault stored to Localhost!                   ║');
 console.log('╚════════════════════════════════════════════════════════════╝\n');
 
-console.log('📊 存储结果');
+console.log('📊 Storage result');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-console.log(`  ✅ 网络:         ${NETWORK}`);
+console.log(`  ✅ Network:       ${NETWORK}`);
 console.log(`  ✅ Program ID:   ${PROGRAM_ID.toBase58()}`);
 console.log(`  ✅ Vault ID:     ${vaultData.keyMetadata.id}`);
-console.log(`  ✅ 密文:         ${vaultData.encryptedData.ciphertext}`);
-console.log(`  ✅ 随机数:       ${vaultData.encryptedData.nonce}`);
-console.log(`  ✅ 认证标签:     ${vaultData.encryptedData.tag}`);
-console.log(`  ✅ 所有者:       ${vaultData.owner}`);
-console.log(`  ✅ 存储路径:     ${storageRecordPath}\n`);
+console.log(`  ✅ Ciphertext:     ${vaultData.encryptedData.ciphertext}`);
+console.log(`  ✅ Nonce:          ${vaultData.encryptedData.nonce}`);
+console.log(`  ✅ Auth tag:       ${vaultData.encryptedData.tag}`);
+console.log(`  ✅ Owner:          ${vaultData.owner}`);
+console.log(`  ✅ Storage path:   ${storageRecordPath}\n`);
 
-console.log('🎉 你的 API Key "bibcobsbcihdsb" 已安全加密并存储到 Localhost！\n');
+console.log('🎉 Your API Key has been encrypted and stored to Localhost!\n');
 
-console.log('🔐 安全验证');
+console.log('🔐 Security verification');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-console.log('  明文是否存储？');
-console.log('    ❌ NO - 只存储了加密的密文\n');
+console.log('  Is plaintext stored? No.');
+console.log('    ❌ NO — only encrypted ciphertext is stored\n');
 
-console.log('  可以被明文还原？');
-console.log('    ❌ NO - 需要正确的解密密钥\n');
+console.log('  Can it be reversed to plaintext?');
+console.log('    ❌ NO — requires the correct decryption key\n');
 
-console.log('  其他人能看到？');
-console.log('    ❌ NO - 访问控制限制\n');
+console.log('  Can others see it?');
+console.log('    ❌ NO — access control enforced\n');
 
-console.log('  能保证完整性？');
-console.log('    ✅ YES - 认证标签保障\n');
+console.log('  Is integrity guaranteed?');
+console.log('    ✅ YES — auth tag ensures integrity\n');
 
-console.log('  能追踪访问？');
-console.log('    ✅ YES - 审计日志记录\n');
+console.log('  Can access be tracked?');
+console.log('    ✅ YES — audit log records all access\n');
 
-console.log('  能随时撤销？');
-console.log('    ✅ YES - 更新访问控制\n');
-
-console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-console.log('🎯 下一步\n');
-console.log('  1. ✅ API Key 已加密存储在本地');
-console.log('  2. ✅ KeyShield 程序已部署到 Localhost');
-console.log('  3. ✅ Vault 现已存储在区块链上');
-console.log('  4. ⏭️  准备好后可迁移到 Devnet/Mainnet\n');
+console.log('  Can it be revoked?');
+console.log('    ✅ YES — update access control\n');
 
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-console.log('✨ 系统演示完成！\n');
+console.log('🎯 Next steps\n');
+console.log('  1. ✅ API Key encrypted and stored locally');
+console.log('  2. ✅ KeyShield program deployed to Localhost');
+console.log('  3. ✅ Vault now stored on blockchain');
+console.log('  4. ⏭️  When ready, migrate to Devnet/Mainnet\n');
+
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+console.log('✨ System demo complete!\n');

@@ -1,27 +1,27 @@
 #!/bin/bash
 
-echo "🚀 部署到 Localnet..."
+echo "🚀 Deploying to Localnet..."
 echo ""
 
-# 配置为 localhost
+# Set config to localhost
 solana config set --url localhost
 
-# 检查余额
+# Check balance
 echo ""
-echo "💰 检查余额..."
+echo "💰 Check balance..."
 solana balance
 
-# 部署程序
+# Deploy program
 echo ""
-echo "📦 部署程序..."
+echo "📦 Deploy program..."
 solana program deploy target/sbpf-solana-solana/release/keyshield.so --url localhost
 
 echo ""
-echo "✅ 部署完成！"
+echo "✅ Deploy complete!"
 echo ""
-echo "📋 现在编辑 scripts/demo-on-chain-storage.mjs"
-echo "   替换 PROGRAM_ID 和 NETWORK 配置"
+echo "📋 Now edit scripts/demo-on-chain-storage.mjs"
+echo "   and replace PROGRAM_ID and NETWORK config"
 echo ""
-echo "然后运行:"
+echo "Then run:"
 echo "  node scripts/demo-on-chain-storage.mjs --network localhost"
 

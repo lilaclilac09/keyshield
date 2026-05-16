@@ -3,8 +3,8 @@
 /**
  * Local Vault Deployment Simulator
  * 
- * 模拟在 devnet 上部署 Vault 的过程
- * 由于网络问题，这个脚本演示部署流程和验证方法
+ * Simulates the Vault deployment process on devnet
+ * Due to network issues, this script demonstrates the deploy flow and verification
  */
 
 import * as fs from 'fs';
@@ -15,27 +15,27 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 console.log('\n╔════════════════════════════════════════════════════════════╗');
-console.log('║        📊 Vault 存储模拟与部署状态验证                    ║');
+console.log('║        📊 Vault Storage Simulation & Deployment Status                    ║');
 console.log('╚════════════════════════════════════════════════════════════╝\n');
 
-// 钱包信息
+// Wallet info
 const myWallet = '74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY';
 const demoWallet = '9VRxrF2w7NSMsxVW3xP1LiV6pkksZ5kavRaxBuKqH5fs';
 const currentBalance = 3.789944317;
 
-// 模拟部署状态
+// Simulated deployment status
 const deploymentStatus = {
   program: {
     name: 'KeyShield',
     version: '0.1.0',
-    buildStatus: '✅ 成功',
+    buildStatus: '✅ Success',
     compiledSize: '73 KB',
     path: 'target/sbpf-solana-solana/release/keyshield.so',
     targetNetwork: 'devnet',
     timestamp: new Date().toISOString()
   },
   deployment: {
-    status: '⏳ 进行中或待部署',
+    status: '⏳ In progress or pending deploy',
     network: 'devnet',
     rpcUrl: 'https://api.devnet.solana.com',
     expectedFeeInLamports: 1000000,
@@ -46,28 +46,28 @@ const deploymentStatus = {
   }
 };
 
-// 显示构建状态
-console.log('🔨 Step 1: 程序构建状态\n');
+// Display build status
+console.log('🔨 Step 1: Program build status\n');
 console.log('   ────────────────────────────────\n');
 
-console.log(`   程序名称:     ${deploymentStatus.program.name}`);
-console.log(`   版本:        ${deploymentStatus.program.version}`);
-console.log(`   构建状态:     ${deploymentStatus.program.buildStatus}`);
-console.log(`   文件大小:     ${deploymentStatus.program.compiledSize}`);
-console.log(`   编译路径:     ${deploymentStatus.program.path}`);
-console.log(`   时间戳:       ${deploymentStatus.program.timestamp}\n`);
+console.log(`   Program name:     ${deploymentStatus.program.name}`);
+console.log(`   Version:        ${deploymentStatus.program.version}`);
+console.log(`   Build status:     ${deploymentStatus.program.buildStatus}`);
+console.log(`   File size:     ${deploymentStatus.program.compiledSize}`);
+console.log(`   Compiled path:     ${deploymentStatus.program.path}`);
+console.log(`   Timestamp:       ${deploymentStatus.program.timestamp}\n`);
 
-// 显示部署前检查
-console.log('✅ Step 2: 部署前检查清单\n');
+// Display pre-deploy checklist
+console.log('✅ Step 2: Pre-deploy checklist\n');
 console.log('   ────────────────────────────────\n');
 
 const checklist = [
-  { item: 'Solana CLI 已安装', status: true },
-  { item: '已配置 devnet', status: true },
-  { item: '钱包已设置', status: true },
-  { item: '钱包有 SOL 余额', status: true, value: `${currentBalance} SOL` },
-  { item: '程序已编译', status: true, value: '73 KB' },
-  { item: '可以支付部署费用', status: true, value: '✅ 足够' }
+  { item: 'Solana CLI installed', status: true },
+  { item: 'devnet configured', status: true },
+  { item: 'Wallet set up', status: true },
+  { item: 'Wallet has SOL balance', status: true, value: `${currentBalance} SOL` },
+  { item: 'Program compiled', status: true, value: '73 KB' },
+  { item: 'Can afford deployment fee', status: true, value: '✅ Sufficient' }
 ];
 
 checklist.forEach(check => {
@@ -78,39 +78,39 @@ checklist.forEach(check => {
 
 console.log('\n');
 
-// 显示部署信息
-console.log('🚀 Step 3: 部署信息\n');
+// Display deployment info
+console.log('🚀 Step 3: Deployment info\n');
 console.log('   ────────────────────────────────\n');
 
-console.log(`   目标网络:     ${deploymentStatus.deployment.network}`);
-console.log(`   RPC 端点:     ${deploymentStatus.deployment.rpcUrl}`);
-console.log(`   当前钱包:     ${deploymentStatus.deployment.currentWallet}`);
-console.log(`   钱包余额:     ${deploymentStatus.deployment.walletBalance}`);
-console.log(`   预估费用:     ${deploymentStatus.deployment.expectedFeeInSol} SOL`);
-console.log(`   部署状态:     ${deploymentStatus.deployment.status}\n`);
+console.log(`   Target network:     ${deploymentStatus.deployment.network}`);
+console.log(`   RPC endpoint:     ${deploymentStatus.deployment.rpcUrl}`);
+console.log(`   Current wallet:     ${deploymentStatus.deployment.currentWallet}`);
+console.log(`   Wallet balance:     ${deploymentStatus.deployment.walletBalance}`);
+console.log(`   Estimated fee:     ${deploymentStatus.deployment.expectedFeeInSol} SOL`);
+console.log(`   Deployment status:     ${deploymentStatus.deployment.status}\n`);
 
-// 如果部署成功会发生什么
-console.log('📋 Step 4: 部署成功后的预期结果\n');
+// What happens if deployment succeeds
+console.log('📋 Step 4: Expected results after successful deployment\n');
 console.log('   ────────────────────────────────\n');
 
 const expectedResults = {
-  programId: '(将在部署时生成)',
+  programId: '(generated at deploy time)',
   owner: myWallet,
-  accountSize: '体积 > 100 KB',
+  accountSize: 'size > 100 KB',
   executable: true,
-  rentEpoch: '当前 epoch',
+  rentEpoch: 'current epoch',
   ownerProgram: 'BPF Loader'
 };
 
-console.log('   一旦部署成功，你将获得：\n');
-console.log(`   ✅ 程序 ID（唯一标识）`);
-console.log(`   ✅ 链上数据存储账户`);
-console.log(`   ✅ Vault PDA 账户用于存储加密 Keys`);
-console.log(`   ✅ 可以通过 Solana Explorer 查看`);
-console.log(`   ✅ 可以通过 RPC 调用程序\n`);
+console.log('   Once deployed, you will have:\n');
+console.log(`   ✅ Program ID (unique identifier)`);
+console.log(`   ✅ On-chain data storage account`);
+console.log(`   ✅ Vault PDA account for storing encrypted keys`);
+console.log(`   ✅ Viewable via Solana Explorer`);
+console.log(`   ✅ Program callable via RPC\n`);
 
-// 显示本地存储的 Vault 信息
-console.log('💾 Step 5: 本地存储的 Vault 信息\n');
+// Display locally stored Vault info
+console.log('💾 Step 5: Locally stored Vault info\n');
 console.log('   ────────────────────────────────\n');
 
 const localVaultPath = path.join(__dirname, '.keyshield-demo', 'vault-467af138e4a858fe68368e123ff56733.json');
@@ -119,49 +119,49 @@ let vaultData = null;
 if (fs.existsSync(localVaultPath)) {
   vaultData = JSON.parse(fs.readFileSync(localVaultPath, 'utf-8'));
   
-  console.log(`   ✅ 已找到本地 Vault\n`);
+  console.log(`   ✅ Local Vault found\n`);
   console.log(`   Vault ID:       ${vaultData.keyMetadata.id}`);
   console.log(`   Owner:          ${vaultData.owner.substring(0, 8)}...`);
   console.log(`   Created:        ${new Date(vaultData.createdAt * 1000).toISOString()}`);
-  console.log(`   Encrypted:      ${vaultData.keyMetadata.encrypted ? '✅ 是' : '❌ 否'}`);
+  console.log(`   Encrypted:      ${vaultData.keyMetadata.encrypted ? '✅ Yes' : '❌ No'}`);
   console.log(`   Encryption:     ${vaultData.keyMetadata.encryptionMethod}`);
   console.log(`   Size:           ${JSON.stringify(vaultData).length} bytes\n`);
   
-  // 显示密文信息
-  console.log(`   💾 密文详情：`);
+  // Display ciphertext details
+  console.log(`   💾 Ciphertext details:`);
   console.log(`   ├─ Ciphertext:  ${vaultData.encryptedData.ciphertext}`);
   console.log(`   ├─ Nonce:       ${vaultData.encryptedData.nonce}`);
   console.log(`   └─ Tag:         ${vaultData.encryptedData.tag}\n`);
 }
 
-// 部署命令参考
-console.log('📝 Step 6: 实际部署命令\n');
+// Deploy command reference
+console.log('📝 Step 6: Actual deploy commands\n');
 console.log('   ────────────────────────────────\n');
 
 const commands = [
   {
     step: 1,
-    desc: '验证钱包连接',
+    desc: 'Verify wallet connection',
     cmd: 'solana address'
   },
   {
     step: 2,
-    desc: '检查余额',
+    desc: 'Check balance',
     cmd: 'solana balance'
   },
   {
     step: 3,
-    desc: '部署程序',
+    desc: 'Deploy program',
     cmd: 'cd programs/keyshield && solana program deploy target/sbpf-solana-solana/release/keyshield.so --url devnet'
   },
   {
     step: 4,
-    desc: '查看程序信息',
+    desc: 'View program info',
     cmd: 'solana program show <PROGRAM_ID> --url devnet'
   },
   {
     step: 5,
-    desc: '执行存储交易',
+    desc: 'Execute storage transaction',
     cmd: 'node scripts/demo-on-chain-storage.mjs --network devnet'
   }
 ];
@@ -171,26 +171,26 @@ commands.forEach(cmd => {
   console.log(`       $ ${cmd.cmd}\n`);
 });
 
-// 故障排除
-console.log('🔧 Step 7: 常见问题排查\n');
+// Troubleshooting
+console.log('🔧 Step 7: Common troubleshooting\n');
 console.log('   ────────────────────────────────\n');
 
 const troubleshooting = [
   {
-    issue: '部署失败：Connection reset',
-    solution: '• 这通常是 devnet 网络问题\n       • 等待 1-2 分钟后重试\n       • 或者尝试切换到其他 devnet RPC 端点'
+    issue: 'Deploy failed: Connection reset',
+    solution: '• Usually a devnet network issue\n       • Wait 1-2 minutes and retry\n       • Or try switching to a different devnet RPC endpoint'
   },
   {
-    issue: '部署失败：Insufficient funds',
-    solution: '• 钱包 SOL 余额不足\n       • 从 faucet 获取更多 SOL (2-5 SOL)\n       • https://faucet.solana.com/'
+    issue: 'Deploy failed: Insufficient funds',
+    solution: '• Wallet SOL balance too low\n       • Get more SOL from the faucet (2-5 SOL)\n       • https://faucet.solana.com/'
   },
   {
-    issue: '构建失败：Stack overflow',
-    solution: '• 某些函数的栈大小过大\n       • 需要优化代码减少栈大小\n       • 将大型变量改为 Box<T> 或在堆上分配'
+    issue: 'Build failed: Stack overflow',
+    solution: '• Some functions use too much stack space\n       • Optimize code to reduce stack usage\n       • Move large variables to Box<T> or heap allocation'
   },
   {
-    issue: '查询显示账户不存在',
-    solution: '• 部署完成但需要时间同步\n       • 等待 1-2 个 slot (几秒钟)\n       • 在 Explorer 上搜索程序 ID'
+    issue: 'Query shows account does not exist',
+    solution: '• Deploy complete but needs time to sync\n       • Wait 1-2 slots (a few seconds)\n       • Search for program ID on Explorer'
   }
 ];
 
@@ -199,22 +199,22 @@ troubleshooting.forEach(t => {
   console.log(`       ${t.solution}\n`);
 });
 
-// 下一步
-console.log('🎯 Step 8: 下一步行动\n');
+// Next steps
+console.log('🎯 Step 8: Next actions\n');
 console.log('   ────────────────────────────────\n');
 
 const nextSteps = [
-  '如果部署成功：',
-  '  1. 复制程序 ID',
-  '  2. 更新 scripts/demo-on-chain-storage.mjs 中的 PROGRAM_ID',
-  '  3. 运行 node scripts/demo-on-chain-storage.mjs --network devnet',
-  '  4. 在 Explorer 上查看交易',
+  'If deployment succeeded:',
+  '  1. Copy program ID',
+  '  2. Update PROGRAM_ID in scripts/demo-on-chain-storage.mjs',
+  '  3. Run: node scripts/demo-on-chain-storage.mjs --network devnet',
+  '  4. View transaction on Explorer',
   '',
-  '如果部署失败：',
-  '  1. 检查网络连接 (solana cluster-version --url devnet)',
-  '  2. 确认钱包余额 (solana balance)',
-  '  3. 再次尝试部署',
-  '  4. 如果仍然失败，检查程序大小和栈使用'
+  'If deployment failed:',
+  '  1. Check network (solana cluster-version --url devnet)',
+  '  2. Confirm wallet balance (solana balance)',
+  '  3. Retry deployment',
+  '  4. If still failing, check program size and stack usage'
 ];
 
 nextSteps.forEach(step => {
@@ -223,13 +223,13 @@ nextSteps.forEach(step => {
 
 console.log('\n');
 
-// 保存状态
+// Save status
 const statusFile = path.join(__dirname, '.keyshield-demo', 'deployment-status.json');
 fs.writeFileSync(statusFile, JSON.stringify(deploymentStatus, null, 2));
 
-console.log('💾 部署状态已保存\n');
+console.log('💾 Deployment status saved\n');
 
-// 生成总结
+// Generate summary
 const summary = {
   wallet: myWallet,
   network: 'devnet',
@@ -239,17 +239,17 @@ const summary = {
   estimatedFee: 0.001,
   localVaultExists: fs.existsSync(localVaultPath),
   timestamp: new Date().toISOString(),
-  status: '准备就绪'
+  status: 'Ready'
 };
 
-console.log('📊 部署状态总结：\n');
+console.log('📊 Deployment status summary:\n');
 console.log('   ────────────────────────────────\n');
-console.log(`   钱包:         ${summary.wallet}`);
-console.log(`   网络:         ${summary.network}`);
-console.log(`   余额:         ${summary.walletBalance} SOL`);
-console.log(`   预估费用:     ${summary.estimatedFee} SOL`);
-console.log(`   本地 Vault:   ${summary.localVaultExists ? '✅ 存在' : '❌ 不存在'}`);
-console.log(`   部署准备:     ${summary.canDeploy ? '✅ 就绪' : '❌ 未就绪'}`);
-console.log(`   状态:         ${summary.status}\n`);
+console.log(`   Wallet:         ${summary.wallet}`);
+console.log(`   Network:         ${summary.network}`);
+console.log(`   Balance:         ${summary.walletBalance} SOL`);
+console.log(`   Estimated fee:     ${summary.estimatedFee} SOL`);
+console.log(`   Local Vault:   ${summary.localVaultExists ? '✅ Present' : '❌ Not present'}`);
+console.log(`   Deploy ready:     ${summary.canDeploy ? '✅ Ready' : '❌ Not ready'}`);
+console.log(`   Status:         ${summary.status}\n`);
 
-console.log('✨ 准备完成！\n');
+console.log('✨ Ready!\n');
