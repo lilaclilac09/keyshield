@@ -714,7 +714,7 @@ DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m src.backend.trading
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KS_TOKEN` | required | Session token from KeyShield dashboard |
-| `KS_BASE` | `http://localhost:8000` | KeyShield Python API base URL (e.g. `https://api.ks.aileena.xyz` in prod) |
+| `KS_BASE` | `http://localhost:8000` | KeyShield Python API base URL (e.g. `https://keyshield-production.up.railway.app` in prod) |
 | `CHAIN` | `solana` | `solana` or `ethereum` |
 | `DRY_RUN` | `true` | `false` to enable real execution |
 | `MAX_POSITION_USD` | `500` | Per-trade size limit |

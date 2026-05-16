@@ -13,7 +13,7 @@
   zero-knowledge ciphertext sync).
 - A Python FastAPI service deployed on Railway (or any Docker
   host) handling vault **usage** (proxy, billing, agents,
-  sharing) at e.g. `https://api.ks.aileena.xyz`.
+  sharing) at e.g. `https://keyshield-production.up.railway.app`.
 - A KeyShield Solana program deployed on devnet (or mainnet) at
   a program ID you own.
 - A web-v2 dashboard build that points at all three, ready to
@@ -190,8 +190,8 @@ Optional but useful:
 | `LOGLEVEL` | `INFO` | `DEBUG` for verbose logs |
 | `KS_DATABASE_URL` | sqlite (in container) | Postgres URL for production billing/agents persistence |
 
-After the first deploy, set a custom domain in the Railway
-dashboard (e.g. `api.ks.aileena.xyz`) and copy that hostname for
+After the first deploy, note the Railway-assigned domain
+(e.g. `keyshield-production.up.railway.app`) and copy that hostname for
 Step 5.
 
 **Verify:**
@@ -270,8 +270,8 @@ KEYSHIELD_SYNC_URL=https://keyshield-sync.<your-account>.workers.dev
 VITE_KEYSHIELD_SYNC_URL=https://keyshield-sync.<your-account>.workers.dev
 
 # Where the Python API is deployed (vault usage — proxy, billing, agents)
-KEYSHIELD_API_URL=https://api.ks.aileena.xyz
-# (or a Railway *.up.railway.app domain if you haven't set a custom one)
+KEYSHIELD_API_URL=https://keyshield-production.up.railway.app
+# (or your own custom domain if you've configured one in Railway)
 
 # Solana program ID (deploy your own or use the shared one for testing)
 KEYSHIELD_PROGRAM_ID=7xxx...your-program-id...xxx
@@ -303,7 +303,7 @@ reference setup uses Vercel with the project building
 - A `PUT https://keyshield-sync.<account>.workers.dev/vault/...`
   shows up in the Network tab returning 200 (vault storage).
 - Calling a stored upstream (e.g. OpenAI) issues a
-  `POST https://api.ks.aileena.xyz/proxy/openai/...` with an
+  `POST https://keyshield-production.up.railway.app/proxy/openai/...` with an
   `X-Upstream-API-Key` header (vault usage).
 
 ---

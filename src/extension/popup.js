@@ -34,7 +34,7 @@ const STALE_API_DEFAULTS = [
   "http://127.0.0.1:8000",
   "http://localhost:8000",
 ];
-const LEGACY_API_BASES = ["https://api.ks.aileena.xyz"];
+const LEGACY_API_BASES = ["https://keyshield-production.up.railway.app"];
 const LEGACY_DASHBOARD_URLS = ["https://app.ks.aileena.xyz"];
 
 // Marker we set when the user explicitly opts into a non-production target so

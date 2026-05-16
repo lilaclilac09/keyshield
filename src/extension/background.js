@@ -31,7 +31,7 @@ const STALE_DASHBOARD_DEFAULTS = [
   'http://localhost:5173',
 ];
 // Older builds defaulted to a maintainer-owned host; migrate unless the user pinned custom URLs.
-const LEGACY_API_BASES = ['https://api.ks.aileena.xyz'];
+const LEGACY_API_BASES = ['https://keyshield-production.up.railway.app'];
 const LEGACY_DASHBOARD_URLS = ['https://app.ks.aileena.xyz'];
 const PIN_PREF_KEY = 'ks_url_pref_pinned';
 

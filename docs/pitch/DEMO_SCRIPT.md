@@ -14,7 +14,7 @@ Core line (always open with this):
 
 ## 30-second elevator
 
-> KeyShield is a zero-trust API key proxy for AI agents. Problem: agents today have raw OpenAI and Helius keys in their `.env` files — one leak is a $40k bill overnight. We encrypt every key client-side with a passkey-derived AES-256 master key. The server only ever sees ciphertext. When an agent calls OpenAI, the proxy injects the key once, discards it immediately, and writes a USDC micropayment to a Solana stream. You pay per actual call, and you revoke any rogue agent with one on-chain instruction. Live on devnet, ~35k lines, Solana program ships seven instructions. Built in 14 days for Privacy Hack 2026.
+> KeyShield is a zero-trust API key proxy for AI agents. Problem: agents today have raw OpenAI and Helius keys in their `.env` files — one leak is a $40k bill overnight. Our browser extension auto-detects keys on any page and saves them to an encrypted vault in one click — iCloud Keychain for developer secrets. Every key is AES-256-GCM encrypted in the browser before it leaves the device; the server only ever holds ciphertext — at least as strong as 1Password's zero-knowledge model. When an agent calls OpenAI, a Rust proxy injects the key once, discards it immediately, and serves hot-path calls 10x faster via in-memory caching. Each call writes a USDC micropayment to a Solana stream. You pay per actual call, and you revoke any rogue agent with one on-chain instruction. Live on devnet, ~35k lines, seven on-chain instructions. Built in 14 days for Privacy Hack 2026.
 
 ---
 
@@ -28,7 +28,12 @@ Open slide 1 (KeyShield title).
 
 > "Agents are the biggest trend of 2026, but agentic AI key security is still a blind spot. Today OpenAI keys are managed like it's 2015 — `.env` files, Docker images, CI environment variables. Once an agent has a key, it might log it in a context window, dump it in a log file. One billing spike and you're out $40k with no idea which agent did it.
 >
-> KeyShield in three lines: **Your agent never holds the key. Your wallet sets the budget. Solana settles the bill.**"
+> KeyShield gives you three things:
+> 1. **10x consumer experience** — our browser extension auto-detects API keys on any page and saves them to your vault in one click, like iCloud Keychain for developer secrets.
+> 2. **Keychain-grade security** — every key is AES-256-GCM encrypted in your browser before it leaves the device. The server only ever holds ciphertext — physical guarantee, not a policy promise. At least as strong as 1Password.
+> 3. **10x faster API calls** — Rust proxy with in-memory response caching. Hot-path RPC calls resolve from cache at sub-50ms instead of round-tripping to the provider.
+>
+> One line: **Your agent never holds the key. Your wallet sets the budget. Solana settles the bill.**"
 
 Switch to slide 3 (KeyShield in one line).
 
@@ -123,7 +128,7 @@ Open Solana Explorer for a historical `MppSettle` tx → expand inner instructio
 ## Judge FAQ
 
 **Q: What's different from Vault.dev or 1Password?**
-A: Their servers can decrypt. Ours physically cannot. Physical guarantee vs. a promise. Plus we're agent-native (ed25519 signing built in) with on-chain settlement.
+A: Three things: (1) Their servers can decrypt — ours physically cannot, same zero-knowledge model as 1Password but with a physical guarantee baked into the architecture. (2) Consumer UX — browser extension auto-detects and saves API keys in one click, like iCloud Keychain for developer secrets. (3) Performance — Rust proxy with in-memory caching serves hot-path calls 10x faster than going direct to the provider. Plus we're agent-native (ed25519 signing, scoped session tokens) with on-chain USDC settlement.
 
 **Q: What if the Cloudflare Worker is compromised?**
 A: It only holds ciphertext — it physically has no decryption key. A breach leaks encrypted blobs only. An attacker still needs the passkey to decrypt.

@@ -57,10 +57,26 @@ def _b58encode(data: bytes) -> str:
 # ─── AES-256-GCM at rest ──────────────────────────────────────────────────
 
 
+_DEFAULT_SECRET = "CHANGE-ME-IN-PROD-32-BYTES-MIN!!"
+
+
 def _server_secret() -> bytes:
     """Same derivation as auth/session.py — single secret rotation
     invalidates both session blobs and server wallet seeds."""
-    raw = os.getenv("SERVER_SECRET", "CHANGE-ME-IN-PROD-32-BYTES-MIN!!")
+    raw = os.getenv("SERVER_SECRET", "")
+    if not raw:
+        import logging
+        import warnings
+
+        warnings.warn(
+            "SERVER_SECRET is not set — server wallet seeds are encrypted "
+            "with an insecure default key. Set SERVER_SECRET in production.",
+            stacklevel=2,
+        )
+        logging.getLogger(__name__).warning(
+            "SERVER_SECRET not set — wallet seeds encrypted with insecure default"
+        )
+        raw = _DEFAULT_SECRET
     return hashlib.sha256(raw.encode()).digest()
 
 
