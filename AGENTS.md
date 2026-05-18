@@ -12,7 +12,7 @@
 4. [Agent Types and When to Use Each](#4-agent-types)
 5. [The Full Trading Stack](#5-the-full-trading-stack)
 6. [0x Protocol Integration](#6-0x-protocol)
-7. [Titan Exchange Integration](#7-titan-exchange)
+7. [Titan Builder Integration](#7-titan-builder)
 8. [Pyth / Hermes Price Feeds](#8-pyth--hermes-price-feeds)
 9. [AI Model Aggregator](#9-ai-model-aggregator)
 10. [OpenClaw + Hermes Agent Wiring](#10-openclaw--hermes-agent-wiring)
@@ -285,9 +285,9 @@ JupiterRouter.quote() → quote_response
   → helius.sendTransaction() → signature
 ```
 
-**Why Titan over mempool:**
+**Why Titan bundles over public mempool:**
 - Public mempool: your TX is visible to searchers → they can sandwich you
-- Titan: TX goes directly to block builder, never in mempool
+- Titan bundle: goes directly to Titan's block builder, never broadcast to public mempool
 - Result: ~20% better effective price on large swaps
 
 **Note on signing:** Never store private keys in code or env vars. Use:
@@ -417,23 +417,25 @@ ZeroXRouter(ks_token, chain_id=10)     # Optimism
 
 ---
 
-## 7. Titan Exchange
+## 7. Titan Builder
 
-Titan is a private block builder on Ethereum. Your transaction never touches the public mempool.
+Titan Builder is a **neutral** block builder on Ethereum (endpoint: `rpc.titanbuilder.xyz`). "Neutral" means they do zero in-house searching — they only build blocks from bundles submitted by external searchers and users.
+
+**What Titan protects:** bundles and private transactions. When you send a transaction inside a bundle, Titan will never unbundle it or broadcast it to the public mempool. A standalone EOA transaction submitted directly to their RPC endpoint has the same mempool exposure as any other transaction.
 
 ### Why it matters for trading
 
 **Public mempool flow:**
 ```
-You submit TX → mempool → searcher sees it → searcher frontruns → you get worse price
+You submit TX → public mempool → searcher sees it → searcher frontruns → you get worse price
 ```
 
-**Titan flow:**
+**Titan bundle flow:**
 ```
-You submit bundle → Titan builder → block included → no searcher visibility
+You submit bundle → Titan builder → block included directly → no public mempool exposure
 ```
 
-**Cost:** Same gas. Better execution price. No extra fees.
+**Cost:** Standard gas. No API key required. Titan supports `refundPercent` (MEV kickback to your address) on bundles that generate value.
 
 ### Store your key
 
@@ -815,7 +817,7 @@ Hermes SSE is simpler (HTTP, auto-reconnect, works behind proxies) and has the s
 
 ### Why Titan over Flashbots?
 
-Both are private mempools. Titan has better retail fill rates and doesn't require a MEV searcher relationship. For production at scale (>$50k per transaction), evaluate both and measure actual execution quality.
+Both are neutral block builders that protect bundles from public mempool exposure — neither is a "private mempool" in the traditional sense. Titan does not run its own searching; Flashbots has historically been more MEV-searcher-centric. Titan requires no API key and no searcher relationship. For production at scale (>$50k per transaction), measure actual execution quality against both builders.
 
 ### Why asyncio.gather() instead of sequential?
 
