@@ -129,6 +129,25 @@ Every proxy call routes through an **on-chain MPP stream**:
 
 ---
 
+## Why Solana — the only chain that fits agent unit economics
+
+The x402 protocol is chain-agnostic. We chose Solana on numbers, not
+tribe:
+
+| Constraint | Why agents need it | Solana | Ethereum L1 | Base / L2 | Tron |
+|---|---|---|---|---|---|
+| Per-tx fee | A single agent call may be worth $0.005 | **~$0.0001** | $1–5 | ~$0.01 | $1+ (energy rent) |
+| Finality | Retry-on-402 loop blocks the agent | **400 ms** | 12 min | 2 s soft / 7 day hard | 3 s |
+| Native USDC | Circle-issued (no bridge risk) | **✅ direct** | ✅ | ✅ | ❌ USDT only |
+| Toolchain | Need ed25519 + USDC SPL in 100 LoC | **solders + Anchor** | viem / wagmi | viem | tronweb |
+| Throughput | Burst of 1000s of agent calls/sec | **65k TPS sustained** | ~15 TPS | ~1k TPS | ~2k TPS |
+
+> If Base / Monad / something newer wins on these numbers next year,
+> **the proxy swaps chains in ~200 lines** — we're not protocol, we're
+> infra. Solana is today's correct answer, not a forever bet.
+
+---
+
 ## Differentiator 3 — Agent wallets, scoped + revocable
 
 Each agent gets its own embedded Solana wallet with a permission bitmask:
@@ -193,6 +212,23 @@ Total: **~35k lines of working code + tests.**
 7. Solana Explorer: real `MppSettle` instruction with USDC moved
 
 > **All keys you see are encrypted. Server only ever sees ciphertext.**
+
+---
+
+## Honest objections — and why each one is a feature, not a bug
+
+We've heard the four standard takes from payments folks. We don't
+argue with any of them — we use them as positioning.
+
+| Objection ("you can't do this because…") | Our reframe ("…which is exactly why we exist") |
+|---|---|
+| **"Traditional rails (Visa, Stripe) won't back agent payments."** | Correct — and they physically can't. A $0.30 + 2.9% floor + CVV/3DS-in-the-loop kills every agent use case below $1. We're not competing with Visa; we serve the segment Visa can't touch. |
+| **"No consumer incentive — C-end won't care."** | Correct — and we're not chasing C-end. The buyer is the dev / agent operator. Same shape as Tron's growth: B-side utility (cross-border USDT) drove it, not consumer love. |
+| **"Only micropayments work on-chain."** | Correct — and that's the moat. AWS is a $100B/yr business built entirely on micropayments. "Only micropayments" = "card networks structurally excluded" = our addressable market. |
+| **"No chain has Tron-style lock-in for this yet."** | Correct — and that's the window. Tron didn't have $50B in year 1; it captured remittance during a 2018–2021 opening. Agent payments are at that 2018 moment. First credible rail wins. |
+| **"You have no moat."** | True today. The moat doesn't come from a clever algorithm — it comes from being the first one with shipped SDKs + 8 upstream providers + on-chain settlement when a 10× agent traffic wave lands. Distribution > defensibility at this stage. |
+
+> **The pitch isn't "we beat Visa." It's "we serve a segment Visa can't physically serve, in a window where no rail has locked in yet."**
 
 ---
 
