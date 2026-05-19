@@ -227,8 +227,9 @@ argue with any of them — we use them as positioning.
 | **"Only micropayments work on-chain."** | Correct — and that's the moat. AWS is a $100B/yr business built entirely on micropayments. "Only micropayments" = "card networks structurally excluded" = our addressable market. |
 | **"No chain has Tron-style lock-in for this yet."** | Correct — and that's the window. Tron didn't have $50B in year 1; it captured remittance during a 2018–2021 opening. Agent payments are at that 2018 moment. First credible rail wins. |
 | **"You have no moat."** | True today. The moat doesn't come from a clever algorithm — it comes from being the first one with shipped SDKs + 8 upstream providers + on-chain settlement when a 10× agent traffic wave lands. Distribution > defensibility at this stage. |
+| **"Agent-to-API payments isn't a real market."** | It already is. **Solana MEV searchers paid Jito ~$420M in tips in 2024** — all bot-to-infrastructure micropayments, no human in the loop, on-chain settled. We're not inventing the category; we're generalizing it from "bot tips MEV builder" to "agent pays any API." |
 
-> **The pitch isn't "we beat Visa." It's "we serve a segment Visa can't physically serve, in a window where no rail has locked in yet."**
+> **The pitch isn't "we beat Visa." It's "we serve a segment Visa can't physically serve, in a window where no rail has locked in yet — and Jito already proved the unit economics work at $400M+/yr."**
 
 ---
 
@@ -292,3 +293,153 @@ Solana settles the bill.
 </p>
 
 <p class="footer">Aileen · Privacy Hack 2026 · Colosseum</p>
+
+---
+
+<!-- _class: appendix -->
+
+# Appendix — steel-manned objections
+
+The five takedowns we've heard from payments / VC folks, with the
+full steel-man + how we answer in conversation. Slides above
+compress these; this is the long form for Q&A.
+
+---
+
+## ① "Traditional rails (Visa / Stripe) won't back agent payments"
+
+**Steel-man.** Card networks have decades of rails, fraud detection,
+chargeback, KYC. "Agent payments" doesn't change the underlying need —
+why re-do it on crypto?
+
+**Real answer.**
+- Card networks have a **$0.30 + 2.9% floor**. An agent that calls an
+  API 10,000×/day at $0.003/call is below this floor by 100×.
+  This isn't "Visa won't" — it's **physically can't**.
+- Card networks require **CVV / 3DS / account-holder verification**.
+  An agent has no human in the loop. The workaround — embedding the
+  user's card credentials in the agent prompt/code — is exactly the
+  pattern KeyShield exists to eliminate.
+- Wrong comparable. x402 isn't replacing Stripe Subscriptions. It's
+  replacing **"API key hardcoded in `.env` + monthly invoice
+  reconciliation"** — a different market entirely.
+
+**Pitch line.** *"Stripe processes humans' wallets. We process agents'
+wallets. Agent count is growing exponentially faster than human count."*
+
+---
+
+## ② "No consumer incentive — C-end won't care"
+
+**Steel-man.** Normal users pay their ChatGPT Plus subscription and
+move on. Nobody wants to manage USDC + private keys to save $2/mo.
+
+**Real answer.**
+- **The buyer was never C-end.** Target user is the developer / agent
+  operator / mid-size SaaS. They have real pain today: prepay credits
+  to 8 different API providers, reconcile monthly, redeploy when a
+  key leaks.
+- Tron analogy works here. Tron's $50B+ USDT didn't come from
+  consumers loving the chain — came from B-side utility (cross-border
+  dollar transfer in Vietnam / Argentina). Agent payments are the
+  same shape: utility-driven, not lifestyle-driven.
+- Secondary C-end story (do not lead with this): "your agent runs
+  errands for you without you giving it your credit card." Privacy +
+  cap-controlled. Real but smaller wedge.
+
+**Pitch line.** *Don't tell the C-end story. Walk through one indie dev
+running a scraping agent — let the unit economics speak for themselves.*
+
+---
+
+## ③ "Only micropayments work on-chain"
+
+**Steel-man.** Anything > $1 routes through card networks anyway
+(chargeback, dispute resolution, regulatory cover). On-chain
+micropayments are a permanent niche.
+
+**Real answer.**
+- **Reframe as moat.** "Only micropayments work" = "card networks
+  physically excluded" = our addressable market by definition.
+- **AWS is a $100B/yr micropayment business.** Every EC2 second, every
+  S3 GB is sub-cent priced. AWS just batches into monthly invoices.
+  x402 = **AWS-style metered billing without needing a pre-signed
+  contract or invoice cycle**.
+- **Small unit price ≠ small total.** 1B agent calls/yr × $0.005 =
+  $5M GMV per provider. OpenAI's API alone did ~$3B in 2024, all
+  charged in sub-cent token increments.
+- **Existing proof:** Solana MEV searchers paid **$420M to Jito
+  validators in 2024** — pure bot-to-infrastructure micropayments,
+  all on-chain. The category already runs at that volume; we're
+  generalizing from "MEV bot tips Jito" to "any agent pays any API."
+
+**Pitch line.** *"The 'only micropayments' segment already does
+$400M+/yr on Solana via Jito. We're extending the same pattern to
+every API, not just block-builders."*
+
+---
+
+## ④ "No chain has Tron-style lock-in for agent payments yet"
+
+**Steel-man.** Tron has a decade of USDT corridor lock-in. Solana,
+Base, Polygon, Arbitrum — nobody has captured agent payments yet.
+You're betting on a market that doesn't exist on a chain that
+hasn't won.
+
+**Real answer (careful — this is the easiest to fumble).**
+- **Concede the fact.** No chain has agent-payment lock-in today.
+- **But Tron wasn't $50B on day 1 either.** It captured the
+  USDT-Asia corridor during a 2018–2021 window when nobody else was
+  fast/cheap enough. Agent payments are in their 2018 moment now.
+- **Why Solana today, by numbers:**
+  - 400ms finality — fits agent retry-on-402 loop
+  - $0.0001 per tx — micropayment math works
+  - Native USDC (Circle-issued, no bridge risk)
+  - solders / Anchor / `@solana/web3.js` mature enough for indie devs
+  - Jito already proves $400M+/yr bot payment volume runs on this chain
+- **Hedge against "what if Base/Monad wins":** x402 is
+  chain-agnostic. The proxy can target Base or Solana — picking the
+  chain is config, not architecture. We push to Solana because the
+  numbers are best **today**.
+
+**Pitch line.** *"x402 abstracts the chain. Solana is the right
+answer today on four hard numbers. If Base catches up on those
+numbers next year, we re-target in ~200 lines."*
+
+---
+
+## ⑤ "You have no moat"
+
+**Steel-man.** Nothing prevents OpenAI, Anthropic, or Stripe from
+shipping the same proxy + on-chain settlement themselves and
+crushing you with distribution.
+
+**Real answer.**
+- **True today.** No clever algorithm, no patent. Hackathon-stage
+  product.
+- The moat at this stage isn't defensibility — it's **first credible
+  shipped product when the agent-traffic wave hits**. KeyShield
+  already has:
+  - 8 upstream providers wired
+  - 3 SDKs shipping (Python / TS / Rust)
+  - On-chain settlement live on devnet
+  - Chrome extension auto-detecting keys in the wild
+- When OpenAI ships their own, they'll only proxy *their own* API.
+  We're the **multi-upstream layer** — same reason developers use
+  OpenRouter instead of going direct.
+- Real long-term moat (forming, not formed): **per-call cost data
+  across 8+ providers** → routing intelligence (cheapest model for a
+  given prompt). That data only accumulates with usage.
+
+**Pitch line.** *"Distribution > defensibility at this stage. When
+the 10× agent traffic wave lands, the team with shipped SDKs +
+on-chain settlement wins the first contract. Moat comes second."*
+
+---
+
+## Summary one-liner
+
+> *"Card networks settle humans paying merchants. We settle agents
+> paying APIs. Different category, in the micropayment band Visa
+> can't physically serve, with $400M+/yr of precedent on Solana via
+> Jito — and no rail locked in yet."*
