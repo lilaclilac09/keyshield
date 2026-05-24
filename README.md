@@ -17,6 +17,16 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/lilaclilac09/keyshield/actions/workflows/test.yml"><img src="https://github.com/lilaclilac09/keyshield/actions/workflows/test.yml/badge.svg?branch=main" alt="CI: Rust" /></a>
+  <a href="https://github.com/lilaclilac09/keyshield/actions/workflows/python.yml"><img src="https://github.com/lilaclilac09/keyshield/actions/workflows/python.yml/badge.svg?branch=main" alt="CI: Python" /></a>
+  <a href="https://github.com/lilaclilac09/keyshield/actions/workflows/node-tests.yml"><img src="https://github.com/lilaclilac09/keyshield/actions/workflows/node-tests.yml/badge.svg?branch=main" alt="CI: Node" /></a>
+  <a href="https://github.com/lilaclilac09/keyshield/tree/main/docs"><img src="https://img.shields.io/badge/docs-/docs-blue" alt="Docs" /></a>
+  <a href="SPEC.md"><img src="https://img.shields.io/badge/spec-v0.1-informational" alt="Spec v0.1" /></a>
+  <a href="packages/mcp-server/"><img src="https://img.shields.io/badge/MCP-server-6f42c1?logo=anthropic&logoColor=white" alt="MCP Server" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-95%2B-brightgreen" alt="95+ tests" /></a>
+</p>
+
+<p align="center">
   <code>10x smoother experience</code> · <code>10x more secure self-custody vault</code> · <code>10x faster API calls</code>
 </p>
 
@@ -102,6 +112,7 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | `src/infra/sync-worker/` | Cloudflare Worker — encrypted vault sync (R2) |
 | `packages/shared/` | Shared types and utilities |
 | `packages/sdk-py/` | Python SDK — `pip install keyshield` |
+| `packages/mcp-server/` | MCP server — manage vault and agents from Claude |
 | `proxy-helius/` | Helius-specific Rust proxy crate |
 | `sites/landing/` | Marketing site |
 | `docs/` | Architecture, API reference, deployment, setup |
