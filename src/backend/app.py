@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 async def _lifespan(app: FastAPI):
     """App lifecycle — startup and shutdown hooks."""
     logger.info("KeyShield app starting up")
+    # Surface the effective CORS allow-list so a CORS-blocked prod dashboard is
+    # diagnosable straight from the deploy logs (no shell access needed).
+    logger.info("KeyShield CORS allow_origins (%d): %s", len(_origins), _origins)
     yield
     logger.info("KeyShield app shutting down")
 
