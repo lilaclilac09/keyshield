@@ -13,6 +13,7 @@ use ks_vault::VaultPath;
 use tower_http::cors::{Any, CorsLayer};
 
 pub mod acme;
+pub mod agent;
 pub mod bridge;
 pub mod handlers;
 pub mod metrics;
@@ -64,6 +65,7 @@ pub fn router(state: AppState, prometheus: metrics_exporter_prometheus::Promethe
         .route("/proxy/:upstream/", any(handlers::proxy_no_path))
         .route("/proxy/:upstream/*path", any(handlers::proxy))
         .route("/manage/batch", post(handlers::batch))
+        .route("/agent/execute", post(agent::execute))
         .fallback(handlers::fallthrough)
         .layer(cors)
         .with_state(state)

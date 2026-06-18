@@ -19,6 +19,7 @@ bytes = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+ks-agent = { path = "../ks-agent" }
 ks-cache = { path = "../ks-cache" }
 ks-helius = { path = "../ks-helius" }
 ks-session = { path = "../ks-session" }

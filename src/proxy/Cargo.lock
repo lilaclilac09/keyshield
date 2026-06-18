@@ -1185,6 +1185,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ks-agent"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ks-cache"
 version = "0.1.0"
 dependencies = [
@@ -1225,6 +1236,7 @@ dependencies = [
  "http",
  "http-body-util",
  "instant-acme",
+ "ks-agent",
  "ks-cache",
  "ks-helius",
  "ks-session",
