@@ -63,7 +63,10 @@ pub async fn run_turn(
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 fn build_command(api_key: &str, state: &ThreadState) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("claude");
+    // KS_CLAUDE_BIN lets operators point at a non-PATH claude install (and lets
+    // tests substitute a fake harness). Defaults to `claude` on PATH.
+    let bin = std::env::var("KS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+    let mut cmd = tokio::process::Command::new(bin);
     cmd.current_dir(&state.cwd)
         .env("ANTHROPIC_API_KEY", api_key)
         .stdin(Stdio::piped())

@@ -199,10 +199,18 @@ fn resolve_cwd(requested: Option<&str>) -> Result<PathBuf, Response> {
     let root = std::env::var("KS_AGENT_WORKSPACE_ROOT")
         .ok()
         .filter(|s| !s.trim().is_empty());
+    resolve_cwd_in(root.as_deref(), requested)
+}
 
+/// Pure containment logic (env read out, so it's race-free to unit-test).
+/// Returns an `Err(StatusCode, msg)` the caller turns into a `Response`.
+fn resolve_cwd_in(
+    root: Option<&str>,
+    requested: Option<&str>,
+) -> Result<PathBuf, Response> {
     match (root, requested) {
         (Some(root), req_opt) => {
-            let root_canon = std::fs::canonicalize(&root).map_err(|_| {
+            let root_canon = std::fs::canonicalize(root).map_err(|_| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "KS_AGENT_WORKSPACE_ROOT does not exist",
@@ -274,5 +282,57 @@ mod tests {
         assert!(scope_allows_exec(&["proxy".into(), "agent:exec".into()]));
         assert!(!scope_allows_exec(&["proxy".into(), "analytics".into()]));
         assert!(!scope_allows_exec(&[]));
+    }
+
+    fn status_of(r: Result<PathBuf, Response>) -> Result<PathBuf, StatusCode> {
+        r.map_err(|resp| resp.status())
+    }
+
+    #[test]
+    fn cwd_inside_root_is_allowed() {
+        let root = tempfile::tempdir().unwrap();
+        let sub = root.path().join("workspace");
+        std::fs::create_dir(&sub).unwrap();
+        let root_s = root.path().to_str().unwrap();
+
+        // relative-to-root
+        let got = status_of(resolve_cwd_in(Some(root_s), Some("workspace"))).unwrap();
+        assert!(got.starts_with(std::fs::canonicalize(root.path()).unwrap()));
+        // absolute inside root
+        let got = status_of(resolve_cwd_in(Some(root_s), sub.to_str())).unwrap();
+        assert_eq!(got, std::fs::canonicalize(&sub).unwrap());
+        // no cwd → defaults to the root
+        let got = status_of(resolve_cwd_in(Some(root_s), None)).unwrap();
+        assert_eq!(got, std::fs::canonicalize(root.path()).unwrap());
+    }
+
+    #[test]
+    fn cwd_escaping_root_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let root_s = root.path().to_str().unwrap();
+
+        // `..` traversal is canonicalized away then rejected
+        assert_eq!(
+            status_of(resolve_cwd_in(Some(root_s), Some("../.."))).unwrap_err(),
+            StatusCode::FORBIDDEN
+        );
+        // absolute path outside the root
+        assert_eq!(
+            status_of(resolve_cwd_in(Some(root_s), Some("/tmp"))).unwrap_err(),
+            StatusCode::FORBIDDEN
+        );
+        // nonexistent path → 400
+        assert_eq!(
+            status_of(resolve_cwd_in(Some(root_s), Some("does/not/exist"))).unwrap_err(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn caller_cwd_without_root_is_refused() {
+        assert_eq!(
+            status_of(resolve_cwd_in(None, Some("/anywhere"))).unwrap_err(),
+            StatusCode::FORBIDDEN
+        );
     }
 }
