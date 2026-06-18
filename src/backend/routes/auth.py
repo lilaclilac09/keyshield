@@ -138,7 +138,13 @@ async def agent_login(request: Request):
         return JSONResponse({"error": "signature required"}, status_code=401)
 
     sess_mod._consume_nonce(nonce)
-    token = sess_mod.create_token(agent_info["owner_wallet"], "default")
+    # Carry the agent's registered scopes into the token. A delegated agent
+    # only reaches scope-gated endpoints (e.g. POST /agent/execute) if its
+    # scopes include "*" or "agent:exec"; a "proxy"-only bot is confined to
+    # the pass-through proxy and cannot run code on the host.
+    token = sess_mod.create_token(
+        agent_info["owner_wallet"], "default", scopes=agent_info.get("scopes", "")
+    )
     return JSONResponse({"token": token})
 
 

@@ -15,6 +15,7 @@ path = "src/lib.rs"
 [dependencies]
 axum = { workspace = true }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
+base64 = "0.22"
 bytes = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }

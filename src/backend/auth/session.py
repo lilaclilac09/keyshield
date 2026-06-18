@@ -97,14 +97,24 @@ def _decrypt(data: bytes) -> str:
 # ─── Token format ──────────────────────────────────────────────────────────
 
 
-def _make_token_payload(user_id: str, expires_at: int) -> str:
-    """Create base64-encoded JSON payload."""
+def _make_token_payload(user_id: str, expires_at: int, scopes: str = "*") -> str:
+    """Create base64-encoded JSON payload.
+
+    `scopes` is a comma-separated capability list embedded in the token so the
+    Rust proxy can authorize scope-gated endpoints (e.g. POST /agent/execute)
+    without a DB round-trip or a schema migration. Owner logins get "*" (full
+    delegation); a delegated agent carries its registered scopes. The Rust side
+    trusts this claim because the token string is the sessions-table primary
+    key — an attacker can't alter the payload without invalidating the lookup.
+    See ks-proxy/src/agent.rs::token_scopes().
+    """
     payload = json.dumps(
         {
             "uid": user_id,
             "exp": expires_at,
             "iat": int(time.time()),
             "nbf": int(time.time()),  # not-before (now),
+            "scp": scopes,
         }
     )
     return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
@@ -116,18 +126,26 @@ def _sign_token(payload: str) -> str:
     return urlsafe_b64encode(sig).decode().rstrip("=")
 
 
-def create_token(user_id: str, password: str, ttl: int = SESSION_TTL) -> str:
+def create_token(
+    user_id: str, password: str, ttl: int = SESSION_TTL, scopes: str = "*"
+) -> str:
     """
     Create a self-contained session token.
 
     Token format: <payload>.<hmac>
-    Payload contains: uid (user_id), exp (expiry epoch), iat (issued_at), nbf (not_before)
+    Payload contains: uid (user_id), exp (expiry epoch), iat (issued_at),
+    nbf (not_before), scp (scopes — comma-separated capability list).
     HMAC verifies the payload hasn't been tampered with.
+
+    `scopes` defaults to "*" (full delegation) so every existing caller — owner
+    login, passkey, etc. — is unaffected. Only delegated agent-logins pass a
+    restricted scope (their registered `scopes`), which the Rust proxy enforces
+    on scope-gated endpoints like POST /agent/execute.
 
     The password is encrypted and stored in the DB for auth operations that need it.
     """
     expires_at = int(time.time()) + ttl
-    payload = _make_token_payload(user_id, expires_at)
+    payload = _make_token_payload(user_id, expires_at, scopes)
     sig = _sign_token(payload)
     token = f"{payload}.{sig}"
 
