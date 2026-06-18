@@ -34,7 +34,8 @@ Spec-driven port à la maxlv's mihomo essay:
 | `ks-session`  | reading `sessions.db` (R/O)                       | 02   |
 | `ks-cache`    | TTL cache (Helius methods + REST routes)          | 03   |
 | `ks-upstream` | per-upstream HTTP/2 client + auth injection       | 04, 05 |
-| `ks-proxy`    | binary: axum routes, fall-through, bridge to py   | 06, 07 |
+| `ks-agent`    | claude harness: spawn, NDJSON↔stream-json normalise | 19   |
+| `ks-proxy`    | binary: axum routes, fall-through, bridge to py   | 06, 07, 19 |
 
 ## Out of scope for stage 1
 

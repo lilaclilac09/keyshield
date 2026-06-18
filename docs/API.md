@@ -166,6 +166,52 @@ DELETE /agents/{agent_id}                          delete agent
 
 ---
 
+## Agent execution — run a Claude Code turn under a vaulted key
+
+Runs a full multi-turn coding agent (`claude`) on the host, paid by the
+caller's vaulted Anthropic key — the key never crosses the wire. See
+spec 19 for the design. The token must carry the `agent:exec` (or `*`)
+scope, and the subprocess is confined to `KS_AGENT_WORKSPACE_ROOT`.
+
+```
+POST   /agent/execute                run one coding turn; returns normalised events
+```
+
+`POST /agent/execute` body:
+
+```json
+{
+  "prompt":     "explain this repo and add a README",
+  "cwd":        "project-a",       // optional; must resolve inside KS_AGENT_WORKSPACE_ROOT
+  "model":      "claude-opus-4-8", // optional
+  "session_id": "abc123..."        // optional; resume a prior turn (claude --resume)
+}
+```
+
+Response: `{ "session_id": "...", "events": [ ... ] }`. Pass `session_id`
+back on the next call to continue the same coding context. Errors:
+`401` (no token), `403` (missing `agent:exec` scope, or `cwd` escapes the
+workspace root), `400` (cwd not found), `422` (no Anthropic key on file).
+
+Example — run a turn and resume it:
+
+```bash
+SID=$(curl -s -X POST http://localhost:8001/agent/execute \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt":"read the repo, summarise the architecture","cwd":"."}' \
+  | jq -r .session_id)
+
+curl -s -X POST http://localhost:8001/agent/execute \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"prompt\":\"now add unit tests\",\"session_id\":\"$SID\"}"
+```
+
+Server env: `KS_AGENT_WORKSPACE_ROOT` (jail root, required to accept a
+caller `cwd`), `KS_CLAUDE_BIN` (claude path override), `ANTHROPIC_API_KEY`
+(platform fallback when the user has no vaulted key).
+
+---
+
 ## Sharing — re-encryption sharing
 
 ```

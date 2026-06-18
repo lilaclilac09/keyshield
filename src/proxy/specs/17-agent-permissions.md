@@ -70,6 +70,7 @@ auditor / observer pattern.
 | List agent | ✅ | ✅ | ✅ |
 | Show agent metadata (name, scopes, last_used) | ✅ | ✅ | ✅ |
 | Trigger `/proxy/*` calls using this agent | ✅ | ✅ | ❌ |
+| Run `/agent/execute` coding turn (spec 19) | ✅ | ✅ | ❌ |
 | Open MPP stream (spec 15) | ✅ | ✅ | ❌ |
 | `record_units` to existing stream | ✅ | ✅ | ❌ |
 | Close MPP stream | ✅ | owner-of-stream only | ❌ |

@@ -92,7 +92,7 @@ pub async fn execute(
     // 3. cwd lockdown — confine to KS_AGENT_WORKSPACE_ROOT.
     let cwd = match resolve_cwd(req.cwd.as_deref()) {
         Ok(p) => p,
-        Err(resp) => return resp,
+        Err((code, msg)) => return (code, msg).into_response(),
     };
 
     // 4. Resolve Anthropic key from vault (plaintext fast-path), else platform env.
@@ -195,7 +195,7 @@ fn token_scopes(token: &str) -> Vec<String> {
 /// - root set + no cwd → the root itself.
 /// - root unset + cwd given → refused (can't validate containment).
 /// - root unset + no cwd → the proxy's own cwd (no caller-controlled path).
-fn resolve_cwd(requested: Option<&str>) -> Result<PathBuf, Response> {
+fn resolve_cwd(requested: Option<&str>) -> Result<PathBuf, (StatusCode, &'static str)> {
     let root = std::env::var("KS_AGENT_WORKSPACE_ROOT")
         .ok()
         .filter(|s| !s.trim().is_empty());
@@ -203,11 +203,11 @@ fn resolve_cwd(requested: Option<&str>) -> Result<PathBuf, Response> {
 }
 
 /// Pure containment logic (env read out, so it's race-free to unit-test).
-/// Returns an `Err(StatusCode, msg)` the caller turns into a `Response`.
+/// Returns a small `(StatusCode, msg)` the caller turns into a `Response`.
 fn resolve_cwd_in(
     root: Option<&str>,
     requested: Option<&str>,
-) -> Result<PathBuf, Response> {
+) -> Result<PathBuf, (StatusCode, &'static str)> {
     match (root, requested) {
         (Some(root), req_opt) => {
             let root_canon = std::fs::canonicalize(root).map_err(|_| {
@@ -215,7 +215,6 @@ fn resolve_cwd_in(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "KS_AGENT_WORKSPACE_ROOT does not exist",
                 )
-                    .into_response()
             })?;
             let target = match req_opt {
                 None => return Ok(root_canon),
@@ -229,24 +228,22 @@ fn resolve_cwd_in(
                 }
             };
             let target_canon = std::fs::canonicalize(&target)
-                .map_err(|_| (StatusCode::BAD_REQUEST, "cwd does not exist").into_response())?;
+                .map_err(|_| (StatusCode::BAD_REQUEST, "cwd does not exist"))?;
             if target_canon.starts_with(&root_canon) {
                 Ok(target_canon)
             } else {
                 Err((
                     StatusCode::FORBIDDEN,
                     "cwd escapes KS_AGENT_WORKSPACE_ROOT",
-                )
-                    .into_response())
+                ))
             }
         }
         (None, Some(_)) => Err((
             StatusCode::FORBIDDEN,
             "caller-supplied cwd requires KS_AGENT_WORKSPACE_ROOT to be configured",
-        )
-            .into_response()),
+        )),
         (None, None) => std::env::current_dir()
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no working directory").into_response()),
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no working directory")),
     }
 }
 
@@ -284,8 +281,8 @@ mod tests {
         assert!(!scope_allows_exec(&[]));
     }
 
-    fn status_of(r: Result<PathBuf, Response>) -> Result<PathBuf, StatusCode> {
-        r.map_err(|resp| resp.status())
+    fn status_of(r: Result<PathBuf, (StatusCode, &'static str)>) -> Result<PathBuf, StatusCode> {
+        r.map_err(|(code, _)| code)
     }
 
     #[test]
