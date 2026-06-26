@@ -114,11 +114,44 @@ async def billing_balance(request: Request):
 @router.post("/billing/topup")
 async def billing_topup(request: Request):
     from ..billing import usage as usage_mod
+    from ..proxy.x402_verify import (
+        load_x402_config,
+        verify_on_chain,
+        record_claim,
+        DuplicateClaim,
+        VerifyError,
+    )
 
     body = await request.json()
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     amount_usd = float(body.get("amount_usd", 0))
+    payment_proof = str(body.get("payment_proof") or "").strip()
+
+    verified_mode = "stub-fallback"
+
+    if payment_proof:
+        from ..proxy.x402_verify import has_claim
+        if has_claim(payment_proof):
+            return JSONResponse(
+                {"detail": "payment_proof already claimed"},
+                status_code=409,
+            )
+
+        config = load_x402_config()
+        try:
+            _, verified_mode = await verify_on_chain(config, payment_proof, amount_usd)
+        except VerifyError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=402)
+
+        try:
+            record_claim(payment_proof, user_id, amount_usd, verified_mode)
+        except DuplicateClaim:
+            return JSONResponse(
+                {"detail": "payment_proof already claimed"},
+                status_code=409,
+            )
+
     new_balance = usage_mod.topup(user_id, amount_usd)
     new_balance_float = (
         float(new_balance)
@@ -129,5 +162,6 @@ async def billing_topup(request: Request):
         {
             "credited_usd": round(amount_usd, 6),
             "balance_usd": round(new_balance_float, 6),
+            "verified_mode": verified_mode,
         }
     )
