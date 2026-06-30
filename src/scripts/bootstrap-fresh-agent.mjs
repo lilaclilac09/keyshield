@@ -58,8 +58,7 @@ const AGENT_KP   = process.env.KS_AGENT_KEYPAIR_FILE ?? '/tmp/keyshield-test-age
 // Vault SIZE — should match `UniversalVault::SIZE` in state.rs.
 const VAULT_SIZE = Number(process.env.KS_VAULT_SIZE ?? 2992);
 
-// Discriminator for `Instruction::GrantAgentUniversalAccess` — see
-// programs/keyshield/src/instructions/mod.rs (variant index 20).
+const IX_CREATE_VAULT = 10;
 const IX_GRANT_AGENT = 20;
 const VAULT_SEED = Buffer.from('universal_vault');
 
@@ -109,8 +108,31 @@ async function main() {
   );
   detail('vault PDA:', `${vaultPda.toBase58()} (bump=${vaultBump})`);
   const conn = new Connection(RPC_URL, 'confirmed');
-  const vaultAcc = await conn.getAccountInfo(vaultPda);
-  if (!vaultAcc) die(`vault PDA not on chain — run a vault-create flow first`);
+  let vaultAcc = await conn.getAccountInfo(vaultPda);
+  if (!vaultAcc) {
+    banner('2b. create UniversalVault (ix #10) — missing on-chain');
+    const createData = Buffer.alloc(2);
+    createData.writeUInt8(IX_CREATE_VAULT, 0);
+    createData.writeUInt8(vaultBump, 1);
+    const createIx = new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: owner.publicKey, isSigner: true, isWritable: true },
+        { pubkey: vaultPda, isSigner: false, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      data: createData,
+    });
+    const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
+    const createTx = new Transaction({ feePayer: owner.publicKey, blockhash, lastValidBlockHeight }).add(createIx);
+    createTx.sign(owner);
+    const createSig = await conn.sendRawTransaction(createTx.serialize(), { skipPreflight: false });
+    detail('create tx:', createSig);
+    await conn.confirmTransaction({ signature: createSig, blockhash, lastValidBlockHeight }, 'confirmed');
+    ok('vault created on-chain');
+    vaultAcc = await conn.getAccountInfo(vaultPda);
+  }
+  if (!vaultAcc) die(`vault PDA not on chain — create failed`);
   if (!vaultAcc.owner.equals(PROGRAM_ID)) {
     die(`vault PDA owner ${vaultAcc.owner.toBase58()} ≠ KeyShield program`);
   }
@@ -176,6 +198,7 @@ async function main() {
   ${c.ok('Run the e2e against the new agent:')}
 
       ${c.dim('# Same shell — backend should already be running')}
+      KS_VAULT_PDA=${vaultPda.toBase58()} \\
       KS_AGENT_PUBKEY=${agent.publicKey.toBase58()} \\
         node src/scripts/mpp-e2e-devnet.mjs
 

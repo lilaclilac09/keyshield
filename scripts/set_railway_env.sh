@@ -20,7 +20,8 @@ echo "✓ KS_PLATFORM_USDC_ATA"
 railway variables --set "KS_KEYSHIELD_PROGRAM_ID=41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j"
 echo "✓ KS_KEYSHIELD_PROGRAM_ID"
 
-railway variables --set "KS_VAULT_PDA=8QBVXySkwWJcic2K4b7SAdaG4tQtyA2ekPvaRQLpizmp"
+# Vault PDA for settler GHpd6gf… (NOT 8QBVXySk… which belongs to a different owner)
+railway variables --set "KS_VAULT_PDA=Axzwa7otsDGowxQSCcA7YvBpXgDZ2nTerzkRTc5m923M"
 echo "✓ KS_VAULT_PDA"
 
 railway variables --set "KS_SOLANA_RPC_URL=https://api.devnet.solana.com"

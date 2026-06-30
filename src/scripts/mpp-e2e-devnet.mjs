@@ -25,8 +25,7 @@
  *
  * Required env (override defaults):
  *   KS_API_BASE      backend URL              (http://localhost:8000)
- *   KS_DEMO_USER     login user               (alice)
- *   KS_DEMO_PW       login password           (pw)
+ *   KS_DEMO_PW       passphrase stored in session   (pw)
  *   KS_RPC_URL       Solana RPC               (https://api.devnet.solana.com)
  *   KS_PROGRAM_ID    KeyShield program        (41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j)
  *   KS_USDC_MINT     USDC mint                (4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU)
@@ -148,13 +147,34 @@ async function main() {
   if (bal < 5_000_000) die('Owner needs at least 0.005 SOL for tx fees');
   ok('keypair + RPC ready');
 
-  banner('2. backend login');
-  const { token } = await api('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ userId: DEMO_USER, password: DEMO_PW }),
-  });
-  if (!token) die('login returned no token');
-  ok(`logged in as ${DEMO_USER}`);
+  banner('2. backend login (wallet-signed challenge)');
+  let token = process.env.KS_E2E_TOKEN?.trim();
+  if (token) {
+    ok('using KS_E2E_TOKEN from env');
+  } else {
+    const ch = await api('/auth/wallet-challenge');
+    const challenge = ch.challenge ?? ch.nonce;
+    const nonce = ch.nonce ?? challenge;
+    if (!challenge) die('wallet-challenge returned no challenge');
+    const message = Buffer.from(challenge, 'utf8');
+    // @solana/web3.js v1 Keypair has no .sign(); use the 64-byte secret
+    // with nacl detached signing (seed = first 32 bytes).
+    const naclMod = await import('tweetnacl');
+    const nacl = naclMod.default ?? naclMod;
+    const signature = nacl.sign.detached(message, owner.secretKey);
+    ({ token } = await api('/auth/wallet-login', {
+      method: 'POST',
+      body: JSON.stringify({
+        walletAddress: owner.publicKey.toBase58(),
+        challenge,
+        nonce,
+        passphrase: DEMO_PW,
+        signature: Buffer.from(signature).toString('base64'),
+      }),
+    }));
+    if (!token) die('wallet-login returned no token');
+    ok(`logged in as ${owner.publicKey.toBase58().slice(0, 8)}…`);
+  }
 
   banner('3. open MPP stream (off-chain row)');
   const agent = process.env.KS_AGENT_PUBKEY
@@ -260,7 +280,11 @@ async function main() {
   banner('9. record tx signature on backend');
   await api(`/mpp/streams/${streamId}/record-tx`, {
     method: 'POST',
-    body: JSON.stringify({ tx_signature: sig }),
+    body: JSON.stringify({
+      tx_signature: sig,
+      stream_pda: streamPda.toBase58(),
+      stream_usdc_ata: expectedStreamUsdcAta.toBase58(),
+    }),
   }, token);
   ok('backend recorded the on-chain signature');
 

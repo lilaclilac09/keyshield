@@ -425,11 +425,21 @@ async def mpp_record_tx(stream_id: int, request: Request):
     sig = str(body.get("tx_signature") or body.get("txSignature") or "").strip()
     if not sig:
         return JSONResponse({"detail": "tx_signature is required"}, status_code=400)
+    stream_pda = str(body.get("stream_pda") or body.get("streamPda") or "").strip() or None
+    stream_usdc_ata = (
+        str(body.get("stream_usdc_ata") or body.get("streamUsdcAta") or "").strip() or None
+    )
 
     from ..mpp import mpp_streams
 
     try:
-        stream = mpp_streams.record_tx_signature(sess["user_id"], stream_id, sig)
+        stream = mpp_streams.record_tx_signature(
+            sess["user_id"],
+            stream_id,
+            sig,
+            stream_pda=stream_pda,
+            stream_usdc_ata=stream_usdc_ata,
+        )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except ValueError as e:
