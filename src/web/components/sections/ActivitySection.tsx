@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, StatCard } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { DataTable, Column } from '../ui/DataTable';
 import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/PaymentBadge';
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
+import { MppStreamOpener } from '../MppStreamOpener';
 import { apiFetch } from '../../lib/auth';
 
 interface UsageEntry {
@@ -50,6 +52,14 @@ export const ActivitySection: React.FC = () => {
   const [topupMsg, setTopupMsg] = useState('');
   const [topupOk, setTopupOk] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mppAgentPubkey, setMppAgentPubkey] = useState('');
+  const [mppAgentName, setMppAgentName] = useState('');
+  const [mppUpstream, setMppUpstream] = useState('openai');
+  const [mppCapMicro, setMppCapMicro] = useState('1000000');
+  const [mppOpenBusy, setMppOpenBusy] = useState(false);
+  const [mppOpenErr, setMppOpenErr] = useState('');
+  const [mppPendingOpen, setMppPendingOpen] = useState<MppStream | null>(null);
+  const [mppActionBusy, setMppActionBusy] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -86,6 +96,59 @@ export const ActivitySection: React.FC = () => {
       if (bRes.ok) setBilling(await bRes.json());
     } catch (e) { setTopupMsg(e instanceof Error ? e.message : 'Network error'); }
     finally { setTopupBusy(false); }
+  };
+
+  const handleOpenMppStream = async () => {
+    const pubkey = mppAgentPubkey.trim();
+    if (!pubkey) { setMppOpenErr('Agent pubkey required'); return; }
+    setMppOpenBusy(true); setMppOpenErr('');
+    try {
+      const r = await apiFetch('/mpp/streams', {
+        method: 'POST',
+        body: JSON.stringify({
+          agentPubkey: pubkey,
+          agentName: mppAgentName.trim() || pubkey.slice(0, 8),
+          upstream: mppUpstream.trim() || 'openai',
+          ratePerTokenMicroUsdc: 100,
+          ratePerCallMicroUsdc: 0,
+          settlementIntervalSecs: 60,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setMppOpenErr(d.detail ?? 'Failed to open stream'); return; }
+      setMppPendingOpen(d.stream as MppStream);
+      setMppAgentPubkey(''); setMppAgentName('');
+      await refresh();
+    } catch (e) {
+      setMppOpenErr(e instanceof Error ? e.message : 'Network error');
+    } finally { setMppOpenBusy(false); }
+  };
+
+  const handleMppSettle = async (streamId: number) => {
+    setMppActionBusy(streamId);
+    try {
+      const r = await apiFetch(`/mpp/streams/${streamId}/settle`, { method: 'POST' });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert((d as { detail?: string }).detail ?? 'Settle failed');
+        return;
+      }
+      await refresh();
+    } finally { setMppActionBusy(null); }
+  };
+
+  const handleMppClose = async (streamId: number) => {
+    if (!window.confirm('Close this MPP stream?')) return;
+    setMppActionBusy(streamId);
+    try {
+      const r = await apiFetch(`/mpp/streams/${streamId}/close`, { method: 'POST' });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert((d as { detail?: string }).detail ?? 'Close failed');
+        return;
+      }
+      await refresh();
+    } finally { setMppActionBusy(null); }
   };
 
   const TABS: { id: Tab; label: string }[] = [
@@ -183,6 +246,31 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
+          <Card title="Open Payment Stream" description="Create an off-chain stream row, then sign the 3-ix on-chain open tx with your wallet.">
+            {mppOpenErr && <p className="text-[12px] text-red-400 mb-3">{mppOpenErr}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <Input label="Agent pubkey" value={mppAgentPubkey} onChange={e => setMppAgentPubkey(e.target.value)} placeholder="Base58 agent wallet" />
+              <Input label="Agent name" value={mppAgentName} onChange={e => setMppAgentName(e.target.value)} placeholder="trading-bot-v1" />
+              <Input label="Upstream" value={mppUpstream} onChange={e => setMppUpstream(e.target.value)} placeholder="openai" />
+              <Input label="Budget (micro-USDC)" value={mppCapMicro} onChange={e => setMppCapMicro(e.target.value)} placeholder="1000000 = 1 USDC" />
+            </div>
+            <Button variant="primary" size="md" onClick={handleOpenMppStream} loading={mppOpenBusy} disabled={!mppAgentPubkey.trim()}>
+              Create stream (off-chain)
+            </Button>
+            {mppPendingOpen && (
+              <div className="mt-4 rounded-lg border border-[#243365] bg-[#0e1631] p-3 flex flex-col gap-2">
+                <p className="text-[12px] text-[#a8b3d8]">
+                  Stream #{mppPendingOpen.id} ready — sign on-chain to fund the PaymentStream PDA.
+                </p>
+                <MppStreamOpener
+                  streamId={mppPendingOpen.id}
+                  agentPubkey={mppPendingOpen.agent_pubkey}
+                  maxTotalMicroUsdc={parseInt(mppCapMicro, 10) || 1_000_000}
+                  onSuccess={() => { setMppPendingOpen(null); void refresh(); }}
+                />
+              </div>
+            )}
+          </Card>
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (
@@ -190,9 +278,28 @@ export const ActivitySection: React.FC = () => {
                   <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><span className="text-[11px] font-mono text-white">M</span></div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2"><span className="text-[13px] text-white font-medium">{s.agent_name || s.agent_pubkey.slice(0, 8)}</span><Badge variant={s.status === 'open' ? 'success' : 'neutral'}>{s.status}</Badge></div>
-                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} \xb7 {s.total_calls} calls \xb7 settled {fmtCost(s.settled_micro_usdc / 1_000_000)}</div>
+                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} · {s.total_calls} calls · pending {fmtCost(s.pending_micro_usdc / 1_000_000)} · settled {fmtCost(s.settled_micro_usdc / 1_000_000)}</div>
+                    {s.status === 'open' && !s.on_chain_signature && (
+                      <div className="mt-2">
+                        <MppStreamOpener streamId={s.id} agentPubkey={s.agent_pubkey} />
+                      </div>
+                    )}
                   </div>
-                  {s.on_chain_signature && <a href={`https://explorer.solana.com/tx/${s.on_chain_signature}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-[11px] text-white hover:underline">View TX</a>}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {s.status === 'open' && (
+                      <Button size="sm" variant="secondary" loading={mppActionBusy === s.id} onClick={() => void handleMppSettle(s.id)}>
+                        Settle
+                      </Button>
+                    )}
+                    {s.status === 'open' && (
+                      <Button size="sm" variant="destructive" loading={mppActionBusy === s.id} onClick={() => void handleMppClose(s.id)}>
+                        Close
+                      </Button>
+                    )}
+                    {s.on_chain_signature && (
+                      <a href={`https://explorer.solana.com/tx/${s.on_chain_signature}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-[11px] text-white hover:underline">TX</a>
+                    )}
+                  </div>
                 </div>
               ))
             }

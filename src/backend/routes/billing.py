@@ -113,12 +113,71 @@ async def billing_balance(request: Request):
 
 @router.post("/billing/topup")
 async def billing_topup(request: Request):
+    """Credit prepaid balance.
+
+    x402 path (production): ``{payment_proof, amount_usd}`` — verified on-chain
+    via ``x402_verify`` with idempotent ``x402_claims`` table.
+
+    Dev path: ``{amount_usd}`` only — allowed when ``KS_X402_VERIFY_REQUIRED``
+    is not ``1`` (dashboard manual top-up).
+    """
+    import os
+
     from ..billing import usage as usage_mod
+    from ..proxy import x402_verify
 
     body = await request.json()
     sess = _auth(request)
-    user_id = sess["user_id"] if sess else "default"
-    amount_usd = float(body.get("amount_usd", 0))
+    if not sess:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    user_id = sess.get("user_id") or "default"
+
+    payment_proof = str(body.get("payment_proof") or body.get("paymentProof") or "").strip()
+    try:
+        amount_usd = float(body.get("amount_usd") or body.get("amountUsd") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({"detail": "amount_usd must be a number"}, status_code=400)
+
+    if amount_usd <= 0:
+        return JSONResponse({"detail": "amount_usd must be positive"}, status_code=400)
+
+    verify_required = os.getenv("KS_X402_VERIFY_REQUIRED", "0").strip() == "1"
+
+    if payment_proof:
+        config = x402_verify.load_x402_config()
+        if config is None and verify_required:
+            return JSONResponse(
+                {"detail": "x402 on-chain verification not configured"},
+                status_code=503,
+            )
+        try:
+            verified, mode = await x402_verify.verify_on_chain(
+                config, payment_proof, amount_usd
+            )
+            if not verified:
+                return JSONResponse(
+                    {"detail": "payment_proof verification failed"},
+                    status_code=402,
+                )
+            x402_verify.record_claim(payment_proof, user_id, amount_usd, mode)
+        except x402_verify.DuplicateClaim:
+            return JSONResponse(
+                {"detail": "payment_proof already claimed"},
+                status_code=409,
+            )
+        except x402_verify.VerifyError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=400)
+        except Exception as exc:
+            return JSONResponse(
+                {"detail": f"verification error: {exc}"},
+                status_code=502,
+            )
+    elif verify_required:
+        return JSONResponse(
+            {"detail": "payment_proof required when KS_X402_VERIFY_REQUIRED=1"},
+            status_code=400,
+        )
+
     new_balance = usage_mod.topup(user_id, amount_usd)
     new_balance_float = (
         float(new_balance)
@@ -129,5 +188,6 @@ async def billing_topup(request: Request):
         {
             "credited_usd": round(amount_usd, 6),
             "balance_usd": round(new_balance_float, 6),
+            "verified": bool(payment_proof),
         }
     )
