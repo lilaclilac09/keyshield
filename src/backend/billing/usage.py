@@ -276,6 +276,45 @@ def get_balance(user_id: str) -> float:
         conn.close()
 
 
+def get_balance_if_exists(user_id: str) -> float | None:
+    """Return balance only when a row exists — no auto-create.
+
+    Used by the Rust bridge (`GET /_internal/balance/<user_id>`). Missing
+    users return None so the route can 404; ks-proxy treats 404 as 0.0 for
+    x402 logic (spec 07).
+    """
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT balance_usd FROM user_balance WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return round(row[0], 6)
+    finally:
+        conn.close()
+
+
+def log_batch(entries: list[dict]) -> int:
+    """Ingest a buffered batch from the Rust bridge. Returns count ingested."""
+    ingested = 0
+    for entry in entries:
+        log_call(
+            user_id=entry["user_id"],
+            upstream=entry["upstream"],
+            key_type=entry.get("key_type", "platform"),
+            method=entry.get("method", ""),
+            path=entry.get("path", ""),
+            tokens_in=int(entry.get("tokens_in", 0)),
+            tokens_out=int(entry.get("tokens_out", 0)),
+            cost_usd=float(entry.get("cost_usd", 0.0)),
+            latency_ms=float(entry.get("latency_ms", 0.0)),
+            status_code=int(entry.get("status_code", 0)),
+        )
+        ingested += 1
+    return ingested
+
+
 def topup(user_id: str, amount_usd: float) -> float:
     """Add prepaid credit. Returns new balance."""
     conn = _db()
