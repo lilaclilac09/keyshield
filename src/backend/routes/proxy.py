@@ -64,6 +64,53 @@ def _is_helius(upstream: str) -> bool:
     return upstream in ("helius", "helius-rpc", "helius-das", "helius-enhanced")
 
 
+async def _maybe_record_mpp(
+    request: Request,
+    user_id: str,
+    tokens_in: int,
+    tokens_out: int,
+    status: int,
+) -> None:
+    """Python-only-mode MPP hot-path metering (spec 15).
+
+    Mirrors ks-proxy handlers.rs §9.5: when a successful (<400) upstream
+    call carries `X-Mpp-Stream-Id: <int>`, debit that stream. Unlike the
+    Rust side (fire-and-forget over the HTTP bridge) this writes SQLite
+    in-process via a worker thread; the await costs ~1ms and guarantees
+    the record isn't lost on process exit. Any failure (foreign stream,
+    closed stream, bad id) is swallowed — metering must never break the
+    proxy response.
+    """
+    if status >= 400:
+        return
+    sid_raw = request.headers.get("X-Mpp-Stream-Id", "").strip()
+    if not sid_raw:
+        return
+    try:
+        stream_id = int(sid_raw)
+    except ValueError:
+        return
+    if not user_id or user_id == "anonymous":
+        # Streams are owner-scoped; without a session there is nothing
+        # to bill against.
+        return
+
+    import asyncio
+
+    from ..mpp import mpp_streams
+
+    try:
+        await asyncio.to_thread(
+            mpp_streams.record_usage,
+            user_id=user_id,
+            stream_id=stream_id,
+            calls=1,
+            tokens=int(tokens_in) + int(tokens_out),
+        )
+    except Exception as exc:  # noqa: BLE001 — never break the hot path
+        logger.debug("mpp record skipped for stream %s: %s", stream_id, exc)
+
+
 @router.api_route(
     "/proxy/{upstream}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
 )
@@ -117,6 +164,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
+    tokens_in = tokens_out = 0
     try:
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
         usage_mod.log_call(
@@ -133,6 +181,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
         )
     except Exception:
         pass
+
+    await _maybe_record_mpp(request, user_id, tokens_in, tokens_out, status)
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
@@ -220,6 +270,7 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
+    tokens_in = tokens_out = 0
     try:
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
         usage_mod.log_call(
@@ -236,6 +287,8 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         )
     except Exception:
         pass
+
+    await _maybe_record_mpp(request, user_id, tokens_in, tokens_out, status)
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
