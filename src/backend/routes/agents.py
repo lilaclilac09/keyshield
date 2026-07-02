@@ -164,6 +164,139 @@ async def agent_wallet_create(agent_id: str, request: Request):
     return JSONResponse({"agent_id": aid, "pubkey": pubkey})
 
 
+# ─── x402 micropayment via server-held agent wallet (ix #25) ─────────────
+#
+# Spec 10 Phase 10.7 — completes the `EmbeddedWalletInterceptor` loop in
+# proxy/x402_interceptor.py: the interceptor POSTs the 402 envelope here,
+# the server signs a `pay_x402` ix with the agent's server-held keypair
+# (server_wallet.py) and submits it, returning the tx signature as the
+# payment proof.
+
+
+@router.post("/agents/{agent_id}/wallet/pay_x402")
+async def agent_wallet_pay_x402(agent_id: str, request: Request):
+    """Sign + submit a `pay_x402` (ix #25) micropayment for an agent.
+
+    Body (JSON) — matches EmbeddedWalletInterceptor's POST shape:
+      envelope.network           — e.g. "solana-devnet"
+      envelope.amountRequired    — integer micro-USDC
+      envelope.payTo             — base58 recipient wallet (ATA derived)
+      envelope.asset             — USDC mint; must match the stream's mint
+      envelope.resource          — opaque, folded into envelope_hash
+      envelope.maxTimeoutSeconds — optional, caps expires_at (≤300s)
+
+    Preconditions:
+      - Server wallet exists for (owner, agent_id) — /wallet/create first.
+      - The agent has an OPEN mpp stream with on-chain PDA/ATA recorded
+        (open_payment_stream signed in-browser, then /record-tx).
+      - On-chain: agent grant active in the vault + stream budget not
+        exhausted — enforced by pay_x402.rs, not re-checked here.
+
+    Returns {"signature", "network", "agentPubkey", "streamPda"} — the
+    signature doubles as the x402 `X-Payment-Proof` value.
+    """
+    import time as _time
+
+    from ..agents import agent_wallet, server_wallet
+    from ..mpp import mpp_onchain, mpp_streams
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"error": "authorization required"}, status_code=401)
+    owner = sess["user_id"]
+
+    body = await request.json()
+    env = body.get("envelope") or {}
+    try:
+        amount = int(env.get("amountRequired") or env.get("amount_required") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({"detail": "amountRequired must be an integer"}, status_code=400)
+    pay_to = str(env.get("payTo") or env.get("pay_to") or "").strip()
+    if amount <= 0 or not pay_to:
+        return JSONResponse(
+            {"detail": "envelope.amountRequired and envelope.payTo are required"},
+            status_code=400,
+        )
+
+    # Off-chain per-call guardrail (on-chain enforces the stream budget cap).
+    max_per_call = int(os.environ.get("KS_X402_AGENT_MAX_PER_CALL", "100000"))
+    if amount > max_per_call:
+        return JSONResponse(
+            {"detail": f"amount {amount} exceeds per-call cap {max_per_call}"},
+            status_code=402,
+        )
+
+    sk = server_wallet.get_signing_key(owner, agent_id)
+    if sk is None:
+        return JSONResponse(
+            {
+                "detail": f"no server wallet for agent {agent_id!r} — "
+                f"POST /agents/{agent_id}/wallet/create first"
+            },
+            status_code=404,
+        )
+    agent_pubkey = server_wallet._b58encode(bytes(sk.verify_key))
+
+    config = mpp_onchain.load_mpp_config()
+    if config is None or not config.vault_pda:
+        return JSONResponse(
+            {
+                "detail": "on-chain config incomplete — set KS_MPP_SETTLER_KEY, "
+                "KS_PLATFORM_USDC_ATA, KS_KEYSHIELD_PROGRAM_ID, KS_VAULT_PDA"
+            },
+            status_code=503,
+        )
+
+    stream = mpp_streams.find_agent_stream(owner, agent_pubkey)
+    if stream is None:
+        return JSONResponse(
+            {
+                "detail": "no open on-chain payment stream for this agent — "
+                "open one (POST /mpp/streams + build-open-tx + record-tx) first"
+            },
+            status_code=409,
+        )
+
+    mint = str(env.get("asset") or "").strip() or config.usdc_mint
+    if mint != config.usdc_mint:
+        return JSONResponse(
+            {"detail": f"asset {mint} does not match stream mint {config.usdc_mint}"},
+            status_code=400,
+        )
+    try:
+        recipient_ata = mpp_onchain.derive_associated_token_address(pay_to, mint)
+    except mpp_onchain.MppSubmitError as e:
+        return JSONResponse({"detail": str(e)}, status_code=503)
+
+    timeout = min(int(env.get("maxTimeoutSeconds") or 300), 300)
+    ix = agent_wallet.build_pay_x402_ix(
+        program_id=config.keyshield_program_id,
+        vault_pda=config.vault_pda,
+        stream_pda=stream["stream_pda"],
+        stream_usdc_ata=stream["stream_usdc_ata"],
+        recipient_usdc_ata=recipient_ata,
+        usdc_mint=mint,
+        agent_pubkey=agent_pubkey,
+        amount_micro_usdc=amount,
+        nonce=os.urandom(16),
+        expires_at=int(_time.time()) + max(timeout, 30),
+        envelope_hash=agent_wallet.canonical_envelope_hash(env),
+    )
+    try:
+        sig = await agent_wallet.submit_pay_x402(ix, bytes(sk), config.rpc_url)
+    except mpp_onchain.MppSubmitError as e:
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+    return JSONResponse(
+        {
+            "signature": sig,
+            "network": str(env.get("network") or "solana"),
+            "agentPubkey": agent_pubkey,
+            "streamPda": stream["stream_pda"],
+        }
+    )
+
+
 # ─── On-chain ephemeral signer (CreateEphemeralSigner ix #23) ───────────
 #
 # Server builds a byte-perfect unsigned ix; owner signs in-browser via

@@ -417,6 +417,34 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
 _PDA_MISSING_WARNED: dict[int, bool] = {}
 
 
+def find_agent_stream(user_id: str, agent_pubkey: str) -> dict | None:
+    """Find the newest OPEN stream for (user_id, agent_pubkey) that has
+    its on-chain PDA + USDC ATA recorded. Returns the stream dict with
+    `stream_pda` + `stream_usdc_ata` keys added, or None.
+
+    Used by `POST /agents/{id}/wallet/pay_x402` (spec 10 Phase 10.7) to
+    locate the funding stream an agent-signed micropayment debits.
+    """
+    conn = _db()
+    try:
+        row = conn.execute(
+            f"SELECT {_STREAM_COLS}, stream_pda, stream_usdc_ata FROM mpp_streams "
+            "WHERE user_id = ? AND agent_pubkey = ? AND status = 'open' "
+            "AND stream_pda IS NOT NULL AND stream_pda != '' "
+            "AND stream_usdc_ata IS NOT NULL AND stream_usdc_ata != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id, agent_pubkey),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    stream = _row_to_stream(row[:17])
+    stream["stream_pda"] = row[17]
+    stream["stream_usdc_ata"] = row[18]
+    return stream
+
+
 def _get_stream_pda_ata(stream_id: int) -> tuple[str | None, str | None]:
     """Look up the on-chain PDA + USDC ATA for a stream.
 

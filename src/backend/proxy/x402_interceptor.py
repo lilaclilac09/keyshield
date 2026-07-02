@@ -18,8 +18,10 @@ Two implementations shipped:
   - `ManualKeypairInterceptor`: signs a standard Coinbase-x402 USDC SPL
     Transfer with a caller-supplied keypair. Works TODAY; doesn't rely on
     the keyshield `pay_x402` on-chain ix. Proof = the USDC tx signature.
-  - `EmbeddedWalletInterceptor`: stub. Will dispatch to the embedded wallet
-    (`/agents/{id}/wallet/pay_x402`) once spec 10 Phase 10.7 lands.
+  - `EmbeddedWalletInterceptor`: dispatches to the control plane's
+    `POST /agents/{id}/wallet/pay_x402` (spec 10 Phase 10.7) which signs
+    the on-chain `pay_x402` ix (#25) with the agent's server-held wallet
+    and returns the tx signature as the proof.
 """
 
 from __future__ import annotations
@@ -238,8 +240,13 @@ class ManualKeypairInterceptor:
 class EmbeddedWalletInterceptor:
     """
     Calls the keyshield control plane to mint an x402 proof via the
-    spec 10 `pay_x402` on-chain ix. Stub until spec 10 Phase 10.4 + 10.7
-    land. Raises `PaymentRequired` so callers fall through cleanly today.
+    spec 10 `pay_x402` on-chain ix (#25), signed with the agent's
+    server-held wallet (see routes/agents.py::agent_wallet_pay_x402).
+
+    Requires: a server wallet for the agent (`/wallet/create`), an open
+    on-chain payment stream bound to that wallet's pubkey, and the
+    backend's on-chain env (KS_KEYSHIELD_PROGRAM_ID etc). A 404 from
+    the endpoint (older deployments) degrades to `PaymentRequired`.
     """
 
     def __init__(self, agent_id: str, base_url: str, bearer: str):
