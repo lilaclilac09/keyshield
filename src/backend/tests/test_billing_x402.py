@@ -2,8 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def isolate_billing_dbs(tmp_path: Path) -> None:
+    """Use per-test sqlite files so x402 claims never leak across runs."""
+    from src.backend.billing import usage as usage_mod
+    from src.backend.proxy import x402_verify
+
+    usage_mod.DB_PATH = tmp_path / "usage.db"
+    x402_verify.DB_PATH = tmp_path / "x402.db"
 
 
 @pytest.fixture()
