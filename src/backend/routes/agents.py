@@ -164,6 +164,26 @@ async def agent_wallet_create(agent_id: str, request: Request):
     return JSONResponse({"agent_id": aid, "pubkey": pubkey})
 
 
+@router.delete("/agents/{agent_id}/wallet")
+async def agent_wallet_delete(agent_id: str, request: Request):
+    """Delete the server-held wallet for (owner, agent_id).
+
+    Destroys the encrypted seed permanently — any on-chain grant or
+    payment stream bound to the wallet's pubkey becomes unusable (the
+    key is gone). Funds in a stream ATA remain withdrawable by the
+    OWNER via withdraw_agent_wallet (#27), which is owner-signed.
+    Idempotent: deleting a non-existent wallet returns deleted=false.
+    """
+    from ..agents import server_wallet
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"error": "authorization required"}, status_code=401)
+    owner = sess["user_id"]
+    deleted = server_wallet.delete_server_wallet(owner, agent_id)
+    return JSONResponse({"deleted": bool(deleted)})
+
+
 # ─── x402 micropayment via server-held agent wallet (ix #25) ─────────────
 #
 # Spec 10 Phase 10.7 — completes the `EmbeddedWalletInterceptor` loop in
