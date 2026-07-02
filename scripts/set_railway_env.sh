@@ -51,6 +51,26 @@ fi
 railway variables --set "KS_X402_ENABLED=0"
 echo "✓ KS_X402_ENABLED=0  (set to 1 when x402 receiver is ready)"
 
+# ── X402 topup verification (Base mainnet) ───────────────────────────────────
+# /billing/topup verifies payment_proof on-chain via proxy/x402_verify.py.
+# Without these it runs in stub-fallback (idempotency only, NO on-chain
+# check). For real-money production, set BOTH and flip VERIFY_REQUIRED=1:
+#
+#   railway variables --set "KS_X402_BASE_RPC_URL=https://mainnet.base.org"
+#   railway variables --set "KS_X402_RECEIVER_ADDRESS=0x<your-40-hex-receiver>"
+#   railway variables --set "KS_X402_VERIFY_REQUIRED=1"
+#
+# Optional (defaults shown):
+#   railway variables --set "KS_X402_USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # USDC on Base
+#   railway variables --set "KS_X402_MIN_CONFIRMATIONS=5"
+echo "· x402 topup verify vars not set (stub-fallback) — see comments in this script"
+
+# ── Agent-signed x402 micropayments (pay_x402 ix #25) ────────────────────────
+# POST /agents/{id}/wallet/pay_x402 per-call cap in micro-USDC (default 100000
+# = 0.10 USDC). The on-chain stream budget cap is the hard limit.
+railway variables --set "KS_X402_AGENT_MAX_PER_CALL=100000"
+echo "✓ KS_X402_AGENT_MAX_PER_CALL=100000"
+
 # ── Convenience ───────────────────────────────────────────────────────────────
 railway variables --set "KS_PROGRAM_ID=41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j"
 echo "✓ KS_PROGRAM_ID"
