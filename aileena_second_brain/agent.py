@@ -27,6 +27,7 @@ SYNONYMS = {
     "techno": {"techno", "electronic", "club", "rave"},
     "dj": {"dj", "set", "carousel", "playlist", "crate"},
     "taste": {"taste", "style", "preference", "into", "vibe"},
+    "culture": {"didion", "hockney", "joan", "david", "art", "literature", "documentary", "podcast", "book"},
 }
 
 UNPUBLISHED_MARKERS = (
@@ -106,9 +107,38 @@ def score_chunk(query_terms: set[str], path: str, section: str, body: str, metad
         score += 4.0
     if query_terms & SYNONYMS["taste"] and "music-taste" in path_l:
         score += 4.0
+    if query_terms & SYNONYMS["culture"] and "culture-taste" in path_l:
+        score += 5.0
+    if "voice-profile" in path_l:
+        score += 0.5
     if str(metadata.get("type", "")).lower() == "preference":
         score += 1.5
     return score
+
+
+def load_voice_profile_text() -> str:
+    path = ROOT / "memories" / "personal" / "voice-profile.md"
+    if not path.exists():
+        return ""
+    return frontmatter.load(path).content.strip()
+
+
+def stylize_as_aileen(answer: str, query: str) -> str:
+    answer = (
+        answer.replace("Inference from taste memory: ", "")
+        .replace("Operational note: ", "")
+        .replace("Based on her taste profile: ", "From her taste — ")
+        .replace(
+            "That's personal agent knowledge, not something she's published about.",
+            "That's personal — not something she's published.",
+        )
+        .replace("From retrieved memory, here's what I can infer:", "Here's how I'd put it —")
+        .replace("  ", " ")
+        .strip()
+    )
+    if "送" in query and answer and not answer.lower().startswith("if you're asking what she'd send"):
+        answer = f"If you're asking what she'd send you — {answer[0].lower()}{answer[1:]}"
+    return answer
 
 
 def retrieve_chunks(query: str, limit: int = 6) -> list[MemoryChunk]:
@@ -183,9 +213,46 @@ def detect_intent(query: str) -> set[str]:
         intents.add("recommend")
     if re.search(r"why|how come|reason", ql):
         intents.add("explain")
+    if any(k in ql for k in ("didion", "hockney", "documentary", "podcast", "joan", "david")):
+        intents.add("culture")
+    if "送" in query or re.search(r"\bsend\b|recommend|suggest", ql):
+        intents.add("recommend")
     if not intents:
         intents.add("general")
     return intents
+
+
+def infer_culture(query: str, chunks: list[MemoryChunk]) -> str:
+    culture_chunks = [
+        c
+        for c in chunks
+        if "culture-taste" in c.path or "didion" in c.content.lower() or "hockney" in c.content.lower()
+    ]
+    bullets = [b for c in culture_chunks for b in extract_bullets(c.content)]
+    send_mode = "送" in query or re.search(r"\bsend\b|recommend|suggest", query.lower())
+
+    lines: list[str] = []
+    if send_mode:
+        lines.append(
+            "If you're asking what she'd send you — I'd start with Joan Didion and David Hockney, "
+            "not as abstract names but as a pair: language + image."
+        )
+        lines.append(
+            "For Didion: *We Tell Ourselves Stories* (Alissa Wilkinson) plus the podcast conversation on "
+            "*The Colin McEnroe Show* (Feb 2026) — that's the newer thread she's actually tracking."
+        )
+        lines.append(
+            "For Hockney: BBC *Front Row — David Hockney special* (Jun 2026). "
+            "If she wants one documentary anchor, it's still *The Center Will Not Hold* for Didion — "
+            "and for Hockney right now it's tribute audio more than a new film."
+        )
+        lines.append("She'd probably add one mood track from her DJ set after that — Daydreaming works as the soft opener.")
+    else:
+        lines.append("She's deeply into Joan Didion and David Hockney — prose clarity and visual appetite, same instinct.")
+        for b in bullets[:4]:
+            if any(k in b.lower() for k in ("didion", "hockney", "podcast", "documentary", "front row")):
+                lines.append(b)
+    return " ".join(lines)
 
 
 def infer_locally(query: str, chunks: list[MemoryChunk]) -> str:
@@ -198,6 +265,9 @@ def infer_locally(query: str, chunks: list[MemoryChunk]) -> str:
 
     unpublished = has_unpublished_signal(chunks)
     lines: list[str] = []
+
+    if "culture" in intents:
+        return infer_culture(query, chunks)
 
     if "preference" in intents and "techno" in intents:
         techno_chunks = [c for c in chunks if "techno" in c.section.lower() or "music-taste" in c.path]
@@ -255,22 +325,29 @@ def infer_locally(query: str, chunks: list[MemoryChunk]) -> str:
                 lines.append(f"- [{c.section}] {s}")
 
     if not lines:
-        return "I retrieved memory but couldn't infer a confident answer. Try a more specific question."
+        return stylize_as_aileen(
+            "I don't have enough memory context yet — add more under aileena_second_brain/memories/.",
+            query,
+        )
 
-    return " ".join(lines)
+    return stylize_as_aileen(" ".join(lines), query)
 
 
 def build_llm_context(query: str, chunks: list[MemoryChunk]) -> str:
     blocks = []
+    voice = load_voice_profile_text()
+    if voice:
+        blocks.append("### voice-profile\n" + voice)
     for c in chunks:
         blocks.append(f"### {c.path} :: {c.section}\n{c.content}")
     tracks = load_dj_set_tracks()
     if tracks:
         blocks.append("### dj-set/setlist.json\n" + json.dumps(tracks, ensure_ascii=False, indent=2))
     return (
-        "You are Aileena, answering as her personal agent using ONLY the memory below.\n"
-        "Infer carefully. Distinguish published facts vs personal unpublished preferences.\n"
-        "If memory is insufficient, say so.\n\n"
+        "You are answering as Aileen's personal agent (Aileena).\n"
+        "Mimic her voice exactly using the voice-profile memory.\n"
+        "Infer from memory only. Distinguish published facts vs personal preferences.\n"
+        "If memory is insufficient, say so in her tone.\n\n"
         f"Question: {query}\n\n"
         "Memory:\n" + "\n\n".join(blocks)
     )
@@ -287,16 +364,26 @@ def infer_with_llm(query: str, chunks: list[MemoryChunk]) -> str | None:
         ks = KeyShield(token=token, base_url=os.environ.get("KS_BASE", "http://localhost:8000"))
         client = ks.openai_client()
         prompt = build_llm_context(query, chunks)
+        voice = load_voice_profile_text()
+        system_prompt = (
+            "You are Aileen's personal agent. Mimic her voice from the voice-profile memory: "
+            "calm, specific, observational, em dashes, no assistant boilerplate. "
+            "Answer in English unless the user writes Chinese. "
+            "Infer; do not invent facts outside memory."
+        )
+        if voice:
+            system_prompt += f"\n\nVoice profile:\n{voice}"
         resp = client.chat.completions.create(
             model=os.environ.get("AILEENA_AGENT_MODEL", "gpt-4o-mini"),
             messages=[
-                {"role": "system", "content": "Answer concisely in English unless the user writes Chinese."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.2,
-            max_tokens=400,
+            temperature=0.35,
+            max_tokens=500,
         )
-        return (resp.choices[0].message.content or "").strip()
+        content = (resp.choices[0].message.content or "").strip()
+        return stylize_as_aileen(content, query) if content else None
     except Exception:
         return None
 

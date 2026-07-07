@@ -3,6 +3,7 @@ text_all.jsonl
 memories.jsonl
 reflections.jsonl
 articles.jsonl
+music.jsonl
 training_data/images/images.jsonl
 training_data/images/metadata.jsonl
 training_data/images/kohya_export/
