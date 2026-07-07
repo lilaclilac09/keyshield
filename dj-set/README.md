@@ -8,7 +8,7 @@ DJ set 曲目轮播（carousel），数据来自 `setlist.json`。
 2. Rainforest — John Beltran / Open House (`Now & Then`)
 3. High Tide — John Beltran / Open House (`Now & Then`)
 4. In Touch Feat. Jinnal & Kaba — Beatrice M. (`Sinking — Plate 3`)
-5. Rendezvous (Original Mix) — Spotify track
+5. Rendezvous (Original Mix) — lovegold (Spotify)
 
 ## Covers
 

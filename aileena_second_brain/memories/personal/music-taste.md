@@ -23,7 +23,7 @@ team_task_id: dj_set_music_taste_001
 1. Harry Styles — Daydreaming（流行/氛围入口曲）
 2. John Beltran / Open House — Rainforest, High Tide（Now & Then / Emotions Electric）
 3. Beatrice M. — In Touch feat. Jinnal & Kaba（Sinking — Plate 3 / Tectonic）
-4. Rendezvous (Original Mix)（Spotify 指定曲）
+4. lovegold — Rendezvous (Original Mix)（Spotify 指定曲）
 
 ## Curation rules
 

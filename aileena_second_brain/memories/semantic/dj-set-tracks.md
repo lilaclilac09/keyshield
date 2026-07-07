@@ -38,7 +38,7 @@ team_task_id: dj_set_music_taste_001
 - Album page: https://beatricem.bandcamp.com/album/sinking
 - Cover: Sinking (Plate 3) artwork
 
-## 5) Rendezvous (Original Mix)
+## 5) Rendezvous (Original Mix) — lovegold
 - Source: user link
 - Spotify: https://open.spotify.com/track/6gurYwFYuzRPH6Nle60meM?si=7a608f64b2cf47a3
 - Cover: Spotify artwork
