@@ -3,6 +3,7 @@
   "title": "DJ Set",
   "subtitle": "Carousel",
   "created_at": "2026-07-07",
+  "memory_sync": "aileena_second_brain/memories/semantic/dj-set-tracks.md",
   "tracks": [
     {
       "position": 1,
@@ -11,7 +12,9 @@
       "album": "Harry's House",
       "year": 2022,
       "duration": "3:07",
+      "source_type": "user_link",
       "cover": "assets/covers/daydreaming.jpg",
+      "cover_source": "spotify",
       "spotify": {
         "id": "69w5X6uTrOaWM32IetSzvO",
         "url": "https://open.spotify.com/track/69w5X6uTrOaWM32IetSzvO?si=26d210d801a14b63",
@@ -26,7 +29,10 @@
       "year": 2026,
       "label": "Emotions Electric",
       "duration": "—",
+      "source_type": "user_search",
+      "search_query": "John Beltran / Open House Now & Then Rainforest",
       "cover": "assets/covers/now-and-then.jpg",
+      "cover_source": "release_artwork_clone",
       "links": {
         "release": "https://bleep.com/release/580544-john-beltran-open-house-now-then"
       }
@@ -39,7 +45,10 @@
       "year": 2026,
       "label": "Emotions Electric",
       "duration": "—",
+      "source_type": "user_search",
+      "search_query": "John Beltran / Open House Now & Then High Tide",
       "cover": "assets/covers/now-and-then.jpg",
+      "cover_source": "release_artwork_clone",
       "links": {
         "release": "https://bleep.com/release/580544-john-beltran-open-house-now-then"
       }
@@ -52,7 +61,10 @@
       "year": 2026,
       "label": "Tectonic",
       "duration": "4:44",
+      "source_type": "user_search",
+      "search_query": "Beatrice M In Touch Jinnal Kaba Sinking Plate 3",
       "cover": "assets/covers/sinking-plate-3.jpg",
+      "cover_source": "album_artwork_sinking_plate_3",
       "links": {
         "release": "https://www.beatport.com/release/in-touch/6469557",
         "album": "https://beatricem.bandcamp.com/album/sinking"
@@ -65,7 +77,9 @@
       "album": "—",
       "year": null,
       "duration": "—",
+      "source_type": "user_link",
       "cover": "assets/covers/rendezvous.jpg",
+      "cover_source": "spotify",
       "spotify": {
         "id": "6gurYwFYuzRPH6Nle60meM",
         "url": "https://open.spotify.com/track/6gurYwFYuzRPH6Nle60meM?si=7a608f64b2cf47a3",

@@ -14,6 +14,7 @@ Text:
 - training_data/text_all.jsonl
 - training_data/memories.jsonl
 - training_data/articles.jsonl
+- training_data/music.jsonl
 - training_data/reflections.jsonl
 
 Images:

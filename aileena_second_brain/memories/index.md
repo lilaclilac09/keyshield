@@ -9,8 +9,14 @@ Last updated: 2026-07-07
 | [personal/](personal/) | Preferences, style, long-term rules | coding style, workflow prefs |
 | [procedural/skills/](procedural/skills/) | Reusable skills (prompts + tools) | Fable5 plan generation |
 | [episodic/](episodic/) | Task trajectories | per-task run logs |
-| [semantic/](semantic/) | Facts, knowledge, rules | Snowflake DT + Cortex Search |
+| [semantic/](semantic/) | Facts, knowledge, rules | Snowflake DT + Cortex Search, DJ set tracks |
 | [archived/](archived/) | Decayed / superseded memories | old experiments |
+
+Music taste:
+- `personal/music-taste.md`
+- `semantic/dj-set-tracks.md`
+- `semantic/data-slicing-strategy.md`
+- skill: `procedural/skills/curate-dj-set-carousel.md`
 
 ## Retrieval Order
 

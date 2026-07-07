@@ -17,6 +17,9 @@ datasets:
   - path: training_data/articles.jsonl
     ds_type: json
     type: alpaca
+  - path: training_data/music.jsonl
+    ds_type: json
+    type: alpaca
 
 learning_rate: 2e-4
 num_epochs: 2
