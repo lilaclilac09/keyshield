@@ -25,4 +25,7 @@ Fable 5 workflow files installed:
 
 Recommended kickoff prompt:
 严格按照项目中的 Fable 5 Workflow Rules 和 Plan 输出模板生成 Implementation Plan。
+
+Optional one-time setup:
+Add account memories from docs/CURSOR_MEMORY_BOOTSTRAP.md (Cursor Settings -> Rules & Memories -> Memories).
 EOF
