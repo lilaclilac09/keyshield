@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aileena DJ Set 001 — Daydreaming</title>
+  <meta name="description" content="DJ set scaffold with Daydreaming by Harry Styles" />
+  <meta property="og:title" content="Aileena DJ Set 001" />
+  <meta property="og:description" content="Daydreaming Session — draft DJ set" />
+  <meta property="og:image" content="assets/set-cover.png" />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: rgba(255, 255, 255, 0.06);
+      --text: #f4f6ff;
+      --muted: #a8b0d6;
+      --accent: #ff8f6b;
+      --accent-2: #8f7dff;
+      --border: rgba(255, 255, 255, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(255, 143, 107, 0.25), transparent 35%),
+        radial-gradient(circle at 80% 0%, rgba(143, 125, 255, 0.22), transparent 30%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 28px;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .cover {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 143, 107, 0.15);
+      color: #ffc7b2;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      background: var(--card);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    .track {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .track img {
+      width: 72px;
+      height: 72px;
+      border-radius: 12px;
+      object-fit: cover;
+    }
+
+    .track h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+    }
+
+    .track p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .stat {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat .value {
+      margin-top: 4px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    iframe {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      min-height: 152px;
+    }
+
+    .links a {
+      color: #ffd2c2;
+      text-decoration: none;
+      margin-right: 14px;
+      font-size: 14px;
+    }
+
+    .links a:hover { text-decoration: underline; }
+
+    .note {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 760px) {
+      .hero { grid-template-columns: 1fr; }
+      .cover { max-width: 320px; margin: 0 auto; display: block; }
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <img class="cover" src="assets/set-cover.png" alt="Aileena DJ Set 001 cover" />
+      <div>
+        <span class="badge">Draft Set</span>
+        <h1 id="set-title">Aileena DJ Set 001</h1>
+        <p class="subtitle" id="set-subtitle">Daydreaming Session</p>
+        <div class="meta">
+          <span class="pill" id="set-date">2026-07-07</span>
+          <span class="pill" id="track-count">1 track</span>
+          <span class="pill">Status: draft</span>
+        </div>
+        <p class="note" id="set-description"></p>
+      </div>
+    </section>
+
+    <section class="card" id="track-card">
+      <div class="track">
+        <img id="track-cover" src="assets/daydreaming-cover.jpg" alt="Daydreaming cover" />
+        <div>
+          <h2 id="track-title">Daydreaming</h2>
+          <p id="track-artist">Harry Styles — Harry's House (2022)</p>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="stat"><div class="label">Duration</div><div class="value" id="track-duration">3:07</div></div>
+        <div class="stat"><div class="label">BPM</div><div class="value" id="track-bpm">120</div></div>
+        <div class="stat"><div class="label">Key</div><div class="value" id="track-key">F</div></div>
+        <div class="stat"><div class="label">Energy</div><div class="value" id="track-energy">0.62</div></div>
+      </div>
+
+      <p class="note" id="track-notes" style="margin-top: 14px;"></p>
+
+      <div style="margin-top: 16px;">
+        <iframe
+          id="spotify-embed"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+          loading="lazy"
+          src="https://open.spotify.com/embed/track/69w5X6uTrOaWM32IetSzvO?utm_source=generator"
+        ></iframe>
+      </div>
+
+      <div class="links" style="margin-top: 12px;">
+        <a id="spotify-link" href="https://open.spotify.com/track/69w5X6uTrOaWM32IetSzvO?si=26d210d801a14b63" target="_blank" rel="noreferrer">Open on Spotify</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin-top:0;">Next steps</h3>
+      <p class="note">
+        还不知道最终要做什么也没关系。这个页面是 DJ Set 脚手架：你可以继续往 <code>setlist.json</code> 里加曲目、改封面、补 BPM/Key，然后再决定要不要做成 Mix、直播 set 或分享页。
+      </p>
+    </section>
+  </div>
+
+  <script>
+    fetch('setlist.json')
+      .then((r) => r.json())
+      .then((data) => {
+        const track = data.tracks[0];
+        document.getElementById('set-title').textContent = data.title;
+        document.getElementById('set-subtitle').textContent = data.subtitle;
+        document.getElementById('set-date').textContent = data.created_at;
+        document.getElementById('track-count').textContent = `${data.tracks.length} track${data.tracks.length > 1 ? 's' : ''}`;
+        document.getElementById('set-description').textContent = data.description;
+
+        document.getElementById('track-title').textContent = track.title;
+        document.getElementById('track-artist').textContent = `${track.artist} — ${track.album} (${track.year})`;
+        document.getElementById('track-duration').textContent = track.duration;
+        document.getElementById('track-bpm').textContent = track.bpm ?? '—';
+        document.getElementById('track-key').textContent = track.key ?? '—';
+        document.getElementById('track-energy').textContent = track.energy ?? '—';
+        document.getElementById('track-notes').textContent = track.notes ?? '';
+        document.getElementById('track-cover').src = track.cover;
+        document.getElementById('spotify-link').href = track.spotify.url;
+        document.getElementById('spotify-embed').src = track.spotify.embed;
+      })
+      .catch(() => {
+        console.warn('setlist.json not loaded; using static fallback');
+      });
+  </script>
+</body>
+</html>

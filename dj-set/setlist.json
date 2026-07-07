@@ -1,0 +1,38 @@
+{
+  "id": "aileena-dj-set-001",
+  "title": "Aileena DJ Set 001",
+  "subtitle": "Daydreaming Session",
+  "description": "Starter DJ set scaffold. Add tracks, transitions, and notes as the set evolves.",
+  "created_at": "2026-07-07",
+  "status": "draft",
+  "covers": {
+    "set": "assets/set-cover.png",
+    "fallback_track": "assets/daydreaming-cover.jpg"
+  },
+  "links": {
+    "spotify_set_playlist": null,
+    "soundcloud": null,
+    "mixcloud": null
+  },
+  "tracks": [
+    {
+      "position": 1,
+      "title": "Daydreaming",
+      "artist": "Harry Styles",
+      "album": "Harry's House",
+      "year": 2022,
+      "duration": "3:07",
+      "duration_ms": 187000,
+      "bpm": 120,
+      "key": "F",
+      "energy": 0.62,
+      "spotify": {
+        "id": "69w5X6uTrOaWM32IetSzvO",
+        "url": "https://open.spotify.com/track/69w5X6uTrOaWM32IetSzvO?si=26d210d801a14b63",
+        "embed": "https://open.spotify.com/embed/track/69w5X6uTrOaWM32IetSzvO?utm_source=generator"
+      },
+      "cover": "assets/daydreaming-cover.jpg",
+      "notes": "Opening track. Warm pop groove — good for building mood before heavier drops."
+    }
+  ]
+}
