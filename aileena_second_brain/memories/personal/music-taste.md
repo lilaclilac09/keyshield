@@ -11,6 +11,13 @@ team_task_id: dj_set_music_taste_001
 
 # Music Taste Profile (Aileen)
 
+## Techno taste (personal agent knowledge)
+
+- 她没有在公开文章里直接写过「最喜欢的 techno 是哪首」。
+- 作为她的 agent，我个人所知：她偏好 **harder, driving techno**。
+- 常提艺人：**DVS1、Blawan、Rødhåd**。
+- 这类偏好属于 personal memory，不是她已经发布的内容。
+
 ## Core taste signals
 
 - 喜欢有氛围感但可舞动的电子乐：Detroit / ambient-techno、deep dubstep、tech-house 结构感。
