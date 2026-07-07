@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText } from 'lucide-react';
+import { Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText, Disc3 } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
@@ -24,10 +24,12 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
+import { DjSetSection } from './components/sections/DjSetSection';
 
-type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
+type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust' | 'djset';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
+  { id: 'djset', label: 'DJ Set', icon: <Disc3 size={14} /> },
   { id: 'vault', label: 'Vault', icon: <Key size={14} /> },
   { id: 'activity', label: 'Activity', icon: <Activity size={14} /> },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} /> },
@@ -42,6 +44,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   vault: { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
+  djset: { title: 'DJ Set', subtitle: 'Track carousel — covers, BPM, keys, links' },
   activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
@@ -100,6 +103,7 @@ const MainContent: React.FC = () => {
           <Header title={config.title} subtitle={config.subtitle} onSearch={() => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
+              {section === 'djset' && <DjSetSection />}
               {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} />}
               {section === 'activity' && <ActivitySection />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}

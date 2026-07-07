@@ -19,6 +19,18 @@ DJ set 曲目轮播（carousel），数据来自 `setlist.json`。
 
 ## Preview
 
+**KeyShield Dashboard（推荐）**
+
+```bash
+cd src/web
+npm install
+npm run dev
+```
+
+登录后侧边栏点 **DJ Set**。
+
+**Standalone**
+
 ```bash
 cd dj-set
 python3 -m http.server 8088

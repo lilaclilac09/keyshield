@@ -31,7 +31,8 @@ team_task_id: dj_set_music_taste_001
 ## Tools Needed
 
 - `dj-set/setlist.json`
-- `dj-set/index.html`（carousel 渲染）
+- `dj-set/index.html`（standalone 预览）
+- `src/web/` → 侧边栏 **DJ Set**（carousel 已接入 dashboard）
 - `aileena_second_brain/prepare_training_data.py`
 
 ## Success Criteria
