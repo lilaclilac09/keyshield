@@ -1,19 +1,8 @@
 {
   "id": "aileena-dj-set-001",
-  "title": "Aileena DJ Set 001",
-  "subtitle": "Daydreaming Session",
-  "description": "Starter DJ set scaffold. Add tracks, transitions, and notes as the set evolves.",
+  "title": "DJ Set",
+  "subtitle": "Carousel",
   "created_at": "2026-07-07",
-  "status": "draft",
-  "covers": {
-    "set": "assets/set-cover.png",
-    "fallback_track": "assets/daydreaming-cover.jpg"
-  },
-  "links": {
-    "spotify_set_playlist": null,
-    "soundcloud": null,
-    "mixcloud": null
-  },
   "tracks": [
     {
       "position": 1,
@@ -22,17 +11,66 @@
       "album": "Harry's House",
       "year": 2022,
       "duration": "3:07",
-      "duration_ms": 187000,
-      "bpm": 120,
-      "key": "F",
-      "energy": 0.62,
+      "cover": "assets/covers/daydreaming.jpg",
       "spotify": {
         "id": "69w5X6uTrOaWM32IetSzvO",
         "url": "https://open.spotify.com/track/69w5X6uTrOaWM32IetSzvO?si=26d210d801a14b63",
         "embed": "https://open.spotify.com/embed/track/69w5X6uTrOaWM32IetSzvO?utm_source=generator"
-      },
-      "cover": "assets/daydreaming-cover.jpg",
-      "notes": "Opening track. Warm pop groove — good for building mood before heavier drops."
+      }
+    },
+    {
+      "position": 2,
+      "title": "Rainforest",
+      "artist": "John Beltran / Open House",
+      "album": "Now & Then",
+      "year": 2026,
+      "label": "Emotions Electric",
+      "duration": "—",
+      "cover": "assets/covers/now-and-then.jpg",
+      "links": {
+        "release": "https://bleep.com/release/580544-john-beltran-open-house-now-then"
+      }
+    },
+    {
+      "position": 3,
+      "title": "High Tide",
+      "artist": "John Beltran / Open House",
+      "album": "Now & Then",
+      "year": 2026,
+      "label": "Emotions Electric",
+      "duration": "—",
+      "cover": "assets/covers/now-and-then.jpg",
+      "links": {
+        "release": "https://bleep.com/release/580544-john-beltran-open-house-now-then"
+      }
+    },
+    {
+      "position": 4,
+      "title": "In Touch Feat. Jinnal & Kaba",
+      "artist": "Beatrice M.",
+      "album": "Sinking — Plate 3",
+      "year": 2026,
+      "label": "Tectonic",
+      "duration": "4:44",
+      "cover": "assets/covers/sinking-plate-3.jpg",
+      "links": {
+        "release": "https://www.beatport.com/release/in-touch/6469557",
+        "album": "https://beatricem.bandcamp.com/album/sinking"
+      }
+    },
+    {
+      "position": 5,
+      "title": "Rendezvous (Original Mix)",
+      "artist": "Spotify Track",
+      "album": "—",
+      "year": null,
+      "duration": "—",
+      "cover": "assets/covers/rendezvous.jpg",
+      "spotify": {
+        "id": "6gurYwFYuzRPH6Nle60meM",
+        "url": "https://open.spotify.com/track/6gurYwFYuzRPH6Nle60meM?si=7a608f64b2cf47a3",
+        "embed": "https://open.spotify.com/embed/track/6gurYwFYuzRPH6Nle60meM?utm_source=generator"
+      }
     }
   ]
 }

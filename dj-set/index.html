@@ -3,268 +3,252 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aileena DJ Set 001 — Daydreaming</title>
-  <meta name="description" content="DJ set scaffold with Daydreaming by Harry Styles" />
-  <meta property="og:title" content="Aileena DJ Set 001" />
-  <meta property="og:description" content="Daydreaming Session — draft DJ set" />
-  <meta property="og:image" content="assets/set-cover.png" />
+  <title>DJ Set — Carousel</title>
   <style>
     :root {
-      --bg: #0b1020;
-      --card: rgba(255, 255, 255, 0.06);
-      --text: #f4f6ff;
-      --muted: #a8b0d6;
-      --accent: #ff8f6b;
-      --accent-2: #8f7dff;
-      --border: rgba(255, 255, 255, 0.12);
+      --bg: #090b12;
+      --card: #121722;
+      --text: #f5f7ff;
+      --muted: #9aa6c7;
+      --accent: #7c8cff;
+      --border: rgba(255,255,255,0.12);
     }
-
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, system-ui, -apple-system, sans-serif;
+      font-family: Inter, system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1a2140, var(--bg) 55%);
       color: var(--text);
-      background:
-        radial-gradient(circle at 20% 10%, rgba(255, 143, 107, 0.25), transparent 35%),
-        radial-gradient(circle at 80% 0%, rgba(143, 125, 255, 0.22), transparent 30%),
-        var(--bg);
-      min-height: 100vh;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 28px 16px 48px; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .sub { color: var(--muted); margin-bottom: 20px; }
+
+    .carousel {
+      position: relative;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      overflow: hidden;
     }
 
-    .wrap {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 32px 20px 64px;
-    }
-
-    .hero {
+    .track-stage {
       display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: 28px;
+      grid-template-columns: 220px 1fr;
+      gap: 18px;
       align-items: center;
-      margin-bottom: 28px;
+      min-height: 260px;
     }
 
     .cover {
       width: 100%;
       aspect-ratio: 1;
       object-fit: cover;
-      border-radius: 20px;
+      border-radius: 14px;
       border: 1px solid var(--border);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      background: #0d111b;
     }
 
-    .badge {
+    .meta h2 { margin: 0 0 6px; font-size: 24px; }
+    .meta p { margin: 0 0 8px; color: var(--muted); }
+    .pill {
       display: inline-block;
+      margin: 0 8px 8px 0;
       padding: 6px 10px;
       border-radius: 999px;
-      background: rgba(255, 143, 107, 0.15);
-      color: #ffc7b2;
+      border: 1px solid var(--border);
+      color: var(--muted);
       font-size: 12px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      margin-bottom: 10px;
     }
 
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 4vw, 42px);
-      line-height: 1.1;
-    }
-
-    .subtitle {
-      color: var(--muted);
-      margin: 0 0 16px;
-      font-size: 18px;
-    }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    .pill {
-      border: 1px solid var(--border);
-      background: var(--card);
-      border-radius: 999px;
-      padding: 8px 12px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      margin-bottom: 16px;
-      backdrop-filter: blur(8px);
-    }
-
-    .track {
-      display: grid;
-      grid-template-columns: 72px 1fr;
-      gap: 14px;
-      align-items: center;
-    }
-
-    .track img {
-      width: 72px;
-      height: 72px;
-      border-radius: 12px;
-      object-fit: cover;
-    }
-
-    .track h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-    }
-
-    .track p {
-      margin: 0;
-      color: var(--muted);
+    .links a {
+      color: #b9c4ff;
+      margin-right: 12px;
       font-size: 14px;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 12px;
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
     }
 
-    .stat {
-      background: rgba(0, 0, 0, 0.2);
+    .btn {
+      background: #1b2440;
+      color: var(--text);
+      border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 10px;
-      text-align: center;
+      padding: 8px 12px;
+      cursor: pointer;
     }
 
-    .stat .label {
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    .dots { display: flex; gap: 8px; }
+    .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #3a4568; border: 0; cursor: pointer;
+    }
+    .dot.active { background: var(--accent); }
+
+    .thumbs {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
     }
 
-    .stat .value {
-      margin-top: 4px;
-      font-weight: 600;
-      font-size: 15px;
+    .thumb {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      background: #0f1422;
+      padding: 0;
     }
+    .thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .thumb.active { outline: 2px solid var(--accent); }
 
     iframe {
       width: 100%;
       border: 0;
       border-radius: 12px;
+      margin-top: 12px;
       min-height: 152px;
     }
 
-    .links a {
-      color: #ffd2c2;
-      text-decoration: none;
-      margin-right: 14px;
-      font-size: 14px;
-    }
-
-    .links a:hover { text-decoration: underline; }
-
-    .note {
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
     @media (max-width: 760px) {
-      .hero { grid-template-columns: 1fr; }
-      .cover { max-width: 320px; margin: 0 auto; display: block; }
-      .grid { grid-template-columns: repeat(2, 1fr); }
+      .track-stage { grid-template-columns: 1fr; }
+      .cover { max-width: 240px; margin: 0 auto; display: block; }
+      .thumbs { grid-template-columns: repeat(3, 1fr); }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <section class="hero">
-      <img class="cover" src="assets/set-cover.png" alt="Aileena DJ Set 001 cover" />
-      <div>
-        <span class="badge">Draft Set</span>
-        <h1 id="set-title">Aileena DJ Set 001</h1>
-        <p class="subtitle" id="set-subtitle">Daydreaming Session</p>
+    <h1>DJ Set</h1>
+    <p class="sub">Carousel · 曲目封面 + 元数据 + Spotify（如有）</p>
+
+    <section class="carousel" aria-label="DJ set carousel">
+      <div class="track-stage">
+        <img id="cover" class="cover" src="assets/covers/daydreaming.jpg" alt="Track cover" />
         <div class="meta">
-          <span class="pill" id="set-date">2026-07-07</span>
-          <span class="pill" id="track-count">1 track</span>
-          <span class="pill">Status: draft</span>
-        </div>
-        <p class="note" id="set-description"></p>
-      </div>
-    </section>
-
-    <section class="card" id="track-card">
-      <div class="track">
-        <img id="track-cover" src="assets/daydreaming-cover.jpg" alt="Daydreaming cover" />
-        <div>
-          <h2 id="track-title">Daydreaming</h2>
-          <p id="track-artist">Harry Styles — Harry's House (2022)</p>
+          <h2 id="title">—</h2>
+          <p id="artist">—</p>
+          <div>
+            <span class="pill" id="album">—</span>
+            <span class="pill" id="duration">—</span>
+            <span class="pill" id="position">—</span>
+          </div>
+          <div class="links" id="links"></div>
+          <div id="player"></div>
         </div>
       </div>
 
-      <div class="grid">
-        <div class="stat"><div class="label">Duration</div><div class="value" id="track-duration">3:07</div></div>
-        <div class="stat"><div class="label">BPM</div><div class="value" id="track-bpm">120</div></div>
-        <div class="stat"><div class="label">Key</div><div class="value" id="track-key">F</div></div>
-        <div class="stat"><div class="label">Energy</div><div class="value" id="track-energy">0.62</div></div>
+      <div class="controls">
+        <button class="btn" id="prev" type="button">← Prev</button>
+        <div class="dots" id="dots"></div>
+        <button class="btn" id="next" type="button">Next →</button>
       </div>
 
-      <p class="note" id="track-notes" style="margin-top: 14px;"></p>
-
-      <div style="margin-top: 16px;">
-        <iframe
-          id="spotify-embed"
-          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-          loading="lazy"
-          src="https://open.spotify.com/embed/track/69w5X6uTrOaWM32IetSzvO?utm_source=generator"
-        ></iframe>
-      </div>
-
-      <div class="links" style="margin-top: 12px;">
-        <a id="spotify-link" href="https://open.spotify.com/track/69w5X6uTrOaWM32IetSzvO?si=26d210d801a14b63" target="_blank" rel="noreferrer">Open on Spotify</a>
-      </div>
-    </section>
-
-    <section class="card">
-      <h3 style="margin-top:0;">Next steps</h3>
-      <p class="note">
-        还不知道最终要做什么也没关系。这个页面是 DJ Set 脚手架：你可以继续往 <code>setlist.json</code> 里加曲目、改封面、补 BPM/Key，然后再决定要不要做成 Mix、直播 set 或分享页。
-      </p>
+      <div class="thumbs" id="thumbs"></div>
     </section>
   </div>
 
   <script>
+    let tracks = [];
+    let index = 0;
+
+    function renderTrack(i) {
+      const t = tracks[i];
+      if (!t) return;
+      index = i;
+
+      document.getElementById('cover').src = t.cover;
+      document.getElementById('cover').alt = `${t.title} cover`;
+      document.getElementById('title').textContent = t.title;
+      document.getElementById('artist').textContent = t.artist;
+      document.getElementById('album').textContent = `${t.album}${t.year ? ` (${t.year})` : ''}`;
+      document.getElementById('duration').textContent = t.duration || '—';
+      document.getElementById('position').textContent = `#${t.position}`;
+
+      const links = document.getElementById('links');
+      links.innerHTML = '';
+      if (t.spotify?.url) {
+        const a = document.createElement('a');
+        a.href = t.spotify.url;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        a.textContent = 'Open on Spotify';
+        links.appendChild(a);
+      }
+      if (t.links?.release) {
+        const a = document.createElement('a');
+        a.href = t.links.release;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        a.textContent = 'Release page';
+        links.appendChild(a);
+      }
+      if (t.links?.album) {
+        const a = document.createElement('a');
+        a.href = t.links.album;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+        a.textContent = 'Album page';
+        links.appendChild(a);
+      }
+
+      const player = document.getElementById('player');
+      player.innerHTML = '';
+      if (t.spotify?.embed) {
+        const iframe = document.createElement('iframe');
+        iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
+        iframe.loading = 'lazy';
+        iframe.src = t.spotify.embed;
+        player.appendChild(iframe);
+      }
+
+      document.querySelectorAll('.dot').forEach((d, n) => d.classList.toggle('active', n === i));
+      document.querySelectorAll('.thumb').forEach((el, n) => el.classList.toggle('active', n === i));
+    }
+
+    function buildUI() {
+      const dots = document.getElementById('dots');
+      const thumbs = document.getElementById('thumbs');
+      dots.innerHTML = '';
+      thumbs.innerHTML = '';
+
+      tracks.forEach((t, i) => {
+        const dot = document.createElement('button');
+        dot.className = 'dot' + (i === 0 ? ' active' : '');
+        dot.type = 'button';
+        dot.setAttribute('aria-label', `Go to track ${i + 1}`);
+        dot.addEventListener('click', () => renderTrack(i));
+        dots.appendChild(dot);
+
+        const thumb = document.createElement('button');
+        thumb.className = 'thumb' + (i === 0 ? ' active' : '');
+        thumb.type = 'button';
+        thumb.innerHTML = `<img src="${t.cover}" alt="${t.title}" />`;
+        thumb.addEventListener('click', () => renderTrack(i));
+        thumbs.appendChild(thumb);
+      });
+
+      document.getElementById('prev').onclick = () => renderTrack((index - 1 + tracks.length) % tracks.length);
+      document.getElementById('next').onclick = () => renderTrack((index + 1) % tracks.length);
+      renderTrack(0);
+    }
+
     fetch('setlist.json')
       .then((r) => r.json())
       .then((data) => {
-        const track = data.tracks[0];
-        document.getElementById('set-title').textContent = data.title;
-        document.getElementById('set-subtitle').textContent = data.subtitle;
-        document.getElementById('set-date').textContent = data.created_at;
-        document.getElementById('track-count').textContent = `${data.tracks.length} track${data.tracks.length > 1 ? 's' : ''}`;
-        document.getElementById('set-description').textContent = data.description;
-
-        document.getElementById('track-title').textContent = track.title;
-        document.getElementById('track-artist').textContent = `${track.artist} — ${track.album} (${track.year})`;
-        document.getElementById('track-duration').textContent = track.duration;
-        document.getElementById('track-bpm').textContent = track.bpm ?? '—';
-        document.getElementById('track-key').textContent = track.key ?? '—';
-        document.getElementById('track-energy').textContent = track.energy ?? '—';
-        document.getElementById('track-notes').textContent = track.notes ?? '';
-        document.getElementById('track-cover').src = track.cover;
-        document.getElementById('spotify-link').href = track.spotify.url;
-        document.getElementById('spotify-embed').src = track.spotify.embed;
+        tracks = data.tracks;
+        buildUI();
       })
-      .catch(() => {
-        console.warn('setlist.json not loaded; using static fallback');
+      .catch((err) => {
+        console.error(err);
+        document.querySelector('.sub').textContent = 'Failed to load setlist.json';
       });
   </script>
 </body>
