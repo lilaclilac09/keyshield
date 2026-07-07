@@ -173,6 +173,15 @@ def evolve_after_turn(
 
     stats = {"episodic": str(episodic_path) if episodic_path else None, "promoted": str(promoted) if promoted else None}
 
+    if learn_fact:
+        try:
+            from omem_adapter.persona_sync import sync_learned_fact
+
+            persona_path = sync_learned_fact(learn_fact, list(topics))
+            stats["persona"] = str(persona_path) if persona_path else None
+        except Exception:
+            stats["persona"] = None
+
     if learn_fact or promoted:
         consolidation = run_consolidation()
         stats["consolidation"] = str(consolidation)

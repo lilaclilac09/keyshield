@@ -1,0 +1,16 @@
+# Optional — full O-Mem bridge (L4)
+# Install only when you want embedding-based episodic clustering:
+#   pip install -r omem_adapter/requirements-optional.txt
+#
+# Then vendor memory_chain from https://github.com/OPPO-PersonalAI/O-Mem
+#   git submodule add https://github.com/OPPO-PersonalAI/O-Mem.git vendor/O-Mem
+#   ln -s ../vendor/O-Mem/memory_chain omem_adapter/memory_chain  # or PYTHONPATH
+
+openai>=1.0.0
+torch>=2.0.0
+sentence-transformers>=2.2.0
+numpy>=1.22.0
+pyyaml>=6.0
+tqdm>=4.66.0
+aiofiles>=23.0.0
+scikit-learn>=1.0.0

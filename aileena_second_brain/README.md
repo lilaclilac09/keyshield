@@ -106,9 +106,22 @@ Inference order:
 
 Self-evolution triggers:
 - Every agent turn → `memories/episodic/YYYY-MM-DD-*.md`
-- Explicit learn phrases: `she also likes X`, `记住：…`, `update memory: …`
+- Explicit learn phrases: `she also likes X`, `记住：…`, `update memory: …` → also syncs to `persona-auto.md` via O-Mem adapter
 - Hot topic repeated 3× in session → `memories/semantic/hot-topic-*.md`
 - `--evolve-now` or high-confidence learn → runs `consolidate.py`
+
+### O-Mem adapter (L4, optional)
+
+Markdown remains source of truth. O-Mem handles **conversation → persona** extraction.
+
+```bash
+export KS_TOKEN="ksv2_..."
+./scripts/aileena-omem.sh ingest "她也喜欢 Surgeon"
+./scripts/aileena-omem.sh add-fact "She tracks Didion podcast threads"
+./scripts/aileena-omem.sh status
+```
+
+See `omem_adapter/README.md` for full O-Mem bridge install (torch + memory_chain).
 
 
 - Shared long-term memory: `memories/semantic/` + `memories/procedural/skills/`
