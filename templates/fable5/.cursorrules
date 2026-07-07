@@ -1,0 +1,34 @@
+# Fable 5 Workflow Rules (Cursor + Opus 混合模式)
+
+## 核心定位
+- Cursor 主要负责：需求分析、架构设计、Implementation Plan 输出、代码优化、最终验证与整合
+- Opus 等强模型主要负责：复杂逻辑实现、大规模代码生成、重构、算法实现等重执行部分
+- 所有工作必须严格遵循 Fable 5 原则
+
+## 执行原则
+- 必须先输出详细的 Implementation Plan
+- Plan 中需要明确标注每个步骤的**执行主体**（Cursor / Opus / 混合）
+- 严格按照 Plan 执行，禁止跳步骤
+- 每完成一个子模块，必须先验证通过后再继续
+- 涉及 Snowflake 的部分，必须使用 Dynamic Tables + Cortex Search 模式
+
+## Plan 输出要求
+- Plan 必须结构清晰，便于直接交给 Opus 执行
+- 每个步骤需包含：目标、具体任务、执行主体、验证方式、依赖项
+- 重要或复杂的步骤需标注推荐使用 Opus 执行
+
+## 代码风格要求
+- 主要使用 TypeScript
+- 所有新代码必须包含完整类型注解和简要注释
+- 错误处理统一规范
+- 禁止使用 placeholder 代码
+
+## 验证与整合规则
+- Opus 生成的代码必须拉回 Cursor 进行验证和优化
+- 最终代码需符合 Plan 要求和项目规范
+- 禁止在未验证的情况下直接合并代码
+
+## 禁止事项
+- 禁止跳过 Plan 阶段直接写代码
+- 禁止跳过测试/验证步骤
+- 禁止使用 placeholder 代码
