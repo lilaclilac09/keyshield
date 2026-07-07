@@ -69,7 +69,22 @@ accelerate launch -m axolotl.cli.train image_lora_config.yaml
 | 合并文本集 | all above | `training_data/text_all.jsonl` |
 | 图片 | `training_data/images/raw/` | `training_data/images/images.jsonl` |
 
-## Centaur Multi-Agent Rules
+## Agent inference
+
+```bash
+# local memory inference (no API)
+./scripts/aileena-agent.sh --local-only "her fav techno"
+
+# memory + optional LLM inference when KS_TOKEN is set
+export KS_TOKEN="ksv2_..."
+./scripts/aileena-agent.sh "recommend a warm-up track for her taste"
+```
+
+Inference order:
+1. retrieve memory chunks (section-level)
+2. infer from bullets/artists/DJ set facts
+3. optional LLM synthesis via KeyShield when `KS_TOKEN` is available
+
 
 - Shared long-term memory: `memories/semantic/` + `memories/procedural/skills/`
 - Per-agent private memory: `memories/episodic/` + `reflection_logs/`
