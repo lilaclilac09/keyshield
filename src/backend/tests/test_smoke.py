@@ -16,15 +16,19 @@ def test_app_imports() -> None:
     assert hasattr(app, "router")
 
 
+def _collect_route_paths(app) -> set[str]:
+    """All registered API paths (OpenAPI is reliable across FastAPI router nesting)."""
+    return set(app.openapi().get("paths", {}).keys())
+
+
 def test_routes_register() -> None:
     """All major route modules must register at least one endpoint."""
     from src.backend.app import app
 
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
-    # Spot-check that the architectural surface is wired.
+    paths = _collect_route_paths(app)
     assert (
-        "/health" in paths or "/health/" in paths or any(p.startswith("/health") for p in paths)
-    ), "expected /health endpoint registered"
+        "/health" in paths or any(p.startswith("/health") for p in paths)
+    ), f"expected /health endpoint registered, got {sorted(paths)[:12]}"
 
 
 def test_settings_loads() -> None:
