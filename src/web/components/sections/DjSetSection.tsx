@@ -66,7 +66,7 @@ export const DjSetSection: React.FC = () => {
       <div className="flex items-center justify-between mb-4 px-1">
         <div className="flex items-center gap-2">
           <Disc3 size={14} className="text-cyan-400" />
-          <h2 className="text-[13px] font-semibold uppercase tracking-[0.18em] text-[#7f8db8] m-0">DJ Set</h2>
+          <h2 className="text-[13px] font-semibold uppercase tracking-[0.18em] text-[#7f8db8] m-0">我的歌</h2>
         </div>
         <div className="flex gap-3">
           {current?.spotify?.url && (

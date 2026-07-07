@@ -29,7 +29,7 @@ import { DjSetSection } from './components/sections/DjSetSection';
 type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust' | 'djset';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: 'djset', label: 'DJ Set', icon: <Disc3 size={14} /> },
+  { id: 'djset', label: '我的歌', icon: <Disc3 size={14} /> },
   { id: 'vault', label: 'Vault', icon: <Key size={14} /> },
   { id: 'activity', label: 'Activity', icon: <Activity size={14} /> },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} /> },
