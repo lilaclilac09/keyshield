@@ -1,0 +1,38 @@
+# Image LoRA config (diffusion / VLM)
+#
+# Recommended path:
+# 1) python3 prepare_image_training_data.py
+# 2) Use metadata.jsonl with your image trainer (Kohya, Flux trainer, or Qwen-VL fine-tune pipeline)
+#
+# This file documents a Qwen2-VL style multimodal setup for Axolotl-like workflows.
+
+base_model: Qwen/Qwen2-VL-7B-Instruct
+model_type: AutoModelForVision2Seq
+
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+datasets:
+  - path: training_data/images/images.jsonl
+    ds_type: json
+    type: chat_template
+
+learning_rate: 1e-4
+num_epochs: 3
+max_seq_length: 4096
+batch_size: 2
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+
+load_in_4bit: true
+output_dir: output_lora_images
+
+# Dataset row format in images.jsonl:
+# {
+#   "image": "training_data/images/raw/example.png",
+#   "caption": "...",
+#   "trigger_word": "aileena_style",
+#   "tags": ["..."]
+# }

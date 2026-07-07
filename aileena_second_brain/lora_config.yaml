@@ -8,7 +8,13 @@ lora_dropout: 0.05
 lora_target_modules: "all-linear"
 
 datasets:
-  - path: training_data/skills.jsonl
+  - path: training_data/text_all.jsonl
+    ds_type: json
+    type: alpaca
+  - path: training_data/memories.jsonl
+    ds_type: json
+    type: alpaca
+  - path: training_data/articles.jsonl
     ds_type: json
     type: alpaca
 
@@ -20,4 +26,4 @@ micro_batch_size: 1
 gradient_accumulation_steps: 4
 
 load_in_4bit: true
-output_dir: output_lora_skills
+output_dir: output_lora_text

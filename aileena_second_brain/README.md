@@ -6,53 +6,68 @@ External-memory system for Aileena: file-based recall, skill distillation, and m
 
 ```text
 aileena_second_brain/
-├── SYSTEM_PROMPT.md          # Full system prompt (copy into agent)
-├── memories/
-│   ├── index.md
-│   ├── personal/
-│   ├── procedural/skills/
-│   ├── episodic/
-│   ├── semantic/
-│   └── archived/
-├── reflection_logs/
+├── SYSTEM_PROMPT.md
+├── articles/                     # 你的文章（训练源）
+├── memories/                       # 记忆库（训练源）
+├── reflection_logs/                # 任务反思（训练源）
 ├── training_data/
-├── consolidate.py            # Coordinator Dreaming
-├── prepare_lora_data.py      # LoRA dataset builder
-├── lora_config.yaml          # Axolotl QLoRA config
-└── requirements.txt
+│   ├── text_all.jsonl
+│   ├── memories.jsonl
+│   ├── articles.jsonl
+│   └── images/
+│       ├── raw/                  # 训练图片
+│       └── captions/               # 图片标注
+├── prepare_training_data.py        # 文本训练集（文章+记忆）
+├── prepare_image_training_data.py  # 图片训练集
+├── train_prepare.sh                # 一键生成全部训练数据
+├── lora_config.yaml                # 文本 LoRA
+└── image_lora_config.yaml          # 图片 LoRA
 ```
 
 ## Quick Start
 
-### 1) Use the system prompt
+### 1) 放入你的内容
 
-Copy `SYSTEM_PROMPT.md` into your agent system instructions.
+- 文章 -> `articles/*.md`
+- 记忆 -> `memories/**`
+- 反思 -> `reflection_logs/*.md`
+- 图片 -> `training_data/images/raw/*`
+- 图片标注 -> `training_data/images/captions/*.md`
 
-### 2) Write memories after each task
-
-- Preferences/rules -> `memories/personal/` or `memories/semantic/`
-- Reusable workflows -> `memories/procedural/skills/`
-- Task traces -> `memories/episodic/`
-- Reflections -> `reflection_logs/`
-
-Every memory file should include YAML frontmatter (`date`, `type`, `tags`, `confidence`, `decay_speed`, `source`).
-
-### 3) Run Coordinator Dreaming
+### 2) 一键生成训练数据
 
 ```bash
 cd aileena_second_brain
-pip install -r requirements.txt
-python consolidate.py
+pip3 install -r requirements.txt
+./train_prepare.sh
 ```
 
-This promotes high-confidence episodic facts to `semantic/` and archives decayed memories.
+会生成：
+- `training_data/text_all.jsonl`（文章 + 记忆 + 反思）
+- `training_data/images/images.jsonl`（图片 + caption）
 
-### 4) Distill skills with LoRA (optional)
+### 3) 文本 LoRA 训练
 
 ```bash
-python prepare_lora_data.py
 accelerate launch -m axolotl.cli.train lora_config.yaml
 ```
+
+### 4) 图片 LoRA 训练
+
+```bash
+./export_kohya_images.sh   # 可选：导出 Kohya 目录
+accelerate launch -m axolotl.cli.train image_lora_config.yaml
+```
+
+## Data Sources
+
+| Source | Path | Output |
+|---|---|---|
+| 文章 | `articles/` | `training_data/articles.jsonl` |
+| 记忆库 | `memories/**` | `training_data/memories.jsonl` |
+| 反思日志 | `reflection_logs/` | `training_data/reflections.jsonl` |
+| 合并文本集 | all above | `training_data/text_all.jsonl` |
+| 图片 | `training_data/images/raw/` | `training_data/images/images.jsonl` |
 
 ## Centaur Multi-Agent Rules
 
