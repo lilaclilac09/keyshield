@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aileena memory agent — retrieve, infer, and answer from external memory."""
+"""Aileena memory agent — fast index, context memory, self-evolution."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import frontmatter
 
+from context_memory import ContextMemory, detect_topics
+from evolve import evolve_after_turn, run_full_evolution
+from memory_store import MemoryStore
+
 ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parent
 DJ_SET_PATH = REPO_ROOT / "dj-set" / "setlist.json"
-MEMORY_DIRS = [
-    ROOT / "memories" / "personal",
-    ROOT / "memories" / "semantic",
-    ROOT / "memories" / "procedural" / "skills",
-]
 
 SYNONYMS = {
     "fav": {"fav", "favorite", "favourite", "like", "loves", "into"},
@@ -28,6 +28,7 @@ SYNONYMS = {
     "dj": {"dj", "set", "carousel", "playlist", "crate"},
     "taste": {"taste", "style", "preference", "into", "vibe"},
     "culture": {"didion", "hockney", "joan", "david", "art", "literature", "documentary", "podcast", "book"},
+    "memory": {"memory", "memories", "context", "evolve", "remember", "记忆", "上下文"},
 }
 
 UNPUBLISHED_MARKERS = (
@@ -48,31 +49,16 @@ class MemoryChunk:
     score: float
 
 
-def load_memories() -> list[dict]:
-    rows: list[dict] = []
-    for directory in MEMORY_DIRS:
-        if not directory.exists():
-            continue
-        for path in sorted(directory.rglob("*.md")):
-            if path.name.lower() in {"index.md", "_template.md", "readme.md"}:
-                continue
-            post = frontmatter.load(path)
-            rows.append(
-                {
-                    "path": str(path.relative_to(ROOT)),
-                    "metadata": dict(post.metadata),
-                    "content": post.content.strip(),
-                }
-            )
-    return rows
-
-
 def expand_query_terms(query: str) -> set[str]:
     tokens = tokenize(query)
     expanded = set(tokens)
     for group in SYNONYMS.values():
         if tokens & group:
             expanded |= group
+    ctx = ContextMemory()
+    for topic in ctx.retrieval_boost_topics():
+        if topic in SYNONYMS:
+            expanded |= SYNONYMS[topic]
     return expanded
 
 
@@ -80,22 +66,14 @@ def tokenize(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9øåäöü]+", text.lower()) if len(t) > 2}
 
 
-def split_sections(content: str) -> list[tuple[str, str]]:
-    parts = re.split(r"\n(?=## )", content.strip())
-    sections: list[tuple[str, str]] = []
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if part.startswith("## "):
-            title, _, body = part.partition("\n")
-            sections.append((title.replace("## ", "").strip(), body.strip()))
-        else:
-            sections.append(("intro", part))
-    return sections
-
-
-def score_chunk(query_terms: set[str], path: str, section: str, body: str, metadata: dict) -> float:
+def score_chunk(
+    query_terms: set[str],
+    path: str,
+    section: str,
+    body: str,
+    metadata: dict,
+    context_topics: set[str],
+) -> float:
     hay = tokenize(f"{path} {section} {body} {metadata}")
     overlap = len(query_terms & hay)
     score = float(overlap)
@@ -109,10 +87,17 @@ def score_chunk(query_terms: set[str], path: str, section: str, body: str, metad
         score += 4.0
     if query_terms & SYNONYMS["culture"] and "culture-taste" in path_l:
         score += 5.0
+    if query_terms & SYNONYMS["memory"] and any(k in path_l for k in ("episodic", "semantic", "context")):
+        score += 3.0
     if "voice-profile" in path_l:
         score += 0.5
     if str(metadata.get("type", "")).lower() == "preference":
         score += 1.5
+    for topic in context_topics:
+        if topic in path_l or topic in section_l or topic in body.lower():
+            score += 2.0
+        if topic in SYNONYMS and query_terms & SYNONYMS[topic]:
+            score += 1.5
     return score
 
 
@@ -142,23 +127,35 @@ def stylize_as_aileen(answer: str, query: str) -> str:
 
 
 def retrieve_chunks(query: str, limit: int = 6) -> list[MemoryChunk]:
+    t0 = time.perf_counter()
     query_terms = expand_query_terms(query)
+    ctx = ContextMemory()
+    context_topics = ctx.retrieval_boost_topics()
     chunks: list[MemoryChunk] = []
-    for mem in load_memories():
-        for section, body in split_sections(mem["content"]):
-            score = score_chunk(query_terms, mem["path"], section, body, mem["metadata"])
-            if score <= 0:
-                continue
-            chunks.append(
-                MemoryChunk(
-                    path=mem["path"],
-                    section=section,
-                    content=body,
-                    metadata=mem["metadata"],
-                    score=score,
-                )
+    for row in MemoryStore.get().chunks():
+        score = score_chunk(
+            query_terms,
+            row["path"],
+            row["section"],
+            row["content"],
+            row["metadata"],
+            context_topics,
+        )
+        if score <= 0:
+            continue
+        chunks.append(
+            MemoryChunk(
+                path=row["path"],
+                section=row["section"],
+                content=row["content"],
+                metadata=row["metadata"],
+                score=score,
             )
+        )
     chunks.sort(key=lambda c: c.score, reverse=True)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    if os.environ.get("AILEENA_DEBUG_TIMING"):
+        print(f"[retrieve {elapsed_ms:.1f}ms]", file=sys.stderr)
     return chunks[:limit]
 
 
@@ -217,9 +214,28 @@ def detect_intent(query: str) -> set[str]:
         intents.add("culture")
     if "送" in query or re.search(r"\bsend\b|recommend|suggest", ql):
         intents.add("recommend")
+    if any(k in ql for k in ("memory", "context", "evolve", "remember")) or "记忆" in query or "上下文" in query:
+        intents.add("memory_meta")
     if not intents:
         intents.add("general")
     return intents
+
+
+def infer_memory_meta(query: str, chunks: list[MemoryChunk]) -> str:
+    stats = MemoryStore.get().stats()
+    ctx = ContextMemory()
+    lines = [
+        "Memory stack is live — index cache for instant retrieval, context file for this session, episodic auto-capture after each turn.",
+        f"Indexed {stats['files']} files / {stats['chunks']} chunks.",
+    ]
+    if ctx.state.active_topics:
+        lines.append(f"Session context is tracking: {', '.join(ctx.state.active_topics)}.")
+    recent = ctx.recent_queries(2)
+    if recent:
+        lines.append(f"Recent thread: {' → '.join(recent)}.")
+    if "自进化" in query or "evolve" in query.lower():
+        lines.append("Self-evolution path: turn → episodic write → consolidate.py promotes high-confidence facts → index invalidates and rebuilds.")
+    return " ".join(lines)
 
 
 def infer_culture(query: str, chunks: list[MemoryChunk]) -> str:
@@ -265,6 +281,9 @@ def infer_locally(query: str, chunks: list[MemoryChunk]) -> str:
 
     unpublished = has_unpublished_signal(chunks)
     lines: list[str] = []
+
+    if "memory_meta" in intents:
+        return infer_memory_meta(query, chunks)
 
     if "culture" in intents:
         return infer_culture(query, chunks)
@@ -336,8 +355,12 @@ def infer_locally(query: str, chunks: list[MemoryChunk]) -> str:
 def build_llm_context(query: str, chunks: list[MemoryChunk]) -> str:
     blocks = []
     voice = load_voice_profile_text()
+    ctx = ContextMemory()
     if voice:
         blocks.append("### voice-profile\n" + voice)
+    context_block = ctx.context_block()
+    if context_block:
+        blocks.append("### session-context\n" + context_block)
     for c in chunks:
         blocks.append(f"### {c.path} :: {c.section}\n{c.content}")
     tracks = load_dj_set_tracks()
@@ -346,6 +369,7 @@ def build_llm_context(query: str, chunks: list[MemoryChunk]) -> str:
     return (
         "You are answering as Aileen's personal agent (Aileena).\n"
         "Mimic her voice exactly using the voice-profile memory.\n"
+        "Use session context for follow-up questions.\n"
         "Infer from memory only. Distinguish published facts vs personal preferences.\n"
         "If memory is insufficient, say so in her tone.\n\n"
         f"Question: {query}\n\n"
@@ -369,7 +393,7 @@ def infer_with_llm(query: str, chunks: list[MemoryChunk]) -> str | None:
             "You are Aileen's personal agent. Mimic her voice from the voice-profile memory: "
             "calm, specific, observational, em dashes, no assistant boilerplate. "
             "Answer in English unless the user writes Chinese. "
-            "Infer; do not invent facts outside memory."
+            "Use session context for follow-ups. Infer; do not invent facts outside memory."
         )
         if voice:
             system_prompt += f"\n\nVoice profile:\n{voice}"
@@ -388,18 +412,56 @@ def infer_with_llm(query: str, chunks: list[MemoryChunk]) -> str | None:
         return None
 
 
-def answer(query: str, use_llm: bool = True) -> str:
+def answer(
+    query: str,
+    use_llm: bool = True,
+    *,
+    evolve: bool = True,
+    show_memory: bool = False,
+) -> str:
     chunks = retrieve_chunks(query)
+    intents = detect_intent(query)
     if use_llm:
         llm = infer_with_llm(query, chunks)
         if llm:
-            return llm
-    return infer_locally(query, chunks)
+            result = llm
+        else:
+            result = infer_locally(query, chunks)
+    else:
+        result = infer_locally(query, chunks)
+
+    if show_memory:
+        debug = ["--- memory debug ---"]
+        for c in chunks:
+            debug.append(f"[{c.score:.1f}] {c.path} :: {c.section}")
+        debug.append(f"index: {MemoryStore.get().stats()}")
+        debug.append(f"context topics: {ContextMemory().state.active_topics}")
+        result = result + "\n" + "\n".join(debug)
+
+    ctx = ContextMemory()
+    turn = ctx.append_turn(query, result, intents, [c.path for c in chunks])
+    if evolve:
+        counts: dict[str, int] = {}
+        for t in ctx.state.turns:
+            for topic in t.topics:
+                counts[topic] = counts.get(topic, 0) + 1
+        evolve_after_turn(
+            query,
+            result,
+            intents,
+            turn.topics,
+            [c.path for c in chunks],
+            context_topic_counts=counts,
+        )
+        MemoryStore.get().refresh()
+
+    return result
 
 
-def repl(use_llm: bool) -> int:
+def repl(use_llm: bool, evolve: bool) -> int:
     mode = "memory+llm" if use_llm and os.environ.get("KS_TOKEN") else "memory inference"
-    print(f"Aileena memory agent ({mode}). Type a question, or 'exit'.")
+    stats = MemoryStore.get().stats()
+    print(f"Aileena memory agent ({mode}) — {stats['chunks']} chunks indexed. Type a question, or 'exit'.")
     while True:
         try:
             query = input("> ").strip()
@@ -410,7 +472,7 @@ def repl(use_llm: bool) -> int:
             continue
         if query.lower() in {"exit", "quit", "q"}:
             return 0
-        print(answer(query, use_llm=use_llm))
+        print(answer(query, use_llm=use_llm, evolve=evolve))
         print()
 
 
@@ -418,13 +480,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Query Aileena external memory agent")
     parser.add_argument("query", nargs="*", help="Question to ask")
     parser.add_argument("--local-only", action="store_true", help="Disable LLM inference")
+    parser.add_argument("--no-evolve", action="store_true", help="Skip episodic capture for this query")
+    parser.add_argument("--show-memory", action="store_true", help="Print retrieved chunks")
+    parser.add_argument("--clear-context", action="store_true", help="Reset session context")
+    parser.add_argument("--evolve-now", action="store_true", help="Run consolidation + index rebuild")
     args = parser.parse_args()
 
+    if args.clear_context:
+        ContextMemory().clear()
+        print("Context memory cleared.")
+        if not args.query:
+            return 0
+
+    if args.evolve_now:
+        stats = run_full_evolution()
+        print(f"Evolution complete: {stats}")
+        if not args.query:
+            return 0
+
     use_llm = not args.local_only
+    evolve = not args.no_evolve
     if args.query:
-        print(answer(" ".join(args.query), use_llm=use_llm))
+        print(answer(" ".join(args.query), use_llm=use_llm, evolve=evolve, show_memory=args.show_memory))
         return 0
-    return repl(use_llm=use_llm)
+    return repl(use_llm=use_llm, evolve=evolve)
 
 
 if __name__ == "__main__":

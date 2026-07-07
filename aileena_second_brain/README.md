@@ -78,12 +78,37 @@ accelerate launch -m axolotl.cli.train image_lora_config.yaml
 # memory + optional LLM inference when KS_TOKEN is set
 export KS_TOKEN="ksv2_..."
 ./scripts/aileena-agent.sh "recommend a warm-up track for her taste"
+
+# debug retrieval + session context
+./scripts/aileena-agent.sh --local-only --show-memory "her fav techno"
+
+# reset session context
+./scripts/aileena-agent.sh --clear-context
+
+# run consolidation + index rebuild
+./scripts/aileena-agent.sh --evolve-now
 ```
 
+### Memory stack (3 layers)
+
+| Layer | Module | Role |
+|---|---|---|
+| L1 Hot | `context_memory.py` | Session turns, active topics, compressed history — **毫秒级** follow-up |
+| L2 Fast | `memory_store.py` | Pre-split index + mtime cache — **秒速检索** without re-parsing markdown |
+| L3 Cold | `memories/**` + `evolve.py` | Disk truth; auto episodic capture → `consolidate.py` promotion |
+
 Inference order:
-1. retrieve memory chunks (section-level)
-2. infer from bullets/artists/DJ set facts
-3. optional LLM synthesis via KeyShield when `KS_TOKEN` is available
+1. refresh memory index (skip if files unchanged)
+2. retrieve chunks + **context topic boost**
+3. infer locally or via LLM (`KS_TOKEN`)
+4. append turn to context memory
+5. evolve: episodic write → optional semantic promotion → consolidate
+
+Self-evolution triggers:
+- Every agent turn → `memories/episodic/YYYY-MM-DD-*.md`
+- Explicit learn phrases: `she also likes X`, `记住：…`, `update memory: …`
+- Hot topic repeated 3× in session → `memories/semantic/hot-topic-*.md`
+- `--evolve-now` or high-confidence learn → runs `consolidate.py`
 
 
 - Shared long-term memory: `memories/semantic/` + `memories/procedural/skills/`

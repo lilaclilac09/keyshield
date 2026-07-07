@@ -10,3 +10,4 @@ training_data/images/kohya_export/
 output_lora_skills/
 output_lora_text/
 output_lora_images/
+.cache/
