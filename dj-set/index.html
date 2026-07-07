@@ -3,174 +3,337 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DJ Set — Carousel</title>
+  <title>DJ Set</title>
   <style>
     :root {
-      --bg: #090b12;
-      --card: #121722;
-      --text: #f5f7ff;
-      --muted: #9aa6c7;
-      --accent: #7c8cff;
-      --border: rgba(255,255,255,0.12);
+      --bg: #05070d;
+      --panel: #0b1020;
+      --text: #eef3ff;
+      --muted: #7f8db8;
+      --accent: #4fd6ff;
+      --accent-glow: rgba(79, 214, 255, 0.55);
+      --border: rgba(255, 255, 255, 0.08);
     }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      min-height: 100vh;
       font-family: Inter, system-ui, sans-serif;
-      background: radial-gradient(circle at top, #1a2140, var(--bg) 55%);
+      background: radial-gradient(circle at 50% -20%, #14203f 0%, var(--bg) 55%);
       color: var(--text);
-    }
-    .wrap { max-width: 920px; margin: 0 auto; padding: 28px 16px 48px; }
-    h1 { margin: 0 0 6px; font-size: 28px; }
-    .sub { color: var(--muted); margin-bottom: 20px; }
-
-    .carousel {
-      position: relative;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px;
-      overflow: hidden;
-    }
-
-    .track-stage {
       display: grid;
-      grid-template-columns: 220px 1fr;
-      gap: 18px;
-      align-items: center;
-      min-height: 260px;
+      place-items: center;
+      padding: 24px 12px;
     }
 
-    .cover {
-      width: 100%;
-      aspect-ratio: 1;
-      object-fit: cover;
-      border-radius: 14px;
+    .dj-set {
+      width: min(980px, 100%);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
       border: 1px solid var(--border);
-      background: #0d111b;
+      border-radius: 22px;
+      padding: 22px 18px 16px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
     }
 
-    .meta h2 { margin: 0 0 6px; font-size: 24px; }
-    .meta p { margin: 0 0 8px; color: var(--muted); }
-    .pill {
-      display: inline-block;
-      margin: 0 8px 8px 0;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .links a {
-      color: #b9c4ff;
-      margin-right: 12px;
-      font-size: 14px;
-    }
-
-    .controls {
+    .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 16px;
+      margin-bottom: 18px;
+      padding: 0 4px;
     }
 
-    .btn {
-      background: #1b2440;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 8px 12px;
+    .header h1 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .carousel-wrap {
+      overflow: hidden;
+      padding: 8px 2px 18px;
+    }
+
+    .carousel {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      padding-bottom: 4px;
+    }
+    .carousel::-webkit-scrollbar { display: none; }
+
+    .track-card {
+      flex: 0 0 168px;
+      scroll-snap-align: center;
+      border: 0;
+      background: transparent;
+      padding: 0;
       cursor: pointer;
+      text-align: left;
+      color: inherit;
+      transition: transform 0.2s ease;
     }
 
-    .dots { display: flex; gap: 8px; }
+    .track-card.active { transform: scale(1.03); }
+
+    .cover-frame {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      aspect-ratio: 1;
+      border: 2px solid transparent;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .track-card.active .cover-frame {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 0 28px var(--accent-glow);
+    }
+
+    .cover-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .track-code {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 8px 8px 7px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #fff;
+      background: linear-gradient(180deg, transparent, rgba(0,0,0,0.82));
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 4px 4px 14px;
+    }
+
+    .dots {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+
     .dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      background: #3a4568; border: 0; cursor: pointer;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 0;
+      background: #2a3558;
+      cursor: pointer;
+      padding: 0;
     }
     .dot.active { background: var(--accent); }
 
-    .thumbs {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .thumb {
-      border: 1px solid var(--border);
-      border-radius: 10px;
+    .progress {
+      flex: 1;
+      height: 3px;
+      background: #1a2442;
+      border-radius: 999px;
       overflow: hidden;
+    }
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #35bfff, #4fd6ff);
+      transition: width 0.25s ease;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1.2fr repeat(3, auto);
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(8, 12, 24, 0.75);
+      margin-bottom: 14px;
+    }
+
+    .meta .title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .meta .sub {
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .meta .stat {
+      text-align: right;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .meta .stat strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .view-toggle {
+      display: inline-flex;
+      gap: 8px;
+    }
+
+    .view-toggle button {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1428;
+      color: var(--muted);
       cursor: pointer;
-      background: #0f1422;
-      padding: 0;
     }
-    .thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
-    .thumb.active { outline: 2px solid var(--accent); }
-
-    iframe {
-      width: 100%;
-      border: 0;
-      border-radius: 12px;
-      margin-top: 12px;
-      min-height: 152px;
+    .view-toggle button.active {
+      color: var(--accent);
+      border-color: rgba(79, 214, 255, 0.45);
+      box-shadow: 0 0 16px rgba(79, 214, 255, 0.15);
     }
 
-    @media (max-width: 760px) {
-      .track-stage { grid-template-columns: 1fr; }
-      .cover { max-width: 240px; margin: 0 auto; display: block; }
-      .thumbs { grid-template-columns: repeat(3, 1fr); }
+    .links a {
+      color: var(--accent);
+      font-size: 12px;
+      text-decoration: none;
+      margin-right: 12px;
+    }
+
+    .list-view {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .list-view.active { display: block; }
+    .carousel-wrap.hidden { display: none; }
+
+    .list-row {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      background: rgba(8, 12, 24, 0.55);
+    }
+    .list-row:first-child { border-top: 0; }
+    .list-row.active { background: rgba(79, 214, 255, 0.08); }
+    .list-row img {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+    .list-row .name { font-size: 13px; font-weight: 600; }
+    .list-row .artist { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .list-row .code { font-size: 10px; color: var(--accent); letter-spacing: 0.08em; }
+
+    @media (max-width: 720px) {
+      .meta { grid-template-columns: 1fr 1fr; }
+      .track-card { flex-basis: 148px; }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>DJ Set</h1>
-    <p class="sub">Carousel · 曲目封面 + 元数据 + Spotify（如有）</p>
+  <main class="dj-set">
+    <div class="header">
+      <h1>DJ Set</h1>
+      <div class="links" id="links"></div>
+    </div>
 
-    <section class="carousel" aria-label="DJ set carousel">
-      <div class="track-stage">
-        <img id="cover" class="cover" src="assets/covers/daydreaming.jpg" alt="Track cover" />
-        <div class="meta">
-          <h2 id="title">—</h2>
-          <p id="artist">—</p>
-          <div>
-            <span class="pill" id="album">—</span>
-            <span class="pill" id="duration">—</span>
-            <span class="pill" id="position">—</span>
-          </div>
-          <div class="links" id="links"></div>
-          <div id="player"></div>
-        </div>
+    <div class="carousel-wrap" id="carouselWrap">
+      <div class="carousel" id="carousel" aria-label="DJ set track carousel"></div>
+    </div>
+
+    <div class="list-view" id="listView" aria-label="DJ set track list"></div>
+
+    <div class="nav">
+      <div class="dots" id="dots"></div>
+      <div class="progress" aria-hidden="true"><span id="progressBar" style="width:20%"></span></div>
+    </div>
+
+    <section class="meta" id="meta">
+      <div>
+        <div class="title" id="metaCode">TRACK —</div>
+        <div class="sub" id="metaTitle">—</div>
       </div>
-
-      <div class="controls">
-        <button class="btn" id="prev" type="button">← Prev</button>
-        <div class="dots" id="dots"></div>
-        <button class="btn" id="next" type="button">Next →</button>
-      </div>
-
-      <div class="thumbs" id="thumbs"></div>
+      <div class="stat">BPM<strong id="metaBpm">—</strong></div>
+      <div class="stat">KEY<strong id="metaKey">—</strong></div>
+      <div class="stat">TIME<strong id="metaDuration">—</strong></div>
     </section>
-  </div>
+
+    <div class="footer">
+      <div class="view-toggle">
+        <button id="gridBtn" class="active" type="button" aria-label="Grid view">▦</button>
+        <button id="listBtn" type="button" aria-label="List view">☰</button>
+      </div>
+      <div class="sub" id="trackCounter">1 / 5</div>
+    </div>
+  </main>
 
   <script>
     let tracks = [];
     let index = 0;
+    let view = 'grid';
+
+    function fmt(value, fallback = '—') {
+      return value === null || value === undefined || value === '' ? fallback : String(value);
+    }
 
     function renderTrack(i) {
       const t = tracks[i];
       if (!t) return;
       index = i;
 
-      document.getElementById('cover').src = t.cover;
-      document.getElementById('cover').alt = `${t.title} cover`;
-      document.getElementById('title').textContent = t.title;
-      document.getElementById('artist').textContent = t.artist;
-      document.getElementById('album').textContent = `${t.album}${t.year ? ` (${t.year})` : ''}`;
-      document.getElementById('duration').textContent = t.duration || '—';
-      document.getElementById('position').textContent = `#${t.position}`;
+      document.getElementById('metaCode').textContent = t.track_id || `TRACK ${String(i + 1).padStart(2, '0')}`;
+      document.getElementById('metaTitle').textContent = `${t.title} — ${t.artist}`;
+      document.getElementById('metaBpm').textContent = fmt(t.bpm);
+      document.getElementById('metaKey').textContent = fmt(t.key);
+      document.getElementById('metaDuration').textContent = fmt(t.duration);
+      document.getElementById('trackCounter').textContent = `${i + 1} / ${tracks.length}`;
+      document.getElementById('progressBar').style.width = `${((i + 1) / tracks.length) * 100}%`;
+
+      document.querySelectorAll('.track-card').forEach((el, n) => el.classList.toggle('active', n === i));
+      document.querySelectorAll('.dot').forEach((el, n) => el.classList.toggle('active', n === i));
+      document.querySelectorAll('.list-row').forEach((el, n) => el.classList.toggle('active', n === i));
+
+      const card = document.querySelectorAll('.track-card')[i];
+      if (card && view === 'grid') {
+        card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
 
       const links = document.getElementById('links');
       links.innerHTML = '';
@@ -179,7 +342,7 @@
         a.href = t.spotify.url;
         a.target = '_blank';
         a.rel = 'noreferrer';
-        a.textContent = 'Open on Spotify';
+        a.textContent = 'Spotify';
         links.appendChild(a);
       }
       if (t.links?.release) {
@@ -187,7 +350,7 @@
         a.href = t.links.release;
         a.target = '_blank';
         a.rel = 'noreferrer';
-        a.textContent = 'Release page';
+        a.textContent = 'Release';
         links.appendChild(a);
       }
       if (t.links?.album) {
@@ -195,60 +358,73 @@
         a.href = t.links.album;
         a.target = '_blank';
         a.rel = 'noreferrer';
-        a.textContent = 'Album page';
+        a.textContent = 'Album';
         links.appendChild(a);
       }
+    }
 
-      const player = document.getElementById('player');
-      player.innerHTML = '';
-      if (t.spotify?.embed) {
-        const iframe = document.createElement('iframe');
-        iframe.allow = 'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture';
-        iframe.loading = 'lazy';
-        iframe.src = t.spotify.embed;
-        player.appendChild(iframe);
-      }
-
-      document.querySelectorAll('.dot').forEach((d, n) => d.classList.toggle('active', n === i));
-      document.querySelectorAll('.thumb').forEach((el, n) => el.classList.toggle('active', n === i));
+    function setView(next) {
+      view = next;
+      document.getElementById('carouselWrap').classList.toggle('hidden', view === 'list');
+      document.getElementById('listView').classList.toggle('active', view === 'list');
+      document.getElementById('gridBtn').classList.toggle('active', view === 'grid');
+      document.getElementById('listBtn').classList.toggle('active', view === 'list');
     }
 
     function buildUI() {
+      const carousel = document.getElementById('carousel');
+      const listView = document.getElementById('listView');
       const dots = document.getElementById('dots');
-      const thumbs = document.getElementById('thumbs');
+      carousel.innerHTML = '';
+      listView.innerHTML = '';
       dots.innerHTML = '';
-      thumbs.innerHTML = '';
 
       tracks.forEach((t, i) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'track-card' + (i === 0 ? ' active' : '');
+        card.innerHTML = `
+          <div class="cover-frame">
+            <img src="${t.cover}" alt="${t.title}" />
+            <div class="track-code">${t.track_id || `TRACK ${String(i + 1).padStart(2, '0')}`}</div>
+          </div>`;
+        card.addEventListener('click', () => renderTrack(i));
+        carousel.appendChild(card);
+
+        const row = document.createElement('div');
+        row.className = 'list-row' + (i === 0 ? ' active' : '');
+        row.innerHTML = `
+          <img src="${t.cover}" alt="${t.title}" />
+          <div>
+            <div class="name">${t.title}</div>
+            <div class="artist">${t.artist}</div>
+          </div>
+          <div class="code">${t.track_id || ''}</div>`;
+        row.addEventListener('click', () => renderTrack(i));
+        listView.appendChild(row);
+
         const dot = document.createElement('button');
-        dot.className = 'dot' + (i === 0 ? ' active' : '');
         dot.type = 'button';
-        dot.setAttribute('aria-label', `Go to track ${i + 1}`);
+        dot.className = 'dot' + (i === 0 ? ' active' : '');
         dot.addEventListener('click', () => renderTrack(i));
         dots.appendChild(dot);
-
-        const thumb = document.createElement('button');
-        thumb.className = 'thumb' + (i === 0 ? ' active' : '');
-        thumb.type = 'button';
-        thumb.innerHTML = `<img src="${t.cover}" alt="${t.title}" />`;
-        thumb.addEventListener('click', () => renderTrack(i));
-        thumbs.appendChild(thumb);
       });
 
-      document.getElementById('prev').onclick = () => renderTrack((index - 1 + tracks.length) % tracks.length);
-      document.getElementById('next').onclick = () => renderTrack((index + 1) % tracks.length);
+      document.getElementById('gridBtn').onclick = () => setView('grid');
+      document.getElementById('listBtn').onclick = () => setView('list');
+
       renderTrack(0);
     }
 
     fetch('setlist.json')
       .then((r) => r.json())
       .then((data) => {
-        tracks = data.tracks;
+        tracks = data.tracks || [];
         buildUI();
       })
       .catch((err) => {
         console.error(err);
-        document.querySelector('.sub').textContent = 'Failed to load setlist.json';
+        document.getElementById('metaTitle').textContent = 'Failed to load setlist.json';
       });
   </script>
 </body>

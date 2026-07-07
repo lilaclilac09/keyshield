@@ -52,6 +52,8 @@ def test_dj_set_tracks() -> None:
             fail(f"track {i} artist mismatch: {t.get('artist')} != {artist}")
         if not t.get("cover"):
             fail(f"track {i} missing cover")
+        if not t.get("track_id"):
+            fail(f"track {i} missing track_id")
 
     ok("dj-set/setlist.json has 5 tracks with correct titles/artists/covers")
 
