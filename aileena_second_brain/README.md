@@ -65,4 +65,4 @@ accelerate launch -m axolotl.cli.train lora_config.yaml
 
 - Semantic memory: `memories/semantic/fable5-hybrid-workflow.md`
 - Skill: `memories/procedural/skills/generate-fable5-plan.md`
-- Repo bootstrap: `../scripts/init-fable5-workflow.sh`
+- Repo bootstrap (Fable5 + Second Brain): `../scripts/init-fable5-workflow.sh`
