@@ -1,0 +1,23 @@
+base_model: Qwen/Qwen2.5-14B-Instruct
+model_type: AutoModelForCausalLM
+
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules: "all-linear"
+
+datasets:
+  - path: training_data/skills.jsonl
+    ds_type: json
+    type: alpaca
+
+learning_rate: 2e-4
+num_epochs: 2
+max_seq_length: 8192
+batch_size: 4
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+
+load_in_4bit: true
+output_dir: output_lora_skills
