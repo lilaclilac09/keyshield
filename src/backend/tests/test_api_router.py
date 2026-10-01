@@ -195,6 +195,31 @@ def test_repeat_rpc_reads_vault_from_memory() -> None:
     assert proxy_routes.vault_db_reads == 0
 
 
+def test_unconfirmed_payment_is_not_cached() -> None:
+    """A null getTransaction means the wallet payment is not visible yet."""
+    hits = {"n": 0}
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        hits["n"] += 1
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": None})
+
+    _install_mock(handler)
+    client = TestClient(app)
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTransaction",
+        "params": ["payment-sig", {"encoding": "jsonParsed"}],
+    }
+    headers = {"X-Upstream-API-Key": "demo-helius-key"}
+    first = client.post("/proxy/helius/", headers=headers, json=body)
+    second = client.post("/proxy/helius/", headers=headers, json=body)
+    assert first.status_code == 200
+    assert first.json()["result"] is None
+    assert second.headers["x-ks-cache"] == "MISS"
+    assert hits["n"] == 2
+
+
 def test_sol_lamports_reads_value_field() -> None:
     from src.backend.skills.helius_skill import _sol_lamports
 

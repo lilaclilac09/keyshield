@@ -12,7 +12,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ query, onChange, o
           <span className="text-[10px] font-semibold text-[#8a96c2] uppercase tracking-wider">Search Vault</span>
           <button onClick={onClose} className="text-[#8a96c2] hover:text-white transition-colors"><X size={18} /></button>
         </div>
-        <input ref={inputRef} type="text" placeholder="Search by name, domain, or tag\u2026" className="w-full bg-transparent border-none text-2xl font-bold focus:outline-none placeholder:text-zinc-800 text-white" value={query} onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === 'Escape' && onClose()} />
+        <input ref={inputRef} type="text" placeholder="Search agents, wallets, or vault keys…" className="w-full bg-transparent border-none text-2xl font-bold focus:outline-none placeholder:text-zinc-800 text-white" value={query} onChange={e => onChange(e.target.value)} onKeyDown={e => e.key === 'Escape' && onClose()} />
       </div>
     </div>
   );

@@ -698,7 +698,10 @@ impl HeliusClient {
                     // `PerEntryTtl`).
                     let ttl = ttl.unwrap_or_else(|| client.ttl_for(method));
                     let arc = Arc::new(raw);
-                    if !ttl.is_zero() {
+                    // Do not remember a JSON null. getTransaction returns
+                    // null until a wallet payment is confirmed.
+                    let pending = arc.as_ref().as_ref() == b"null";
+                    if !ttl.is_zero() && !pending {
                         client
                             .inner
                             .mem_cache

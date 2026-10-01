@@ -22,7 +22,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export const AgentsSection: React.FC = () => {
+export const AgentsSection: React.FC<{ query?: string }> = ({ query = '' }) => {
   const [agentList, setAgentList] = useState<AgentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
@@ -73,6 +73,9 @@ export const AgentsSection: React.FC = () => {
 
   const handleRevoke = async (id: number) => { try { await apiFetch(`/agents/${id}`, { method: 'DELETE' }); setAgentList(prev => prev.filter(a => a.id !== id)); } catch {} };
 
+  const q = query.trim().toLowerCase();
+  const visibleAgents = agentList.filter(a => !q || a.name.toLowerCase().includes(q) || a.pubkey_b58.toLowerCase().includes(q));
+
   return (
     <div className="space-y-5">
       <Card title="Agent Authentication" description="Agents authenticate with their own ed25519 keypair. Register the agent's public key here once.">
@@ -93,7 +96,10 @@ export const AgentsSection: React.FC = () => {
 
       <Card title="Registered Agents" headerRight={<button onClick={load} className="text-[#8a96c2] hover:text-white transition-colors"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>}>
         {agentList.length === 0 && !loading && <p className="text-[12px] text-[#5e6a91] text-center py-4">No agents registered yet</p>}
-        {agentList.map(a => (
+        {agentList.length > 0 && visibleAgents.length === 0 && (
+          <p className="text-[12px] text-[#5e6a91] text-center py-4">No agents match “{query.trim()}”</p>
+        )}
+        {visibleAgents.map(a => (
           <div key={a.id} className="flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0">
             <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
             <div className="flex-1 min-w-0">

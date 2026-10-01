@@ -179,6 +179,15 @@ def _cache_set(ck: str, data: Any, ttl: float) -> None:
         _CACHE[ck] = (data, time.monotonic() + ttl)
 
 
+def _rpc_cacheable(result: Any) -> bool:
+    """Cache a JSON-RPC body only when it has a real result.
+
+    `{"result": null}` is what Helius returns before a payment transaction
+    is visible. Caching that makes the wallet look unpaid for the whole TTL.
+    """
+    return isinstance(result, dict) and "result" in result and result.get("result") is not None
+
+
 # ─── Auth header builder ──────────────────────────────────────────────────────
 def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple[str, dict]:
     cfg = PROVIDERS[provider_name]
@@ -268,7 +277,7 @@ async def call_helius(
         if cached is not None:
             return cached, "HIT", 200
         result, status = await _call_enhanced(method, params, api_key, rpc_id)
-        if ttl and status == 200 and isinstance(result, dict) and "result" in result:
+        if ttl and status == 200 and _rpc_cacheable(result):
             _cache_set(ck, result, ttl)
         return result, "MISS", status
 
@@ -292,7 +301,7 @@ async def call_helius(
 
     status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
     result = json.loads(content)
-    if ttl and "result" in result:
+    if ttl and _rpc_cacheable(result):
         _cache_set(ck, result, ttl)
     return result, "MISS", status
 

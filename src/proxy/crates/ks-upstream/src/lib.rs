@@ -599,7 +599,9 @@ impl UpstreamClients {
                 if let Ok(parsed) =
                     serde_json::from_slice::<serde_json::Value>(&canonical)
                 {
-                    if parsed.get("result").is_some() {
+                    // Null means "not confirmed yet". Caching it hides a
+                    // wallet payment for the whole TTL.
+                    if parsed.get("result").is_some_and(|v| !v.is_null()) {
                         cache.set(k, canonical.clone(), ttl_dur);
                     }
                 }

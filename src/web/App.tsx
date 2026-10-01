@@ -102,7 +102,7 @@ const MainContent: React.FC = () => {
             <div className="max-w-5xl mx-auto">
               {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} />}
               {section === 'activity' && <ActivitySection />}
-              {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
+              {section === 'agents' && (<><AgentsSection query={searchQuery} /><EphemeralWalletsSection query={searchQuery} /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
               {section === 'sessions' && <SessionsSection onLogout={handleLogout} />}
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
