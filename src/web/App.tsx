@@ -92,7 +92,7 @@ const MainContent: React.FC = () => {
   return (
     <div className="h-screen bg-[#0b1226] text-white flex flex-col" style={{ fontFamily: "'Montserrat', 'Inter', sans-serif" }}>
       <BetaBanner />
-      {isSearchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }} />}
+      {isSearchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => setIsSearchOpen(false)} />}
       <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={addItem} initialData={prefilledData} />
       <div className="flex flex-1 min-h-0">
         <Sidebar items={NAV} active={section} onNavigate={(id: string) => setSection(id as Section)} walletAddress={fullAddr} connected={!!fullAddr} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
