@@ -15,9 +15,11 @@ See docs/technical/SYNC_VAULT_ARCHITECTURE.md.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import sqlite3
 import time
 
 from fastapi import APIRouter, Request
@@ -62,6 +64,79 @@ def _bearer(request: Request) -> str | None:
 
 def _is_helius(upstream: str) -> bool:
     return upstream in ("helius", "helius-rpc", "helius-das", "helius-enhanced")
+
+
+# Repeat RPC calls were opening SQLite, running usage DDL, then waiting
+# on that commit before the response went out. The key cache removes the
+# vault read from the hot path. Usage is recorded after the response.
+_VAULT_KEYS: dict[tuple[str, str], tuple[str, float]] = {}
+_VAULT_KEY_TTL = 30.0
+vault_db_reads = 0
+
+
+def remember_vault_key(user_id: str, upstream: str, value: str) -> None:
+    if not user_id or not upstream:
+        return
+    if not value:
+        forget_vault_key(user_id, upstream)
+        return
+    _VAULT_KEYS[(user_id, upstream)] = (value, time.monotonic() + _VAULT_KEY_TTL)
+
+
+def forget_vault_key(user_id: str, upstream: str | None = None) -> None:
+    if upstream is None:
+        for key in [k for k in _VAULT_KEYS if k[0] == user_id]:
+            _VAULT_KEYS.pop(key, None)
+        return
+    _VAULT_KEYS.pop((user_id, upstream), None)
+
+
+def lookup_vault_key(user_id: str, upstream: str, db_path) -> tuple[str | None, str]:
+    """Return (api_key, source) where source is 'memory' or 'db'."""
+    global vault_db_reads
+    now = time.monotonic()
+    hit = _VAULT_KEYS.get((user_id, upstream))
+    if hit and hit[1] > now and hit[0]:
+        return hit[0], "memory"
+    vault_db_reads += 1
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT value FROM vault_items "
+            "WHERE user_id = ? AND upstream = ? AND value != '' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (user_id, upstream),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row[0]:
+        return None, "db"
+    remember_vault_key(user_id, upstream, row[0])
+    return row[0], "db"
+
+
+def _record_usage(**kwargs) -> None:
+    try:
+        content = kwargs.pop("content")
+        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(
+            kwargs["upstream"], content
+        )
+        usage_mod.log_call(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost_usd,
+            **kwargs,
+        )
+    except Exception:
+        pass
+
+
+def _schedule_usage(**kwargs) -> None:
+    try:
+        asyncio.get_running_loop().create_task(asyncio.to_thread(_record_usage, **kwargs))
+    except RuntimeError:
+        _record_usage(**kwargs)
 
 
 @router.api_route(
@@ -116,23 +191,16 @@ async def proxy_route(upstream: str, path: str, request: Request):
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
-
-    try:
-        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
-        usage_mod.log_call(
-            user_id=user_id,
-            upstream=upstream,
-            key_type="user",
-            method=str(request.method),
-            path=f"/{path}",
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            cost_usd=cost_usd,
-            latency_ms=latency_ms,
-            status_code=status,
-        )
-    except Exception:
-        pass
+    _schedule_usage(
+        user_id=user_id,
+        upstream=upstream,
+        key_type="user",
+        method=str(request.method),
+        path=f"/{path}",
+        latency_ms=latency_ms,
+        status_code=status,
+        content=content if isinstance(content, (bytes, bytearray)) else json.dumps(content).encode(),
+    )
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
@@ -145,6 +213,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
+    resp.headers["x-ks-ms"] = f"{latency_ms:.1f}"
     return resp
 
 
@@ -179,23 +248,12 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         else:
             return JSONResponse({"error": "invalid token"}, status_code=401)
 
-    _VAULT_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_VAULT_DB))
-    try:
-        row = conn.execute(
-            "SELECT value FROM vault_items "
-            "WHERE user_id = ? AND upstream = ? AND value != '' "
-            "ORDER BY created_at DESC LIMIT 1",
-            (user_id, upstream),
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row or not row[0]:
+    api_key, key_source = lookup_vault_key(user_id, upstream, _VAULT_DB)
+    if not api_key:
         return JSONResponse(
             {"error": f"no {upstream} key in vault — POST /manage/store first"},
             status_code=422,
         )
-    api_key = row[0]
     body = await request.body()
     interceptor = _get_x402_interceptor()
     t0 = time.perf_counter()
@@ -220,22 +278,16 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
-    try:
-        tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
-        usage_mod.log_call(
-            user_id=user_id,
-            upstream=upstream,
-            key_type="vault",
-            method=str(request.method),
-            path=f"/{path}",
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            cost_usd=cost_usd,
-            latency_ms=latency_ms,
-            status_code=status,
-        )
-    except Exception:
-        pass
+    _schedule_usage(
+        user_id=user_id,
+        upstream=upstream,
+        key_type="vault",
+        method=str(request.method),
+        path=f"/{path}",
+        latency_ms=latency_ms,
+        status_code=status,
+        content=content if isinstance(content, (bytes, bytearray)) else json.dumps(content).encode(),
+    )
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
@@ -248,6 +300,8 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
     resp.headers["x-ks-key-type"] = "vault"
+    resp.headers["x-ks-vault"] = key_source
+    resp.headers["x-ks-ms"] = f"{latency_ms:.1f}"
     return resp
 
 

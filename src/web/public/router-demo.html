@@ -48,7 +48,8 @@
     };
 
     document.getElementById("rpc").onclick = async () => {
-      document.getElementById("rpc").disabled = true;
+      const btn = document.getElementById("rpc");
+      btn.disabled = true;
       const res = await fetch(API + "/vproxy/helius/", {
         method: "POST",
         headers,
@@ -62,8 +63,16 @@
       const body = await res.json();
       const lamports = body && body.result && body.result.value;
       const sol = typeof lamports === "number" ? (lamports / 1e9).toFixed(4) + " SOL" : "n/a";
-      show("getBalance via saved vault key → " + sol + "  (cache " + res.headers.get("x-ks-cache") + ")", body);
+      const cache = res.headers.get("x-ks-cache");
+      const vault = res.headers.get("x-ks-vault");
+      const ms = res.headers.get("x-ks-ms");
+      show(
+        "getBalance via saved vault key → " + sol +
+          "  (cache " + cache + ", vault " + vault + ", " + ms + "ms)",
+        body
+      );
       out.className = res.ok ? "ok" : "";
+      btn.disabled = false;
     };
   </script>
 </body>

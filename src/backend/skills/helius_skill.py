@@ -52,6 +52,17 @@ async def _webhook_req(method: str, path: str, api_key: str, body: Any = None) -
 # ─── Tool: portfolio ──────────────────────────────────────────────────────────
 
 
+def _sol_lamports(balance_resp: dict) -> int:
+    """getBalance returns {result: {context, value}}, not a bare integer."""
+    raw = balance_resp.get("result", 0)
+    if isinstance(raw, dict):
+        raw = raw.get("value") or 0
+    try:
+        return int(raw or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def portfolio(wallet: str, api_key: str) -> dict:
     """
     Full wallet snapshot: SOL balance + SPL token balances + NFT count.
@@ -74,8 +85,9 @@ async def portfolio(wallet: str, api_key: str) -> dict:
     tokens_resp = results[1]
     nfts_resp = results[2]
 
-    sol_lamports = balance_resp.get("result", 0)
-    tokens = tokens_resp.get("result", {}).get("tokens", [])
+    sol_lamports = _sol_lamports(balance_resp)
+    token_body = tokens_resp.get("result", {})
+    tokens = token_body.get("tokens", []) if isinstance(token_body, dict) else []
     nft_items = nfts_resp.get("result", {}).get("items", [])
 
     return {
@@ -84,8 +96,8 @@ async def portfolio(wallet: str, api_key: str) -> dict:
         "tokens": [
             {
                 "mint": t.get("mint"),
-                "symbol": t.get("tokenData", {}).get("symbol", "?"),
-                "balance": t.get("amount", 0) / (10 ** t.get("decimals", 0)),
+                "symbol": (t.get("tokenData") or {}).get("symbol") or t.get("symbol") or "?",
+                "balance": t.get("amount", 0) / (10 ** int(t.get("decimals") or 0)),
             }
             for t in tokens[:20]
         ],

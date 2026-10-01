@@ -215,6 +215,9 @@ async def vault_store(request: Request):
                 int(body.get("cipher_v") or 0),
             ),
         )
+    from .proxy import remember_vault_key
+
+    remember_vault_key(uid, body.get("upstream") or "", body.get("value") or "")
     return JSONResponse({"id": item_id})
 
 
@@ -248,6 +251,9 @@ async def vault_delete(item_id: str, request: Request):
         )
     if cur.rowcount == 0:
         return JSONResponse({"detail": "item not found"}, status_code=404)
+    from .proxy import forget_vault_key
+
+    forget_vault_key(uid)
     return JSONResponse({"ok": True})
 
 
@@ -283,4 +289,9 @@ async def vault_update(item_id: str, request: Request):
         )
     if cur.rowcount == 0:
         return JSONResponse({"detail": "item not found"}, status_code=404)
+    from .proxy import forget_vault_key
+
+    # The row may have changed upstream or value. Drop this user's cache
+    # so the next RPC reads the new key instead of the previous one.
+    forget_vault_key(uid)
     return JSONResponse({"ok": True})

@@ -19,7 +19,9 @@ const ANTHROPIC_DEFAULT_VERSION: &str = "2023-06-01";
 // 05 "Method → bucket" + ADR-001). All three buckets use `?api-key={key}`
 // auth. These mirror `v2-mvp/src/api_router.py:21-37`.
 const HELIUS_RPC_BASE: &str = "https://mainnet.helius-rpc.com";
-const HELIUS_DAS_BASE: &str = "https://mainnet.helius-rpc.com/das";
+// DAS is JSON-RPC on the same host as getBalance. `/das` was a second
+// origin that Helius does not serve.
+const HELIUS_DAS_BASE: &str = "https://mainnet.helius-rpc.com";
 const HELIUS_ENHANCED_BASE: &str = "https://api.helius.xyz/v0";
 
 /// Helius bucket assignment for a JSON-RPC method.

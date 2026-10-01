@@ -49,10 +49,21 @@ FREE_CREDIT_USD = 0.10
 # ── DB setup ──────────────────────────────────────────────────────────────────
 
 
+_SCHEMA_READY = False
+
+
 def _db() -> sqlite3.Connection:
+    """Open usage.db. The CREATE script runs once per process.
+
+    Running it on every RPC blocked the proxy on SQLite DDL before the
+    client ever saw the upstream response.
+    """
+    global _SCHEMA_READY
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
+    if _SCHEMA_READY:
+        return conn
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS usage_log (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +99,7 @@ def _db() -> sqlite3.Connection:
             ON topup_tx (user_id, credited_at DESC);
     """)
     conn.commit()
+    _SCHEMA_READY = True
     return conn
 
 

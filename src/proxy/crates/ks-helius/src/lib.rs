@@ -36,7 +36,9 @@ use ks_cache::pycompat;
 /// Wire shape for a Helius JSON-RPC request.
 const HELIUS_RPC_BASE: &str = "https://mainnet.helius-rpc.com";
 const HELIUS_DAS_BASE: &str = "https://mainnet.helius-rpc.com";
-const HELIUS_ENHANCED_BASE: &str = "https://api.helius.xyz/v0";
+// Host only. Call paths already start with `/v0/...`. Including `/v0`
+// here produced `https://api.helius.xyz/v0/v0/...` and a 404.
+const HELIUS_ENHANCED_BASE: &str = "https://api.helius.xyz";
 
 /// Identifies which Helius surface a method targets. Drives URL
 /// selection in `fire`.
@@ -859,10 +861,35 @@ impl HeliusClient {
         params: &Value,
         proof: Option<&Value>,
     ) -> Result<Bytes, HeliusError> {
-        let path = match method {
-            "parseTransactions" => "/v0/transactions",
-            "getTransactions" => "/v0/addresses/-/transactions",
-            "getTokenBalances" => "/v0/addresses/-/balances",
+        let arr = params.as_array();
+        let head = arr
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let (http_get, path, post_body) = match method {
+            "parseTransactions" => (false, "/v0/transactions".to_string(), Some(params.clone())),
+            "getTokenBalances" => (
+                true,
+                format!("/v0/addresses/{head}/balances"),
+                None,
+            ),
+            "getTransactions" if arr.map(|a| a.len() > 1).unwrap_or(false) => {
+                let limit = arr
+                    .and_then(|a| a.get(1))
+                    .and_then(|o| o.get("limit"))
+                    .and_then(|n| n.as_u64())
+                    .unwrap_or(100);
+                (
+                    true,
+                    format!("/v0/addresses/{head}/transactions?limit={limit}"),
+                    None,
+                )
+            }
+            "getTransactions" => (
+                false,
+                "/v0/transactions".to_string(),
+                Some(json!({"transactions": [head]})),
+            ),
             other => {
                 return Err(HeliusError::Upstream {
                     status: 0,
@@ -870,17 +897,21 @@ impl HeliusClient {
                 });
             }
         };
+        let joiner = if path.contains('?') { '&' } else { '?' };
         let url = format!(
-            "{}{}?api-key={}",
-            self.inner.enhanced_base, path, &*self.inner.api_key,
+            "{}{}{}api-key={}",
+            self.inner.enhanced_base, path, joiner, &*self.inner.api_key,
         );
-        let body = serde_json::to_vec(params)?;
-        let mut req = self
-            .inner
-            .http
-            .post(&url)
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body);
+        let mut req = if http_get {
+            self.inner.http.get(&url)
+        } else {
+            let body = serde_json::to_vec(&post_body.unwrap_or(params.clone()))?;
+            self.inner
+                .http
+                .post(&url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body)
+        };
         if let Some(p) = proof {
             for (k, v) in proof_to_headers(p) {
                 req = req.header(k, v);

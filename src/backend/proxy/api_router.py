@@ -28,14 +28,17 @@ PROVIDERS: dict[str, dict] = {
         "auth_param": "api-key",
         "inject_content_type": False,
     },
+    # DAS methods are JSON-RPC on the same host as getBalance. A separate
+    # /das origin was an extra DNS + TLS pool and Helius does not serve it.
     "helius-das": {
-        "base": "https://mainnet.helius-rpc.com/das",
+        "base": "https://mainnet.helius-rpc.com",
         "auth": "query",
         "auth_param": "api-key",
         "inject_content_type": False,
     },
+    # Enhanced history and balances are REST on api.helius.xyz, not JSON-RPC.
     "helius-enhanced": {
-        "base": "https://api.helius.xyz/v0",
+        "base": "https://api.helius.xyz",
         "auth": "query",
         "auth_param": "api-key",
         "inject_content_type": False,
@@ -202,26 +205,52 @@ def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple
 
 
 # ─── Route Helius JSON-RPC ────────────────────────────────────────────────────
+# JSON-RPC, including DAS (getAsset and friends), all go to one host.
+# History and balances are REST and are handled in `_call_enhanced`.
+_ENHANCED_REST = {"getTransactions", "getTokenBalances"}
+
+
 def _helius_provider(method: str) -> str:
-    _DAS = {
-        "getAsset",
-        "getAssetBatch",
-        "getAssetProof",
-        "getAssetProofBatch",
-        "getAssetsByOwner",
-        "getAssetsByGroup",
-        "getAssetsByCreator",
-        "getAssetsByAuthority",
-        "searchAssets",
-        "getTokenAccounts",
-        "getNftEditions",
-    }
-    _ENHANCED = {"getTransactions", "getTokenBalances"}
-    if method in _DAS:
-        return "helius-das"
-    if method in _ENHANCED:
-        return "helius-enhanced"
     return "helius-rpc"
+
+
+def _enhanced_request(method: str, params: Any) -> tuple[str, str, dict | None]:
+    """Map the old JSON-RPC names onto the REST routes Helius actually serves."""
+    args = params if isinstance(params, list) else []
+    head = args[0] if args else ""
+    if method == "getTokenBalances":
+        return "GET", f"/v0/addresses/{head}/balances", None
+    opts = args[1] if len(args) > 1 and isinstance(args[1], dict) else None
+    if method == "getTransactions" and opts is not None:
+        limit = int(opts.get("limit") or 100)
+        return "GET", f"/v0/addresses/{head}/transactions?limit={limit}", None
+    # A bare signature is the parse-transactions endpoint.
+    return "POST", "/v0/transactions", {"transactions": [head]}
+
+
+async def _call_enhanced(
+    method: str,
+    params: Any,
+    api_key: str,
+    rpc_id: Any,
+) -> tuple[Any, int]:
+    http_method, path, payload = _enhanced_request(method, params)
+    sep = "&" if "?" in path else "?"
+    url = f"{path}{sep}api-key={api_key}" if api_key else path
+    client = _CLIENTS["helius-enhanced"]
+    if http_method == "GET":
+        resp = await client.get(url)
+    else:
+        resp = await client.post(url, json=payload)
+    try:
+        parsed = json.loads(resp.content)
+    except Exception:
+        parsed = {"raw": resp.content.decode(errors="replace")}
+    if resp.status_code == 200:
+        return {"jsonrpc": "2.0", "id": rpc_id, "result": parsed}, resp.status_code
+    if isinstance(parsed, dict):
+        return parsed, resp.status_code
+    return {"error": parsed}, resp.status_code
 
 
 async def call_helius(
@@ -232,6 +261,17 @@ async def call_helius(
     *,
     interceptor: PaymentInterceptor | None = None,
 ) -> tuple[Any, str, int]:
+    if method in _ENHANCED_REST:
+        ttl = _HELIUS_TTL.get(method, 0)
+        ck = _ck("helius", method, params)
+        cached = _cache_get(ck) if ttl else None
+        if cached is not None:
+            return cached, "HIT", 200
+        result, status = await _call_enhanced(method, params, api_key, rpc_id)
+        if ttl and status == 200 and isinstance(result, dict) and "result" in result:
+            _cache_set(ck, result, ttl)
+        return result, "MISS", status
+
     provider = _helius_provider(method)
     body = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params}
     url, headers = _build_url_and_headers(provider, "/", api_key)
