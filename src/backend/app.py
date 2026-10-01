@@ -57,6 +57,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["x-ks-cache", "x-ks-key-type"],
 )
 
 
