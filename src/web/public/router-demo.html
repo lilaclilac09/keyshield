@@ -20,7 +20,7 @@
     <p>Detect a provider key, save it into the local vault, then call Helius <code>getBalance</code> through <code>/vproxy</code>. The proxy reads the saved key and attaches <code>api-key</code>. The page never puts that key on the RPC request.</p>
     <p>Detected key: <strong id="detected">demo-helius-key</strong></p>
     <button id="save" type="button">Save detected key</button>
-    <button id="rpc" type="button" disabled>Call getBalance</button>
+    <button id="rpc" type="button" disabled>Call getBalance twice</button>
     <h2>Result</h2>
     <pre id="out">Waiting.</pre>
   </main>
@@ -47,9 +47,7 @@
       document.getElementById("rpc").disabled = !res.ok;
     };
 
-    document.getElementById("rpc").onclick = async () => {
-      const btn = document.getElementById("rpc");
-      btn.disabled = true;
+    async function callBalance() {
       const res = await fetch(API + "/vproxy/helius/", {
         method: "POST",
         headers,
@@ -63,15 +61,23 @@
       const body = await res.json();
       const lamports = body && body.result && body.result.value;
       const sol = typeof lamports === "number" ? (lamports / 1e9).toFixed(4) + " SOL" : "n/a";
-      const cache = res.headers.get("x-ks-cache");
-      const vault = res.headers.get("x-ks-vault");
-      const ms = res.headers.get("x-ks-ms");
-      show(
-        "getBalance via saved vault key → " + sol +
-          "  (cache " + cache + ", vault " + vault + ", " + ms + "ms)",
-        body
-      );
-      out.className = res.ok ? "ok" : "";
+      return {
+        line: "getBalance → " + sol +
+          "  (cache " + res.headers.get("x-ks-cache") +
+          ", vault " + res.headers.get("x-ks-vault") +
+          ", " + res.headers.get("x-ks-ms") + "ms)",
+        body,
+        ok: res.ok,
+      };
+    }
+
+    document.getElementById("rpc").onclick = async () => {
+      const btn = document.getElementById("rpc");
+      btn.disabled = true;
+      const first = await callBalance();
+      const second = await callBalance();
+      out.textContent = first.line + "\n" + second.line + "\n" + JSON.stringify(second.body, null, 2);
+      out.className = first.ok && second.ok ? "ok" : "";
       btn.disabled = false;
     };
   </script>
