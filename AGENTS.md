@@ -892,3 +892,14 @@ This project is indexed by GitNexus as **keyshield** (6516 symbols, 11707 relati
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Cursor Cloud specific instructions
+
+The local product is three processes: Python control plane `:8001`, Rust proxy `:8000`, Vite dashboard `:3000`. Product docs are in `DEVELOPMENT.md`. These notes are only the gaps on a fresh Cloud Agent VM.
+
+- The base image's Rust is 1.83 and cannot parse `edition2024` crates. Run `rustup toolchain install stable && rustup default stable` before `cargo build --bin ks-proxy --manifest-path src/proxy/Cargo.toml`.
+- `python3-venv` is not preinstalled. `sudo apt-get install -y python3.12-venv`, then `python3 -m venv .venv` and `.venv/bin/pip install -r src/backend/requirements.txt pytest pytest-asyncio`. Put `.venv/bin` first on `PATH`.
+- `npm ci` at the repo root installs the web workspace, but Vite is hoisted to the root `node_modules`. `node dev.cjs` exits unless `src/web/node_modules/vite` exists. After `npm ci`, `ln -sfn ../../../node_modules/vite src/web/node_modules/vite`, or start the UI with `npx vite --host 0.0.0.0 --port 3000` from `src/web`. Vite's config listens on port **3000**.
+- `node dev.cjs` runs `uvicorn app:app` with cwd `src/backend`. That import fails because `app.py` uses package-relative imports. From the repo root: `python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001`.
+- `ks-proxy` opens `KS_SESSION_DB` read-only and does not create the file. Create `src/backend/sessions.db` with the `sessions` table (`token`, `user_id`, `enc_pass`, `expires_at`) before launch. From `src/proxy`, set `KS_BIND=127.0.0.1:8000`, `PYTHON_BACKEND_URL=http://127.0.0.1:8001`, `KS_SESSION_DB=/workspace/src/backend/sessions.db`, `KS_VAULT_DIR=/workspace/src/backend/vault`, `KS_VAULT_DB_PATH=/workspace/src/backend/data/vault_shim.db`.
+- Passkey login in Chrome needs `http://127.0.0.1:3000`, not `localhost`. Wallet login is `GET /auth/wallet-challenge` then `POST /auth/wallet-login` with an ed25519 signature. `pytest src/backend/tests/` is the backend suite; `test_routes_register` fails on current FastAPI because included routers have no `.path`, while `GET /health` still returns `{"status":"ok","version":"2.0"}`.
