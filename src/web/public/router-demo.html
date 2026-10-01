@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>KeyShield router demo</title>
+  <style>
+    body { margin: 0; font-family: Montserrat, Inter, sans-serif; background: #0b1226; color: #e8ecff; }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 24px 64px; }
+    h1 { font-size: 28px; letter-spacing: 0.04em; margin: 0 0 8px; }
+    p { color: #a8b3d8; line-height: 1.5; }
+    button { background: #2e4585; color: white; border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 700; cursor: pointer; margin-right: 8px; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    pre { background: #131c39; border: 1px solid #243365; border-radius: 12px; padding: 16px; overflow: auto; white-space: pre-wrap; }
+    .ok { color: #8ee4b0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>KEYSHIELD</h1>
+    <p>Detect a provider key, save it into the local vault, then call Helius <code>getBalance</code> through <code>/vproxy</code>. The proxy reads the saved key and attaches <code>api-key</code>. The page never puts that key on the RPC request.</p>
+    <p>Detected key: <strong id="detected">demo-helius-key</strong></p>
+    <button id="save" type="button">Save detected key</button>
+    <button id="rpc" type="button" disabled>Call getBalance</button>
+    <h2>Result</h2>
+    <pre id="out">Waiting.</pre>
+  </main>
+  <script>
+    const API = "http://127.0.0.1:8011";
+    const headers = { "Content-Type": "application/json", "X-Dev-Mode": "1" };
+    const out = document.getElementById("out");
+    const key = document.getElementById("detected").textContent;
+
+    function show(title, body) {
+      out.textContent = title + "\n" + JSON.stringify(body, null, 2);
+    }
+
+    document.getElementById("save").onclick = async () => {
+      document.getElementById("save").disabled = true;
+      const res = await fetch(API + "/manage/store", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ upstream: "helius", name: "helius key", value: key }),
+      });
+      const body = await res.json();
+      show(res.ok ? "Saved to vault" : "Save failed", body);
+      if (res.ok) out.className = "ok";
+      document.getElementById("rpc").disabled = !res.ok;
+    };
+
+    document.getElementById("rpc").onclick = async () => {
+      document.getElementById("rpc").disabled = true;
+      const res = await fetch(API + "/vproxy/helius/", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getBalance",
+          params: ["DemoWallet11111111111111111111111111111111"],
+        }),
+      });
+      const body = await res.json();
+      const lamports = body && body.result && body.result.value;
+      const sol = typeof lamports === "number" ? (lamports / 1e9).toFixed(4) + " SOL" : "n/a";
+      show("getBalance via saved vault key → " + sol + "  (cache " + res.headers.get("x-ks-cache") + ")", body);
+      out.className = res.ok ? "ok" : "";
+    };
+  </script>
+</body>
+</html>

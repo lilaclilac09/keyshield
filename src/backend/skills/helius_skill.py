@@ -108,7 +108,7 @@ async def transactions(wallet: str, api_key: str, limit: int = 10) -> list[dict]
     Decoded transaction history via Helius Enhanced API.
     Returns up to `limit` transactions with type, source, and amount info.
     """
-    result, _ = await api_router.call_helius("getTransactions", [wallet, {"limit": limit}], api_key)
+    result, *_ = await api_router.call_helius("getTransactions", [wallet, {"limit": limit}], api_key)
     raw_txs = result.get("result", [])
     out = []
     for tx in raw_txs:
@@ -135,7 +135,7 @@ async def nfts(wallet: str, api_key: str, limit: int = 20, page: int = 1) -> dic
     List NFTs owned by a wallet via DAS getAssetsByOwner.
     Returns items with name, image, and collection.
     """
-    result, _ = await api_router.call_helius(
+    result, *_ = await api_router.call_helius(
         "getAssetsByOwner",
         [wallet, {"page": page, "limit": limit}],
         api_key,
@@ -172,7 +172,7 @@ async def search_nfts(query: str, api_key: str, limit: int = 10) -> list[dict]:
     """
     Search NFTs by name / symbol / creator via DAS searchAssets.
     """
-    result, _ = await api_router.call_helius(
+    result, *_ = await api_router.call_helius(
         "searchAssets",
         [{"burnt": False, "limit": limit, "name": query}],
         api_key,
@@ -195,7 +195,7 @@ async def token_info(mint: str, api_key: str) -> dict:
     """
     Token metadata + supply via getAsset (DAS) + getAccountInfo (RPC).
     """
-    asset_result, _ = await api_router.call_helius("getAsset", [mint], api_key)
+    asset_result, *_ = await api_router.call_helius("getAsset", [mint], api_key)
     asset = asset_result.get("result", {})
     meta = asset.get("content", {}).get("metadata", {})
     return {
@@ -216,7 +216,7 @@ async def analyze_tx(signature: str, api_key: str) -> dict:
     Decode a single transaction — type, accounts involved, token movements.
     Uses Helius Enhanced getTransactions with a single signature.
     """
-    result, _ = await api_router.call_helius("getTransactions", [signature], api_key)
+    result, *_ = await api_router.call_helius("getTransactions", [signature], api_key)
     txs = result.get("result", [])
     if not txs:
         return {"error": "transaction not found", "signature": signature}
@@ -274,7 +274,7 @@ async def priority_fee(
     if transaction:
         request["transaction"] = transaction
 
-    result, _ = await api_router.call_helius("getPriorityFeeEstimate", [request], api_key)
+    result, *_ = await api_router.call_helius("getPriorityFeeEstimate", [request], api_key)
     return result.get("result", {})
 
 

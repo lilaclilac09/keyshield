@@ -26,16 +26,19 @@ PROVIDERS: dict[str, dict] = {
         "base": "https://mainnet.helius-rpc.com",
         "auth": "query",  # api-key goes in query string
         "auth_param": "api-key",
+        "inject_content_type": False,
     },
     "helius-das": {
         "base": "https://mainnet.helius-rpc.com/das",
         "auth": "query",
         "auth_param": "api-key",
+        "inject_content_type": False,
     },
     "helius-enhanced": {
         "base": "https://api.helius.xyz/v0",
         "auth": "query",
         "auth_param": "api-key",
+        "inject_content_type": False,
     },
     "openai": {
         "base": "https://api.openai.com",
@@ -64,6 +67,27 @@ PROVIDERS: dict[str, dict] = {
     "alchemy": {
         "base": "https://eth-mainnet.g.alchemy.com",
         "auth": "bearer",
+    },
+    # Spec 04. These were on the Rust proxy and missing here, so
+    # /proxy/0x, /proxy/titan, and /proxy/pyth returned "unknown provider".
+    "0x": {
+        "base": "https://api.0x.org",
+        "auth": "header",
+        "auth_header": "0x-api-key",
+        "inject_content_type": False,
+    },
+    "titan": {
+        "base": "https://rpc.titanbuilder.xyz",
+        "auth": "bearer",
+        "auth_optional": True,
+        "inject_content_type": False,
+    },
+    "pyth": {
+        "base": "https://hermes.pyth.network",
+        "auth": "query",
+        "auth_param": "api_key",
+        "auth_optional": True,
+        "inject_content_type": False,
     },
 }
 
@@ -157,15 +181,20 @@ def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple
     cfg = PROVIDERS[provider_name]
     headers: dict[str, str] = dict(cfg.get("extra_headers", {}))
 
+    optional = bool(cfg.get("auth_optional")) and not api_key
     if cfg["auth"] == "query":
-        sep = "&" if "?" in path else "?"
-        url = f"{path}{sep}{cfg['auth_param']}={api_key}"
+        url = path
+        if not optional:
+            sep = "&" if "?" in path else "?"
+            url = f"{path}{sep}{cfg['auth_param']}={api_key}"
     elif cfg["auth"] == "bearer":
         url = path
-        headers["authorization"] = f"Bearer {api_key}"
+        if not optional:
+            headers["authorization"] = f"Bearer {api_key}"
     elif cfg["auth"] == "header":
         url = path
-        headers[cfg["auth_header"]] = api_key
+        if not optional:
+            headers[cfg["auth_header"]] = api_key
     else:
         url = path
 
@@ -202,7 +231,7 @@ async def call_helius(
     rpc_id: Any = 1,
     *,
     interceptor: PaymentInterceptor | None = None,
-) -> tuple[Any, str]:
+) -> tuple[Any, str, int]:
     provider = _helius_provider(method)
     body = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params}
     url, headers = _build_url_and_headers(provider, "/", api_key)
@@ -213,19 +242,19 @@ async def call_helius(
 
     if method in _HELIUS_WRITES:
         status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
-        return json.loads(content), "MISS"
+        return json.loads(content), "MISS", status
 
     ttl = _HELIUS_TTL.get(method, 0)
     ck = _ck("helius", method, params)
     cached = _cache_get(ck) if ttl else None
     if cached is not None:
-        return cached, "HIT"
+        return cached, "HIT", 200
 
     status, content, _ = await with_x402_retry(_fire, interceptor=interceptor)
     result = json.loads(content)
     if ttl and "result" in result:
         _cache_set(ck, result, ttl)
-    return result, "MISS"
+    return result, "MISS", status
 
 
 # ─── Route generic REST (OpenAI, Anthropic, etc.) ────────────────────────────
@@ -261,7 +290,10 @@ async def call_rest(
     url, headers = _build_url_and_headers(provider_name, path, api_key)
     if extra_headers:
         headers.update(extra_headers)
-    headers["content-type"] = "application/json"
+    # Spec 04: AI providers re-inject JSON content-type. 0x, Titan, Pyth,
+    # and the Helius REST fallback forward the caller content-type instead.
+    if PROVIDERS[provider_name].get("inject_content_type", True):
+        headers["content-type"] = "application/json"
 
     async def _fire(extra: dict[str, str]) -> tuple[int, bytes, dict]:
         resp = await _CLIENTS[provider_name].request(
@@ -280,7 +312,7 @@ async def batch_helius(requests: list[dict], api_key: str) -> list[dict]:
     """Fire all Helius RPC calls in parallel, return in order."""
 
     async def one(req: dict) -> dict:
-        result, cache_status = await call_helius(
+        result, cache_status, _status = await call_helius(
             req["method"], req.get("params", []), api_key, req.get("id", 1)
         )
         return {**result, "x-ks-cache": cache_status}

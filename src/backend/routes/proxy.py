@@ -266,14 +266,12 @@ async def _proxy_helius(api_router, upstream, path, body, api_key, request, inte
         rpc_method = parsed["method"]
         rpc_params = parsed.get("params", [])
         rpc_id = parsed.get("id", 1)
-        result, cache_status = await api_router.call_helius(
+        result, cache_status, status = await api_router.call_helius(
             rpc_method, rpc_params, api_key, rpc_id, interceptor=interceptor
         )
-        return (
-            json.dumps(result).encode(),
-            result.get("error") and 400 or 200,
-            cache_status,
-        )
+        # Spec 05: the HTTP status mirrors upstream. A JSON-RPC error
+        # object on HTTP 200 stays 200.
+        return json.dumps(result).encode(), status, cache_status
 
     # Non-JSON-RPC: fall through to REST on the specific helius sub-provider
     provider = upstream if upstream.startswith("helius-") else "helius-rpc"

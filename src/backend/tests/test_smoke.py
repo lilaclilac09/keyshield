@@ -16,11 +16,30 @@ def test_app_imports() -> None:
     assert hasattr(app, "router")
 
 
+def _route_paths(app) -> set[str]:
+    """Collect paths from top-level routes and included APIRouters.
+
+    FastAPI 0.142 stores `include_router` mounts as `_IncludedRouter`
+    objects that do not expose `.path` until a request is matched.
+    """
+    paths: set[str] = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if path:
+            paths.add(path)
+        inner = getattr(route, "original_router", None)
+        for child in getattr(inner, "routes", ()):
+            child_path = getattr(child, "path", None)
+            if child_path:
+                paths.add(child_path)
+    return paths
+
+
 def test_routes_register() -> None:
     """All major route modules must register at least one endpoint."""
     from src.backend.app import app
 
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
+    paths = _route_paths(app)
     # Spot-check that the architectural surface is wired.
     assert (
         "/health" in paths or "/health/" in paths or any(p.startswith("/health") for p in paths)

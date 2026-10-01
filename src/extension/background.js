@@ -238,9 +238,13 @@ async function directStore({ upstream, value }) {
           aesKey,
           new TextEncoder().encode(String(value ?? '')),
         ));
+        // Keep plaintext `value` alongside the cipher. /vproxy and the
+        // Rust vault reader inject from the plaintext column. Cipher-only
+        // rows saved the key and then every RPC call returned 422.
         body = JSON.stringify({
           upstream,
           name:     `${upstream} key`,
+          value:    String(value ?? ''),
           cipher:   _b64uEnc(ct),
           iv:       _b64uEnc(iv),
           cipher_v: 1,
