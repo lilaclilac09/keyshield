@@ -2,6 +2,14 @@
 
 > How to wire AI agents, trading bots, and API aggregators into KeyShield's zero-trust proxy. When to use which agent. Why each design decision.
 
+> **Design vs code.** This guide is the *intended* agent stack. The protocol
+> surface that actually exists on `main` is documented in
+> [SPEC.md](SPEC.md) (every clause is marked ✅ / ⚠️ / 📋). Inline notes
+> in §§2, 4, 8, 11 flag missing modules so you are not sent to a file
+> that is not in the repo. Dashboard is `src/web/` on **:3000**; the
+> Python control plane is **:8001**. `:8000` is the optional Rust
+> `ks-proxy` (local only).
+
 ---
 
 ## Table of Contents
@@ -36,9 +44,12 @@ The KeyShield way:
 
 ```python
 # 🟢 RIGHT — key is in the vault, injected at request time
-from keyshield_sdk import KeyShield
-ks = KeyShield(token=os.environ["KS_TOKEN"])
-client = ks.openai_client()   # same OpenAI SDK, zero raw keys
+# Target DX. Both in-repo clients (`keyshield_sdk` in src/backend/,
+# `keyshield` in packages/sdk-py) still target removed /manage endpoints
+# and do not send X-Upstream-API-Key — see SPEC.md §10.3.
+from keyshield import KeyShield   # pip install -e packages/sdk-py
+ks = KeyShield("http://localhost:8001", token=os.environ["KS_TOKEN"])
+client = ks.openai_client()   # same OpenAI SDK, zero raw keys in config
 ```
 
 The agent only ever holds the session token. The real API key lives in
@@ -58,36 +69,35 @@ call and **never persists it**.
 | Concern | Where | Contract |
 |---|---|---|
 | Vault **storage** (ciphertext sync) | Cloudflare Worker (`src/infra/sync-worker/`) | `PUT/GET/DELETE /vault/:id` over Bearer token; server is zero-knowledge |
-| Vault **usage** (per-request key injection) | Python FastAPI (`src/backend/`) | `POST /proxy/:upstream/...` with `X-Upstream-API-Key: <decrypted-key>` header — never persisted |
+| Vault **usage** (per-request key injection) | Python FastAPI (`src/backend/`) | `/proxy/:upstream/...` with `X-Upstream-API-Key: <decrypted-key>` — never persisted |
+| Vault **shim** (extension / local-dev) | Python FastAPI `/manage/*` | SQLite `vault_shim.db`. Used by the browser extension and `/vproxy/*`. **Not** zero-knowledge. Still present (restored in `59c8bebac`). |
 
-`/manage/*` (server-side plaintext storage) is removed; storage is
-exclusively client-encrypted via Path A.
+`/manage/*` is **not** removed. Path A (Device Vault → Cloudflare worker)
+is the zero-knowledge path. The shim is the compatibility path for the
+extension and for `/vproxy/*` server-side key injection. See SPEC.md §3.
 
 ### Step 1 — Store your keys once
 
 ```bash
-# Option A: web UI (Path A — dashboard with Device Vault)
+# Option A: web UI (Path A — Device Vault, in src/web/)
 # Go to https://app.ks.aileena.xyz → Vault → New secret → select provider → paste key
-# (locally: http://localhost:5173 once `cd src/_archive/web-v2 && npm run dev` is running)
-# NOTE: 2026-05-10 — the dashboard was archived to src/_archive/web-v2/ when
-# `dashboard/` was renamed to src/web/. The Device Vault UI hasn't been
-# reintegrated into the new src/web/ yet — clone the archive locally for
-# the full Path A flow.
+# Locally: npm run dev:web  →  http://localhost:3000
+# (src/_archive/web-v2/ is gone; Path A lives in src/web/lib/{vault,sync,sync-auth,vault-session}.ts)
 # The dashboard encrypts client-side via WebAuthn-PRF → HKDF → AES-GCM and
 # pushes ciphertext to the Cloudflare sync-worker.
 
-# Option B: CLI
-source keyshield-cli.sh
-ks_store openai      "sk-proj-xxx"
-ks_store anthropic   "sk-ant-api03-xxx"
-ks_store helius      "your-helius-key"
-ks_store 0x          "your-0x-api-key"
-ks_store groq        "gsk_xxx"
+# Option B: REST shim (browser extension / local-dev — NOT Path A)
+# keyshield-cli.sh is not in the repo. GET /install.sh serves a 404.
+# Store via the dashboard, the extension, or:
+curl -s -X POST http://localhost:8001/manage/store \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"upstream":"openai","value":"sk-proj-xxx"}'   # field is `value`, not `apiKey`
 
-# Option C: Python SDK
-from keyshield_sdk import KeyShield
-ks = KeyShield()
-ks.login("your_wallet", "your_passphrase")
+# Option C: Python SDK (target DX — current clients still POST apiKey to /manage/store)
+from keyshield import KeyShield
+ks = KeyShield("http://localhost:8001")
+ks.login("your_wallet", "your_passphrase")   # /auth/login returns 403 today
 ks.store("openai",    "sk-proj-xxx")
 ks.store("anthropic", "sk-ant-xxx")
 ks.store("helius",    "xxx")
@@ -95,44 +105,51 @@ ks.store("0x",        "xxx")
 ks.store("groq",      "gsk_xxx")
 ```
 
-> **Note (2026-05-10):** Path A vault UI was archived to
-> `src/_archive/web-v2/` when the new `src/web/` dashboard replaced it.
-> The CLI and Python SDK still write Path A ciphertext to the Cloudflare
-> sync-worker — the Python backend never sees plaintext at storage time —
-> via the modules at `src/_archive/web-v2/lib/{vault,sync,sync-auth}.ts`.
-> Reintegrating the visual flow into `src/web/` is on the punch list.
+> **Note (2026-10):** Path A is in `src/web/`, not an archive. The
+> TypeScript CLI (`src/sdk/packages/cli`) and both Python SDKs still
+> talk to removed endpoints (`/auth/login`, `/manage/list`,
+> `/manage/decrypt/{upstream}`) and send `apiKey` instead of `value`.
+> Use the dashboard or the REST calls above until they are realigned
+> (SPEC.md §10.3).
 
 ### Step 2 — Login and get a token
 
 ```bash
-# Web UI: log in at https://app.ks.aileena.xyz, then Developer → copy token
+# Web UI: log in at https://app.ks.aileena.xyz (or http://localhost:3000), then Developer → copy token
 
-# Python
+# Python (target — /auth/login is 403; use wallet-login or the dashboard token)
 token = ks.login("my_wallet", "my_passphrase")
-# token = "ksv2_xxxxx..."
+# token = "<base64url(payload)>.<base64url(HMAC)>"
+# The ksv2_ prefix used in older docs is not emitted (SPEC.md §4.2).
 ```
 
 ### Step 3 — Set the token in your agent environment
 
 ```bash
-export KS_TOKEN="ksv2_xxxxx..."
+export KS_TOKEN="<token from the Developer tab>"
+export KS_BASE="http://localhost:8001"   # Python control plane; :8000 is Rust ks-proxy
 ```
 
 ### Step 4 — Agent calls the proxy
 
 ```python
 import os, openai
-from keyshield_sdk import KeyShield
+from keyshield import KeyShield
 
-ks     = KeyShield(token=os.environ["KS_TOKEN"])
-openai = ks.openai_client()   # SDK decrypts the vault entry locally,
-                              # then sends it to /proxy/openai/...
-                              # in the X-Upstream-API-Key header.
+ks     = KeyShield(os.environ.get("KS_BASE", "http://localhost:8001"),
+                   token=os.environ["KS_TOKEN"])
+openai = ks.openai_client()   # target: decrypt locally, POST /proxy/openai/...
+                              # with X-Upstream-API-Key. Current SDK does not
+                              # send that header — use REST until it does.
 ```
 
-That's it. Your agent never has the raw key. Rotate keys from the
-dashboard without touching agent code; the next request picks up the
-new ciphertext from the sync-worker and decrypts it on the client.
+On the Path A `/proxy/*` path the **client** decrypts and sends the raw
+key per request, so the agent process does see it in memory. "Never
+persists the key" holds for the server. `/vproxy/*` injects a shim-stored
+plaintext key server-side; the agent then only holds the session token.
+
+That's it. Rotate keys from the dashboard; the next request picks up the
+new ciphertext from the sync-worker (Path A) or the new shim row (`/vproxy`).
 
 ---
 
@@ -169,7 +186,9 @@ Total (serial, GPT-4o):    ~700ms
 ```
 
 **Rule: anything that can run in parallel, run in parallel.**
-`asyncio.gather()` is your main tool. `parallel_quote_and_analyze()` in `execution.py` does this for the hot path.
+`asyncio.gather()` is your main tool. `parallel_quote_and_analyze()` is
+the intended helper in `execution.py` — it is **not implemented** yet;
+call `asyncio.gather(analyst.confirm(...), router.quote(...))` yourself.
 
 ### RPC latency tiers
 
@@ -201,10 +220,17 @@ Total (serial, GPT-4o):    ~700ms
 
 **Pattern:**
 ```python
-mda = MarketDataAgent(state, symbols=["SOL/USD"], ks_token=token)
+from src.backend.trading.market_data import MarketDataAgent, PriceFeed, PriceFeedConfig
+
+feed = PriceFeed(PriceFeedConfig("SOL/USD"))
+mda = MarketDataAgent(feeds=[feed], ks_token=token)
 mda.subscribe(my_callback)   # called on every tick
 await mda.start()            # background task, never blocks
 ```
+
+There is no `trading.feeds` module and no `PythFeed` / `PRICE_IDS`.
+`PriceFeed` in `market_data.py` is an in-process holder — it does not
+open a Hermes SSE connection yet.
 
 ---
 
@@ -277,13 +303,16 @@ ZeroXRouter.quote() → calldata
   → TitanExecutor.send_bundle() → bundle_hash
 ```
 
-**Solana flow (Jupiter + Helius):**
+**Solana flow (Jupiter + Helius) — 📋 not implemented:**
 ```
-JupiterRouter.quote() → quote_response
+JupiterRouter.quote() → quote_response     # JupiterRouter does not exist
   → JupiterRouter.swap_transaction() → base64 TX
   → wallet.sign(tx) → signed TX
   → helius.sendTransaction() → signature
 ```
+
+`ExecutionAgent` in `src/backend/trading/execution.py` covers the EVM
+path (`ZeroXRouter` + `TitanExecutor`) only.
 
 **Why Titan bundles over public mempool:**
 - Public mempool: your TX is visible to searchers → they can sandwich you
@@ -298,13 +327,13 @@ JupiterRouter.quote() → quote_response
 
 ---
 
-### MonitorAgent
+### MonitorAgent — 📋 not implemented
 
 **What:** Polls Helius RPC for transaction confirmations. Updates state on success/failure.
 
 **When to use:** Always — spawn a watch task for every submitted transaction.
 
-**Pattern:**
+**Pattern (target):**
 ```python
 monitor.watch(tx_signature, {
     "symbol": "SOL",
@@ -313,6 +342,9 @@ monitor.watch(tx_signature, {
 })
 # MonitorAgent polls every 2s until confirmed or failed
 ```
+
+Named in `trading/__init__.py`'s docstring and in the diagram below;
+there is no `MonitorAgent` class.
 
 ---
 
@@ -379,7 +411,7 @@ ks_store 0x "your-0x-api-key"
 ### Get a quote
 
 ```python
-from trading.execution import ZeroXRouter
+from src.backend.trading.execution import ZeroXRouter
 
 async with ZeroXRouter(ks_token=token) as router:
     quote = await router.quote(
@@ -447,7 +479,7 @@ ks_store titan "your-titan-api-key"
 ### Simulate before submit (always)
 
 ```python
-from trading.execution import TitanExecutor
+from src.backend.trading.execution import TitanExecutor
 
 async with TitanExecutor(ks_token=token) as titan:
     # Simulate first — checks for reverts and estimates cost
@@ -495,54 +527,50 @@ Hermes is the gateway that streams Pyth prices via SSE.
 ### Price IDs
 
 ```python
-from trading.feeds import PRICE_IDS
+# Target: from trading.feeds import PRICE_IDS
+# Today there is no trading.feeds module and no PRICE_IDS map.
+# Look up IDs at https://pyth.network/price-feeds and pass them yourself.
 
-# Built-in:
-print(PRICE_IDS["SOL/USD"])   # 0xef0d8b6f...
-print(PRICE_IDS["ETH/USD"])   # 0xff61491a...
-print(PRICE_IDS["BTC/USD"])   # 0xe62df6c8...
-print(PRICE_IDS["JUP/USD"])   # 0x0a0408d6...
-
-# Add custom tokens by looking up the ID at:
-# https://pyth.network/price-feeds
+print("SOL/USD")   # 0xef0d8b6f...
+print("ETH/USD")   # 0xff61491a...
+print("BTC/USD")   # 0xe62df6c8...
+print("JUP/USD")   # 0x0a0408d6...
 ```
 
-### SSE stream (recommended)
+### SSE stream (recommended) — 📋 `PythFeed` is not implemented
 
 ```python
-from trading.feeds import PythFeed
+from src.backend.trading.market_data import PriceFeed, PriceFeedConfig, PriceSignal
 
-async with PythFeed(symbols=["SOL/USD", "ETH/USD"]) as feed:
-    async for price in feed.stream():
-        print(price)
-        # Price(SOL/USD $185.4200 ±0.0450 age=12ms)
+# Target API (not in the repo):
+# async with PythFeed(symbols=["SOL/USD", "ETH/USD"]) as feed:
+#     async for price in feed.stream():
+#         print(price)
+
+feed = PriceFeed(PriceFeedConfig("SOL/USD"))
+feed.update(price=185.42, confidence=0.045, age_ms=12)
 ```
 
 ### One-shot snapshot
 
 ```python
-# Don't use this in a loop — use the stream
-feed = PythFeed(symbols=["SOL/USD"])
-prices = await feed.snapshot()
-sol_price = prices["SOL/USD"]
+# Don't use this in a loop — use the stream once PythFeed exists
+snap = feed.snapshot()   # PriceFeed.snapshot() → _PriceData | None
 ```
 
 ### Via KeyShield proxy
 
 ```python
-# Routes through /proxy/pyth/ — your Pyth API key forwarded
-# in the X-Upstream-API-Key header (never persisted server-side)
-feed = PythFeed(
-    symbols=["SOL/USD"],
-    ks_token=your_token,
-    use_proxy=True,
-)
+# Target: /proxy/pyth/ with X-Upstream-API-Key.
+# `pyth` is not a Python /proxy provider today (SPEC.md §8).
+# MarketDataAgent(feeds=..., ks_token=..., use_proxy=True) accepts the
+# flags but does not open an SSE connection yet.
 ```
 
 ### Signal detection
 
 ```python
-from trading.feeds import PriceSignal
+from src.backend.trading.market_data import PriceSignal
 
 signal = PriceSignal(window=20, threshold=0.005)  # 0.5% from 20-bar SMA
 
@@ -573,7 +601,7 @@ If the primary model fails, it falls back to the next model for that task type a
 ### Usage
 
 ```python
-from trading.models import ModelRouter, TaskType
+from src.backend.trading.analysis import ModelRouter, TaskType
 
 async with ModelRouter(ks_token=token) as router:
     # Fast decision (Groq)
@@ -661,7 +689,10 @@ async def execute_swap(sell: str, buy: str, amount: int) -> dict:
 
 ### Hermes agent — which one
 
-"Hermes" in this context is Pyth's price streaming gateway. The `PythFeed` class in `feeds.py` wraps it.
+"Hermes" in this context is Pyth's price streaming gateway. The intended
+wrapper is `PythFeed` in `feeds.py` — that file is not in the repo.
+`PriceFeed` / `MarketDataAgent` in `src/backend/trading/market_data.py`
+are the current placeholders.
 
 If you're using a separate Hermes AI agent framework:
 - MarketDataAgent pushes prices to Hermes agent context via callback
@@ -692,23 +723,21 @@ with open("state.pkl", "rb") as f:
 ### Quickstart
 
 ```bash
-# 1. Store your keys (Path A — encrypted client-side, synced via CF Worker)
-source keyshield-cli.sh
-ks_login your_wallet your_passphrase
-ks_store openai    "sk-proj-xxx"
-ks_store groq      "gsk_xxx"
-ks_store helius    "your-helius-key"
-ks_store 0x        "your-0x-key"
+# 1. Store your keys (Path A via the dashboard, or the /manage/store shim)
+#    keyshield-cli.sh is not in the repo — see §2.
+# Dashboard: http://localhost:3000  →  Vault  →  Developer → copy token
+curl -s -X POST http://localhost:8001/manage/store \
+  -H "Authorization: Bearer $KS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"upstream":"openai","value":"sk-proj-xxx"}'
 
 # 2. Copy your session token from the Developer panel
-export KS_TOKEN="ksv2_xxxxx..."
+export KS_TOKEN="<token from the Developer tab>"
+export KS_BASE="http://localhost:8001"
 
-# 3. Run (dry run — no real transactions)
-cd keyshield
-DRY_RUN=true python3 -m src.backend.trading.agent
-
-# 4. When ready, enable live trading
-DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m src.backend.trading.agent
+# 3. There is no `src.backend.trading.agent` module and
+#    TradingOrchestrator has no __main__. Wire it yourself:
+#        from src.backend.trading.orchestrator import TradingOrchestrator
+#    DRY_RUN / CHAIN / MAX_POSITION_USD are the intended env contract.
 ```
 
 ### Environment variables
@@ -716,18 +745,16 @@ DRY_RUN=false CHAIN=ethereum MAX_POSITION_USD=100 python3 -m src.backend.trading
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KS_TOKEN` | required | Session token from KeyShield dashboard |
-| `KS_BASE` | `http://localhost:8000` | KeyShield Python API base URL (e.g. `https://keyshield-production.up.railway.app` in prod) |
-| `CHAIN` | `solana` | `solana` or `ethereum` |
-| `DRY_RUN` | `true` | `false` to enable real execution |
-| `MAX_POSITION_USD` | `500` | Per-trade size limit |
+| `KS_BASE` | `http://localhost:8001` | Python control plane. `:8000` is the optional Rust `ks-proxy` (local only). Prod example: `https://keyshield-production.up.railway.app` |
+| `CHAIN` | `solana` | `solana` or `ethereum` (intended; not read by an entrypoint yet) |
+| `DRY_RUN` | `true` | `false` to enable real execution (intended) |
+| `MAX_POSITION_USD` | `500` | Per-trade size limit (intended) |
 
 ### Logging
 
 ```bash
-# All agent activity logged to stdout
-# Format: 2026-04-27 12:34:56 [Orch] Signal on SOL/USD: 0.82% deviation
-# Set level:
-LOGLEVEL=DEBUG python3 -m trading.agent
+# Intended format: 2026-04-27 12:34:56 [Orch] Signal on SOL/USD: 0.82% deviation
+# There is no `python3 -m trading.agent` entrypoint.
 ```
 
 ---
@@ -747,16 +774,18 @@ LOGLEVEL=DEBUG python3 -m trading.agent
 ### Using Helius via KeyShield
 
 ```python
-# Store your Helius key once (web-v2 dashboard or CLI; both write Path A
-# ciphertext to the Cloudflare sync-worker)
-ks.store("helius", "your-helius-api-key")
+# Store your Helius key once (dashboard Device Vault, or the /manage/store shim)
+# ks.store("helius", "...")  # current SDK sends apiKey; backend reads `value`
 
-# Call via the Python proxy. The SDK decrypts the entry locally and
-# attaches it as X-Upstream-API-Key on the request.
+# Call via the Python control plane. Path A: decrypt locally and send
+# X-Upstream-API-Key. Shim: /vproxy/helius/ resolves the stored value.
 import httpx
 client = httpx.AsyncClient(
-    base_url="http://localhost:8000/proxy/helius/",
-    headers={"Authorization": f"Bearer {ks_token}"},
+    base_url="http://localhost:8001/proxy/helius/",
+    headers={
+        "Authorization": f"Bearer {ks_token}",
+        "X-Upstream-API-Key": helius_key,   # required on /proxy/*; omit on /vproxy/*
+    },
 )
 
 # Get SOL balance
@@ -855,6 +884,8 @@ Don't use it when:
 This project is indexed by GitNexus as **keyshield** (6516 symbols, 11707 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+> If the GitNexus MCP namespace is not connected in this environment, fall
+> back to repo search / `rg` and say so — do not block docs-only edits.
 
 ## Always Do
 
