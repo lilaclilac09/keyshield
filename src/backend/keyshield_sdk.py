@@ -665,7 +665,7 @@ class AgentKeyShield:
             raise KeyShieldError(400, "vault_passphrase not set — pass it or set KS_VAULT_PASS")
 
         # 1. Fetch challenge
-        r = self._client.get("/auth/agent-challenge")
+        r = self._client.post("/auth/agent-challenge")
         _raise(r)
         challenge = r.json()["challenge"]
 

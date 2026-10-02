@@ -665,7 +665,7 @@ class AgentKeyShield:
                 400, "vault_passphrase missing — pass it or set KS_VAULT_PASS"
             )
 
-        r = self._client.get("/auth/agent-challenge")
+        r = self._client.post("/auth/agent-challenge")
         _raise(r)
         body = r.json()
         challenge = body["challenge"]

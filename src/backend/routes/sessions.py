@@ -60,6 +60,8 @@ async def list_sessions(request: Request):
 
     user_id = sess["user_id"]
     now = int(time.time())
+    from ..auth import session as sess_mod
+
     current_token = request.headers.get("Authorization", "")[7:]
 
     conn = _db()
