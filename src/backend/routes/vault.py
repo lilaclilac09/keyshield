@@ -36,6 +36,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from ..auth.devmode import dev_mode_enabled
+
 
 router = APIRouter()
 
@@ -101,17 +103,24 @@ def _auth(request: Request) -> dict | None:
 
 
 def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
-    """Resolve the caller. Bearer session wins; otherwise X-Dev-Mode:1
-    opts into the local "default" user. Returns 401 if neither.
-
-    The 2-tuple shape is kept so callers can early-return on error.
+    """Resolve the caller. Bearer session wins; X-Dev-Mode:1 maps to user
+    ``default`` only when ``KS_DEV_MODE`` is enabled. Returns 401 otherwise.
     """
     sess = _auth(request)
     if sess:
         return sess["user_id"], None
-    if request.headers.get("X-Dev-Mode") == "1":
+    if request.headers.get("X-Dev-Mode") == "1" and dev_mode_enabled():
         return "default", None
     return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
+
+
+def _plaintext_value(body: dict) -> str:
+    """Prefer ``value``; accept ``apiKey`` / ``api_key`` as aliases."""
+    for key in ("value", "apiKey", "api_key"):
+        raw = body.get(key)
+        if raw is not None and str(raw) != "":
+            return str(raw)
+    return ""
 
 
 def _iso(ts: float | None) -> str | None:
@@ -205,7 +214,7 @@ async def vault_store(request: Request):
                 body.get("name") or "unnamed",
                 body.get("type") or "api_key",
                 body.get("upstream") or "",
-                body.get("value") or "",
+                _plaintext_value(body),
                 tags_json,
                 now,
                 now,
@@ -220,9 +229,13 @@ async def vault_store(request: Request):
 
 @router.get("/manage/decrypt/{item_id}")
 async def vault_decrypt(item_id: str, request: Request):
-    """Return plaintext value. Production should NOT call this — the CF
-    Worker path decrypts client-side. This is the local-dev fallback so
-    the dashboard's "reveal" button works without Path A."""
+    """Return plaintext value. Gated behind KS_DEV_MODE — production Path A
+    decrypts client-side. Without the flag this always returns 403."""
+    if not dev_mode_enabled():
+        return JSONResponse(
+            {"detail": "plaintext decrypt is disabled; enable KS_DEV_MODE for local-dev"},
+            status_code=403,
+        )
     uid, err = _require_user_id(request)
     if err:
         return err
@@ -269,6 +282,10 @@ async def vault_update(item_id: str, request: Request):
         "cipher_v",
     )
     updates = {k: v for k, v in body.items() if k in allowed}
+    if "value" not in updates:
+        alias = body.get("apiKey", body.get("api_key"))
+        if alias is not None:
+            updates["value"] = alias
     if "tags" in updates and isinstance(updates["tags"], list):
         updates["tags"] = _json.dumps(updates["tags"])
     if not updates:

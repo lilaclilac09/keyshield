@@ -4,13 +4,12 @@ from fastapi.testclient import TestClient
 
 from src.backend.app import app
 
-# Dev-mode header used by _require_user_id when no real auth is present.
-# This mirrors the X-Dev-Mode opt-in added by the security hardening PR
-# so tests can hit the vault routes without a full session.
+# Opt-in local-dev header. Must be paired with KS_DEV_MODE=1.
 _DEV_HEADERS = {"X-Dev-Mode": "1"}
 
 
-def test_manage_store_preserves_cipher_fields():
+def test_manage_store_preserves_cipher_fields(monkeypatch):
+    monkeypatch.setenv("KS_DEV_MODE", "1")
     client = TestClient(app)
 
     payload = {

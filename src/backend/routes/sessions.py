@@ -60,6 +60,7 @@ async def list_sessions(request: Request):
 
     user_id = sess["user_id"]
     now = int(time.time())
+    current_token = request.headers.get("Authorization", "")[7:]
 
     conn = _db()
     try:
@@ -79,14 +80,14 @@ async def list_sessions(request: Request):
             result.append(
                 {
                     "id": token_prefix,
-                    "token": row["token"],
+                    "token_prefix": token_prefix,
                     "user_id": row["user_id"],
                     "ip_address": _get_ip(request),
                     "user_agent": _get_ua(request),
                     "device": _detect_device(_get_ua(request)),
                     "last_active_at": now,
                     "expires_at": row["expires_at"],
-                    "is_current": True,  # only the current token can list sessions
+                    "is_current": bool(current_token.startswith(token_prefix)),
                 }
             )
     finally:

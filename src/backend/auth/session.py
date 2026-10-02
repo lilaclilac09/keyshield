@@ -97,17 +97,35 @@ def _decrypt(data: bytes) -> str:
 # ─── Token format ──────────────────────────────────────────────────────────
 
 
-def _make_token_payload(user_id: str, expires_at: int) -> str:
+def _make_token_payload(
+    user_id: str,
+    expires_at: int,
+    *,
+    aid: int | None = None,
+    provider: str | None = None,
+    scope: list[str] | str | None = None,
+    spend_cap_usd: float | None = None,
+    vault_key_id: str | None = None,
+) -> str:
     """Create base64-encoded JSON payload."""
-    payload = json.dumps(
-        {
-            "uid": user_id,
-            "exp": expires_at,
-            "iat": int(time.time()),
-            "nbf": int(time.time()),  # not-before (now),
-        }
-    )
-    return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    now = int(time.time())
+    payload: dict = {
+        "uid": user_id,
+        "exp": expires_at,
+        "iat": now,
+        "nbf": now,
+    }
+    if aid is not None:
+        payload["aid"] = int(aid)
+    if provider:
+        payload["provider"] = str(provider)
+    if scope is not None:
+        payload["scope"] = scope
+    if spend_cap_usd is not None:
+        payload["spend_cap_usd"] = float(spend_cap_usd)
+    if vault_key_id:
+        payload["vault_key_id"] = str(vault_key_id)
+    return urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
 
 
 def _sign_token(payload: str) -> str:
@@ -116,18 +134,37 @@ def _sign_token(payload: str) -> str:
     return urlsafe_b64encode(sig).decode().rstrip("=")
 
 
-def create_token(user_id: str, password: str, ttl: int = SESSION_TTL) -> str:
+def create_token(
+    user_id: str,
+    password: str,
+    ttl: int = SESSION_TTL,
+    *,
+    aid: int | None = None,
+    provider: str | None = None,
+    scope: list[str] | str | None = None,
+    spend_cap_usd: float | None = None,
+    vault_key_id: str | None = None,
+) -> str:
     """
     Create a self-contained session token.
 
     Token format: <payload>.<hmac>
-    Payload contains: uid (user_id), exp (expiry epoch), iat (issued_at), nbf (not_before)
+    Payload contains: uid, exp, iat, nbf, plus optional delegated claims
+    (aid, provider, scope, spend_cap_usd, vault_key_id).
     HMAC verifies the payload hasn't been tampered with.
 
     The password is encrypted and stored in the DB for auth operations that need it.
     """
     expires_at = int(time.time()) + ttl
-    payload = _make_token_payload(user_id, expires_at)
+    payload = _make_token_payload(
+        user_id,
+        expires_at,
+        aid=aid,
+        provider=provider,
+        scope=scope,
+        spend_cap_usd=spend_cap_usd,
+        vault_key_id=vault_key_id,
+    )
     sig = _sign_token(payload)
     token = f"{payload}.{sig}"
 
@@ -203,7 +240,21 @@ def get(token: str) -> dict | None:
     if not row:
         return None
 
-    return {"user_id": user_id, "password": _decrypt(row[0])}
+    aid = data.get("aid")
+    if aid is not None:
+        from ..agents import agents as agents_mod
+
+        try:
+            if agents_mod.is_revoked(int(aid)):
+                return None
+        except (TypeError, ValueError):
+            return None
+
+    sess = {"user_id": user_id, "password": _decrypt(row[0]), "iat": data.get("iat")}
+    for key in ("aid", "provider", "scope", "spend_cap_usd", "vault_key_id"):
+        if key in data:
+            sess[key] = data[key]
+    return sess
 
 
 def verify_token(token: str) -> tuple[bool, Optional[str]]:

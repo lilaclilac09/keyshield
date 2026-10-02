@@ -87,6 +87,10 @@ def _db() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_topup_user
             ON topup_tx (user_id, credited_at DESC);
     """)
+    try:
+        conn.execute("ALTER TABLE usage_log ADD COLUMN agent_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -141,6 +145,7 @@ def log_call(
     cost_usd: float = 0.0,
     latency_ms: float = 0.0,
     status_code: int = 0,
+    agent_id: int | None = None,
 ) -> None:
     """Record one proxy call. Also deducts from balance when platform key is used."""
     conn = _db()
@@ -149,8 +154,8 @@ def log_call(
             """
             INSERT INTO usage_log
               (user_id, upstream, key_type, method, path,
-               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts, agent_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """,
             (
                 user_id,
@@ -164,6 +169,7 @@ def log_call(
                 latency_ms,
                 status_code,
                 int(time.time()),
+                agent_id,
             ),
         )
         conn.commit()
@@ -181,6 +187,32 @@ def log_call(
                 (cost_usd, int(time.time()), user_id),
             )
             conn.commit()
+    finally:
+        conn.close()
+
+
+def spent_usd(
+    user_id: str,
+    *,
+    agent_id: int | None = None,
+    since: int | None = None,
+) -> float:
+    """Sum cost_usd for a user (optionally one agent) since `since` epoch."""
+    conn = _db()
+    try:
+        clauses = ["user_id = ?"]
+        args: list = [user_id]
+        if agent_id is not None:
+            clauses.append("agent_id = ?")
+            args.append(agent_id)
+        if since is not None:
+            clauses.append("ts >= ?")
+            args.append(int(since))
+        row = conn.execute(
+            f"SELECT COALESCE(SUM(cost_usd), 0) FROM usage_log WHERE {' AND '.join(clauses)}",
+            args,
+        ).fetchone()
+        return float(row[0] or 0.0)
     finally:
         conn.close()
 

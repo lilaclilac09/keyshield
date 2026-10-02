@@ -285,6 +285,33 @@ def list_agents(owner_wallet: str) -> list[dict]:
         conn.close()
 
 
+def is_revoked(agent_id: int) -> bool:
+    """True if the agent id is unknown or present on the CRL.
+
+    Used by session.get() so an already-issued agent token dies on the
+    next request after DELETE /agents/{id} (independent of owner sessions).
+    """
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT owner_wallet, pubkey_b58 FROM agent_keys WHERE id = ?",
+            (agent_id,),
+        ).fetchone()
+        if row is None:
+            return True
+        crl = conn.execute(
+            """
+            SELECT 1 FROM agent_revocations
+            WHERE owner_wallet = ? AND pubkey_b58 = ?
+            LIMIT 1
+            """,
+            (row[0], row[1]),
+        ).fetchone()
+        return crl is not None
+    finally:
+        conn.close()
+
+
 def revoke(owner_wallet: str, agent_id: int) -> bool:
     """Delete an agent registration. Returns True if found + deleted."""
     conn = _db()

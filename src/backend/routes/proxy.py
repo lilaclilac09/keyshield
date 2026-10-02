@@ -24,6 +24,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..auth import session as sess_mod
+from ..auth.delegation import check_proxy_access
+from ..auth.devmode import dev_mode_enabled
 from ..billing import usage as usage_mod
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,23 @@ def _bearer(request: Request) -> str | None:
     return auth[7:] if auth.startswith("Bearer ") else None
 
 
+def _agent_id(sess: dict) -> int | None:
+    aid = sess.get("aid")
+    if aid is None:
+        return None
+    try:
+        return int(aid)
+    except (TypeError, ValueError):
+        return None
+
+
+def _policy_or_error(sess: dict | None, upstream: str, path: str):
+    ok, err, status = check_proxy_access(sess, upstream, path)
+    if ok:
+        return None
+    return JSONResponse({"error": err}, status_code=status)
+
+
 def _is_helius(upstream: str) -> bool:
     return upstream in ("helius", "helius-rpc", "helius-das", "helius-enhanced")
 
@@ -87,6 +106,9 @@ async def proxy_route(upstream: str, path: str, request: Request):
         )
 
     sess = sess_mod.get(_bearer(request) or "") or {}
+    blocked = _policy_or_error(sess or None, upstream, path)
+    if blocked:
+        return blocked
     user_id = sess.get("user_id") or sess.get("userId") or "anonymous"
 
     body = await request.body()
@@ -130,6 +152,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
             cost_usd=cost_usd,
             latency_ms=latency_ms,
             status_code=status,
+            agent_id=_agent_id(sess),
         )
     except Exception:
         pass
@@ -171,13 +194,16 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     sess = sess_mod.get(token) if token else None
     user_id = (sess or {}).get("user_id") or (sess or {}).get("userId")
     if not user_id:
-        # Dev fallback — same opt-in header /manage/* uses.
-        if request.headers.get("X-Dev-Mode") == "1":
+        if request.headers.get("X-Dev-Mode") == "1" and dev_mode_enabled():
             user_id = "default"
         elif not token:
             return JSONResponse({"error": "authorization required"}, status_code=401)
         else:
             return JSONResponse({"error": "invalid token"}, status_code=401)
+
+    blocked = _policy_or_error(sess, upstream, path)
+    if blocked:
+        return blocked
 
     _VAULT_DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(_VAULT_DB))
@@ -233,6 +259,7 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
             cost_usd=cost_usd,
             latency_ms=latency_ms,
             status_code=status,
+            agent_id=_agent_id(sess or {}),
         )
     except Exception:
         pass

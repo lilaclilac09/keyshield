@@ -20,11 +20,8 @@ def test_routes_register() -> None:
     """All major route modules must register at least one endpoint."""
     from src.backend.app import app
 
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
-    # Spot-check that the architectural surface is wired.
-    assert (
-        "/health" in paths or "/health/" in paths or any(p.startswith("/health") for p in paths)
-    ), "expected /health endpoint registered"
+    paths = set(app.openapi().get("paths", {}))
+    assert any(p.startswith("/health") for p in paths), "expected /health endpoint registered"
 
 
 def test_settings_loads() -> None:

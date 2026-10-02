@@ -72,27 +72,30 @@ async def wallet_challenge():
 @router.post("/auth/wallet-login")
 async def wallet_login(request: Request):
     body = await request.json()
-    wallet_addr = body.get("walletAddress", "")
+    wallet_addr = (body.get("walletAddress") or "").strip()
     challenge = body.get("challenge", "")
     passphrase = body.get("passphrase", "")
-    signature_b64 = body.get("signature", "")
+    signature_b64 = (body.get("signature") or "").strip()
     nonce = str(body.get("nonce", challenge))
+
+    if not wallet_addr:
+        return JSONResponse({"error": "walletAddress required"}, status_code=400)
+    if not signature_b64:
+        return JSONResponse({"error": "signature required"}, status_code=401)
 
     if not sess_mod._validate_challenge(challenge, nonce):
         return JSONResponse({"error": "challenge expired or used"}, status_code=400)
 
     # Verify ed25519 signature: wallet signed the challenge bytes
-    if signature_b64 and wallet_addr:
-        try:
-            from nacl.signing import VerifyKey
-            import base58 as _b58
+    try:
+        from nacl.signing import VerifyKey
+        import base58 as _b58
 
-            sig_bytes = base64.b64decode(signature_b64 + "==")
-            # Decode base58 pubkey → raw 32 bytes, then build VerifyKey
-            vk = VerifyKey(_b58.b58decode(wallet_addr))
-            vk.verify(challenge.encode(), sig_bytes)
-        except Exception as _e:
-            return JSONResponse({"error": f"signature verification failed: {_e}"}, status_code=401)
+        sig_bytes = base64.b64decode(signature_b64 + "==")
+        vk = VerifyKey(_b58.b58decode(wallet_addr))
+        vk.verify(challenge.encode(), sig_bytes)
+    except Exception as _e:
+        return JSONResponse({"error": f"signature verification failed: {_e}"}, status_code=401)
 
     token = sess_mod.create_token(wallet_addr, passphrase)
     sess_mod._consume_nonce(nonce)
@@ -138,8 +141,52 @@ async def agent_login(request: Request):
         return JSONResponse({"error": "signature required"}, status_code=401)
 
     sess_mod._consume_nonce(nonce)
-    token = sess_mod.create_token(agent_info["owner_wallet"], "default")
-    return JSONResponse({"token": token})
+    from ..auth.delegation import parse_scope_list
+
+    registered_scopes = parse_scope_list(agent_info.get("scopes"))
+    req_scope = body.get("scope")
+    req_provider = (body.get("provider") or "").strip() or None
+    req_vault = (body.get("vault_key_id") or "").strip() or None
+    req_cap = body.get("spend_cap_usd")
+
+    token_scope = None
+    if req_scope is not None:
+        requested = parse_scope_list(req_scope)
+        if registered_scopes != ["*"] and not set(requested).issubset(set(registered_scopes)):
+            return JSONResponse({"error": "requested scope exceeds agent registration"}, status_code=403)
+        token_scope = requested
+    elif registered_scopes != ["*"]:
+        token_scope = registered_scopes
+
+    if req_provider and registered_scopes != ["*"] and req_provider not in registered_scopes:
+        return JSONResponse({"error": "requested provider exceeds agent registration"}, status_code=403)
+
+    spend_cap = None
+    if req_cap is not None and req_cap != "":
+        try:
+            spend_cap = float(req_cap)
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "spend_cap_usd must be a number"}, status_code=400)
+
+    agents_mod.touch(pubkey_b58)
+    token = sess_mod.create_token(
+        agent_info["owner_wallet"],
+        "default",
+        aid=agent_info["agent_id"],
+        provider=req_provider,
+        scope=token_scope,
+        spend_cap_usd=spend_cap,
+        vault_key_id=req_vault,
+    )
+    return JSONResponse(
+        {
+            "token": token,
+            "aid": agent_info["agent_id"],
+            "provider": req_provider,
+            "scope": token_scope,
+            "spend_cap_usd": spend_cap,
+        }
+    )
 
 
 # ─── Passkey routes (WebAuthn) ──────────────────────────────────

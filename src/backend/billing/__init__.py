@@ -10,6 +10,7 @@ from .billing_solana import (
 )
 from .usage import (
     log_call,
+    spent_usd,
     get_stats,
     get_history,
     get_balance,
@@ -32,6 +33,7 @@ __all__ = [
     "SolUsdPrice",
     "fetch_sol_usd_price",
     "log_call",
+    "spent_usd",
     "get_stats",
     "get_history",
     "get_balance",

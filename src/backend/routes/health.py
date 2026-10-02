@@ -16,8 +16,7 @@ async def health():
 
 @router.get("/health/mpp")
 async def health_mpp():
-    """Show which MPP env vars are present (values hidden). Used to verify
-    Railway shared-variable injection without exposing secrets."""
+    """Show which MPP env vars are *present* — never echo secret values."""
     vars_to_check = [
         "KS_MPP_SETTLER_KEY",
         "KS_PLATFORM_USDC_ATA",
@@ -31,14 +30,7 @@ async def health_mpp():
         "KS_X402_ENABLED",
         "SERVER_SECRET",
     ]
-    present = {}
-    for v in vars_to_check:
-        val = os.environ.get(v, "")
-        if val:
-            # Show first 6 chars + length so we can confirm the right value is set
-            present[v] = f"{val[:6]}… ({len(val)} chars)"
-        else:
-            present[v] = None
+    present = {v: bool(os.environ.get(v, "").strip()) for v in vars_to_check}
 
     # Try loading mpp config to see if it succeeds
     try:
