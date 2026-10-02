@@ -126,6 +126,7 @@ class TestUsage:
         wallet_login_sync(ks)
         stats = ks.usage_stats()
         assert "stats" in stats
+        assert isinstance(stats["stats"], list)
 
 
 # ─── lifecycle ──────────────────────────────────────────────────────────

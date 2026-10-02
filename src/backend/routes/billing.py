@@ -16,6 +16,30 @@ def _auth(request: Request) -> dict | None:
     return sess_mod.get(token[7:])
 
 
+def _query_limit(request: Request, default: int = 50, cap: int = 500) -> int:
+    raw = request.query_params.get("limit")
+    if raw is None or raw == "":
+        return default
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(n, cap))
+
+
+def _stats_rows(payload) -> list:
+    """Unwrap get_stats() which already returns {"stats": [...]}."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        inner = payload.get("stats")
+        if isinstance(inner, list):
+            return inner
+        if isinstance(inner, dict) and isinstance(inner.get("stats"), list):
+            return inner["stats"]
+    return []
+
+
 # ─── Frontend-compatible endpoints ─────────────────────────────────────
 
 
@@ -37,8 +61,7 @@ async def billing_info(request: Request):
     else:
         balance_dict = {}
 
-    stats = usage_mod.get_stats(user_id)
-    stats_rows = stats.get("stats", []) if isinstance(stats, dict) else []
+    stats_rows = _stats_rows(usage_mod.get_stats(user_id))
 
     total_spent = sum((row.get("cost_usd") or 0) for row in stats_rows)
     total_calls = sum((row.get("calls") or 0) for row in stats_rows)
@@ -60,7 +83,7 @@ async def billing_usage(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    history = usage_mod.get_history(user_id)
+    history = usage_mod.get_history(user_id, limit=_query_limit(request))
     return JSONResponse({"history": history})
 
 
@@ -73,8 +96,9 @@ async def usage_stats(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    stats = usage_mod.get_stats(user_id)
-    return JSONResponse({"stats": stats})
+    # get_stats() already returns {"stats": [...]}. Do not wrap again —
+    # the dashboard treats `body.stats` as the row array.
+    return JSONResponse({"stats": _stats_rows(usage_mod.get_stats(user_id))})
 
 
 @router.get("/usage/history")
@@ -83,7 +107,7 @@ async def usage_history(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    history = usage_mod.get_history(user_id)
+    history = usage_mod.get_history(user_id, limit=_query_limit(request))
     return JSONResponse({"history": history})
 
 

@@ -42,7 +42,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   vault: { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
-  activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
+  activity: { title: 'Activity & Billing', subtitle: 'Token consumption, proxy calls, and balance' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
