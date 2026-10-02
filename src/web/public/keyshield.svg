@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" role="img" aria-label="KeyShield">
+  <rect width="24" height="24" rx="5" fill="#0b1226"/>
+  <g transform="translate(2.4 2.4) scale(0.8)">
+    <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="#ffffff" stroke-width="1.5" fill="none"/>
+    <circle cx="11.5" cy="11" r="2" stroke="#a8b3d8" stroke-width="1.2" fill="none"/>
+    <line x1="13" y1="12.5" x2="16" y2="15.5" stroke="#a8b3d8" stroke-width="1.2"/>
+    <line x1="15" y1="14.5" x2="16" y2="13.5" stroke="#a8b3d8" stroke-width="1.2"/>
+    <line x1="15.5" y1="15" x2="16.5" y2="14" stroke="#a8b3d8" stroke-width="1.2"/>
+  </g>
+</svg>
