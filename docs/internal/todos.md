@@ -1,5 +1,10 @@
 # KeyShield — Deferred Work
 
+> **STALE PATHS (R3).** Path A client lives in
+> `src/_archive/web-v2/lib/{vault,sync,sync-auth}.ts`, not `src/web-v2/`.
+> Live protocol gaps: [SPEC.md](../../SPEC.md) 📋 rows and
+> [RECURRING_ISSUES.md](RECURRING_ISSUES.md) (R7, R10–R12, R15–R16).
+
 Items considered during /plan-ceo-review on 2026-04-15 and explicitly deferred.
 
 ---

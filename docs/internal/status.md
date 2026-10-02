@@ -1,5 +1,12 @@
 # Session Status — wake-up summary
 
+> **STALE SNAPSHOT (R2).** This is a wake-up note from branch
+> `claude/intelligent-payne-dcc71d`, not current `main`. Live ports and
+> contracts: [SPEC.md](../../SPEC.md) and [README.md](../../README.md)
+> (dashboard **:3000**, FastAPI **:8001**, optional Rust **:8000**).
+> Recurring-issue register: [RECURRING_ISSUES.md](RECURRING_ISSUES.md).
+> GitNexus Cloud/MCP: [GITNEXUS.md](GITNEXUS.md).
+
 > Auto-generated while you slept. Two clean commits on `claude/intelligent-payne-dcc71d`.
 
 ## TL;DR

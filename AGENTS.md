@@ -878,48 +878,89 @@ Don't use it when:
 - You need streaming responses (add streaming support first)
 - Latency of the router logic itself matters (it's sub-millisecond but still overhead)
 
+---
+
+## GitNexus — Cloud Agents vs desktop
+
+Cursor Cloud Agents **do not** load the desktop GitNexus stdio MCP
+(`npx gitnexus setup` → `~/.cursor/mcp.json`). That is why
+`gitnexus_impact` / `gitnexus_detect_changes` are often missing here.
+
+Do **not** stall and write only “GitNexus MCP was not connected.”
+
+1. Probe MCP (`GetDynamicTools` pattern `gitnexus`).
+2. If absent, use the CLI wrapper: [`scripts/gitnexus-cloud.sh`](scripts/gitnexus-cloud.sh).
+3. Follow the runbook: [`docs/internal/GITNEXUS.md`](docs/internal/GITNEXUS.md).
+4. Log repeats in [`docs/internal/RECURRING_ISSUES.md`](docs/internal/RECURRING_ISSUES.md) (issue **R1**).
+
+`npx gitnexus analyze` without `--index-only` rewrites the tagged block
+below. Cloud Agents must pass `--index-only` (the wrapper does).
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **keyshield** (6516 symbols, 11707 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project can be indexed by GitNexus as **keyshield**. The on-disk
+index (`.gitnexus/`) is gitignored and **machine-local**. A leftover
+`meta.json` from another host (WSL path, old commit) is foreign storage —
+delete it (`rm -rf .gitnexus` or `./scripts/gitnexus-cloud.sh analyze`)
+before re-indexing.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
-> If the GitNexus MCP namespace is not connected in this environment, fall
-> back to repo search / `rg` and say so — do not block docs-only edits.
+Prefer MCP tools when the `gitnexus` namespace is connected (desktop
+Cursor after `npx gitnexus setup`). On Cloud Agents, use the CLI.
+
+> If any GitNexus tool warns the index is stale, run
+> `./scripts/gitnexus-cloud.sh analyze` (or `npx gitnexus analyze --index-only`)
+> first.
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+- **Before editing a function / class / method:** run impact analysis
+  (MCP `impact` / `gitnexus_impact`, or CLI
+  `./scripts/gitnexus-cloud.sh impact --direction upstream <symbol>`).
+  Report blast radius (callers, flows, risk). Docs-only edits may skip
+  this step.
+- **Before committing symbol changes:** run detect-changes
+  (MCP `detect_changes` / `gitnexus_detect_changes`, or CLI
+  `./scripts/gitnexus-cloud.sh detect-changes --scope all`).
+- **Warn** if impact returns HIGH or CRITICAL before proceeding.
+- Exploring: MCP `query` / CLI `./scripts/gitnexus-cloud.sh query "…"`.
+- Symbol 360°: MCP `context` / CLI `./scripts/gitnexus-cloud.sh context <name>`.
+
+If MCP is absent **and** the CLI fails (`gitnexus doctor` + the error),
+fall back to `rg` / call-graph by hand and record the failure in
+`docs/internal/RECURRING_ISSUES.md`. Do not invent a GitNexus report.
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+- NEVER treat a missing MCP namespace as a reason to stop the task.
+- NEVER ignore HIGH or CRITICAL risk from impact (MCP or CLI).
+- NEVER rename symbols with blind find-and-replace when MCP `rename`
+  or a graph-aware edit is available (desktop). On Cloud, grep + compile
+  is the fallback; still do not drive-by rename public APIs.
+- NEVER commit symbol edits without detect-changes (MCP or CLI) unless
+  both layers failed and that failure is recorded.
 
 ## Resources
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/keyshield/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/keyshield/clusters` | All functional areas |
-| `gitnexus://repo/keyshield/processes` | All execution flows |
-| `gitnexus://repo/keyshield/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/keyshield/context` | Overview + staleness (MCP only) |
+| `npx gitnexus status` / `list` | Same facts via CLI |
+| `gitnexus://repo/keyshield/clusters` | Functional areas (MCP) |
+| `gitnexus://repo/keyshield/processes` | Execution flows (MCP) |
 
 ## CLI
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+Skill markdown under `.claude/skills/gitnexus/` is **not in this repo**
+(`gitnexus setup` installs it on the operator machine). Use:
+
+| Task | Command |
+|------|---------|
+| Index / repair foreign leftover | `./scripts/gitnexus-cloud.sh analyze` |
+| Blast radius | `./scripts/gitnexus-cloud.sh impact --direction upstream <symbol>` |
+| Uncommitted / vs-main impact | `./scripts/gitnexus-cloud.sh detect-changes --scope all` |
+| How does X work? | `./scripts/gitnexus-cloud.sh query "…"` |
+| Symbol context | `./scripts/gitnexus-cloud.sh context <name>` |
+| Full attach + Cloud procedure | `docs/internal/GITNEXUS.md` |
 
 <!-- gitnexus:end -->
