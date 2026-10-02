@@ -152,7 +152,11 @@ async fn proxy_inner(
     };
 
     // 6. x402 check on platform key.
-    if key_type == KeyType::Platform {
+    // An open MPP stream is already the payment channel: skip the balance
+    // HTTP call and the 402 so the client does not pay-and-retry. Usage is
+    // debited after the response by the record hook below.
+    let paid_by_stream = key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
+    if key_type == KeyType::Platform && !paid_by_stream {
         let balance = state.bridge.balance(&session.user_id).await.unwrap_or_else(|err| {
             // Per spec 07: bridge failure → treat as 0 → 402. Logged warn.
             tracing::warn!(error = %err, user = %session.user_id, "balance bridge failed; treating as 0");
@@ -211,6 +215,12 @@ async fn proxy_inner(
         HeaderName::from_static("x-ks-key-type"),
         HeaderValue::from_static(key_type.as_str()),
     );
+    if paid_by_stream {
+        out_headers.insert(
+            HeaderName::from_static("x-ks-pay"),
+            HeaderValue::from_static("mpp"),
+        );
+    }
 
     // 9. Fire-and-forget usage log.
     let (tok_in, tok_out, cost) = extract_token_usage(&upstream_str, &resp.body);
@@ -759,6 +769,18 @@ fn cache_status_from(headers: &HeaderMap) -> Option<CacheStatus> {
         "MISS" | "miss" => Some(CacheStatus::Miss),
         _ => None,
     }
+}
+
+/// `X-Mpp-Stream-Id` names an open stream owned by this user.
+/// Header is absent, unparseable, or the stream is not open → false.
+fn mpp_stream_open(state: &AppState, user_id: &str, headers: &HeaderMap) -> bool {
+    let Some(raw) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let Ok(stream_id) = raw.parse::<u64>() else {
+        return false;
+    };
+    crate::mpp::stream_is_open(&state.open_streams, &state.mpp_db_path, user_id, stream_id)
 }
 
 /// `_x402_body(upstream, resource_url)` — verbatim from server.py:355-375.

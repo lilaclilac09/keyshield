@@ -73,6 +73,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let vault_db_path = std::env::var("KS_VAULT_DB_PATH")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/vault_shim.db"));
+    let mpp_db_path = std::env::var("KS_MPP_DB")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/mpp.db"));
     let helius = std::sync::Arc::new(
         ks_helius::HeliusClient::with_api_key("placeholder", ks_helius::HeliusConfig::default()),
     );
@@ -87,6 +90,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         stealth: stealth_on,
         vault_db_path,
         helius,
+        mpp_db_path,
+        open_streams: Arc::new(TtlCache::new()),
     };
 
     // Install the global Prometheus recorder once and pass the render

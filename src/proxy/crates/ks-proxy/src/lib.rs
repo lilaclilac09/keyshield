@@ -16,6 +16,7 @@ pub mod acme;
 pub mod bridge;
 pub mod handlers;
 pub mod metrics;
+pub mod mpp;
 pub mod stealth;
 pub mod tls;
 pub mod usage;
@@ -38,6 +39,11 @@ pub struct AppState {
     /// yields a per-user client that reuses the warm in-memory cache and
     /// the HTTP/2 keep-alive pool.
     pub helius: std::sync::Arc<ks_helius::HeliusClient>,
+    /// Python `mpp.db`. An open row lets a platform-key call skip the 402
+    /// gate. Missing file fails closed (the call still 402s).
+    pub mpp_db_path: std::path::PathBuf,
+    /// Confirmed-open `(user_id, stream_id)` pairs. See `mpp::stream_is_open`.
+    pub open_streams: Arc<TtlCache<u8>>,
 }
 
 /// Build the axum `Router` for the hot path. Used by both `main.rs` and

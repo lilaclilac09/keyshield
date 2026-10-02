@@ -258,6 +258,8 @@ impl Harness {
             stealth: stealth_on,
             vault_db_path,
             helius,
+            mpp_db_path: vault_db_dir.path().join("mpp-missing.db"),
+            open_streams: Arc::new(TtlCache::new()),
         };
         std::mem::forget(vault_db_dir);
 

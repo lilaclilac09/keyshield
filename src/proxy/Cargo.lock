@@ -1216,6 +1216,7 @@ dependencies = [
 name = "ks-proxy"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "axum",
  "axum-server",
  "base64",
@@ -1234,10 +1235,12 @@ dependencies = [
  "metrics-exporter-prometheus",
  "rcgen 0.13.2",
  "reqwest",
+ "rusqlite",
  "rustls",
  "rustls-pemfile",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
