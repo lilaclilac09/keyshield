@@ -111,6 +111,54 @@ async def billing_balance(request: Request):
     )
 
 
+@router.get("/billing/plans")
+async def billing_plans():
+    """GET /billing/plans — the three monthly plans."""
+    from ..billing import plans as plans_mod
+
+    return JSONResponse({"plans": plans_mod.catalog()})
+
+
+@router.get("/billing/subscription")
+async def billing_subscription(request: Request):
+    """GET /billing/subscription — the plan on this account."""
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    return JSONResponse({"plan": plans_mod.current_plan(user_id)})
+
+
+@router.post("/billing/subscription")
+async def billing_set_subscription(request: Request):
+    """POST /billing/subscription — body `{plan: personal|operate|floor}`."""
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    body = await request.json()
+    plan_id = str(body.get("plan") or "").strip()
+    try:
+        plan = plans_mod.set_plan(user_id, plan_id)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    return JSONResponse({"plan": plan})
+
+
+@router.get("/billing/breakdown")
+async def billing_breakdown(request: Request):
+    """GET /billing/breakdown — this month's calls against the plan.
+
+    Shares are portions of the month's platform calls. The monthly plan
+    price is the settlement. Per-call prices are not the breakdown.
+    """
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    return JSONResponse(plans_mod.breakdown(user_id))
+
+
 @router.post("/billing/topup")
 async def billing_topup(request: Request):
     from ..billing import usage as usage_mod

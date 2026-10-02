@@ -7,11 +7,16 @@ The decision tree from the user's perspective:
 
 ```
 Does my agent already have a vault key for this upstream?
-├─ Yes → call /proxy/<upstream>/... — zero cost to me, my own key is used
-└─ No  → KeyShield uses its platform key and bills me. How?
-         ├─ I prepaid (most common)        → balance debited per call
-         ├─ I want to stream a long task   → MPP (open a metered channel)
-         └─ I want zero setup, pay-as-I-go → x402 (per-call micropayment)
+├─ Yes → call /proxy/<upstream>/... — your own key, outside every plan
+└─ No  → KeyShield uses its platform key. How is that paid?
+         ├─ I am on a monthly plan (the normal way) → the call draws down
+         │    the calls included in Personal, Operate, or Floor
+         ├─ I opened an MPP stream                    → the call is recorded
+         │    on the stream and does not 402
+         ├─ I hold a Tempo session voucher            → the call is checked
+         │    locally and does not 402
+         ├─ I prepaid a balance                       → balance debited
+         └─ None of those, balance is empty           → 402, then pay, then retry
 ```
 
 ## Path A — Prepaid balance + on-chain Solana topup
@@ -63,23 +68,25 @@ Verifies SPL transfer to your token account. Same memo binding + idempotency.
 processing 10K records. Per-call x402 round-trips waste 200ms each;
 prepaid balance might be wrong-sized.
 
-**Status:** **NOT YET IMPLEMENTED**. The frontend's DocsSection describes
-it; `programs/keyshield/src/state.rs` has the `PaymentStream` PDA layout;
-the metering / settlement code on Python side is TODO. Spec pending.
+**Status:** The off-chain stream and the Rust hot path are in place.
+Opening a stream is `POST /mpp/streams`. Each proxy call that sends
+`X-Mpp-Stream-Id` for an **open** row owned by that user skips the
+balance lookup and the 402. After a successful response, `ks-proxy`
+records usage with `POST /mpp/streams/{id}/record`. A closed, foreign,
+or missing stream still returns 402. Confirmed-open pairs stay in
+memory for 5 seconds (`src/proxy/crates/ks-proxy/src/mpp.rs`).
 
-### Designed flow
+On-chain settle remains the Python `mpp_settle` path in
+`src/backend/mpp/`. The hot path does not wait for it.
 
-1. Agent calls `POST /billing/streams/open` with
-   `{upstream, max_rate_usd_per_min, settlement_interval_secs}`.
-2. Server creates a `PaymentStream` PDA on-chain via the Solana program,
-   binding agent_pubkey + owner_wallet + rate cap.
-3. For each `/proxy/<upstream>/...` call, server records token usage
-   against the open stream (no 402, no per-call payment latency).
-4. Every `settlement_interval_secs`, server submits an on-chain
-   instruction that debits the stream's USDC escrow by the cumulative
-   usage * cost-per-1k-tokens.
-5. Either party can close the stream (`POST /billing/streams/close`);
-   final settlement runs immediately.
+### Flow
+
+1. The account opens a stream with `POST /mpp/streams`.
+2. The agent calls `/proxy/<upstream>/...` with `X-Mpp-Stream-Id`.
+3. The Rust proxy reads `mpp.db` (`KS_MPP_DB`, default
+   `src/backend/data/mpp.db`). An open row owned by the caller is
+   forwarded on that same request.
+4. Usage is recorded off-chain. Settlement runs on the stream interval.
 
 **Why faster than x402:** x402 is a 402 → pay → retry round-trip on
 every call (~200ms). MPP is a one-time stream-open + per-call usage
@@ -142,19 +149,21 @@ on-chain check. Needs:
 
 This is one of the Stage 2 work items in `proxy-rs/ADR-002-architecture.md`.
 
-## Why three paths
+## Which path
 
 Different agent profiles want different tradeoffs:
 
 | | Setup cost | Per-call latency | Balance sizing |
 |---|---|---|---|
+| **Monthly plan** | choose Personal, Operate, or Floor | none inside the allowance | the plan |
 | **Prepaid + Solana** | top up via UI | none | manual |
-| **MPP streaming** | open stream once | none after open | on-chain rate cap |
-| **x402** | none | ~200ms (402 round-trip) | per-call USDC |
+| **MPP streaming** | open stream once | none after open | the stream |
+| **Tempo session** | open a TIP-1034 channel once | none after the voucher | the voucher |
+| **x402** | none | one extra round trip | per call |
 
-A demo / hackathon agent → x402 (zero setup).
-A trading bot running 8 hours → MPP (no per-call latency tax).
-A person buying their AI coworker $50 of credit → Prepaid + Solana.
+People who run agents every day → a monthly plan. The price is the plan, not the call.
+A trading bot running for hours → MPP or a Tempo session voucher.
+A one-off caller with no plan and no balance → x402.
 
 ## Where each path lives in code
 
@@ -162,5 +171,42 @@ A person buying their AI coworker $50 of credit → Prepaid + Solana.
 |---|---|---|---|
 | Prepaid SOL | `ActivitySection.tsx` topup card | `server.py:billing_topup_solana`, `billing_solana.py` | Solana SystemProgram transfer + Memo |
 | Prepaid USDC | same | `server.py:billing_topup_solana_usdc` | SPL token transfer + Memo |
-| MPP streaming | (not yet) | (TODO) | `programs/keyshield` PaymentStream PDA |
-| x402 | agent SDK (not browser) | `server.py:_x402_body` (response shape OK) + `billing_topup` (verify TODO) | Base USDC transfer |
+| Monthly plan | `PlanSection.tsx` | `GET /billing/plans`, `GET /billing/breakdown`, `POST /billing/subscription` | — |
+| MPP streaming | Activity → MPP | `routes/mpp.py` + `ks-proxy` `X-Mpp-Stream-Id` | `programs/keyshield` PaymentStream |
+| Tempo session | wallet sends `Payment-Authorization` | `ks-proxy` `src/tempo.rs` | TIP-1034 channel reserve |
+| x402 | agent SDK (not browser) | `ks-proxy` 402 body when no plan channel applies | Base USDC transfer |
+
+## Path D — Tempo wallet session (TIP-1034 v2)
+
+**When:** a Tempo wallet already holds an open channel and can sign a cumulative voucher. Same latency goal as MPP: no 402 retry.
+
+**Specs:** `draft-httpauth-payment-01` and `draft-tempo-session-00` (`sessionProtocol: "v2"`). The older v1 contract channel is not accepted.
+
+1. The proxy's 402, when `KS_TEMPO_PAYEE` is set, includes `WWW-Authenticate: Payment` with `method="tempo"`, `intent="session"`, and `header="Payment-Authorization"`. The KeyShield bearer stays in `Authorization`.
+2. The wallet sends `Payment-Authorization: Payment <base64url credential>`.
+3. `ks-proxy` checks the echoed header, payee, escrow, currency, chain, channel id, low-s signature, and a cumulative amount that does not go backwards.
+4. The accepted amount is written to `tempo_vouchers.db` before the upstream call. A restart cannot treat an old voucher as a new payment.
+5. The response carries `x-ks-pay: tempo`.
+
+Defaults when the matching env var is unset: escrow `0x4D50500000000000000000000000000000000000`, currency pathUSD `0x20c0000000000000000000000000000000000000`, chain `4217`. `KS_TEMPO_PAYEE` is required. `KS_TEMPO_DB` overrides the voucher book.
+
+## Path E — Monthly plans
+
+**When:** this is the normal way a person pays. The decision is which plan fits the work. Calls inside the plan are included, so the product does not put a price on each call.
+
+| Plan | Monthly | Platform calls included | Agents |
+|---|---|---|---|
+| Personal | $29 | 40,000 | 1 |
+| Operate | $89 | 200,000 | 8 |
+| Floor | $240 | 1,000,000 | no cap |
+
+Operate is the plan most teams use. Calls made with a vault key (`self_custodian`) sit outside every plan. Full rules and the breakdown response: [SUBSCRIPTION.md](SUBSCRIPTION.md).
+
+```
+GET  /billing/plans
+GET  /billing/subscription
+POST /billing/subscription          { "plan": "operate" }
+GET  /billing/breakdown
+```
+
+The dashboard is the Plan section (`src/web/components/sections/PlanSection.tsx`). It shows the allowance and each upstream's share of this month's platform calls. The monthly price is the settlement.

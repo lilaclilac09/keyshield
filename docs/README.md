@@ -20,7 +20,8 @@ Operator guides, get-started flows, and architecture notes.
 | [DEVNET.md](DEVNET.md) | Devnet deployment guide |
 | [EXTENSION.md](EXTENSION.md) | Browser extension build + install |
 | [OPERATOR.md](OPERATOR.md) | Operator runbook |
-| [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | x402 + MPP payment flow walkthrough |
+| [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | Plan, MPP, Tempo session, prepaid, and x402 |
+| [SUBSCRIPTION.md](SUBSCRIPTION.md) | Personal, Operate, and Floor — allowance and breakdown |
 | [technical/cryptography.md](technical/cryptography.md) | Crypto map: Path A PRF, extension HKDF/AES-GCM, proxy hot path |
 | [technical/SYNC_VAULT_ARCHITECTURE.md](technical/SYNC_VAULT_ARCHITECTURE.md) | Path A sync vault (wire format, JWT, CAS) |
 

@@ -183,13 +183,19 @@ DELETE /sharing/{share_id}           legacy alias
 ## Billing & usage
 
 ```
-GET  /billing/balance                { balance: number }
-GET  /billing/usage                  { totalCalls, totalCost, ... }
+GET  /billing/plans                  Personal $29, Operate $89, Floor $240
+GET  /billing/subscription           plan on this account
+POST /billing/subscription           body: { plan: "operate" }
+GET  /billing/breakdown              this month's calls against the plan
+GET  /billing/balance                { balance_usd, total_spent_usd, free_credit_usd }
+GET  /billing/usage                  { history: [...] }
 GET  /billing                        combined snapshot
-POST /billing/topup                  body: { amount_usd } — Solana on-chain top-up
+POST /billing/topup                  body: { amount_usd }
 GET  /usage/stats                    aggregated stats
 GET  /usage/history?limit=30         per-call history
 ```
+
+`GET /billing/breakdown` is the transparency call. `by_upstream[].share_pct` is the share of this month's platform calls. `settlement.monthly_usd` is the plan price. Own-key calls are in `own_keys` and do not draw the allowance. See [SUBSCRIPTION.md](SUBSCRIPTION.md).
 
 ---
 
@@ -203,6 +209,8 @@ POST /mpp/streams                    open a new stream
 POST /mpp/streams/{id}/build-open-tx     → tx payload to fund the stream
 POST /mpp/streams/{id}/build-withdraw-tx → tx payload for the provider to claim
 POST /mpp/streams/{id}/record            record a metered call (off-chain)
+
+A proxy call with `X-Mpp-Stream-Id` for an open stream owned by the caller skips the 402. The Rust proxy records the call after the response.
 POST /mpp/streams/{id}/record-tx         record an on-chain settlement
 POST /mpp/streams/{id}/settle            finalize and close
 POST /mpp/streams/{id}/close             close without settlement
