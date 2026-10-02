@@ -36,6 +36,14 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
+### Product walkthrough
+
+Spend is one monthly plan. The breakdown ranks providers by share and keeps a rating column for measured latency.
+
+<video src="src/web/public/demo/spend-walkthrough.mp4" width="720" controls></video>
+
+[Open the walkthrough](src/web/public/demo/spend-walkthrough.mp4) · [Dashboard](https://app.ks.aileena.xyz) · [Marketing site](https://ks.aileena.xyz)
+
 ### Three pillars
 
 | | What you get |

@@ -2,6 +2,10 @@
 
 People pay for a plan. Platform calls draw down the calls included in that plan. A call made with the user's own key is outside the plan. The breakdown shows where this month's platform calls went. It does not price each call.
 
+<video src="../src/web/public/demo/spend-walkthrough.mp4" width="720" controls></video>
+
+[Open the walkthrough](../src/web/public/demo/spend-walkthrough.mp4)
+
 Source of the numbers: `src/backend/billing/plans.py`.
 
 ## Plans

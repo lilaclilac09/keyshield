@@ -2,6 +2,14 @@
 
 Operator guides, get-started flows, and architecture notes.
 
+## Product walkthrough
+
+The Spend workspace: summary, ranked breakdown, calls, plan switch, sharing, and the vault.
+
+<video src="../src/web/public/demo/spend-walkthrough.mp4" width="720" controls></video>
+
+[Open the walkthrough](../src/web/public/demo/spend-walkthrough.mp4)
+
 ---
 
 ## 🚀 Start here

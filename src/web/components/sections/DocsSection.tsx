@@ -12,6 +12,18 @@ export const DocsSection: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <Card variant="bordered" title="Product walkthrough" description="Spend settles the month as one plan. Rank is share of platform calls. Rating stays in a fixed column and fills from measured latency.">
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          className="w-full rounded-xl border border-[#243365] bg-black"
+          src="/demo/spend-walkthrough.mp4"
+        >
+          <a className="text-[#93b4ff]" href="/demo/spend-walkthrough.mp4">Open the walkthrough</a>
+        </video>
+      </Card>
+
       {/* Quickstart */}
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
