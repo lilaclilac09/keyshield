@@ -13,7 +13,15 @@
 
 ✅ **All three services up and healthy. v2 vault UI restored. Passkey routes wired. Sync worker on 8787. Chrome extension extracted. Theme is navy. Backend 500s all fixed. Build passes. Two clean commits ready.**
 
-## Live services
+## Live services (canonical)
+
+| Service | Port | Notes |
+|---|---|---|
+| Dashboard (`src/web/` Vite) | **3000** | not :5173 |
+| FastAPI control plane | **8001** | `/proxy`, `/vproxy`, `/manage/*` shim |
+| Rust `ks-proxy` | **8000** | hot path; fallthrough to :8001 |
+
+The table below is the original wake-up note and is **not** current.
 
 | Service | Port | Status | Notes |
 |---|---|---|---|

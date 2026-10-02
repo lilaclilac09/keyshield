@@ -10,16 +10,16 @@ Starts (cross-platform — works on macOS, Linux, Windows):
 
 - **Python control plane** on `:8001` (uvicorn auto-reload, `src/backend/`)
 - **Rust hot-path proxy** on `:8000` (release build, fronts everything)
-- **Web frontend** on `:5173` (Vite dev with HMR, `src/web/`)
+- **Web frontend** on `:3000` (Vite dev with HMR, `src/web/`)
 
 `Ctrl-C` stops everything cleanly. First run builds the Rust release binary
 (~30s) and runs `npm install` in `src/web/` (~30s); subsequent runs start
 in <2s.
 
-Open **http://localhost:5173** — that's the dashboard / extension popup.
+Open **http://localhost:3000** — that's the dashboard / extension popup.
 It talks to `:8000` (Rust); Rust handles `/proxy/*` directly and
 reverse-proxies everything else (passkey, vault, billing, agents, usage)
-to Python on `:8001`. See [`src/proxy/ADR-002-architecture.md`](src/proxy/ADR-002-architecture.md).
+to Python on `:8001`. See [`src/proxy/ADR-002-architecture.md`](src/proxy/ADR-002-architecture.md) if present, otherwise [SPEC.md](SPEC.md).
 
 ## Run a single service
 
@@ -91,7 +91,7 @@ Step-by-step + env matrix + DNS in
 - **Passkey requires a real domain or `127.0.0.1`** — `localhost` doesn't
   work in Chrome's passkey API. `dev.cjs` binds `127.0.0.1` for this reason.
 - **Port conflicts** — `dev.cjs` doesn't auto-kill processes on `:8000` /
-  `:8001` / `:5173`. Free them first if you have other dev servers running.
+  `:8001` / `:3000`. Free them first if you have other dev servers running.
 - **Vault state persists** — `src/backend/vault/` and `src/backend/data/*.db`
   are not reset between runs. To start fresh: `rm -rf src/backend/vault src/backend/data`.
 - **`cargo build --release`** is slow first time (~30s on M-series Mac,

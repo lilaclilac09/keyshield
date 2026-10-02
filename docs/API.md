@@ -35,7 +35,7 @@ That is the whole flow: **token → store → proxy**.
 
 | Service       | URL                       | Purpose                                            |
 |---------------|---------------------------|----------------------------------------------------|
-| Frontend      | `http://localhost:5173`   | Vault UI (vite dev server)                         |
+| Frontend      | `http://localhost:3000`   | Vault UI (vite dev server, `src/web/`)             |
 | Backend API   | `http://localhost:8001`   | FastAPI — every endpoint below lives here          |
 | Sync Worker   | `http://localhost:8787`   | Cloudflare Worker for end-to-end-encrypted vault   |
 | Browser Ext.  | `chrome://extensions/`    | Load unpacked from `src/extension/`                |
@@ -47,7 +47,7 @@ That is the whole flow: **token → store → proxy**.
 KeyShield mints a **bearer session token**. Every authenticated endpoint expects:
 
 ```
-Authorization: Bearer <token>
+Authorization: Bearer <token>     # public form ksv2_<payload>.<hmac>
 ```
 
 There are four ways to get a token. Pick whichever fits your client.
@@ -279,7 +279,7 @@ keyshield-cli store openai sk-proj-...
 keyshield-cli proxy openai v1/models
 ```
 
-The CLI script is at `src/scripts/keyshield-cli.sh` and is also served from `GET /install.sh`.
+The CLI script is at `src/backend/keyshield-cli.sh` (wrapper: `src/scripts/keyshield-cli.sh`) and is also served from `GET /install.sh`. Password login is disabled; export `KS_TOKEN`.
 
 ---
 

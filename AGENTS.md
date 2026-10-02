@@ -87,7 +87,7 @@ extension and for `/vproxy/*` server-side key injection. See SPEC.md §3.
 # pushes ciphertext to the Cloudflare sync-worker.
 
 # Option B: REST shim (browser extension / local-dev — NOT Path A)
-# keyshield-cli.sh is not in the repo. GET /install.sh serves a 404.
+# source src/backend/keyshield-cli.sh   # or curl -fsSL $KS_BASE/install.sh
 # Store via the dashboard, the extension, or:
 curl -s -X POST http://localhost:8001/manage/store \
   -H "Authorization: Bearer $KS_TOKEN" \
@@ -120,7 +120,7 @@ ks.store("groq",      "gsk_xxx")
 # Python (target — /auth/login is 403; use wallet-login or the dashboard token)
 token = ks.login("my_wallet", "my_passphrase")
 # token = "<base64url(payload)>.<base64url(HMAC)>"
-# The ksv2_ prefix used in older docs is not emitted (SPEC.md §4.2).
+# Session tokens are minted as ksv2_<payload>.<hmac> (SPEC.md §4.2). Both proxies accept the prefix.
 ```
 
 ### Step 3 — Set the token in your agent environment
@@ -724,7 +724,7 @@ with open("state.pkl", "rb") as f:
 
 ```bash
 # 1. Store your keys (Path A via the dashboard, or the /manage/store shim)
-#    keyshield-cli.sh is not in the repo — see §2.
+#    source src/backend/keyshield-cli.sh  # GET /install.sh serves the same file
 # Dashboard: http://localhost:3000  →  Vault  →  Developer → copy token
 curl -s -X POST http://localhost:8001/manage/store \
   -H "Authorization: Bearer $KS_TOKEN" -H "Content-Type: application/json" \
