@@ -30,6 +30,7 @@ The Spend workspace: summary, ranked breakdown, calls, plan switch, sharing, and
 | [OPERATOR.md](OPERATOR.md) | Operator runbook |
 | [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | Plan, MPP, Tempo session, prepaid, and x402 |
 | [SUBSCRIPTION.md](SUBSCRIPTION.md) | Personal, Operate, and Floor — allowance and breakdown |
+| [COLOSSEUM-SUBMISSION.md](COLOSSEUM-SUBMISSION.md) | Superteam Germany MVP form and the fields you still fill |
 | [technical/cryptography.md](technical/cryptography.md) | Crypto map: Path A PRF, extension HKDF/AES-GCM, proxy hot path |
 | [technical/SYNC_VAULT_ARCHITECTURE.md](technical/SYNC_VAULT_ARCHITECTURE.md) | Path A sync vault (wire format, JWT, CAS) |
 

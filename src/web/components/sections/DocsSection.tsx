@@ -24,6 +24,17 @@ export const DocsSection: React.FC = () => {
         </video>
       </Card>
 
+      <Card variant="bordered" title="Solana devnet" description="Agent spend settles on a payment stream. The program is deployed on devnet. You do not need a mainnet wallet to try the dashboard.">
+        <ul className="space-y-2 text-[13px] text-[#e8ecff]">
+          <li><span className="text-[#8a96c2]">Network</span> · Solana devnet</li>
+          <li><span className="text-[#8a96c2]">Program</span> · <a className="text-[#93b4ff] hover:underline" href="https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet" target="_blank" rel="noreferrer">41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j</a></li>
+          <li><span className="text-[#8a96c2]">Stream PDA</span> · <a className="text-[#93b4ff] hover:underline" href="https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet" target="_blank" rel="noreferrer">E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR</a></li>
+          <li><span className="text-[#8a96c2]">Open stream tx</span> · <a className="text-[#93b4ff] hover:underline" href="https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet" target="_blank" rel="noreferrer">678bqTSq…XTQc</a></li>
+          <li><span className="text-[#8a96c2]">USDC mint</span> · 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU</li>
+        </ul>
+        <p className="text-[12px] text-[#8a96c2] mt-3">Instructions on that program: CreateUniversalVault, GrantAgentAccess, RevokeAgentAccess, UpdateVaultConfig, OpenStream, MppSettle, CloseStream.</p>
+      </Card>
+
       {/* Quickstart */}
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>

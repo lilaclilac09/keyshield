@@ -91,7 +91,7 @@ client = ks.openai_client()   # zero raw keys
 node dev.cjs
 
 # 2. open the vault UI
-open http://localhost:5173
+open http://localhost:3000
 
 # 3. connect wallet → store a provider key → copy Developer token
 
@@ -159,6 +159,7 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
+| [docs/COLOSSEUM-SUBMISSION.md](docs/COLOSSEUM-SUBMISSION.md) | Road to Colosseum form, with the fields only you can fill |
 
 ---
 
