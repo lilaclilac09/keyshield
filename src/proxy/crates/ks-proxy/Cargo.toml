@@ -29,6 +29,7 @@ metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 rcgen = "0.13"
 reqwest = { workspace = true }
+rusqlite = { workspace = true }
 # rustls 0.23 made CryptoProvider selection explicit. We pin `ring`
 # (no cmake / aws-lc-sys build deps) and disable default features so
 # we can opt into exactly one provider — see ADR-007 §"Provider".

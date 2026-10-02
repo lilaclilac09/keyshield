@@ -129,6 +129,12 @@ async fn proxy_inner(
         return (StatusCode::NOT_FOUND, "unknown upstream").into_response();
     };
 
+    if let Err((status, msg)) =
+        crate::policy::check_proxy_access(&state, &session, &upstream_str, &path)
+    {
+        return (status, Json(json!({ "error": msg }))).into_response();
+    }
+
     // 4. Read body (1MB cap = 413).
     let (_parts, body) = req.into_parts();
     let body_bytes: Bytes = match body_to_bytes(body, MAX_BODY).await {
@@ -323,10 +329,9 @@ pub async fn batch(
     let mut futures = Vec::with_capacity(req.requests.len());
     for item in req.requests.into_iter() {
         let state = state.clone();
-        let user_id = session.user_id.clone();
-        let password = session.password.clone();
+        let session = session.clone();
         futures.push(tokio::spawn(async move {
-            run_batch_item(state, user_id, password, item).await
+            run_batch_item(state, session, item).await
         }));
     }
 
@@ -345,22 +350,23 @@ pub async fn batch(
 
 async fn run_batch_item(
     state: AppState,
-    user_id: String,
-    password: String,
+    session: ks_session::Session,
     item: BatchItem,
 ) -> Value {
     // Mirrors `server.py:run_one`. Verbatim error strings per ADR-001 #9, #10.
+    if let Err((_status, msg)) =
+        crate::policy::check_proxy_access(&state, &session, &item.upstream, &item.path)
+    {
+        return json!({ "error": msg });
+    }
+
     let Ok(upstream_id) = UpstreamId::from_str(&item.upstream) else {
         return json!({"error": "unknown upstream"});
     };
 
     // Per-item key resolution mirrors single-proxy semantics. PermissionError
     // in Python becomes a 401 with detail; we propagate as `{"error": detail}`.
-    let pseudo_session = ks_session::Session {
-        user_id: user_id.clone(),
-        password: password.clone(),
-    };
-    let (api_key, _key_type) = match resolve_key(&state, &pseudo_session, &item.upstream) {
+    let (api_key, _key_type) = match resolve_key(&state, &session, &item.upstream) {
         Ok(p) => p,
         Err(resp) => {
             // Pull detail out of the response — server.py uses HTTPException.detail.
@@ -678,10 +684,7 @@ fn header_upstream_key(headers: &HeaderMap) -> Option<String> {
 
 fn resolve_session(state: &AppState, token: String) -> Result<ks_session::Session, Response> {
     if token == "dev-bypass" {
-        return Ok(ks_session::Session {
-            user_id: "dev-bypass".to_string(),
-            password: "dev-bypass".to_string(),
-        });
+        return Ok(ks_session::Session::basic("dev-bypass", "dev-bypass"));
     }
     match state.sessions.get(&token) {
         Ok(Some(s)) => Ok(s),

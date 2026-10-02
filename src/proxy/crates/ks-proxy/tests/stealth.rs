@@ -258,6 +258,8 @@ impl Harness {
             stealth: stealth_on,
             vault_db_path,
             helius,
+            usage_db_path: None,
+            agents_db_path: None,
         };
         std::mem::forget(vault_db_dir);
 

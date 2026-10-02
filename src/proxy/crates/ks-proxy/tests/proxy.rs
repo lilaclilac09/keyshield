@@ -251,6 +251,8 @@ impl Harness {
             stealth: false,
             vault_db_path,
             helius,
+            usage_db_path: None,
+            agents_db_path: None,
         };
         // Keep tempdir alive via leak — test process exits soon enough.
         std::mem::forget(vault_db_dir);

@@ -43,14 +43,14 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROXY_RS = SCRIPT_DIR.parent
 REPO_ROOT = PROXY_RS.parent.parent  # post-SOTA: src/proxy/ → up 2 levels to repo root
-V2_SESSION_PY = REPO_ROOT / "v2-mvp" / "src" / "session.py"
+V2_SESSION_PY = REPO_ROOT / "src" / "backend" / "auth" / "session.py"
 
 
 def _load_session_module(db_path: Path, server_secret: str):
-    """Import v2-mvp/src/session.py with overridden DB_PATH and SERVER_SECRET.
+    """Import src/backend/auth/session.py with overridden DB_PATH and SERVER_SECRET.
 
-    `_SERVER_SECRET` is captured from `os.getenv` at import time, so we set
-    the env var first and then load the module fresh.
+    `_server_secret()` reads `os.getenv` at call time, so we set the env
+    var first and then load the module fresh.
     """
     os.environ["SERVER_SECRET"] = server_secret
     spec = importlib.util.spec_from_file_location("v2_session", V2_SESSION_PY)

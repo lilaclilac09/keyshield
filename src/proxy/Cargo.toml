@@ -34,6 +34,8 @@ serde_json = { version = "1", features = ["preserve_order"] }
 metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
 thiserror = "1"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors"] }

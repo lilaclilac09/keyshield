@@ -16,6 +16,7 @@ pub mod acme;
 pub mod bridge;
 pub mod handlers;
 pub mod metrics;
+pub mod policy;
 pub mod stealth;
 pub mod tls;
 pub mod usage;
@@ -38,6 +39,10 @@ pub struct AppState {
     /// yields a per-user client that reuses the warm in-memory cache and
     /// the HTTP/2 keep-alive pool.
     pub helius: std::sync::Arc<ks_helius::HeliusClient>,
+    /// Optional usage.db for `spend_cap_usd`. Missing file → fail-open.
+    pub usage_db_path: Option<std::path::PathBuf>,
+    /// Optional agents.db for `aid` CRL. Missing file → fail-open.
+    pub agents_db_path: Option<std::path::PathBuf>,
 }
 
 /// Build the axum `Router` for the hot path. Used by both `main.rs` and

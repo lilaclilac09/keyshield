@@ -12,7 +12,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ks_session::{Session, SessionError, SessionStore};
+use ks_session::{SessionError, SessionStore};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -113,9 +113,13 @@ fn fresh_session_round_trips_through_get() {
     let store = SessionStore::open(Path::new(&m.db_path), &m.server_secret).expect("open");
 
     let got = store.get(&m.token).expect("get").expect("Some(session)");
-    let Session { user_id, password } = got;
-    assert_eq!(user_id, m.user_id);
-    assert_eq!(password, m.password);
+    assert_eq!(got.user_id, m.user_id);
+    assert_eq!(got.password, m.password);
+    assert!(
+        m.token.starts_with("ksv2_"),
+        "Python mint must emit ksv2_ prefix, got {}",
+        m.token
+    );
 }
 
 #[test]
