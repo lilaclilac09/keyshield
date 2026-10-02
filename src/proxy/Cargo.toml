@@ -1,5 +1,7 @@
 [workspace]
 resolver = "2"
+# proxy-helius/ at repo root is a stale snapshot of ks-helius — not a member.
+# Canonical crate: crates/ks-helius
 members = [
     "crates/ks-vault",
     "crates/ks-session",

@@ -136,19 +136,26 @@ async fn proxy_inner(
         Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "payload too large").into_response(),
     };
 
-    // 4.5. Helius fast-path: vault key + ks-helius cached_call.
+    // 4.5. Helius fast-path: header key or vault key + ks-helius cached_call.
     // Falls through to the standard ks-upstream pass-through on any failure
     // (vault NotFound, JSON parse error, unknown method, helius error).
+    let header_key = header_upstream_key(&headers);
     if upstream_str == "helius" {
-        if let Some(resp) = helius_fast_path(&state, &session, &body_bytes).await {
+        if let Some(resp) =
+            helius_fast_path(&state, &session, &body_bytes, header_key.as_deref()).await
+        {
             return resp;
         }
     }
 
-    // 5. Resolve key (vault → platform fallback).
-    let (api_key, key_type) = match resolve_key(&state, &session, &upstream_str) {
-        Ok(p) => p,
-        Err(resp) => return resp,
+    // 5. Resolve key: X-Upstream-API-Key header (Path A) → vault → platform.
+    let (api_key, key_type) = if let Some(k) = header_key {
+        (k, KeyType::Header)
+    } else {
+        match resolve_key(&state, &session, &upstream_str) {
+            Ok(p) => p,
+            Err(resp) => return resp,
+        }
     };
 
     // 6. x402 check on platform key.
@@ -563,6 +570,7 @@ async fn helius_fast_path(
     state: &AppState,
     session: &ks_session::Session,
     body: &Bytes,
+    header_key: Option<&str>,
 ) -> Option<Response> {
     // 1. Parse body as JSON-RPC `{method, params}`. Anything else falls
     //    through.
@@ -581,19 +589,21 @@ async fn helius_fast_path(
         .copied()
         .find(|m| *m == parsed.method.as_str())?;
 
-    // 3. Resolve the per-user Helius key from the vault SQLite shim.
-    //    Vault NotFound / DB-missing → fall through (let pass-through
-    //    decide between vault and platform fallback).
-    let key = match ks_vault::sqlite::lookup_upstream_key(
-        &state.vault_db_path,
-        &session.user_id,
-        "helius",
-    ) {
-        Ok(k) => k,
-        Err(ks_vault::SqliteVaultError::NotFound { .. }) => return None,
-        Err(e) => {
-            tracing::warn!(error = %e, "helius fast-path vault lookup failed; falling through");
-            return None;
+    // 3. Resolve the Helius key: Path A header first, then vault shim.
+    let key = if let Some(k) = header_key {
+        k.to_string()
+    } else {
+        match ks_vault::sqlite::lookup_upstream_key(
+            &state.vault_db_path,
+            &session.user_id,
+            "helius",
+        ) {
+            Ok(k) => k,
+            Err(ks_vault::SqliteVaultError::NotFound { .. }) => return None,
+            Err(e) => {
+                tracing::warn!(error = %e, "helius fast-path vault lookup failed; falling through");
+                return None;
+            }
         }
     };
 
@@ -657,6 +667,15 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
     Some(raw[7..].to_string())
 }
 
+fn header_upstream_key(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get("x-upstream-api-key")?.to_str().ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 fn resolve_session(state: &AppState, token: String) -> Result<ks_session::Session, Response> {
     if token == "dev-bypass" {
         return Ok(ks_session::Session {
@@ -678,6 +697,7 @@ fn resolve_session(state: &AppState, token: String) -> Result<ks_session::Sessio
 enum KeyType {
     SelfCustodian,
     Platform,
+    Header,
 }
 
 impl KeyType {
@@ -685,6 +705,7 @@ impl KeyType {
         match self {
             KeyType::SelfCustodian => "self_custodian",
             KeyType::Platform => "platform",
+            KeyType::Header => "user",
         }
     }
 }
@@ -798,3 +819,29 @@ fn normalized_path(p: &str) -> String {
         format!("/{p}")
     }
 }
+
+#[cfg(test)]
+mod header_key_tests {
+    use super::*;
+
+    #[test]
+    fn reads_x_upstream_api_key() {
+        let mut h = HeaderMap::new();
+        h.insert("x-upstream-api-key", HeaderValue::from_static("sk-test"));
+        assert_eq!(header_upstream_key(&h).as_deref(), Some("sk-test"));
+    }
+
+    #[test]
+    fn empty_header_is_none() {
+        let mut h = HeaderMap::new();
+        h.insert("x-upstream-api-key", HeaderValue::from_static("   "));
+        assert_eq!(header_upstream_key(&h), None);
+    }
+
+    #[test]
+    fn missing_header_is_none() {
+        let h = HeaderMap::new();
+        assert_eq!(header_upstream_key(&h), None);
+    }
+}
+
