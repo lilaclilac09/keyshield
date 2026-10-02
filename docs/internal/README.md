@@ -4,7 +4,7 @@ Internal project documentation — not intended for external contributors.
 
 | File | Contents |
 |---|---|
-| [GITNEXUS.md](GITNEXUS.md) | **Why GitNexus MCP is missing on Cloud Agents, how to attach it, CLI fallback** |
+| [GITNEXUS.md](GITNEXUS.md) | **Desktop MCP (`~/.cursor/mcp.json`), index, validate; Cloud CLI fallback** |
 | [RECURRING_ISSUES.md](RECURRING_ISSUES.md) | **Repeated problems with cause / solution / status (R1–R16)** |
 | [roadmap.md](roadmap.md) | Product roadmap and future directions |
 | [status.md](status.md) | Historical wake-up note — **not** live status (see banner in file) |

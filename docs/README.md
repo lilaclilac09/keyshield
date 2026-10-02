@@ -32,7 +32,7 @@ Operator guides, get-started flows, and architecture notes.
 
 ## Internal
 
-- [internal/](internal/) — roadmap, status, todos, migration history, demo scripts
+- [internal/](internal/) — roadmap, status, todos, GitNexus attach/validate ([GITNEXUS.md](internal/GITNEXUS.md)), migration history, demo scripts
 
 ## Engineering specs
 

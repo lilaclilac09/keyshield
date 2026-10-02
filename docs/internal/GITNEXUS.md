@@ -49,36 +49,66 @@ Result here: `8,907 nodes | 19,266 edges | 347 clusters | 585 flows` at `/worksp
 
 ## 2. Attach GitNexus MCP (desktop Cursor) — this is the real MCP fix
 
-Run **once per laptop**, from any directory, Node `^22.18.0 || >=24.11.0` preferred (`v22.14.0` still loaded the native addon here with an `EBADENGINE` warning):
+Public replica (same steps, shorter): [README.md § GitNexus](../../README.md#gitnexus-cursor).
+
+**Once per machine.** Node `^22.18.0 || >=24.11.0` (`node -v`). `v22.14.0` can hang extracting the native Ladybug addon (`EBADENGINE`). Pin verified here: **`gitnexus@1.6.12`**.
+
+### 2.1 MCP config
+
+`npx gitnexus setup` after `Ok to proceed? (y)` shows a spinner. That is **npm installing the tarball**, not another `y`. Wait ~2 minutes. If still stuck: `Ctrl+C`.
 
 ```bash
-npx -y gitnexus@latest setup
+npx -y gitnexus@1.6.12 setup --coding-agent cursor
 ```
 
-That writes:
+Writes `~/.cursor/mcp.json` and skills under `~/.cursor/skills/`.
+
+**Skip setup** — edit `~/.cursor/mcp.json` (create `~/.cursor` first). Empty file:
 
 ```json
 {
   "mcpServers": {
     "gitnexus": {
       "command": "npx",
-      "args": ["-y", "gitnexus@latest", "mcp"]
+      "args": ["-y", "gitnexus@1.6.12", "mcp"]
     }
   }
 }
 ```
 
-into `~/.cursor/mcp.json`, and copies skills to `~/.cursor/skills/`.
+Already has other servers: add the `"gitnexus"` key inside `mcpServers` (JSON comma rules). Do not delete existing servers.
 
-Then, **in this repo**:
+Windows: `"command": "cmd"`, `"args": ["/c", "npx", "-y", "gitnexus@1.6.12", "mcp"]`. File: `%USERPROFILE%\.cursor\mcp.json`.
+
+Quit Cursor fully (`Cmd+Q` / Alt+F4) and reopen. **Settings → MCP** → `gitnexus` connected.
+
+### 2.2 Index this repo
 
 ```bash
 cd /path/to/keyshield
-rm -rf .gitnexus               # if analyze says storage is "foreign"
-npx gitnexus analyze           # builds .gitnexus/ (gitignored)
+rm -rf .gitnexus               # required if analyze says storage is "foreign"
+npx -y gitnexus@1.6.12 analyze --index-only --skip-fts --name keyshield
 ```
 
-Restart Cursor (MCP is loaded at session start). Verify by asking the agent to `list_repos` or by checking Settings → MCP → `gitnexus`.
+`.gitnexus/` is gitignored. Never commit `meta.json`.
+
+### 2.3 Validate (anyone)
+
+```bash
+npx -y gitnexus@1.6.12 --version     # 1.6.12
+npx -y gitnexus@1.6.12 status        # this checkout indexed
+npx -y gitnexus@1.6.12 list          # includes keyshield
+./scripts/gitnexus-cloud.sh doctor
+./scripts/gitnexus-cloud.sh impact --direction upstream get_stats
+```
+
+Desktop MCP file:
+
+```bash
+python3 -c "import json,pathlib; p=pathlib.Path.home()/'.cursor'/'mcp.json'; g=json.loads(p.read_text())['mcpServers']['gitnexus']; assert 'mcp' in g.get('args',[]) or g.get('args')==['mcp']; print(g)"
+```
+
+In Cursor, ask the agent to `list_repos`.
 
 Official docs: [Cursor setup](https://abhigyanpatwari-gitnexus.mintlify.app/mcp/cursor).
 

@@ -121,6 +121,71 @@ curl -s "$KS_BASE/vproxy/openai/v1/models" -H "Authorization: Bearer $KS_TOKEN"
 
 ---
 
+## GitNexus (Cursor)
+
+Local code graph for agents. **Desktop MCP and Cloud Agents are separate** — attaching MCP on a laptop does not install it on Cloud.
+
+Pin used here: `gitnexus@1.6.12`. Node `^22.18.0` or `>=24.11.0` (`node -v`). `v22.14.0` may hang on the native Ladybug addon (`EBADENGINE`).
+
+### 1. MCP (once per machine)
+
+`npx gitnexus setup` after `Ok to proceed? (y)` shows a spinner (`⠇ …`). That is **npm downloading the package**, not another prompt. Wait ~2 min. If it is still stuck: `Ctrl+C`, then:
+
+```bash
+npx -y gitnexus@1.6.12 setup --coding-agent cursor
+```
+
+Or skip setup: create `~/.cursor/` if needed and edit `~/.cursor/mcp.json`.
+
+Empty file:
+
+```json
+{
+  "mcpServers": {
+    "gitnexus": {
+      "command": "npx",
+      "args": ["-y", "gitnexus@1.6.12", "mcp"]
+    }
+  }
+}
+```
+
+File already has other servers: add the `"gitnexus"` entry inside `mcpServers` (comma after the previous entry; no trailing comma). Do not remove existing keys.
+
+Windows: `"command": "cmd"`, `"args": ["/c", "npx", "-y", "gitnexus@1.6.12", "mcp"]`. Path: `%USERPROFILE%\.cursor\mcp.json`.
+
+Quit Cursor fully (macOS `Cmd+Q`, Windows Alt+F4) and reopen. **Settings → MCP** → `gitnexus` connected.
+
+### 2. Index this repo
+
+```bash
+cd /path/to/keyshield
+rm -rf .gitnexus    # required if analyze says storage is "foreign"
+npx -y gitnexus@1.6.12 analyze --index-only --skip-fts --name keyshield
+```
+
+`.gitnexus/` is gitignored. Never commit `meta.json` (a copy from another machine is **foreign** and blocks analyze).
+
+### 3. Validate (anyone)
+
+```bash
+npx -y gitnexus@1.6.12 --version          # 1.6.12
+npx -y gitnexus@1.6.12 status             # this checkout is indexed
+npx -y gitnexus@1.6.12 list               # includes keyshield
+./scripts/gitnexus-cloud.sh doctor
+./scripts/gitnexus-cloud.sh impact --direction upstream get_stats
+```
+
+MCP file (desktop only):
+
+```bash
+python3 -c "import json,pathlib; p=pathlib.Path.home()/'.cursor'/'mcp.json'; g=json.loads(p.read_text())['mcpServers']['gitnexus']; assert 'mcp' in g.get('args',[]) or g.get('args')==['mcp']; print(g)"
+```
+
+Cloud Agents: skip MCP; run `./scripts/gitnexus-cloud.sh analyze` then `impact` / `detect-changes`. Full procedure: [docs/internal/GITNEXUS.md](docs/internal/GITNEXUS.md).
+
+---
+
 ## Repo map
 
 | Path | Role |
@@ -184,6 +249,7 @@ Topology: dashboard on Cloudflare Pages → FastAPI control plane on Railway (`a
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Local dev setup |
 | [DEPLOY.md](DEPLOY.md) | Production deployment |
 | [AGENTS.md](AGENTS.md) | Agent integration design |
+| [docs/internal/GITNEXUS.md](docs/internal/GITNEXUS.md) | GitNexus MCP vs CLI — attach, validate, Cloud fallback |
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
