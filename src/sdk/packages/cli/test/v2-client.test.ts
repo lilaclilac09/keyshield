@@ -23,10 +23,10 @@ describe('V2Client.login', () => {
     expect(JSON.parse(init.body)).toEqual({ userId: 'alice', password: 'pw' });
   });
 
-  it('throws on a non-OK status', async () => {
-    const fetchImpl = vi.fn(async () => new Response('bad', { status: 401 }));
+  it('throws a wallet/passkey hint on 403', async () => {
+    const fetchImpl = vi.fn(async () => new Response('nope', { status: 403 }));
     const c = new V2Client({ baseUrl: 'http://srv', fetchImpl: fetchImpl as any });
-    await expect(c.login('a', 'b')).rejects.toThrow(/401/);
+    await expect(c.login('a', 'b')).rejects.toThrow(/direct login disabled/);
   });
 
   it('throws if the response is missing token', async () => {

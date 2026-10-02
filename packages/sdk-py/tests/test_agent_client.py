@@ -11,14 +11,15 @@ import pytest
 pytest.importorskip("nacl.signing")
 
 from keyshield import KeyShield, AgentKeyShield, KeyShieldError, generate_keypair
+from conftest import wallet_login_sync
 
 
 def _owner_login_and_register(sync_client, agent_pubkey: str) -> str:
-    """Owner-side bootstrap. Returns the owner's user_id."""
+    """Owner-side bootstrap. Returns the owner's wallet address."""
     with KeyShield(base_url="http://test", client=sync_client) as ks:
-        ks.login("alice", "secret")
+        wallet = wallet_login_sync(ks)
         ks.agent_register(agent_pubkey, name="bot")
-    return "alice"
+    return wallet
 
 
 def test_generate_keypair_returns_hex_and_b58():
@@ -29,11 +30,9 @@ def test_generate_keypair_returns_hex_and_b58():
 
 
 def test_agent_authenticate_and_list_keys(sync_client):
-    # 1. owner registers agent pubkey
     creds = generate_keypair()
     owner = _owner_login_and_register(sync_client, creds["pubkey_b58"])
 
-    # 2. agent process self-auths
     agent = AgentKeyShield(
         owner_wallet=owner,
         private_key_hex=creds["private_key_hex"],
@@ -42,9 +41,7 @@ def test_agent_authenticate_and_list_keys(sync_client):
         client=sync_client,
     )
     token = agent.authenticate()
-    assert isinstance(token, str) and token
-
-    # 3. authed calls go through; vault lookup uses owner's data
+    assert isinstance(token, str) and token.startswith("ksv2_")
     assert agent.list_keys() == []
 
 
@@ -62,7 +59,6 @@ def test_agent_pubkey_property_matches_keypair(sync_client):
 
 def test_agent_authenticate_without_registration_returns_403(sync_client):
     creds = generate_keypair()
-    # No owner registration — agent-login must reject.
     agent = AgentKeyShield(
         owner_wallet="alice",
         private_key_hex=creds["private_key_hex"],

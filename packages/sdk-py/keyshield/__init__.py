@@ -14,26 +14,13 @@ Three client classes:
 Quick start (owner):
 
     from keyshield import KeyShield
-    with KeyShield("http://localhost:8000") as ks:
-        ks.login("alice", "secret")
+    with KeyShield("http://localhost:8001") as ks:
+        # wallet_login() or pass token=os.environ["KS_TOKEN"]
         ks.store("openai", "sk-...")
-        ks.set_pricing("openai", price_usd=0.001)   # opt-in to billing
+        client = ks.openai_client(api_key="sk-...")  # Path A: X-Upstream-API-Key
 
-Quick start (agent):
-
-    from keyshield import AgentKeyShield
-    agent = AgentKeyShield(
-        owner_wallet="9WzDX...",
-        private_key_hex=os.environ["AGENT_KEY"],
-        vault_passphrase=os.environ["VAULT_PASS"],
-    )
-    resp = agent.proxy("openai", "v1/chat/completions", json={
-        "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": "hi"}],
-    })
-
-The wire format and endpoints are documented inside `v2-mvp/src/server.py`;
-this module is a thin, type-friendly facade over them.
+The wire format lives on FastAPI (`src/backend/`) and the Rust hot path
+(`src/proxy/`). `/auth/login` is disabled (403); use wallet or passkey.
 """
 
 from __future__ import annotations
@@ -106,7 +93,7 @@ class KeyShield:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
         token: str | None = None,
         transport: httpx.BaseTransport | None = None,
@@ -134,6 +121,7 @@ class KeyShield:
     # ── Auth ─────────────────────────────────────────────────────────────────
 
     def login(self, user_id: str, password: str) -> str:
+        """Password login. Live FastAPI returns 403 — use ``wallet_login``."""
         resp = self._post("/auth/login", {"userId": user_id, "password": password})
         self._token = resp["token"]
         return self._token
@@ -157,6 +145,7 @@ class KeyShield:
                 "walletAddress": wallet_address,
                 "signature": sig_b64,
                 "challenge": challenge,
+                "nonce": challenge,
                 "passphrase": passphrase,
             },
         )
@@ -190,13 +179,24 @@ class KeyShield:
         self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
 
     def list_keys(self) -> list[str]:
-        return self._authed("GET", "/manage/list")["keys"]
+        data = self._authed("GET", "/manage/list")
+        if isinstance(data, dict) and "keys" in data:
+            return list(data["keys"])
+        if isinstance(data, list):
+            return [i.get("upstream") for i in data if i.get("upstream")]
+        return []
 
     def list_items(self) -> list[dict]:
-        return self._authed("GET", "/manage/list").get("items", [])
+        data = self._authed("GET", "/manage/list")
+        if isinstance(data, dict):
+            return list(data.get("items") or [])
+        if isinstance(data, list):
+            return data
+        return []
 
     def decrypt_key(self, upstream: str) -> str:
-        return self._authed("GET", f"/manage/decrypt/{upstream}")["key"]
+        body = self._authed("GET", f"/manage/decrypt/{upstream}")
+        return body.get("key") or body.get("value") or ""
 
     def delete_key(self, upstream: str) -> None:
         self._authed("DELETE", f"/manage/secret/{upstream}")
@@ -210,10 +210,13 @@ class KeyShield:
         method: str = "POST",
         json: Any = None,
         headers: dict | None = None,
+        api_key: str | None = None,
     ) -> httpx.Response:
         self._require_token()
         full_path = f"/proxy/{upstream}/{path.lstrip('/')}"
         hdrs = {"Authorization": f"Bearer {self._token}"}
+        if api_key:
+            hdrs["X-Upstream-API-Key"] = api_key
         if headers:
             hdrs.update(headers)
         return self._client.request(
@@ -298,28 +301,42 @@ class KeyShield:
     def proxy_url(self, upstream: str) -> str:
         return f"{self.base_url}/proxy/{upstream}/"
 
-    def openai_client(self) -> Any:
+    def openai_client(self, api_key: str | None = None) -> Any:
         try:
             import openai
         except ImportError as exc:  # pragma: no cover
             raise ImportError("openai_client() requires: pip install openai") from exc
+        token = self._require_token()
+        extra: dict[str, str] = {}
+        if api_key:
+            extra["X-Upstream-API-Key"] = api_key
+            base = self.proxy_url("openai")
+        else:
+            base = f"{self.base_url}/vproxy/openai/"
         return openai.OpenAI(
-            base_url=self.proxy_url("openai"),
-            api_key="keyshield-proxy",
-            default_headers={"Authorization": f"Bearer {self._require_token()}"},
+            base_url=base,
+            api_key=token,
+            default_headers=extra or None,
         )
 
-    def anthropic_client(self) -> Any:
+    def anthropic_client(self, api_key: str | None = None) -> Any:
         try:
             import anthropic
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "anthropic_client() requires: pip install anthropic"
             ) from exc
+        token = self._require_token()
+        extra: dict[str, str] = {}
+        if api_key:
+            extra["X-Upstream-API-Key"] = api_key
+            base = self.proxy_url("anthropic")
+        else:
+            base = f"{self.base_url}/vproxy/anthropic/"
         return anthropic.Anthropic(
-            base_url=self.proxy_url("anthropic"),
-            api_key="keyshield-proxy",
-            default_headers={"Authorization": f"Bearer {self._require_token()}"},
+            base_url=base,
+            api_key=token,
+            default_headers=extra or None,
         )
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
@@ -376,7 +393,7 @@ class AsyncKeyShield:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -401,6 +418,33 @@ class AsyncKeyShield:
         self._token = r.json()["token"]
         return self._token
 
+    async def wallet_challenge(self) -> dict:
+        r = await self._client.get("/auth/wallet-challenge")
+        _raise(r)
+        return r.json()
+
+    async def wallet_login(
+        self,
+        wallet_address: str,
+        signature_bytes: bytes,
+        challenge: str,
+        passphrase: str,
+    ) -> str:
+        sig_b64 = base64.b64encode(signature_bytes).decode()
+        r = await self._client.post(
+            "/auth/wallet-login",
+            json={
+                "walletAddress": wallet_address,
+                "signature": sig_b64,
+                "challenge": challenge,
+                "nonce": challenge,
+                "passphrase": passphrase,
+            },
+        )
+        _raise(r)
+        self._token = r.json()["token"]
+        return self._token
+
     async def logout(self) -> None:
         if not self._token:
             return
@@ -416,10 +460,16 @@ class AsyncKeyShield:
         )
 
     async def list_keys(self) -> list[str]:
-        return (await self._authed("GET", "/manage/list"))["keys"]
+        data = await self._authed("GET", "/manage/list")
+        if isinstance(data, dict) and "keys" in data:
+            return list(data["keys"])
+        if isinstance(data, list):
+            return [i.get("upstream") for i in data if i.get("upstream")]
+        return []
 
     async def decrypt_key(self, upstream: str) -> str:
-        return (await self._authed("GET", f"/manage/decrypt/{upstream}"))["key"]
+        body = await self._authed("GET", f"/manage/decrypt/{upstream}")
+        return body.get("key") or body.get("value") or ""
 
     async def delete_key(self, upstream: str) -> None:
         await self._authed("DELETE", f"/manage/secret/{upstream}")
@@ -432,9 +482,12 @@ class AsyncKeyShield:
         method: str = "POST",
         json: Any = None,
         headers: dict | None = None,
+        api_key: str | None = None,
     ) -> httpx.Response:
         self._require_token()
         hdrs = {"Authorization": f"Bearer {self._token}"}
+        if api_key:
+            hdrs["X-Upstream-API-Key"] = api_key
         if headers:
             hdrs.update(headers)
         return await self._client.request(
@@ -546,7 +599,7 @@ class AgentKeyShield:
         owner_wallet: str | None = None,
         private_key_hex: str | None = None,
         vault_passphrase: str | None = None,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
@@ -554,7 +607,7 @@ class AgentKeyShield:
         self._owner = owner_wallet or os.getenv("KS_OWNER_WALLET", "")
         self._key_hex = private_key_hex or os.getenv("KS_AGENT_KEY", "")
         self._pass = vault_passphrase or os.getenv("KS_VAULT_PASS", "")
-        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8000")).rstrip(
+        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8001")).rstrip(
             "/"
         )
         self._token: str | None = None
@@ -614,7 +667,9 @@ class AgentKeyShield:
 
         r = self._client.get("/auth/agent-challenge")
         _raise(r)
-        challenge = r.json()["challenge"]
+        body = r.json()
+        challenge = body["challenge"]
+        nonce = body.get("nonce", challenge)
 
         sk = SigningKey(bytes.fromhex(self._key_hex[:64]))
         sig_b64 = base64.b64encode(sk.sign(challenge.encode()).signature).decode()
@@ -623,11 +678,12 @@ class AgentKeyShield:
         r = self._client.post(
             "/auth/agent-login",
             json={
-                "ownerWallet": self._owner,
-                "agentPubkey": pubkey,
+                "pubkeyB58": pubkey,
                 "signature": sig_b64,
                 "challenge": challenge,
+                "nonce": nonce,
                 "passphrase": self._pass,
+                "ownerWallet": self._owner,
             },
         )
         _raise(r)
@@ -638,7 +694,12 @@ class AgentKeyShield:
         self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
 
     def list_keys(self) -> list[str]:
-        return self._authed("GET", "/manage/list")["keys"]
+        data = self._authed("GET", "/manage/list")
+        if isinstance(data, dict) and "keys" in data:
+            return list(data["keys"])
+        if isinstance(data, list):
+            return [i.get("upstream") for i in data if i.get("upstream")]
+        return []
 
     def proxy(
         self,
@@ -647,9 +708,12 @@ class AgentKeyShield:
         method: str = "POST",
         json: Any = None,
         headers: dict | None = None,
+        api_key: str | None = None,
     ) -> httpx.Response:
         self._ensure_token()
         hdrs = {"Authorization": f"Bearer {self._token}"}
+        if api_key:
+            hdrs["X-Upstream-API-Key"] = api_key
         if headers:
             hdrs.update(headers)
         return self._client.request(

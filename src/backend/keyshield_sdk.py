@@ -78,7 +78,7 @@ class KeyShield:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
         token: str | None = None,
     ) -> None:
@@ -303,19 +303,23 @@ class KeyShield:
         """Return the proxy base URL for an upstream. Use this as base_url in AI SDKs."""
         return f"{self.base_url}/proxy/{upstream}/"
 
-    def openai_client(self) -> Any:
+    def openai_client(self, api_key: str | None = None) -> Any:
         """
         Return a pre-configured openai.OpenAI client routed through the proxy.
+        Session token is the OpenAI api_key; pass api_key= for X-Upstream-API-Key.
         Requires: pip install openai
         """
         try:
             import openai
         except ImportError as exc:
             raise ImportError("openai_client() requires: pip install openai") from exc
+        token = self._require_token()
+        extra = {"X-Upstream-API-Key": api_key} if api_key else {}
+        base = self.proxy_url("openai") if api_key else f"{self.base_url}/vproxy/openai/"
         return openai.OpenAI(
-            base_url=self.proxy_url("openai"),
-            api_key="keyshield-proxy",
-            default_headers={"Authorization": f"Bearer {self._require_token()}"},
+            base_url=base,
+            api_key=token,
+            default_headers=extra or None,
         )
 
     def anthropic_client(self) -> Any:
@@ -382,7 +386,7 @@ class AsyncKeyShield:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
         token: str | None = None,
     ) -> None:
@@ -581,7 +585,7 @@ class AgentKeyShield:
       KS_OWNER_WALLET   — owner's Solana wallet address
       KS_AGENT_KEY      — agent private key hex (64 chars)
       KS_VAULT_PASS     — vault decryption passphrase
-      KS_BASE           — KeyShield URL (default: http://localhost:8000)
+      KS_BASE           — KeyShield URL (default: http://localhost:8001)
     """
 
     def __init__(
@@ -589,13 +593,13 @@ class AgentKeyShield:
         owner_wallet: str | None = None,
         private_key_hex: str | None = None,
         vault_passphrase: str | None = None,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:8001",
         timeout: float = 30.0,
     ) -> None:
         self._owner = owner_wallet or os.getenv("KS_OWNER_WALLET", "")
         self._key_hex = private_key_hex or os.getenv("KS_AGENT_KEY", "")
         self._pass = vault_passphrase or os.getenv("KS_VAULT_PASS", "")
-        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8000")).rstrip("/")
+        self._base = (base_url or os.getenv("KS_BASE", "http://localhost:8001")).rstrip("/")
         self._token: str | None = None
         self._client = httpx.Client(
             base_url=self._base,
@@ -675,10 +679,11 @@ class AgentKeyShield:
         r = self._client.post(
             "/auth/agent-login",
             json={
+                "pubkeyB58": pubkey,
                 "ownerWallet": self._owner,
-                "agentPubkey": pubkey,
                 "signature": sig_b64,
                 "challenge": challenge,
+                "nonce": challenge,
                 "passphrase": self._pass,
             },
         )
@@ -719,17 +724,18 @@ class AgentKeyShield:
     def proxy_url(self, upstream: str) -> str:
         return f"{self._base}/proxy/{upstream}/"
 
-    def openai_client(self) -> Any:
-        """Pre-configured openai.OpenAI routed through the proxy. Requires: pip install openai"""
+    def openai_client(self, api_key: str | None = None) -> Any:
         try:
             import openai
         except ImportError as exc:
             raise ImportError("requires: pip install openai") from exc
         self._ensure_token()
+        extra = {"X-Upstream-API-Key": api_key} if api_key else {}
+        base = self.proxy_url("openai") if api_key else f"{self._base}/vproxy/openai/"
         return openai.OpenAI(
-            base_url=self.proxy_url("openai"),
-            api_key="keyshield-agent",
-            default_headers={"Authorization": f"Bearer {self._token}"},
+            base_url=base,
+            api_key=self._token,
+            default_headers=extra or None,
         )
 
     def anthropic_client(self) -> Any:
@@ -882,7 +888,7 @@ Examples:
 
     cmd = args[0]
     rest = args[1:]
-    ks = KeyShield(os.environ.get("KS_BASE", "http://localhost:8000"))
+    ks = KeyShield(os.environ.get("KS_BASE", "http://localhost:8001"))
     _load_token(ks)
 
     if cmd == "health":

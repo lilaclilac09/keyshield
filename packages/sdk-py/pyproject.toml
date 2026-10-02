@@ -31,7 +31,7 @@ dependencies = [
 # sign a server challenge locally. Most users hitting only /auth/login
 # + /proxy can skip it.
 agent = ["pynacl>=1.5"]
-test = ["pytest>=7", "fastapi>=0.115", "pydantic>=2.10", "cryptography>=42", "webauthn>=2", "httpx[http2]>=0.27"]
+test = ["pytest>=7", "pytest-asyncio>=0.23", "fastapi>=0.115", "pydantic>=2.10", "cryptography>=42", "webauthn>=2", "httpx[http2]>=0.27", "pynacl>=1.5", "base58>=2", "starlette>=0.37"]
 
 [project.urls]
 Homepage = "https://github.com/lilaclilac09/keyshield"
@@ -45,3 +45,4 @@ include = ["keyshield*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"

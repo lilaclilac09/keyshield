@@ -50,7 +50,13 @@ export async function runLogin(opts: LoginOptions = {}): Promise<number> {
   try {
     token = await client.login(userId, password);
   } catch (e: any) {
-    process.stderr.write(`login failed: ${e?.message ?? e}\n`);
+    const msg = e?.message ?? e;
+    process.stderr.write(`login failed: ${msg}\n`);
+    if (String(msg).includes('direct login disabled')) {
+      process.stderr.write(
+        'hint: password login is 403. Use wallet/passkey, or export KS_TOKEN / KEYSHIELD_TOKEN from the dashboard.\n',
+      );
+    }
     return 1;
   }
 

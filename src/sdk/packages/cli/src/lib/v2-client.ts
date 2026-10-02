@@ -54,6 +54,11 @@ export class V2Client {
       userId,
       password,
     });
+    if (res.status === 403) {
+      throw new Error(
+        'direct login disabled; use wallet or passkey (POST /auth/wallet-login) or set KS_TOKEN',
+      );
+    }
     if (!res.ok) {
       throw new Error(`login failed: HTTP ${res.status}`);
     }
@@ -75,8 +80,18 @@ export class V2Client {
     if (!res.ok) {
       throw new Error(`listKeys failed: HTTP ${res.status}`);
     }
-    const body = (await res.json()) as { items?: ListedKey[] };
-    return body.items ?? [];
+    const body = (await res.json()) as {
+      items?: ListedKey[];
+      keys?: string[];
+    };
+    if (Array.isArray(body.items)) {
+      return body.items;
+    }
+    return (body.keys ?? []).map((upstream) => ({
+      upstream,
+      createdAt: 0,
+      updatedAt: 0,
+    }));
   }
 
   /** Fetch decrypted plaintext for a single upstream. */
@@ -92,11 +107,12 @@ export class V2Client {
     if (!res.ok) {
       throw new Error(`getKey(${upstream}) failed: HTTP ${res.status}`);
     }
-    const body = (await res.json()) as { key?: string };
-    if (!body.key) {
+    const body = (await res.json()) as { key?: string; value?: string };
+    const key = body.key || body.value;
+    if (!key) {
       throw new Error(`getKey(${upstream}) response missing \`key\` field`);
     }
-    return body.key;
+    return key;
   }
 
   async storeKey(
