@@ -16,10 +16,13 @@ path = "src/lib.rs"
 axum = { workspace = true }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 bytes = { workspace = true }
+base64 = "0.22"
 dashmap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+k256 = { version = "0.13", features = ["ecdsa"] }
 ks-cache = { path = "../ks-cache" }
+sha3 = "0.10"
 ks-helius = { path = "../ks-helius" }
 ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }

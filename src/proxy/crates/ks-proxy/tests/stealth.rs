@@ -260,6 +260,9 @@ impl Harness {
             helius,
             mpp_db_path: vault_db_dir.path().join("mpp-missing.db"),
             open_streams: Arc::new(TtlCache::new()),
+            tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(
+                vault_db_dir.path().join("tempo_vouchers.db"),
+            )),
         };
         std::mem::forget(vault_db_dir);
 

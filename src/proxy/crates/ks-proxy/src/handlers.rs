@@ -156,7 +156,10 @@ async fn proxy_inner(
     // HTTP call and the 402 so the client does not pay-and-retry. Usage is
     // debited after the response by the record hook below.
     let paid_by_stream = key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
-    if key_type == KeyType::Platform && !paid_by_stream {
+    // A Tempo wallet session voucher is the same kind of prepaid channel:
+    // the client already paid off-chain, so this request is not a 402.
+    let paid_by_tempo = key_type == KeyType::Platform && !paid_by_stream && tempo_voucher_pays(&state, &headers);
+    if key_type == KeyType::Platform && !paid_by_stream && !paid_by_tempo {
         let balance = state.bridge.balance(&session.user_id).await.unwrap_or_else(|err| {
             // Per spec 07: bridge failure → treat as 0 → 402. Logged warn.
             tracing::warn!(error = %err, user = %session.user_id, "balance bridge failed; treating as 0");
@@ -167,6 +170,14 @@ async fn proxy_inner(
             let mut resp = (StatusCode::PAYMENT_REQUIRED, Json(body)).into_response();
             resp.headers_mut()
                 .insert("X-Payment-Required", HeaderValue::from_static("x402"));
+            if let Some(lane) = crate::tempo::config_from_env() {
+                if let Ok(value) = HeaderValue::from_str(&crate::tempo::www_authenticate(&lane)) {
+                    resp.headers_mut().insert(
+                        HeaderName::from_static("www-authenticate"),
+                        value,
+                    );
+                }
+            }
             return resp;
         }
     }
@@ -215,10 +226,10 @@ async fn proxy_inner(
         HeaderName::from_static("x-ks-key-type"),
         HeaderValue::from_static(key_type.as_str()),
     );
-    if paid_by_stream {
+    if let Some(lane) = pay_lane(paid_by_stream, paid_by_tempo) {
         out_headers.insert(
             HeaderName::from_static("x-ks-pay"),
-            HeaderValue::from_static("mpp"),
+            HeaderValue::from_static(lane),
         );
     }
 
@@ -773,6 +784,28 @@ fn cache_status_from(headers: &HeaderMap) -> Option<CacheStatus> {
 
 /// `X-Mpp-Stream-Id` names an open stream owned by this user.
 /// Header is absent, unparseable, or the stream is not open → false.
+fn pay_lane(paid_by_stream: bool, paid_by_tempo: bool) -> Option<&'static str> {
+    if paid_by_stream {
+        Some("mpp")
+    } else if paid_by_tempo {
+        Some("tempo")
+    } else {
+        None
+    }
+}
+
+/// `Payment-Authorization: Payment <credential>` from a Tempo wallet.
+/// No payee configured, or a voucher that does not verify, is false.
+fn tempo_voucher_pays(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(raw) = headers.get("payment-authorization").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let Some(lane) = crate::tempo::config_from_env() else {
+        return false;
+    };
+    crate::tempo::session_voucher_pays(raw, &lane, &state.tempo_vouchers)
+}
+
 fn mpp_stream_open(state: &AppState, user_id: &str, headers: &HeaderMap) -> bool {
     let Some(raw) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) else {
         return false;

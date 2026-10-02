@@ -17,6 +17,7 @@ pub mod bridge;
 pub mod handlers;
 pub mod metrics;
 pub mod mpp;
+pub mod tempo;
 pub mod stealth;
 pub mod tls;
 pub mod usage;
@@ -44,6 +45,9 @@ pub struct AppState {
     pub mpp_db_path: std::path::PathBuf,
     /// Confirmed-open `(user_id, stream_id)` pairs. See `mpp::stream_is_open`.
     pub open_streams: Arc<TtlCache<u8>>,
+    /// Highest Tempo session voucher accepted per channel. A later voucher
+    /// with a smaller cumulative amount does not skip the 402 gate.
+    pub tempo_vouchers: Arc<tempo::VoucherBook>,
 }
 
 /// Build the axum `Router` for the hot path. Used by both `main.rs` and

@@ -92,6 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         helius,
         mpp_db_path,
         open_streams: Arc::new(TtlCache::new()),
+        tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(
+            std::env::var("KS_TEMPO_DB")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/tempo_vouchers.db")),
+        )),
     };
 
     // Install the global Prometheus recorder once and pass the render
