@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff, Key, Lock, FileText, Terminal, KeyRound } from 'lucide-react';
 import { VaultItem, VaultItemType, TYPE_PREFIX } from '../types';
 import { getPrefs } from '../lib/preferences';
+import { ProductTabs } from './ui/ProductTabs';
 
 interface Props { isOpen: boolean; onClose: () => void; onSave: (item: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => Promise<void> | void; initialData?: Partial<VaultItem>; }
 
@@ -89,10 +90,13 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           <div><h2 className="text-[16px] font-bold text-white uppercase tracking-wider">New Secret</h2><p className="text-[11px] text-[#8a96c2] mt-0.5">{TYPE_TABS.find(t => t.id === type)?.sub}</p></div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#8a96c2] hover:text-white hover:bg-white/5 transition-colors"><X size={16} /></button>
         </div>
-        <div className="px-6 pt-4 shrink-0">
-          <div className="grid grid-cols-5 gap-1 p-1 rounded-lg bg-[#0e1631] border border-[#243365]">
-            {TYPE_TABS.map(t => <button key={t.id} type="button" onClick={() => { setType(t.id); setSaveError(''); }} className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-colors ${type === t.id ? 'bg-white text-black' : 'text-[#8a96c2] hover:text-white'}`}>{t.icon}<span className="hidden sm:inline">{t.label}</span></button>)}
-          </div>
+        <div className="px-6 shrink-0">
+          <ProductTabs<VaultItemType>
+            label="Secret type"
+            value={type}
+            onChange={(id) => { setType(id); setSaveError(''); }}
+            tabs={TYPE_TABS.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+          />
         </div>
         <form onSubmit={submit} noValidate className="p-6 space-y-4 overflow-y-auto flex-1">
           <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">{type === 'api_key' ? 'Label' : type === 'note' ? 'Title' : 'Name'}{type === 'api_key' && <span className="text-[#3e4a72] ml-1">(optional)</span>}</label><input placeholder={type === 'api_key' ? 'e.g. Production API key' : type === 'password' ? 'e.g. GitHub' : type === 'note' ? 'e.g. Recovery codes' : 'e.g. deploy-key'} className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></div>

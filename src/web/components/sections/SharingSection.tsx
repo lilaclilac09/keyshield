@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Share2, ArrowDownLeft, ArrowUpRight, Plus } from 'lucide-react';
 import { Card } from '../ui/Card';
+import { ProductTabs } from '../ui/ProductTabs';
 import { Button } from '../ui/Button';
 import { Input, Select } from '../ui/Input';
 import { Badge } from '../ui/Badge';
@@ -32,8 +33,17 @@ export const SharingSection: React.FC<{ addr: string }> = ({ addr }) => {
   return (
     <div className="space-y-4">
       <Card title="Sharing" description="Grant teammates read access to specific keys without showing the plaintext." headerRight={<button onClick={refresh} disabled={loading} className="text-[#8a96c2] hover:text-white"><Share2 size={13} className={loading ? 'animate-spin' : ''} /></button>}>
-        <div className="flex gap-1 rounded-lg border border-[#243365] bg-[#0e1631] p-1 text-[11px] mb-4">
-          {(['incoming', 'outgoing', 'new'] as Tab[]).map(t => <button key={t} onClick={() => setTab(t)} className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${tab === t ? 'bg-white text-black' : 'text-[#a8b3d8] hover:text-white'}`}>{t === 'incoming' ? <ArrowDownLeft size={12} /> : t === 'outgoing' ? <ArrowUpRight size={12} /> : <Plus size={12} />}{t === 'incoming' ? ` Shared with me (${incoming.length})` : t === 'outgoing' ? ` Shared by me (${outgoing.length})` : ' New share'}</button>)}
+        <div className="mb-4">
+          <ProductTabs<Tab>
+            label="Sharing"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'incoming', label: 'Shared with me', count: incoming.length, icon: <ArrowDownLeft size={14} /> },
+              { id: 'outgoing', label: 'Shared by me', count: outgoing.length, icon: <ArrowUpRight size={14} /> },
+              { id: 'new', label: 'New share', icon: <Plus size={14} /> },
+            ]}
+          />
         </div>
 
         {err && <p className="text-[12px] text-red-400">{err}</p>}

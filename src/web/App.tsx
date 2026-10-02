@@ -30,7 +30,7 @@ type Section = 'vault' | 'activity' | 'plan' | 'agents' | 'sharing' | 'sessions'
 
 const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'vault', label: 'Vault', icon: <Key size={14} /> },
-  { id: 'activity', label: 'Activity', icon: <Activity size={14} /> },
+  { id: 'activity', label: 'Spend', icon: <Activity size={14} /> },
   { id: 'plan', label: 'Plan', icon: <CreditCard size={14} /> },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} /> },
   { id: 'sharing', label: 'Sharing', icon: <Share2 size={14} /> },
@@ -44,8 +44,8 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   vault: { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
-  activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
-  plan: { title: 'Plan', subtitle: 'One monthly plan. Calls inside it are included.' },
+  activity: { title: 'Spend', subtitle: 'Monthly plan, ranked by provider' },
+  plan: { title: 'Plans', subtitle: 'Personal, Operate, and Floor' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
