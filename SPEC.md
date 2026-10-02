@@ -256,7 +256,7 @@ Verified against a running local stack (Python `:8001`, Rust `:8000`) on `main` 
 |---|---|---|
 | S1 | `POST /auth/wallet-login` verifies the ed25519 signature **only if** a `signature` field is present. Omitting it mints a valid session for **any** wallet address. | `src/backend/routes/auth.py::wallet_login` |
 | S2 | `X-Dev-Mode: 1` is honoured unconditionally on `/manage/*` and `/vproxy/*`, giving unauthenticated read/write/decrypt access to the shared `default` user's shim vault. | `routes/vault.py::_require_user_id`, `routes/proxy.py::vault_proxy_route` |
-| S3 | `GET /health/mpp` is unauthenticated and echoes the first 6 characters + length of `SERVER_SECRET` and `KS_MPP_SETTLER_KEY`. | `routes/health.py` |
+| S3 | `GET /health/mpp` is unauthenticated. When an env var is set it echoes the first 6 characters + length (`{val[:6]}… ({len} chars)`), including `SERVER_SECRET` and `KS_MPP_SETTLER_KEY`. Unset vars return `null`. | `routes/health.py` |
 | S4 | `GET /sessions` returns full bearer tokens for every session of the user. | `routes/sessions.py` |
 | S5 | `/manage/decrypt/{id}` returns plaintext from the shim; it is reachable in every deployment that exposes `/manage/*`. | `routes/vault.py` |
 
