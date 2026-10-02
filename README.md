@@ -115,7 +115,7 @@ curl -s "$KS_BASE/proxy/openai/v1/models" \
 curl -s "$KS_BASE/vproxy/openai/v1/models" -H "Authorization: Bearer $KS_TOKEN"
 ```
 
-`node dev.cjs` starts web + proxy in one go; its backend command currently fails on import ([SPEC.md §10.3](SPEC.md#103-broken-developer-surface-documentation--code)) — use `npm run dev:api` for the control plane until that is fixed.
+`node dev.cjs` starts web + Rust proxy + the Python control plane (`uvicorn src.backend.app:app` from the repo root). Set `KS_DEV_MODE=1` if you need `X-Dev-Mode` / `/manage/decrypt` locally.
 
 → Full setup: [DEVELOPMENT.md](DEVELOPMENT.md)
 

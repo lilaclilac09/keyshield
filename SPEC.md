@@ -69,9 +69,10 @@ PUT    /manage/vault/{id}    partial update
 DELETE /manage/vault/{id}    delete
 ```
 
-- The request field is **`value`** (not `apiKey`). A body with `apiKey` is accepted but stores an empty value.
+- Caller identity is the Bearer session, or the `X-Dev-Mode: 1` header **when `KS_DEV_MODE` is enabled**. Without that env flag the header is ignored (401).
+- `GET /manage/decrypt/{id}` returns plaintext from the shim **only when `KS_DEV_MODE` is on**; otherwise 403.
+- The request field is **`value`**. `apiKey` / `api_key` are accepted as aliases.
 - The browser extension encrypts client-side when the dashboard has pushed it a vault key (`src/web/lib/vault-key.ts`: wallet signature over `KeyShield Vault Key Derivation v1` → HKDF-SHA256 → AES-256-GCM) and sends `cipher`/`iv`/`cipher_v: 1` with no `value`; without a registered key it falls back to plaintext `value`. Encrypted rows are decrypted by the extension only — `/vproxy/*` and the Rust fast path select `value != ''` and skip them.
-- Caller identity is the Bearer session, or the `X-Dev-Mode: 1` header, which maps to the shared user `default`. The dev-mode header is **not gated by environment** today (📋 gate it behind a `KS_DEV_MODE` flag, see §10).
 - Legacy `.enc` vault files (AES-256-GCM, PBKDF2 — the `v2-mvp` format read by `ks-vault`) have no writer in the current codebase.
 
 ---
@@ -87,56 +88,64 @@ DELETE /manage/vault/{id}    delete
 Payload (plain JSON, readable by the holder):
 
 ```json
-{ "uid": "<user_id>", "exp": 1700000000, "iat": 1699996400, "nbf": 1699996400 }
+{ "uid": "<user_id>", "exp": 1700000000, "iat": 1699996400, "nbf": 1699996400,
+  "aid": 12, "provider": "openai", "scope": ["openai"], "spend_cap_usd": 10.0, "vault_key_id": "ks_…" }
 ```
 
-- `user_id` is the Solana wallet address (wallet login), the passkey user id, or — for agent login — the **owner's** wallet address.
+Optional delegated claims (`aid`, `provider`, `scope`, `spend_cap_usd`, `vault_key_id`) are included when minted by `/auth/agent-login`. Owner wallet/passkey tokens omit them and keep full access.
+
+- `uid` is the Solana wallet address (wallet login), the passkey user id, or — for agent login — the **owner's** wallet address.
 - The token is valid only while a matching row exists in `sessions.db` and `exp` has not passed, so deleting the row revokes it immediately.
+- An agent token with `aid` is rejected as soon as that agent is on the CRL (`DELETE /agents/{id}`), even if the session row is still present.
 - A missing `SERVER_SECRET` falls back to an insecure default with a warning; set it in every deployment.
+- The `ksv2_…` prefix is still not emitted (📋).
 
-Implementation: `src/backend/auth/session.py`; read-only mirror in `src/proxy/crates/ks-session`.
+Implementation: `src/backend/auth/session.py`; read-only mirror in `src/proxy/crates/ks-session` (Rust does not yet parse the extra claims).
 
-### 4.2 Scoped token (target) 📋
+### 4.2 Scoped token ⚠️
 
-The protocol target is a provider-scoped, capped token:
+Optional claims on the HMAC payload (not a `ksv2_` wrapper):
 
 ```json
 {
-  "sub": "<user_id>",
+  "uid": "<owner_wallet>",
+  "aid": 12,
   "vault_key_id": "<provider_key_ref>",
   "provider": "openai",
-  "scope": ["chat.completions"],
+  "scope": ["openai"],
   "spend_cap_usd": 10.00,
   "exp": 1700000000,
-  "iat": 1699996400
+  "iat": 1699996400,
+  "nbf": 1699996400
 }
 ```
 
-None of `vault_key_id`, `provider`, `scope`, or `spend_cap_usd` are carried by the current token, and the `ksv2_…` prefix used in older docs is not emitted anywhere. Today a token grants access to every upstream the user has a key for.
+Python `/proxy` and `/vproxy` enforce `provider`, `scope`, and `spend_cap_usd`. Rust `ks-proxy` still treats every valid session as owner-wide (📋). The `ksv2_…` prefix is not emitted.
 
 ---
 
 ## 5. Delegation
 
-### 5.1 Current behaviour ⚠️
+### 5.1 Current behaviour ✅
 
 An owner registers an agent's ed25519 public key (`POST /agents/register`, stored in `agent_keys` with a free-form `scopes` string). The agent then authenticates:
 
 ```
 POST /auth/agent-challenge              → { challenge, nonce }
-POST /auth/agent-login                  → { token }
-     body: { pubkeyB58, signature, challenge, nonce }
+POST /auth/agent-login                  → { token, aid, provider, scope, spend_cap_usd }
+     body: { pubkeyB58, signature, challenge, nonce,
+             provider?, scope?, spend_cap_usd?, vault_key_id? }
 ```
 
-- The signature **is required** for agent login (401 without it).
-- The returned token is minted for the **owner's wallet** — it is indistinguishable from the owner's own session and carries no scope subset or spend cap.
-- Revoking the agent (`DELETE /agents/{id}`) prevents *new* logins; tokens already issued stay valid until expiry or until the owner revokes sessions (§7).
+- The signature **is required** for agent login (401 without it). Wallet login now also requires a signature (S1).
+- The returned token is minted for the **owner's wallet** and carries `aid` plus any requested `provider` / `scope` (must be a subset of the registration) / `spend_cap_usd` / `vault_key_id`.
+- Revoking the agent (`DELETE /agents/{id}`) writes the CRL and deletes the registration row. `session.get()` returns `None` for that `aid` on the next request — independent of the owner's other sessions.
 
-### 5.2 Target behaviour 📋
+### 5.2 Target behaviour (remaining) 📋
 
-- Scope is a strict subset of the owner's permissions, enforced by the proxy
-- Spending cap is enforced against accumulated usage
-- The delegated token is revocable independently of the owner's sessions, with the next request returning `401`
+- Rust `ks-proxy` also enforces `provider` / `scope` / `spend_cap_usd`
+- `ksv2_` encoding
+- Path-level scopes such as `chat.completions` (substring match works today; not a formal ACL)
 
 Agent code receives only a token. Which component ultimately holds the raw key depends on the proxy path (§6).
 
@@ -164,11 +173,12 @@ Client → POST /proxy/openai/v1/chat/completions
 
 Proxy:
   1. Read the upstream key from the header (never persisted or logged)
-  2. Resolve provider config (base URL, auth style)
-  3. Serve from the in-memory TTL cache if the call is cacheable (§8)
-  4. Forward to upstream; retry once through the x402 interceptor on 402
-  5. Record usage (tokens, cost, latency) against the session user
-  6. Return the upstream response with `x-ks-cache: HIT|MISS`
+  2. Enforce delegated claims if the session has `provider` / `scope` / `spend_cap_usd` / `aid`
+  3. Resolve provider config (base URL, auth style)
+  4. Serve from the in-memory TTL cache if the call is cacheable (§8)
+  5. Forward to upstream; retry once through the x402 interceptor on 402
+  6. Record usage (tokens, cost, latency, agent_id) against the session user
+  7. Return the upstream response with `x-ks-cache: HIT|MISS`
 ```
 
 The **client** decrypts the vault entry (Path A) and sends the raw key per request. The server holds it for one round-trip only. Consequence: in this path the agent process does see the raw key in memory; "never sees the key" holds for the server, not the agent.
@@ -182,21 +192,21 @@ Same as 6.1, but the key is resolved server-side from `vault_items` by `(user_id
 ```
 Client → POST /proxy/helius/
          Authorization: Bearer <session>          (required — 401 if missing)
+         X-Upstream-API-Key: <raw key>            (optional — Path A; used if present)
 
 ks-proxy:
   1. Validate the session against sessions.db (read-only)
-  2. helius only: look up the user's key in vault_shim.db and serve a curated
-     JSON-RPC method list through ks-helius (moka cache + single-flight dedup)
-  3. Otherwise resolve: legacy .enc vault entry → platform env key
-     (OPENAI_API_KEY, HELIUS_API_KEY, …) → 401 if neither
-  4. Platform key + zero balance → 402 with an x402 payment-required body
-  5. Forward, add x-ks-cache / x-ks-key-type, fire-and-forget usage log to Python
-  6. Everything that is not /proxy/* or /manage/batch falls through to Python
+  2. If X-Upstream-API-Key is set, use it (key type `user`)
+  3. helius: ks-helius cached_call (header key or vault_shim.db) for the curated method list
+  4. Otherwise resolve: legacy .enc vault entry → platform env key → 401 if neither
+  5. Platform key + zero balance → 402 with an x402 payment-required body
+  6. Forward, add x-ks-cache / x-ks-key-type, fire-and-forget usage log to Python
+  7. Everything that is not /proxy/* or /manage/batch falls through to Python
 ```
 
-- Ignores `X-Upstream-API-Key`; the Path A client flow therefore does **not** work through the Rust proxy today.
-- Only reachable in local development (`:8000`). The documented production topology (dashboard → Railway FastAPI, sync worker on Cloudflare) does not deploy `ks-proxy`.
-- Fixtures: byte-parity "oracle" tests in `src/proxy/crates/*/tests` compare against the Python implementation.
+- Path A header injection works on both Python and Rust.
+- Only reachable in local development (`:8000`). Production (dashboard → Railway FastAPI, sync worker on Cloudflare) does not deploy `ks-proxy`.
+- Does not yet enforce delegated `provider` / `scope` / `spend_cap_usd` claims (Python does).
 
 Raw key exists in server memory for the duration of one upstream HTTP round-trip in all three paths.
 
@@ -209,11 +219,11 @@ Raw key exists in server memory for the duration of one upstream HTTP round-trip
 | `POST /auth/logout` | deletes the caller's session row — token is rejected on the next request | ✅ |
 | `DELETE /sessions/{token_prefix}` | revoke another session of the same user | ✅ |
 | `POST /auth/delete-account` | deletes all sessions and tombstones the user in `deleted_users` | ✅ (Python) ⚠️ (`ks-session` checks the sessions table but not `deleted_users`) |
-| `DELETE /agents/{id}` | blocks future agent logins | ✅ |
+| `DELETE /agents/{id}` | blocks future agent logins **and** rejects already-issued tokens with that `aid` | ✅ |
 | Per-provider "revoke all tokens" (key rotation equivalent) | — | 📋 |
-| Independent revocation of a delegated token | — | 📋 (agent tokens are owner tokens, §5.1) |
+| Independent revocation of a delegated token | next request 401 via CRL + `aid` | ✅ |
 
-`GET /sessions` currently returns the **full token string** of every active session to the caller; it should return only the prefix (📋).
+`GET /sessions` returns a `token_prefix` only (not the full bearer).
 
 ---
 
@@ -250,38 +260,38 @@ Cache characteristics:
 
 Verified against a running local stack (Python `:8001`, Rust `:8000`) on `main` at `e28c24830`.
 
-### 10.1 Security — fix before any production use
+### 10.1 Security (fixed this change)
 
-| # | Finding | Where |
+| # | Finding | Fix |
 |---|---|---|
-| S1 | `POST /auth/wallet-login` verifies the ed25519 signature **only if** a `signature` field is present. Omitting it mints a valid session for **any** wallet address. | `src/backend/routes/auth.py::wallet_login` |
-| S2 | `X-Dev-Mode: 1` is honoured unconditionally on `/manage/*` and `/vproxy/*`, giving unauthenticated read/write/decrypt access to the shared `default` user's shim vault. | `routes/vault.py::_require_user_id`, `routes/proxy.py::vault_proxy_route` |
-| S3 | `GET /health/mpp` is unauthenticated. When an env var is set it echoes the first 6 characters + length (`{val[:6]}… ({len} chars)`), including `SERVER_SECRET` and `KS_MPP_SETTLER_KEY`. Unset vars return `null`. | `routes/health.py` |
-| S4 | `GET /sessions` returns full bearer tokens for every session of the user. | `routes/sessions.py` |
-| S5 | `/manage/decrypt/{id}` returns plaintext from the shim; it is reachable in every deployment that exposes `/manage/*`. | `routes/vault.py` |
+| S1 | `POST /auth/wallet-login` minted a session without a signature | Signature + `walletAddress` are required; 401 otherwise |
+| S2 | `X-Dev-Mode: 1` honoured in every environment | Only when `KS_DEV_MODE` is `1`/`true`/`yes`/`on` |
+| S3 | `GET /health/mpp` echoed secret prefixes | Unauthenticated still, but values are booleans (`true`/`false`) |
+| S4 | `GET /sessions` returned full bearer tokens | Response has `token_prefix` only |
+| S5 | `/manage/decrypt/{id}` reachable in every deploy | 403 unless `KS_DEV_MODE` is on |
 
 ### 10.2 Protocol gaps (spec → code)
 
 | Area | Spec target | Today |
 |---|---|---|
-| Token format | `ksv2_<base58>` with provider / scope / spend cap | `payload.hmac`, `{uid, exp, iat, nbf}` only |
-| Delegation | scoped subset + independent revocation | agent receives an owner-equivalent token |
-| Spend cap | enforced by proxy | tracked in `usage` tables; x402 402 only on platform keys in `ks-proxy` |
-| Path A through Rust | one proxy contract | Rust ignores `X-Upstream-API-Key` |
+| Token format | `ksv2_<base58>` | still `payload.hmac`; extra claims now ride in the JSON |
+| Delegation | scoped subset + independent revocation | Python proxy + `aid` CRL ✅; Rust does not enforce claims 📋 |
+| Spend cap | enforced by proxy | Python sums `usage_log` since `iat` ✅ |
+| Path A through Rust | one proxy contract | Rust honours `X-Upstream-API-Key` ✅ |
 | Disk cache tier | memory + disk | memory only |
-| `/manage/*` removal | announced in AGENTS.md / roadmap | routes restored in `59c8bebac` and still used by the extension |
+| `/manage/*` removal | announced in older docs | kept as the extension shim; Path A is separate |
 
 ### 10.3 Broken developer surface (documentation ≠ code)
 
-- `node dev.cjs` starts the backend with `uvicorn app:app` from `src/backend/` → `ImportError: attempted relative import` (`app.py` uses relative imports; the working command is `uvicorn src.backend.app:app` from the repo root).
-- Vite serves the dashboard on **:3000** (`src/web/vite.config.ts`), not :5173 as README / DEVELOPMENT.md / docs/API.md state.
-- `docs/API.md`, the dashboard Developer tab, and both Python SDKs send `apiKey` to `/manage/store`; the backend reads `value`.
-- `packages/sdk-py` calls `/auth/login` (returns 403), `/manage/list`, `/manage/decrypt/{upstream}`, `/manage/secret/{upstream}`, `/manage/batch` — none exist on the Python backend. Its tests import `v2-mvp/src/*`, which was deleted (only `archive/v2-mvp/tests/` remains).
-- `src/sdk/packages/cli` (TypeScript) targets the same removed endpoints.
+- `node dev.cjs` now starts `uvicorn src.backend.app:app` from the repo root (was `app:app` under `src/backend/` → `ImportError`).
+- Vite serves the dashboard on **:3000** (`src/web/vite.config.ts`), not :5173 as DEVELOPMENT.md / docs/API.md still state.
+- `POST /manage/store` accepts `value` and `apiKey` / `api_key`. SDKs and the CLI send both. `docs/API.md` may still show only `apiKey`.
+- `packages/sdk-py` still calls `/auth/login` (403), `/manage/list`, `/manage/decrypt/{upstream}`, `/manage/secret/{upstream}`, `/manage/batch` — none exist on the Python backend. Its tests import `v2-mvp/src/*`, which was deleted (only `archive/v2-mvp/tests/` remains).
+- `src/sdk/packages/cli` still targets some of those removed list/decrypt/secret endpoints.
 - `pip install keyshield` installs an **unrelated** PyPI project; `keyshield-mcp` is not published.
-- Referenced files that do not exist: `keyshield-cli.sh` (AGENTS.md, `GET /install.sh`), `src/_archive/web-v2/` (AGENTS.md), `src/scripts/demo.sh` (`npm run demo`), `scripts/test-store-key.mjs` (Makefile — the file is under `src/scripts/`), `src/proxy/ADR-002-architecture.md`, `src/web/.env.production`, `frontend/` (`playwright.config.ts`), `landing/` (now `sites/landing/`).
-- `AGENTS.md` §3–§11 describe a trading stack that only partly exists. Missing: `trading.feeds` (`PythFeed`, `PRICE_IDS`), `JupiterRouter`, `MonitorAgent`, `parallel_quote_and_analyze()`, the `src.backend.trading.agent` entrypoint. Present: `trading.market_data` (`PriceFeed`, `PriceSignal`, `MarketDataAgent`), `trading.analysis` (`ModelRouter`, `TaskType`, `AnalysisAgent`), `trading.execution` (`ZeroXRouter`, `TitanExecutor`, `ExecutionAgent`), `trading.risk`, `trading.orchestrator` (no `__main__`). The same file states `/manage/*` was removed; it was not.
-- `proxy-helius/` is a diverged copy of `ks-helius` outside both Cargo workspaces; nothing builds it.
+- Referenced files that do not exist: `keyshield-cli.sh` (AGENTS.md, `GET /install.sh`), `src/_archive/web-v2/` (older AGENTS notes), `src/scripts/demo.sh` (`npm run demo`), `scripts/test-store-key.mjs` (Makefile — the file is under `src/scripts/`), `src/proxy/ADR-002-architecture.md`, `src/web/.env.production`, `frontend/` (`playwright.config.ts`), `landing/` (now `sites/landing/`).
+- `AGENTS.md` trading stack: see that file's design-vs-code note.
+- `proxy-helius/` is a stale snapshot; canonical crate is `src/proxy/crates/ks-helius`.
 - `Makefile` `deploy` target still contains debug instrumentation writing to an absolute path under `/Users/aileen/…`.
 
 ### 10.4 Test & CI reality
@@ -290,8 +300,8 @@ Verified against a running local stack (Python `:8001`, Rust `:8000`) on `main` 
 |---|---|
 | Rust proxy unit (`cargo test --lib`) | 27 passed |
 | Rust proxy integration | depends on deleted `v2-mvp` seed scripts (`continue-on-error` in CI) |
-| Solana program (Mollusk) | needs `cargo build-sbf`; **not run by any CI job** |
-| Python backend | 8 passed, 21 skipped (legacy), 1 failed — `test_routes_register` breaks on FastAPI ≥ 0.142 (`_IncludedRouter`); `requirements.txt` has no upper bounds |
+| Solana program (lib unit) | CI job `program-tests` runs `cargo test --lib`; Mollusk needs `cargo build-sbf` (`continue-on-error`) |
+| Python backend | FastAPI pinned `<0.140`; hardening tests cover S1–S5 |
 | `packages/sdk-py`, `tests/integration` | collection errors (missing modules / fixtures) |
 | TypeScript workspaces | agent-sdk 22, cli 68, goat-wallet 6 passed; sync-worker suite fails to load under workerd (`continue-on-error` in CI) |
 | `src/web` typecheck | clean |
