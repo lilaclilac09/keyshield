@@ -106,6 +106,7 @@ export class V2Client {
   ): Promise<void> {
     const res = await this.request('POST', '/manage/store', token, {
       upstream,
+      value: apiKey,
       apiKey,
     });
     if (!res.ok) {

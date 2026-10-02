@@ -108,7 +108,11 @@ describe('V2Client.storeKey / deleteKey', () => {
     const [url, init] = fetchImpl.mock.calls[0] as any;
     expect(url).toBe('http://srv/manage/store');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ upstream: 'openai', apiKey: 'sk-x' });
+    expect(JSON.parse(init.body)).toEqual({
+      upstream: 'openai',
+      value: 'sk-x',
+      apiKey: 'sk-x',
+    });
   });
 
   it('deleteKey hits /manage/secret/<u> with DELETE', async () => {

@@ -53,7 +53,8 @@ if (runAll || services.includes('web')) {
 }
 
 if (runAll || services.includes('backend')) {
-  run('python3', ['-m', 'uvicorn', 'app:app', '--port', '8001', '--reload'], 'src/backend', 'BACKEND');
+  // Must run from repo root: app.py uses relative imports (`from .routes`).
+  run('python3', ['-m', 'uvicorn', 'src.backend.app:app', '--host', '127.0.0.1', '--port', '8001', '--reload'], '.', 'BACKEND');
 }
 
 if (runAll || services.includes('proxy')) {

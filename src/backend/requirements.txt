@@ -1,6 +1,7 @@
 # KeyShield Python control plane dependencies
 
-fastapi>=0.115
+fastapi>=0.115,<0.140
+starlette>=0.37,<1
 uvicorn[standard]>=0.34
 pydantic>=2.10
 # http2 extra installs `h2` — proxy/api_router.py creates

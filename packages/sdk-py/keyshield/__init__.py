@@ -187,7 +187,7 @@ class KeyShield:
     # ── Vault ────────────────────────────────────────────────────────────────
 
     def store(self, upstream: str, api_key: str) -> None:
-        self._authed_post("/manage/store", {"upstream": upstream, "apiKey": api_key})
+        self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
 
     def list_keys(self) -> list[str]:
         return self._authed("GET", "/manage/list")["keys"]
@@ -412,7 +412,7 @@ class AsyncKeyShield:
     # vault
     async def store(self, upstream: str, api_key: str) -> None:
         await self._authed_post(
-            "/manage/store", {"upstream": upstream, "apiKey": api_key}
+            "/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key}
         )
 
     async def list_keys(self) -> list[str]:
@@ -635,7 +635,7 @@ class AgentKeyShield:
         return self._token
 
     def store(self, upstream: str, api_key: str) -> None:
-        self._authed_post("/manage/store", {"upstream": upstream, "apiKey": api_key})
+        self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
 
     def list_keys(self) -> list[str]:
         return self._authed("GET", "/manage/list")["keys"]

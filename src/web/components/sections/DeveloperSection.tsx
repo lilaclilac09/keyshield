@@ -34,8 +34,8 @@ export const DeveloperSection: React.FC = () => {
       <Card title="CLI \u2014 keyshield-cli.sh" headerRight={<a href={`${API_BASE}/static/keyshield-cli.sh`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download \u2192</a>}>
         <div className="space-y-3">
           <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Login & Store</p><CodeBlock code={`bash keyshield-cli.sh login <wallet-address> <passphrase>\nbash keyshield-cli.sh store openai sk-proj-your-openai-key`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy a request</p><CodeBlock code={`curl -sS ${API_BASE}/proxy/openai/v1/models \\\n  -H "Authorization: Bearer ${t}"`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">REST \u2014 store & list</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openai","apiKey":"sk-proj-your-key"}'`} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy a request</p><CodeBlock code={`curl -sS ${API_BASE}/proxy/openai/v1/models \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "X-Upstream-API-Key: $OPENAI_API_KEY"`} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">REST \u2014 store & list</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openai","value":"sk-proj-your-key"}'`} /></div>
         </div>
       </Card>
 
@@ -52,7 +52,7 @@ export const DeveloperSection: React.FC = () => {
             { m: 'POST', p: '/auth/logout', d: 'Revoke current session' },
             { m: 'GET', p: '/manage/vault', d: 'List stored upstream keys' },
             { m: 'POST', p: '/manage/store', d: 'Encrypt & store an API key' },
-            { m: 'GET', p: '/manage/decrypt/{upstream}', d: 'Decrypt a stored key' },
+            { m: 'GET', p: '/manage/decrypt/{id}', d: 'Plaintext (KS_DEV_MODE only)' },
             { m: 'DELETE', p: '/manage/secret/{upstream}', d: 'Delete a stored key' },
             { m: 'POST', p: '/proxy/{upstream}/{path}', d: 'Zero-trust API proxy' },
             { m: 'GET', p: '/agents/list', d: 'List registered agents' },
