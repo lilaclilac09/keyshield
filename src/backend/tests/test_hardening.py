@@ -185,3 +185,71 @@ def test_agent_token_revoked_independently():
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 401
+
+
+def test_minted_token_has_ksv2_prefix_and_round_trips():
+    token = sess_mod.create_token("owner-ksv2", "pw")
+    assert token.startswith("ksv2_")
+    assert sess_mod.get(token) is not None
+    assert sess_mod.get(token)["user_id"] == "owner-ksv2"
+    canon = sess_mod.canonical_token(token)
+    assert not canon.startswith("ksv2_")
+    assert sess_mod.get(canon) is not None
+    valid, err = sess_mod.verify_token(token)
+    assert valid is True and err is None
+
+
+def test_scope_bare_token_does_not_match_path_substring():
+    from src.backend.auth.delegation import check_proxy_access
+
+    sess = {"user_id": "u", "scope": ["v1"]}
+    ok, _err, status = check_proxy_access(sess, "openai", "v1/models")
+    assert ok is False
+    assert status == 403
+
+    sess = {"user_id": "u", "scope": ["/v1/models"]}
+    ok, _err, status = check_proxy_access(sess, "openai", "v1/models")
+    assert ok is True
+
+
+def test_vault_list_and_secret_aliases(monkeypatch):
+    monkeypatch.setenv("KS_DEV_MODE", "1")
+    client = _client()
+    token, _ = _signed_wallet(client)
+    h = {"Authorization": f"Bearer {token}"}
+    store = client.post(
+        "/manage/store",
+        headers=h,
+        json={"upstream": "openai", "value": "sk-alias"},
+    )
+    assert store.status_code == 200
+    listed = client.get("/manage/list", headers=h)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert "openai" in body["keys"]
+    assert any(i.get("upstream") == "openai" for i in body["items"])
+    dec = client.get("/manage/decrypt/openai", headers=h)
+    assert dec.status_code == 200
+    assert dec.json()["key"] == "sk-alias"
+    assert dec.json()["value"] == "sk-alias"
+    gone = client.delete("/manage/secret/openai", headers=h)
+    assert gone.status_code == 200
+    listed2 = client.get("/manage/list", headers=h)
+    assert listed2.json()["keys"] == []
+
+
+def test_revoke_all_tokens_for_provider():
+    client = _client()
+    owner_token, wallet = _signed_wallet(client)
+    scoped = sess_mod.create_token(wallet, "pw", provider="openai")
+    other = sess_mod.create_token(wallet, "pw", provider="anthropic")
+    owner = sess_mod.create_token(wallet, "pw")
+    r = client.delete(
+        "/sessions/provider/openai",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["revoked"] >= 1
+    assert sess_mod.get(scoped) is None
+    assert sess_mod.get(other) is not None
+    assert sess_mod.get(owner) is not None

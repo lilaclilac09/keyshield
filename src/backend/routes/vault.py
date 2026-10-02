@@ -142,6 +142,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         tags = _json.loads(row["tags"] or "[]")
     except Exception:
         tags = []
+    created = row["created_at"]
+    updated = row["updated_at"]
     return {
         "id": row["id"],
         "name": row["name"],
@@ -152,8 +154,10 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "iv": row["iv"] or "",
         "cipher_v": row["cipher_v"] or 0,
         "tags": tags,
-        "created_at": _iso(row["created_at"]),
-        "updated_at": _iso(row["updated_at"]),
+        "created_at": _iso(created),
+        "updated_at": _iso(updated),
+        "createdAt": created,
+        "updatedAt": updated,
         "expires_at": _iso(row["expires_at"]) if row["expires_at"] else None,
     }
 
@@ -169,6 +173,28 @@ async def vault_list(request: Request):
             (uid,),
         ).fetchall()
     return JSONResponse([_row_to_dict(r) for r in rows])
+
+
+@router.get("/manage/list")
+async def vault_list_alias(request: Request):
+    """SDK/CLI alias: ``{keys, items}`` wrapping ``GET /manage/vault``."""
+    uid, err = _require_user_id(request)
+    if err:
+        return err
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC",
+            (uid,),
+        ).fetchall()
+    items = [_row_to_dict(r) for r in rows]
+    keys: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        upstream = item.get("upstream") or ""
+        if upstream and upstream not in seen:
+            seen.add(upstream)
+            keys.append(upstream)
+    return JSONResponse({"keys": keys, "items": items})
 
 
 @router.post("/manage/store")
@@ -241,12 +267,42 @@ async def vault_decrypt(item_id: str, request: Request):
         return err
     with _db() as conn:
         row = conn.execute(
-            "SELECT value FROM vault_items WHERE id = ? AND user_id = ?",
+            "SELECT id, upstream, value FROM vault_items WHERE id = ? AND user_id = ?",
             (item_id, uid),
         ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT id, upstream, value FROM vault_items "
+                "WHERE upstream = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1",
+                (item_id, uid),
+            ).fetchone()
     if not row:
         return JSONResponse({"detail": "item not found"}, status_code=404)
-    return JSONResponse({"id": item_id, "value": row["value"] or ""})
+    value = row["value"] or ""
+    return JSONResponse(
+        {
+            "id": row["id"],
+            "upstream": row["upstream"] or item_id,
+            "value": value,
+            "key": value,
+        }
+    )
+
+
+@router.delete("/manage/secret/{upstream}")
+async def vault_delete_by_upstream(upstream: str, request: Request):
+    """SDK/CLI alias: delete every vault row for this upstream."""
+    uid, err = _require_user_id(request)
+    if err:
+        return err
+    with _db() as conn:
+        cur = conn.execute(
+            "DELETE FROM vault_items WHERE user_id = ? AND upstream = ?",
+            (uid, upstream),
+        )
+    if cur.rowcount == 0:
+        return JSONResponse({"detail": "item not found"}, status_code=404)
+    return JSONResponse({"ok": True})
 
 
 @router.delete("/manage/vault/{item_id}")

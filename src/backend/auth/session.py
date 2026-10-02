@@ -6,8 +6,10 @@ Security upgrades:
     so a token survives server restarts (no dependency on the DB being up).
   - The session DB stores only user metadata (userId, enc_password) for
     auth operations that need the password (e.g., store_key, decrypt_key).
-  - Token format: <base64_payload>.<hmac> where payload = {"uid":..., "exp":..., "iat":...}
+  - Token format: ksv2_<base64_payload>.<hmac> (public) / <base64_payload>.<hmac> (stored)
+    where payload = {"uid":..., "exp":..., "iat":...}
   - HMAC key is derived from SERVER_SECRET (configurable via env).
+  - Both the prefixed public form and the unprefixed canonical form are accepted.
 
 Token lifecycle:
   1. User logs in → server issues token with HMAC
@@ -36,6 +38,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 DB_PATH = Path(__file__).parent.parent / "sessions.db"
 SESSION_TTL = 24 * 3600  # 24 hours
+TOKEN_PREFIX = "ksv2_"
 
 
 def _db() -> sqlite3.Connection:
@@ -97,6 +100,48 @@ def _decrypt(data: bytes) -> str:
 # ─── Token format ──────────────────────────────────────────────────────────
 
 
+def canonical_token(token: str) -> str:
+    """Strip the public ``ksv2_`` prefix. Stored rows use this form."""
+    if token.startswith(TOKEN_PREFIX):
+        return token[len(TOKEN_PREFIX) :]
+    return token
+
+
+def public_token(token: str) -> str:
+    """Mint/return the documented public form ``ksv2_<payload>.<hmac>``."""
+    canon = canonical_token(token)
+    return f"{TOKEN_PREFIX}{canon}"
+
+
+def _b64json(payload_str: str) -> dict:
+    padding = "=" * ((4 - len(payload_str) % 4) % 4)
+    return json.loads(urlsafe_b64decode(payload_str + padding))
+
+
+def _hmac_ok(payload_str: str, sig: str) -> bool:
+    expected = _sign_token(payload_str)
+    try:
+        return _hmac.compare_digest(sig, expected)
+    except ValueError:
+        return False
+
+
+def _decode_payload(token: str) -> dict | None:
+    """HMAC-verify and JSON-decode a public or canonical token. No expiry check."""
+    if not token:
+        return None
+    canon = canonical_token(token)
+    if "." not in canon:
+        return None
+    payload_str, sig = canon.rsplit(".", 1)
+    if not _hmac_ok(payload_str, sig):
+        return None
+    try:
+        return _b64json(payload_str)
+    except Exception:
+        return None
+
+
 def _make_token_payload(
     user_id: str,
     expires_at: int,
@@ -148,7 +193,9 @@ def create_token(
     """
     Create a self-contained session token.
 
-    Token format: <payload>.<hmac>
+    Public token format: ksv2_<payload>.<hmac>
+    Stored (canonical) form: <payload>.<hmac> — both proxies strip the prefix.
+
     Payload contains: uid, exp, iat, nbf, plus optional delegated claims
     (aid, provider, scope, spend_cap_usd, vault_key_id).
     HMAC verifies the payload hasn't been tampered with.
@@ -166,9 +213,9 @@ def create_token(
         vault_key_id=vault_key_id,
     )
     sig = _sign_token(payload)
-    token = f"{payload}.{sig}"
+    canonical = f"{payload}.{sig}"
 
-    # Store password in DB (needed for key management operations)
+    # Store the unprefixed form so Rust/Python lookups share one key.
     with _db() as conn:
         conn.execute(
             """
@@ -179,9 +226,9 @@ def create_token(
                 enc_pass = excluded.enc_pass,
                 expires_at = excluded.expires_at
         """,
-            (token, user_id, _encrypt(password), expires_at),
+            (canonical, user_id, _encrypt(password), expires_at),
         )
-    return token
+    return public_token(canonical)
 
 
 def get(token: str) -> dict | None:
@@ -196,22 +243,8 @@ def get(token: str) -> dict | None:
 
     Returns: {"user_id": str, "password": str} on success.
     """
-    if not token or "." not in token:
-        return None
-
-    parts = token.rsplit(".", 1)
-    payload_str, sig = parts[0], parts[1]
-
-    # Verify HMAC
-    expected_sig = _sign_token(payload_str)
-    if not _hmac.compare_digest(sig, expected_sig):
-        return None
-
-    # Decode payload and check expiry
-    padding = "=" * (4 - len(payload_str) % 4) if len(payload_str) % 4 else ""
-    try:
-        data = json.loads(urlsafe_b64decode(payload_str + padding))
-    except Exception:
+    data = _decode_payload(token)
+    if not data:
         return None
 
     now = int(time.time())
@@ -221,6 +254,7 @@ def get(token: str) -> dict | None:
         return None  # not yet valid
 
     user_id = data["uid"]
+    canon = canonical_token(token)
 
     # Check if user was soft-deleted (belt-and-braces)
     with _db() as conn:
@@ -230,11 +264,10 @@ def get(token: str) -> dict | None:
         if deleted:
             return None
 
-    # Get encrypted password from DB
-    with _db() as conn:
+        # Accept public, canonical, or a legacy row stored with the prefixed form.
         row = conn.execute(
-            "SELECT enc_pass FROM sessions WHERE token = ? AND expires_at > ?",
-            (token, now),
+            "SELECT enc_pass FROM sessions WHERE token IN (?, ?) AND expires_at > ?",
+            (canon, token, now),
         ).fetchone()
 
     if not row:
@@ -264,21 +297,11 @@ def verify_token(token: str) -> tuple[bool, Optional[str]]:
     Use this when the server is in read-only mode or during migration.
     Error reasons: "expired", "tampered", "malformed", "deleted"
     """
-    if not token or "." not in token:
-        return False, "malformed"
-
-    parts = token.rsplit(".", 1)
-    payload_str, sig = parts[0], parts[1]
-
-    expected_sig = _sign_token(payload_str)
-    if not _hmac.compare_digest(sig, expected_sig):
+    data = _decode_payload(token)
+    if not data:
+        if not token or "." not in canonical_token(token):
+            return False, "malformed"
         return False, "tampered"
-
-    padding = "=" * (4 - len(payload_str) % 4) if len(payload_str) % 4 else ""
-    try:
-        data = json.loads(urlsafe_b64decode(payload_str + padding))
-    except Exception:
-        return False, "malformed"
 
     now = int(time.time())
     if now > data.get("exp", 0):
@@ -301,8 +324,37 @@ def verify_token(token: str) -> tuple[bool, Optional[str]]:
 
 
 def delete(token: str) -> None:
+    canon = canonical_token(token)
     with _db() as conn:
-        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.execute(
+            "DELETE FROM sessions WHERE token IN (?, ?)",
+            (canon, token),
+        )
+
+
+def delete_for_provider(user_id: str, provider: str) -> int:
+    """Revoke every session whose payload ``provider`` claim matches.
+
+    Owner-wide tokens (no ``provider`` claim) are left intact. Returns the
+    number of rows deleted.
+    """
+    want = (provider or "").strip().lower()
+    if not user_id or not want:
+        return 0
+    deleted = 0
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT token FROM sessions WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        for (tok,) in rows:
+            data = _decode_payload(tok)
+            if not data:
+                continue
+            claim = str(data.get("provider") or "").strip().lower()
+            if claim == want:
+                conn.execute("DELETE FROM sessions WHERE token = ?", (tok,))
+                deleted += 1
+    return deleted
 
 
 def delete_all_for_user(user_id: str) -> int:
@@ -328,10 +380,11 @@ def is_deleted(user_id: str) -> bool:
 
 def extend_token(token: str, extra_secs: int = 86400) -> bool:
     """Extend token expiry by extra_secs. Returns True if extended."""
+    canon = canonical_token(token)
     with _db() as conn:
         cur = conn.execute(
-            "UPDATE sessions SET expires_at = expires_at + ? WHERE token = ?",
-            (extra_secs, token),
+            "UPDATE sessions SET expires_at = expires_at + ? WHERE token IN (?, ?)",
+            (extra_secs, canon, token),
         )
         return cur.rowcount > 0
 

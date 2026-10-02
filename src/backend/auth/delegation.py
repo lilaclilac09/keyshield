@@ -33,6 +33,17 @@ def _upstream_matches(constraint: str, upstream: str) -> bool:
     return False
 
 
+def _is_path_scope(item: str) -> bool:
+    """Path-level ACL items must look like a path, not a free substring.
+
+    ``openai`` matches the upstream. ``/v1/chat`` or ``chat.completions`` or
+    ``helius:getBalance`` match inside the request path. A bare token like
+    ``v1`` does **not** match every path that happens to contain those
+    letters — that was the old loophole.
+    """
+    return any(ch in item for ch in "/.:")
+
+
 def scope_allows(scopes: list[str], upstream: str, path: str) -> bool:
     if not scopes or "*" in scopes:
         return True
@@ -41,7 +52,7 @@ def scope_allows(scopes: list[str], upstream: str, path: str) -> bool:
         if _upstream_matches(item, upstream):
             return True
         needle = item.strip().lower()
-        if needle and needle in path_l:
+        if needle and _is_path_scope(needle) and needle in path_l:
             return True
     return False
 

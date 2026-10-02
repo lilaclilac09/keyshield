@@ -75,8 +75,10 @@ async def list_sessions(request: Request):
         ).fetchall()
 
         result = []
+        current_canon = sess_mod.canonical_token(current_token)
         for row in rows:
-            token_prefix = row["token"][:8] if row["token"] else ""
+            stored = row["token"] or ""
+            token_prefix = stored[:8]
             result.append(
                 {
                     "id": token_prefix,
@@ -87,13 +89,25 @@ async def list_sessions(request: Request):
                     "device": _detect_device(_get_ua(request)),
                     "last_active_at": now,
                     "expires_at": row["expires_at"],
-                    "is_current": bool(current_token.startswith(token_prefix)),
+                    "is_current": current_canon == stored,
                 }
             )
     finally:
         conn.close()
 
     return JSONResponse(result)
+
+
+@router.delete("/sessions/provider/{provider}")
+async def revoke_provider_sessions(provider: str, request: Request):
+    """Revoke every delegated token scoped to ``provider`` for this user."""
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    from ..auth import session as sess_mod
+
+    n = sess_mod.delete_for_provider(sess["user_id"], provider)
+    return JSONResponse({"ok": True, "revoked": n, "provider": provider})
 
 
 @router.delete("/sessions/{token_prefix}")
@@ -104,10 +118,14 @@ async def revoke_session(token_prefix: str, request: Request):
         return JSONResponse({"detail": "unauthorized"}, status_code=401)
 
     user_id = sess["user_id"]
-    current_token = request.headers.get("Authorization", "")[7:]
+    from ..auth import session as sess_mod
+
+    current_canon = sess_mod.canonical_token(
+        request.headers.get("Authorization", "")[7:]
+    )
 
     # Don't allow revoking the current session
-    if current_token.startswith(token_prefix):
+    if current_canon.startswith(token_prefix):
         return JSONResponse({"detail": "cannot revoke current session"}, status_code=400)
 
     conn = _db()
