@@ -10,6 +10,23 @@ import { grantShare, revokeShare, listIncomingShares, listOutgoingShares, type S
 
 type Tab = 'incoming' | 'outgoing' | 'new';
 
+/** `/manage/vault` returns a list of items. An array's `.keys` is a method, so it must never be passed to setState. */
+function vaultKeyNames(payload: unknown): string[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === 'object' && Array.isArray((payload as { keys?: unknown }).keys)
+      ? (payload as { keys: unknown[] }).keys
+      : [];
+  return rows.flatMap((row) => {
+    if (typeof row === 'string' && row) return [row];
+    if (row && typeof row === 'object') {
+      const name = (row as { name?: unknown; upstream?: unknown }).name ?? (row as { upstream?: unknown }).upstream;
+      if (typeof name === 'string' && name) return [name];
+    }
+    return [];
+  });
+}
+
 export const SharingSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [tab, setTab] = useState<Tab>('incoming');
   const [incoming, setIncoming] = useState<ShareRow[]>([]);
@@ -24,8 +41,8 @@ export const SharingSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [stub, setStub] = useState('');
   const [keys, setKeys] = useState<string[]>([]);
 
-  const refresh = useCallback(async () => { setLoading(true); setErr(''); try { const [inc, out] = await Promise.all([listIncomingShares(), listOutgoingShares()]); setIncoming(inc); setOutgoing(out); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed'); } finally { setLoading(false); } }, []);
-  useEffect(() => { refresh(); (async () => { try { const r = await apiFetch('/manage/vault'); if (r.ok) { const d = await r.json(); setKeys(d.keys ?? []); if (!keyName && (d.keys ?? []).length > 0) setKeyName((d.keys ?? [])[0]); } } catch {} })(); }, [refresh]);
+  const refresh = useCallback(async () => { setLoading(true); setErr(''); try { const [inc, out] = await Promise.all([listIncomingShares(), listOutgoingShares()]); setIncoming(Array.isArray(inc) ? inc : []); setOutgoing(Array.isArray(out) ? out : []); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed'); } finally { setLoading(false); } }, []);
+  useEffect(() => { refresh(); (async () => { try { const r = await apiFetch('/manage/vault'); if (r.ok) { const names = vaultKeyNames(await r.json()); setKeys(names); if (!keyName && names.length > 0) setKeyName(names[0]); } } catch {} })(); }, [refresh]);
 
   const submit = async () => { if (!keyName || !recipient || recipient === addr) return; setSubmitting(true); setErr(''); setSuccess(''); setStub(''); try { const input = { key_name: keyName, recipient_user_id: recipient, expires_at: expiresStr ? Math.floor(new Date(expiresStr).getTime() / 1000) : undefined }; const r = await grantShare(input); if (r.status === 501) { setStub(r.detail || 'Sharing not yet implemented.'); } else { setSuccess(`Shared ${keyName} with ${recipient.slice(0, 12)}\u2026`); setRecipient(''); await refresh(); } } catch (e) { setErr(e instanceof Error ? e.message : 'Share failed'); } finally { setSubmitting(false); } };
   const handleRevoke = async (id: number) => { try { await revokeShare(id); await refresh(); } catch {} };
