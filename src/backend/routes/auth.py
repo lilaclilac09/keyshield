@@ -153,13 +153,17 @@ async def agent_login(request: Request):
     if req_scope is not None:
         requested = parse_scope_list(req_scope)
         if registered_scopes != ["*"] and not set(requested).issubset(set(registered_scopes)):
-            return JSONResponse({"error": "requested scope exceeds agent registration"}, status_code=403)
+            return JSONResponse(
+                {"error": "requested scope exceeds agent registration"}, status_code=403
+            )
         token_scope = requested
     elif registered_scopes != ["*"]:
         token_scope = registered_scopes
 
     if req_provider and registered_scopes != ["*"] and req_provider not in registered_scopes:
-        return JSONResponse({"error": "requested provider exceeds agent registration"}, status_code=403)
+        return JSONResponse(
+            {"error": "requested provider exceeds agent registration"}, status_code=403
+        )
 
     spend_cap = None
     if req_cap is not None and req_cap != "":

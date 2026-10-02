@@ -122,9 +122,7 @@ async def revoke_session(token_prefix: str, request: Request):
     user_id = sess["user_id"]
     from ..auth import session as sess_mod
 
-    current_canon = sess_mod.canonical_token(
-        request.headers.get("Authorization", "")[7:]
-    )
+    current_canon = sess_mod.canonical_token(request.headers.get("Authorization", "")[7:])
 
     # Don't allow revoking the current session
     if current_canon.startswith(token_prefix):

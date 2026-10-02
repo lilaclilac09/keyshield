@@ -82,6 +82,9 @@ jobs:
   python-backend:
     name: Python backend smoke test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     # Lightweight gate: confirms the FastAPI app imports cleanly + tests pass.
     # Railway builds the Docker image on push to main; this job exists so PRs
     # fail fast on broken imports before Railway's build cycle catches them.

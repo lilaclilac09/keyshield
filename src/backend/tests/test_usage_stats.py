@@ -12,12 +12,10 @@ from src.backend.routes import billing as billing_mod
 
 
 def test_stats_rows_unwraps_nested_and_list():
-    assert billing_mod._stats_rows({"stats": [{"upstream": "openai"}]}) == [
-        {"upstream": "openai"}
+    assert billing_mod._stats_rows({"stats": [{"upstream": "openai"}]}) == [{"upstream": "openai"}]
+    assert billing_mod._stats_rows({"stats": {"stats": [{"upstream": "groq"}]}}) == [
+        {"upstream": "groq"}
     ]
-    assert billing_mod._stats_rows(
-        {"stats": {"stats": [{"upstream": "groq"}]}}
-    ) == [{"upstream": "groq"}]
     assert billing_mod._stats_rows([{"upstream": "x"}]) == [{"upstream": "x"}]
     assert billing_mod._stats_rows(None) == []
     assert billing_mod._stats_rows({"stats": "nope"}) == []

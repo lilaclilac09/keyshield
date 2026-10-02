@@ -178,7 +178,9 @@ class KeyShield:
         Encrypt and store an API key.
         upstream: openai | anthropic | mistral | cohere | groq | helius
         """
-        self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
+        self._authed_post(
+            "/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key}
+        )
 
     def list_keys(self) -> list[str]:
         """Return the list of upstream names you have stored keys for."""
@@ -453,7 +455,9 @@ class AsyncKeyShield:
             self._token = None
 
     async def store(self, upstream: str, api_key: str) -> None:
-        await self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
+        await self._authed_post(
+            "/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key}
+        )
 
     async def list_keys(self) -> list[str]:
         data = await self._authed("GET", "/manage/list")
@@ -696,7 +700,9 @@ class AgentKeyShield:
 
     def store(self, upstream: str, api_key: str) -> None:
         """Store an API key in the owner's vault."""
-        self._authed_post("/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key})
+        self._authed_post(
+            "/manage/store", {"upstream": upstream, "value": api_key, "apiKey": api_key}
+        )
 
     def list_keys(self) -> list[str]:
         return self._authed("GET", "/manage/list")["keys"]

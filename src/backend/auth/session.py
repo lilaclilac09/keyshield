@@ -343,9 +343,7 @@ def delete_for_provider(user_id: str, provider: str) -> int:
         return 0
     deleted = 0
     with _db() as conn:
-        rows = conn.execute(
-            "SELECT token FROM sessions WHERE user_id = ?", (user_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT token FROM sessions WHERE user_id = ?", (user_id,)).fetchall()
         for (tok,) in rows:
             data = _decode_payload(tok)
             if not data:
