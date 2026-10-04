@@ -20,6 +20,7 @@
     "test:bankrun": "vitest run tests/bankrun_security.test.ts",
     "test:fault": "vitest run tests/proxy_fault_injection.test.ts",
     "test:invariants": "cargo test -p keyshield --lib --test bankrun_invariants --test fuzz_invariants --test embedded_wallet_layout -- --test-threads=1",
+    "test:harness": "npm run test:bankrun && npm run test:fault && npm run live:e2e:dry",
     "live:e2e": "npx --yes tsx scripts/live_e2e_run.ts",
     "live:e2e:dry": "npx --yes tsx scripts/live_e2e_run.ts --dry-run",
     "typecheck": "npm run typecheck --workspaces --if-present",

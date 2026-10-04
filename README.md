@@ -139,6 +139,30 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | `sites/landing/` | Marketing site |
 | `docs/` | Architecture, API reference, deployment, setup |
 
+### Four-stage MPP harness
+
+These suites are first-class. Run them from the repo root. GitNexus
+MCP is not available in this environment, so impact analysis is skipped
+and is not a reason to leave the harness uncommitted.
+
+| Stage | What it proves | Command | Files |
+|---|---|---|---|
+| 1 | Clock / tombstone / mint / underflow (host oracle; Mollusk needs `cargo-build-sbf`) | `npm run test:bankrun` + `npm run test:invariants` | `tests/bankrun_security.test.ts`, `src/programs/keyshield/tests/bankrun_invariants.rs` |
+| 2 | Proptest invariants A/B/C on `StreamModel` | `cargo test -p keyshield --test fuzz_invariants` | `tests/fuzz_invariants.rs` |
+| 3 | SSE mid-stream drop, 502/504, empty 200, garbage JSON — meter only a verified prefix | `npm run test:fault` | `tests/proxy_fault_injection.test.ts`, `tests/proxy_fault_injection_driver.py` |
+| 4 | Devnet inference path (dry-run default; `LIVE_E2E=1` for real OpenRouter/Ollama) | `npm run live:e2e:dry` | `scripts/live_e2e_run.ts`, `scripts/fixtures/devnet-wallets.json` |
+
+```bash
+npm run test:harness          # Stages 1 + 3 + 4 dry-run
+npm run test:fault            # Stage 3 only
+npm run live:e2e:dry          # Stage 4 crypto + path check
+LIVE_E2E=1 npm run live:e2e   # Stage 4 live (wallets + OPENROUTER_API_KEY)
+```
+
+Stage 3 does not sign `mpp_settle`. Stage 4 live prepends the owner
+Ed25519 binding (`sha256(stream || seq || debit || artifact)`) as
+instruction 0 so the program does not return 6114.
+
 ---
 
 ## Production
