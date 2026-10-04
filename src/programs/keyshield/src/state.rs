@@ -487,7 +487,9 @@ pub struct AgentPaymentStream {
     /// Replay-protection ring buffer.
     pub consumed_nonces: [ConsumedNonce; CONSUMED_NONCES_LEN],
 
-    /// Reserved for future fields (bumps discriminator if used).
+    /// First 32 bytes store the last settled fulfillment artifact root
+    /// (`sha256` of the batch's artifact hashes). The rest is reserved.
+    /// A second `mpp_settle` with the same root is rejected as a replay.
     pub _reserved: [u8; 64],
 }
 
@@ -541,7 +543,9 @@ pub mod aps_offset {
     pub const NONCES_HEAD: usize = 224;
     // pad1 [225..232]
     pub const NONCES: usize = 232;
-    // reserved at NONCES + 64*48 = 232 + 3072 = 3304
+    /// `NONCES + CONSUMED_NONCES_LEN * 48` = 232 + 3072.
+    /// Bytes [0..32] of this region are the last settled artifact root.
+    pub const RESERVED: usize = 3304;
 }
 
 /// Byte offset of `AgentGrant.revoked_at` within the 128-byte grant

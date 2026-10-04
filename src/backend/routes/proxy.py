@@ -134,6 +134,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
+    meter_header = _mpp_meter_header(request, user_id, upstream, status, content)
+
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
     except Exception:
@@ -145,6 +147,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
+    if meter_header:
+        resp.headers["x-ks-mpp-meter"] = meter_header
     return resp
 
 
@@ -237,6 +241,8 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
+    meter_header = _mpp_meter_header(request, user_id, upstream, status, content)
+
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
     except Exception:
@@ -248,7 +254,57 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
     resp.headers["x-ks-key-type"] = "vault"
+    if meter_header:
+        resp.headers["x-ks-mpp-meter"] = meter_header
     return resp
+
+
+def _mpp_meter_header(
+    request: Request,
+    user_id: str,
+    upstream: str,
+    status: int,
+    content: bytes | str,
+) -> str | None:
+    """Record MPP usage from the response this proxy just observed.
+
+    Present only when the caller sent `X-Mpp-Stream-Id`. A rejected
+    fulfillment does not fail the proxy call — the upstream body is
+    still returned, and the header says why nothing was billed.
+    """
+    raw_id = request.headers.get("x-mpp-stream-id")
+    if not raw_id:
+        return None
+    if not user_id or user_id == "anonymous":
+        return "rejected:authentication required"
+    try:
+        stream_id = int(raw_id)
+    except (TypeError, ValueError):
+        return "rejected:invalid stream id"
+
+    from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
+
+    payload = content if isinstance(content, (bytes, bytearray)) else str(content).encode()
+    try:
+        mpp_streams.meter_proxy_response(
+            user_id=user_id,
+            stream_id=stream_id,
+            upstream=upstream,
+            status_code=int(status),
+            body=payload,
+        )
+    except FulfillmentRejected as exc:
+        logger.info("mpp meter rejected stream=%s: %s", raw_id, exc)
+        return f"rejected:{exc.reason}"
+    except mpp_streams.StreamNotFound:
+        return "rejected:stream not found"
+    except mpp_streams.StreamClosed:
+        return "rejected:stream closed"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("mpp meter failed stream=%s: %s", raw_id, exc)
+        return "rejected:meter error"
+    return "recorded"
 
 
 async def _proxy_helius(api_router, upstream, path, body, api_key, request, interceptor):

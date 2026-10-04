@@ -63,32 +63,46 @@ Verifies SPL transfer to your token account. Same memo binding + idempotency.
 processing 10K records. Per-call x402 round-trips waste 200ms each;
 prepaid balance might be wrong-sized.
 
-**Status:** **NOT YET IMPLEMENTED**. The frontend's DocsSection describes
-it; `programs/keyshield/src/state.rs` has the `PaymentStream` PDA layout;
-the metering / settlement code on Python side is TODO. Spec pending.
+**Status:** **IMPLEMENTED**, with a fulfillment gate. The Solana program
+(`state.rs`, `instructions/mpp_settle.rs`) tracks the stream PDA, the
+USDC escrow ATA, and the hard `max_total_micro_usdc` budget. Python
+metering lives in `src/backend/mpp/mpp_streams.py` and
+`src/backend/mpp/fulfillment.py`. Settlement submits ix #26 only when
+the batch has a non-zero artifact root. On-chain, a missing or
+all-zero root returns `UnverifiedFulfillment` (6108) and does not
+transfer USDC.
 
-### Designed flow
+### Flow
 
-1. Agent calls `POST /billing/streams/open` with
-   `{upstream, max_rate_usd_per_min, settlement_interval_secs}`.
-2. Server creates a `PaymentStream` PDA on-chain via the Solana program,
-   binding agent_pubkey + owner_wallet + rate cap.
-3. For each `/proxy/<upstream>/...` call, server records token usage
-   against the open stream (no 402, no per-call payment latency).
-4. Every `settlement_interval_secs`, server submits an on-chain
-   instruction that debits the stream's USDC escrow by the cumulative
-   usage * cost-per-1k-tokens.
-5. Either party can close the stream (`POST /billing/streams/close`);
-   final settlement runs immediately.
+1. Agent opens a stream with `POST /mpp/streams`
+   `{upstream, rate_per_token_micro_usdc, rate_per_call_micro_usdc,
+   settlement_interval_secs}` and the wallet signs `open_payment_stream`.
+2. The stream row stores the provider scope (`upstream`), the PDA, and
+   the USDC escrow ATA.
+3. Each proxied call that sends `X-Mpp-Stream-Id` is metered from the
+   response the proxy actually received. `fulfillment.py` rebuilds the
+   preimage (`stream`, provider, HTTP status, `sha256(body)`, units)
+   and accepts it only when the body is a 2xx payload with real
+   content. Empty bodies, error statuses, error JSON, and garbage are
+   not billed. The response header `x-ks-mpp-meter` is `recorded` or
+   `rejected:<reason>`. `POST /mpp/streams/{id}/record` requires the
+   same `status_code` + `body` and caps claimed tokens at `usage` in
+   that body. The same artifact hash cannot be metered twice.
+4. Every `settlement_interval_secs`, the server folds the unsettled
+   artifact hashes into one root and submits `mpp_settle`. The
+   instruction debits `units × cost_per_unit` only when that root is
+   present and has not been replayed. Pending balance with no artifact
+   is dropped, not paid.
+5. Either party can close the stream (`POST /mpp/streams/{id}/close`);
+   final settlement runs immediately, still only for verified artifacts.
 
 **Why faster than x402:** x402 is a 402 → pay → retry round-trip on
 every call (~200ms). MPP is a one-time stream-open + per-call usage
 record (no extra HTTP). The 200ms savings × 10K calls = 33 minutes saved
 on a long-running agent.
 
-**Implementation gates:** Solana program `instructions/open_stream.rs` +
-`instructions/settle_stream.rs`, Python `billing_streams.py`, frontend
-`StreamingSection.tsx`.
+**Code:** `instructions/open_stream.rs` + `instructions/mpp_settle.rs`,
+Python `src/backend/mpp/`, proxy header `X-Mpp-Stream-Id`.
 
 ## Path C — x402 (per-call micropayment, Coinbase format)
 
@@ -162,5 +176,5 @@ A person buying their AI coworker $50 of credit → Prepaid + Solana.
 |---|---|---|---|
 | Prepaid SOL | `ActivitySection.tsx` topup card | `server.py:billing_topup_solana`, `billing_solana.py` | Solana SystemProgram transfer + Memo |
 | Prepaid USDC | same | `server.py:billing_topup_solana_usdc` | SPL token transfer + Memo |
-| MPP streaming | (not yet) | (TODO) | `programs/keyshield` PaymentStream PDA |
+| MPP streaming | Activity / stream open tx | `routes/mpp.py`, `mpp/mpp_streams.py`, `mpp/fulfillment.py`; proxy meters `X-Mpp-Stream-Id` | `programs/keyshield` `mpp_settle` requires artifact root |
 | x402 | agent SDK (not browser) | `server.py:_x402_body` (response shape OK) + `billing_topup` (verify TODO) | Base USDC transfer |

@@ -67,6 +67,9 @@ pub enum KeyShieldError {
     InvalidEnvelope = 6105,
     InsufficientStreamBalance = 6106,
     NotMppSettler = 6107,
+    /// `mpp_settle` carried no fulfillment artifact root. A zero or
+    /// missing commitment cannot debit the stream escrow.
+    UnverifiedFulfillment = 6108,
 }
 
 impl From<KeyShieldError> for ProgramError {

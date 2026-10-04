@@ -7,6 +7,14 @@
 //! `AgentPaymentStream`'s USDC ATA. Same budget enforcement as
 //! `pay_x402`, but the signer is the `mpp_settler_pubkey` recorded at
 //! `OpenPaymentStream` time, not the agent's EphemeralSigner.
+//!
+//! The debit is bound to a fulfillment artifact root: sha256 of the
+//! artifact hashes for this batch. Each hash is sha256 of a preimage
+//! the metering service built from the upstream response (status,
+//! body digest, stream, units). A missing or all-zero root is
+//! rejected — invoiced units alone cannot move USDC. The HTTP body
+//! itself stays off-chain; the program enforces that a commitment
+//! was presented and that the same commitment cannot be replayed.
 
 use pinocchio::{
     account_info::AccountInfo,
@@ -21,13 +29,33 @@ use pinocchio_token::instructions::TransferChecked;
 
 use crate::{
     error::KeyShieldError,
-    state::{
-        aps_offset, AgentPaymentStream, AGENT_GRANTS_START, AGENT_GRANT_SIZE,
-        AGENT_GRANT_REVOKED_AT_OFFSET, MAX_AGENTS, UniversalVault,
-        AGENT_PAYMENT_STREAM_DISCRIMINATOR,
-    },
     instructions::open_stream::APS_SEED,
+    state::{
+        aps_offset, AgentPaymentStream, UniversalVault, AGENT_GRANTS_START,
+        AGENT_GRANT_REVOKED_AT_OFFSET, AGENT_GRANT_SIZE, AGENT_PAYMENT_STREAM_DISCRIMINATOR,
+        MAX_AGENTS,
+    },
 };
+
+/// Read the 32-byte fulfillment root that follows `units_consumed`.
+///
+/// Returns `UnverifiedFulfillment` when the ix data stops after the
+/// unit count or the root is all zeros.
+pub fn parse_artifact_root(data: &[u8]) -> Result<[u8; 32], ProgramError> {
+    if data.len() < 40 {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    let mut root = [0u8; 32];
+    root.copy_from_slice(&data[8..40]);
+    if root == [0u8; 32] {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    Ok(root)
+}
+
+fn artifact_root_replayed(prev: &[u8], root: &[u8; 32]) -> bool {
+    prev.len() == 32 && prev.iter().any(|&byte| byte != 0) && prev == root
+}
 
 /// Process `mpp_settle` (ix #26).
 ///
@@ -43,7 +71,9 @@ use crate::{
 ///
 /// ### Data (after dispatcher strips discriminator)
 /// `units_consumed` (8) u64 — units to settle since last call.
-/// = 8 bytes minimum.
+/// `artifact_root` (32) — sha256 of the batch's fulfillment hashes.
+/// = 40 bytes minimum. A shorter payload or an all-zero root returns
+/// `UnverifiedFulfillment` (6108) after the settler is authenticated.
 pub fn process_mpp_settle(
     _program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -67,7 +97,9 @@ pub fn process_mpp_settle(
     }
 
     let units_consumed = u64::from_le_bytes(
-        data[0..8].try_into().map_err(|_| KeyShieldError::InvalidPaymentAmount)?,
+        data[0..8]
+            .try_into()
+            .map_err(|_| KeyShieldError::InvalidPaymentAmount)?,
     );
     if units_consumed == 0 {
         return Err(KeyShieldError::InvalidPaymentAmount.into());
@@ -93,10 +125,25 @@ pub fn process_mpp_settle(
         [aps_offset::MPP_SETTLER..aps_offset::MPP_SETTLER + 32]
         .try_into()
         .map_err(|_| KeyShieldError::NotMppSettler)?;
-    let recorded_settler = Pubkey::try_from(&recorded_settler_bytes[..])
-        .map_err(|_| KeyShieldError::NotMppSettler)?;
+    let recorded_settler =
+        Pubkey::try_from(&recorded_settler_bytes[..]).map_err(|_| KeyShieldError::NotMppSettler)?;
     if &recorded_settler != settler.key() {
         return Err(KeyShieldError::NotMppSettler.into());
+    }
+
+    // Fulfillment commitment. Checked after settler auth so a bad
+    // signer still reports NotMppSettler, and before any balance write
+    // or token transfer. The preimage (response bytes) was verified
+    // off-chain; this rejects a settle that skipped that step.
+    if sbuf.len() < aps_offset::RESERVED + 32 {
+        return Err(KeyShieldError::PaymentStreamNotFound.into());
+    }
+    let artifact_root = parse_artifact_root(data)?;
+    if artifact_root_replayed(
+        &sbuf[aps_offset::RESERVED..aps_offset::RESERVED + 32],
+        &artifact_root,
+    ) {
+        return Err(KeyShieldError::NonceReused.into());
     }
 
     // mint + ATA consistency.
@@ -150,8 +197,8 @@ pub fn process_mpp_settle(
             let pk_bytes: [u8; 32] = vault_data[off..off + 32]
                 .try_into()
                 .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
-            let pk = Pubkey::try_from(&pk_bytes[..])
-                .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
+            let pk =
+                Pubkey::try_from(&pk_bytes[..]).map_err(|_| KeyShieldError::AgentGrantNotFound)?;
             if pk == stream_agent && pk != Pubkey::default() {
                 let is_active = vault_data[off + 58];
                 let revoked_at_off = off + AGENT_GRANT_REVOKED_AT_OFFSET;
@@ -207,6 +254,7 @@ pub fn process_mpp_settle(
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
+    sbuf[aps_offset::RESERVED..aps_offset::RESERVED + 32].copy_from_slice(&artifact_root);
 
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
@@ -232,4 +280,48 @@ pub fn process_mpp_settle(
     .invoke_signed(&[pda_signer])?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{artifact_root_replayed, parse_artifact_root};
+    use crate::error::KeyShieldError;
+    use crate::state::{aps_offset, AgentPaymentStream};
+    use pinocchio::program_error::ProgramError;
+
+    #[test]
+    fn short_payload_is_unverified() {
+        let err = parse_artifact_root(&5u64.to_le_bytes()).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn zero_root_is_unverified() {
+        let mut data = [0u8; 40];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        let err = parse_artifact_root(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn non_zero_root_is_accepted() {
+        let mut data = [0u8; 40];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        let root = parse_artifact_root(&data).unwrap();
+        assert_eq!(root[0], 1);
+        assert!(!artifact_root_replayed(&[0u8; 32], &root));
+        assert!(artifact_root_replayed(&root, &root));
+    }
+
+    #[test]
+    fn reserved_region_can_hold_the_root() {
+        assert!(aps_offset::RESERVED + 32 <= AgentPaymentStream::SIZE);
+    }
 }

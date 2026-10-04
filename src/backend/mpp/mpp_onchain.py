@@ -23,20 +23,23 @@ exactly once at first failed load.
 
 ### Byte layout (mpp_settle ix data field)
 
-After the dispatcher strips the discriminator, on-chain expects 8
-bytes (u64 little-endian, `units_consumed`). Full ix data wire is:
+After the dispatcher strips the discriminator, on-chain expects 40
+bytes: `units_consumed` (u64) followed by a 32-byte fulfillment
+artifact root. A missing or all-zero root is `UnverifiedFulfillment`
+(6108). Full ix data wire is:
 
-  [0]:    discriminator = 26 (0x1a)
-  [1..9]: amount as u64 little-endian
+  [0]:     discriminator = 26 (0x1a)
+  [1..9]:  amount as u64 little-endian
+  [9..41]: artifact root (sha256 of the batch's fulfillment hashes)
 
-This module's `build_mpp_settle_ix_data(amount)` returns the FULL
-9-byte payload. Spec 10 Q3 documents this as `units_consumed`; the
-on-chain ix multiplies by `cost_per_unit` to get the actual debit.
-The caller (mpp_streams.settle_on_chain) currently passes the
-already-priced amount as `amount_micro_usdc`, which means Phase
-10.4-real expects the on-chain `cost_per_unit` to be set to 1 in
-OpenPaymentStream — or this module needs a follow-up to convert
-micro-USDC → units. See ROADMAP P0a follow-ups.
+This module's `build_mpp_settle_ix_data(amount, artifact_root)` returns
+the full 41-byte payload. Spec 10 Q3 documents the u64 as
+`units_consumed`; the on-chain ix multiplies by `cost_per_unit` to
+get the actual debit. The caller (mpp_streams.settle_on_chain) passes
+the already-priced amount as `amount_micro_usdc`, which means the
+on-chain `cost_per_unit` is 1 for streams opened by this stack — the
+u64 matches micro-USDC. The artifact root is produced only after
+`fulfillment.py` accepts the upstream response.
 """
 
 from __future__ import annotations
@@ -270,26 +273,35 @@ def _b58encode_pure(b: bytes) -> str:
 MPP_SETTLE_DISCRIMINATOR = 26  # 0x1a
 
 
-def build_mpp_settle_ix_data(amount_micro_usdc: int) -> bytes:
+def build_mpp_settle_ix_data(amount_micro_usdc: int, artifact_root: bytes) -> bytes:
     """Construct the full ix data payload for `mpp_settle`.
 
     Layout (matches `programs/keyshield/src/instructions/mpp_settle.rs`
     after the dispatcher strips byte 0):
 
-      [0]:    discriminator = 26 (0x1a)
-      [1..9]: amount as u64 little-endian
+      [0]:     discriminator = 26 (0x1a)
+      [1..9]:  amount as u64 little-endian
+      [9..41]: fulfillment artifact root
 
     On-chain treats the u64 as `units_consumed` and computes
     `units_consumed * cost_per_unit_micro_usdc` to produce the actual
-    debit. Spec 10 Q3 calls this `units_consumed`. We pass the
-    pre-priced amount today (assumes cost_per_unit=1); see ROADMAP
-    P0a follow-up for unit conversion.
+    debit. We pass the pre-priced amount (cost_per_unit=1). The root
+    must be the 32-byte commitment from `fulfillment.artifact_root`;
+    an all-zero root is rejected here and again on-chain.
     """
     if amount_micro_usdc < 0:
         raise ValueError("amount_micro_usdc must be non-negative")
     if amount_micro_usdc > 0xFFFFFFFFFFFFFFFF:
         raise ValueError("amount_micro_usdc exceeds u64 range")
-    return bytes([MPP_SETTLE_DISCRIMINATOR]) + int(amount_micro_usdc).to_bytes(8, "little")
+    if not isinstance(artifact_root, (bytes, bytearray)) or len(artifact_root) != 32:
+        raise ValueError("artifact_root must be 32 bytes")
+    if bytes(artifact_root) == bytes(32):
+        raise ValueError("artifact_root must be a non-zero fulfillment commitment")
+    return (
+        bytes([MPP_SETTLE_DISCRIMINATOR])
+        + int(amount_micro_usdc).to_bytes(8, "little")
+        + bytes(artifact_root)
+    )
 
 
 @dataclass(frozen=True)
@@ -320,6 +332,7 @@ def build_mpp_settle_ix(
     stream_pda: str,
     stream_ata: str,
     amount: int,
+    artifact_root: bytes,
 ) -> _SimpleInstruction:
     """Build the full mpp_settle instruction.
 
@@ -393,7 +406,7 @@ def build_mpp_settle_ix(
     return _SimpleInstruction(
         program_id=config.keyshield_program_id,
         accounts=accounts,
-        data=build_mpp_settle_ix_data(amount),
+        data=build_mpp_settle_ix_data(amount, artifact_root),
     )
 
 

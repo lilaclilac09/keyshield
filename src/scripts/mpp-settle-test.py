@@ -71,10 +71,22 @@ def main() -> int:
     #    debits units × cost_per_unit; cost_per_unit was set to 1 during
     #    open_stream so units == micro-USDC for this stream).
     units = 50_000
+    root_hex = os.environ.get("KS_MPP_ARTIFACT_ROOT", "").strip()
+    if len(root_hex) != 64:
+        print(
+            "✗ refusing to settle without KS_MPP_ARTIFACT_ROOT "
+            "(64 hex chars). mpp_settle will not debit invoiced units "
+            "that have no fulfillment artifact root.",
+            file=sys.stderr,
+        )
+        return 1
+    artifact_root = bytes.fromhex(root_hex)
     print(f"\n▶ settle_on_chain({stream_id}, micro_usdc={units})")
     t0 = time.perf_counter()
-    debited = mpp_streams.settle_on_chain(stream_id, units)
+    outcome = mpp_streams.settle_on_chain(stream_id, units, artifact_root)
+    debited = outcome.debited_micro_usdc
     dt = time.perf_counter() - t0
+    print(f"    mode            : {outcome.mode}")
     print(f"    returned        : {debited} micro-USDC")
     print(f"    elapsed         : {dt:.2f}s")
 

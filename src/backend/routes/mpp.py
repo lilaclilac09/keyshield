@@ -193,11 +193,29 @@ async def mpp_record_usage(stream_id: int, request: Request):
     sess, err = _require_auth(request)
     if err:
         return err
+    import base64
+
     body = await request.json()
     tokens = int(body.get("tokens", 0) or 0)
     calls = int(body.get("calls", 0) or 0)
+    status_code = body.get("status_code")
+    raw_body = body.get("body")
+    if raw_body is None and body.get("body_b64"):
+        try:
+            raw_body = base64.b64decode(body["body_b64"], validate=True)
+        except Exception:
+            return JSONResponse({"detail": "body_b64 is not valid base64"}, status_code=400)
+    if status_code is None or raw_body is None:
+        return JSONResponse(
+            {
+                "detail": "fulfillment artifact required: status_code and body",
+                "code": "unverified_fulfillment",
+            },
+            status_code=400,
+        )
 
     from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
 
     try:
         stream = mpp_streams.record_usage(
@@ -205,11 +223,19 @@ async def mpp_record_usage(stream_id: int, request: Request):
             stream_id=stream_id,
             calls=calls,
             tokens=tokens,
+            status_code=int(status_code),
+            body=raw_body,
+            content_type=body.get("content_type"),
         )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except mpp_streams.StreamClosed:
         return JSONResponse({"detail": "stream is closed"}, status_code=409)
+    except FulfillmentRejected as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"stream": stream})

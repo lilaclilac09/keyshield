@@ -10,9 +10,11 @@ On-chain mode (Phase 10.4-real, this file):
     KS_KEYSHIELD_PROGRAM_ID). Idempotency log lives in
     `mpp_settle_attempts`.
   - With env unset OR with the stream's PaymentStream PDA still
-    DB-only (open_stream wiring is a P1 follow-up), `settle_on_chain`
-    transparently falls back to the stub (returns 0) — DB-side
-    settlement still happens so the UI keeps working.
+    DB-only, `settle_on_chain` falls back to a stub. The DB still
+    settles, but only artifacts whose upstream response passed
+    `fulfillment.py`. Unverified pending is dropped, not paid.
+  - Every on-chain submit includes a 32-byte artifact root. A missing
+    or all-zero root is refused before the transaction is built.
   - Per spec 10 §Q3, x402 and MPP debit the SAME PaymentStream USDC
     ATA on-chain.
 
@@ -20,6 +22,7 @@ Tables (created lazily on first call to `_db()`):
   - mpp_streams:          one row per opened stream
   - mpp_events:           append-only audit log of open/record/settle/close
   - mpp_settle_attempts:  idempotency log for on-chain mpp_settle submissions
+  - mpp_artifacts:        verified fulfillment hashes awaiting settlement
 
 The DB lives at v2-mvp/data/mpp.db so resetting MPP state doesn't nuke
 usage history. Same lifecycle pattern as `usage.DB_PATH`.
@@ -31,7 +34,10 @@ import asyncio
 import logging
 import sqlite3
 import time
+from dataclasses import dataclass
 from pathlib import Path
+
+from .fulfillment import FulfillmentRejected, artifact_root, verify_fulfillment
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +124,24 @@ def _db() -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_mpp_settle_attempts_stream
             ON mpp_settle_attempts (stream_id, ts DESC);
+
+        -- One row per verified upstream response. Settlement debits
+        -- only rows with settled=0, and only after their hashes are
+        -- folded into the artifact root passed to mpp_settle.
+        CREATE TABLE IF NOT EXISTS mpp_artifacts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            stream_id       INTEGER NOT NULL,
+            artifact_hash   TEXT    NOT NULL,
+            body_sha256     TEXT    NOT NULL,
+            calls           INTEGER NOT NULL,
+            tokens          INTEGER NOT NULL,
+            micro_usdc      INTEGER NOT NULL,
+            settled         INTEGER NOT NULL DEFAULT 0,
+            ts              INTEGER NOT NULL,
+            UNIQUE (stream_id, artifact_hash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mpp_artifacts_stream
+            ON mpp_artifacts (stream_id, settled, id);
     """)
 
     # Spec 10 Phase 10.5 wallet sign-off — idempotent column adds. Once
@@ -142,6 +166,10 @@ def _db() -> sqlite3.Connection:
     if "stream_usdc_ata" not in existing_cols:
         conn.execute("ALTER TABLE mpp_streams ADD COLUMN stream_usdc_ata TEXT")
 
+    attempt_cols = {row[1] for row in conn.execute("PRAGMA table_info(mpp_settle_attempts)")}
+    if "artifact_root" not in attempt_cols:
+        conn.execute("ALTER TABLE mpp_settle_attempts ADD COLUMN artifact_root TEXT")
+
     conn.commit()
     return conn
 
@@ -155,6 +183,20 @@ class StreamNotFound(Exception):
 
 class StreamClosed(Exception):
     """Operation requires an open stream but the stream is closed."""
+
+
+@dataclass(frozen=True)
+class SettleOutcome:
+    """Result of one attempt to submit `mpp_settle`.
+
+    `mode="stub"` means chain config is absent and the DB may settle
+    verified artifacts locally. `mode="submitted"` means the chain
+    accepted the debit (or an identical root was already consumed).
+    `mode="failed"` leaves pending usage in place for a later retry.
+    """
+
+    debited_micro_usdc: int
+    mode: str
 
 
 # ─── row → dict helpers ──────────────────────────────────────────────────────
@@ -292,27 +334,43 @@ def _emit_event(
 # ─── stub vs real on-chain seam ──────────────────────────────────────────────
 
 
-def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
-    """Submit a real `mpp_settle` ix (#26) to Solana, returning the
-    on-chain debit amount in micro-USDC.
+def _is_artifact_replay(error: str) -> bool:
+    """True when the chain already consumed this fulfillment root."""
+    text = error.lower()
+    return "noncereused" in text or "0x17d5" in text or "custom program error: 6101" in text
 
-    Phase 10.4-real implementation. Stub-fallback (return 0) still
-    runs whenever:
+
+def settle_on_chain(stream_id: int, micro_usdc: int, artifact_root_bytes: bytes) -> SettleOutcome:
+    """Submit a real `mpp_settle` ix (#26) to Solana.
+
+    `artifact_root_bytes` is the 32-byte fulfillment commitment for
+    this batch. A missing or zero root raises FulfillmentRejected and
+    does not touch the chain — invoiced units alone are not enough.
+
+    Stub-fallback (`mode="stub"`) runs whenever:
       - any required env var (KS_MPP_SETTLER_KEY, KS_PLATFORM_USDC_ATA,
         KS_KEYSHIELD_PROGRAM_ID) is unset
       - the stream's PaymentStream PDA isn't yet opened on-chain
-        (open_stream is still DB-only — see ROADMAP P0a follow-up)
-      - the on-chain submission errors (network down, BudgetExceeded
-        retry, etc.) — the caller treats this as "settle failed,
-        pending stays in DB" so the next interval retries.
+
+    A submission error returns `mode="failed"` so the caller keeps
+    the pending balance for the next interval. Replaying a root the
+    chain already consumed is treated as success so the DB can catch
+    up after a crash between confirm and commit.
 
     Idempotency: each attempt is logged in `mpp_settle_attempts`. A
     second call with the same (stream_id, requested_micro_usdc,
     ts-bucket) within `_PENDING_RECENCY_SECS` returns the prior
     result instead of re-submitting.
     """
+    if not isinstance(artifact_root_bytes, (bytes, bytearray)) or len(artifact_root_bytes) != 32:
+        raise FulfillmentRejected("settlement requires a 32-byte fulfillment artifact root")
+    if bytes(artifact_root_bytes) == bytes(32):
+        raise FulfillmentRejected("settlement requires a non-zero fulfillment artifact root")
+    artifact_root_bytes = bytes(artifact_root_bytes)
+    root_hex = artifact_root_bytes.hex()
+
     if micro_usdc <= 0:
-        return 0
+        return SettleOutcome(0, "failed")
 
     # Lazy import — avoids circular import / fails-soft if module not
     # importable (e.g. solders missing). The import itself can't fail
@@ -324,13 +382,13 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
             import mpp_onchain  # type: ignore[no-redef]
         except ImportError as e:
             logger.warning("mpp_onchain import failed: %s — stub-fallback", e)
-            return 0
+            return SettleOutcome(0, "stub")
 
     config = mpp_onchain.load_mpp_config()
     if config is None:
         # load_mpp_config() already logged the warning once; just
         # fall through to stub.
-        return 0
+        return SettleOutcome(0, "stub")
 
     # PDA + ATA are not stored in the mpp_streams schema today
     # (open_stream is still DB-only). Without them we can't build
@@ -345,18 +403,18 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
                 stream_id,
             )
             _PDA_MISSING_WARNED[stream_id] = True
-        return 0
+        return SettleOutcome(0, "stub")
 
     # Idempotency check.
     now_ts = int(time.time())
     prior = _find_recent_attempt(stream_id, micro_usdc, now_ts)
     if prior is not None:
-        # Either it succeeded → return the debited amount, or it
-        # failed → return 0 (caller retries on the next interval).
-        return int(prior.get("debited_micro_usdc") or 0)
+        if prior.get("success"):
+            return SettleOutcome(int(prior.get("debited_micro_usdc") or 0), "submitted")
+        return SettleOutcome(0, "failed")
 
     try:
-        ix = mpp_onchain.build_mpp_settle_ix(config, pda, ata, micro_usdc)
+        ix = mpp_onchain.build_mpp_settle_ix(config, pda, ata, micro_usdc, artifact_root_bytes)
     except Exception as e:  # noqa: BLE001
         # build_mpp_settle_ix raises if vault_pda is missing — same
         # stub-fallback behavior as PDA missing.
@@ -368,8 +426,9 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
             success=False,
             debited=0,
             error=str(e),
+            artifact_root=root_hex,
         )
-        return 0
+        return SettleOutcome(0, "failed")
 
     # Pick the right way to run an async coroutine. If we're inside a
     # running event loop (FastAPI request handler called settle_on_chain
@@ -390,15 +449,19 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
             debited, tx_sig = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
+        replayed = _is_artifact_replay(str(e))
         _record_settle_attempt(
             stream_id,
             micro_usdc,
             now_ts,
-            success=False,
-            debited=0,
+            success=replayed,
+            debited=int(micro_usdc) if replayed else 0,
             error=str(e),
+            artifact_root=root_hex,
         )
-        return 0
+        if replayed:
+            return SettleOutcome(int(micro_usdc), "submitted")
+        return SettleOutcome(0, "failed")
 
     _record_settle_attempt(
         stream_id,
@@ -408,8 +471,9 @@ def settle_on_chain(stream_id: int, micro_usdc: int) -> int:
         debited=int(debited),
         error=None,
         tx_signature=tx_sig,
+        artifact_root=root_hex,
     )
-    return int(debited)
+    return SettleOutcome(int(debited), "submitted")
 
 
 # Per-stream "we've already complained about missing PDA" cache so
@@ -481,6 +545,7 @@ def _record_settle_attempt(
     debited: int,
     error: str | None = None,
     tx_signature: str | None = None,
+    artifact_root: str | None = None,
 ) -> None:
     """Insert a row in `mpp_settle_attempts`. UNIQUE constraint on
     (stream_id, requested_micro_usdc, ts) means duplicate inserts at
@@ -492,8 +557,8 @@ def _record_settle_attempt(
                 """
                 INSERT INTO mpp_settle_attempts
                   (stream_id, requested_micro_usdc, tx_signature,
-                   debited_micro_usdc, success, error, ts)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                   debited_micro_usdc, success, error, ts, artifact_root)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(stream_id),
@@ -503,6 +568,7 @@ def _record_settle_attempt(
                     1 if success else 0,
                     error,
                     int(ts),
+                    artifact_root,
                 ),
             )
             conn.commit()
@@ -603,24 +669,51 @@ def open_stream(
         conn.close()
 
 
+def _unsettled_artifacts(conn: sqlite3.Connection, stream_id: int) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, artifact_hash, calls, tokens, micro_usdc
+          FROM mpp_artifacts
+         WHERE stream_id = ? AND settled = 0
+         ORDER BY id ASC
+        """,
+        (int(stream_id),),
+    ).fetchall()
+    return [
+        {
+            "id": row[0],
+            "artifact_hash": row[1],
+            "calls": row[2],
+            "tokens": row[3],
+            "micro_usdc": row[4],
+        }
+        for row in rows
+    ]
+
+
 def record_usage(
     user_id: str,
     stream_id: int,
     calls: int,
     tokens: int,
+    *,
+    status_code: int,
+    body: bytes | str | dict | list,
+    content_type: str | None = None,
+    observed: bool = False,
 ) -> dict:
-    """Add `calls` + `tokens` to the stream's running totals; recompute
-    `pending_micro_usdc`. Auto-settles when elapsed >= settlement_interval.
+    """Meter one upstream response against an open stream.
 
-    Returns the (possibly post-settle) stream dict, with an extra
-    `just_settled_micro_usdc` field (0 if no settlement happened this
-    call). The frontend keys off that field to show the auto-settle
-    toast.
+    `body` is the fulfillment preimage's payload. Empty, error, and
+    garbage responses raise FulfillmentRejected and do not change
+    pending balance. Client-claimed `calls` / `tokens` are capped at
+    what the payload proves. `observed=True` is the proxy path, which
+    bills one call plus the `usage` object in the body.
 
-    Raises StreamClosed if the stream is no longer open.
+    Auto-settles when elapsed >= settlement_interval, and only for
+    artifacts that passed verification. Returns the stream dict plus
+    `just_settled_micro_usdc` and `artifact_hash`.
     """
-    if calls < 0 or tokens < 0:
-        raise ValueError("calls and tokens must be non-negative")
     now = int(time.time())
     conn = _db()
     try:
@@ -628,9 +721,46 @@ def record_usage(
         if stream["status"] != "open":
             raise StreamClosed(stream_id)
 
-        added = int(tokens) * int(stream["rate_per_token_micro_usdc"]) + int(calls) * int(
+        artifact = verify_fulfillment(
+            stream_id=stream_id,
+            upstream=stream["upstream"],
+            status_code=status_code,
+            body=body,
+            content_type=content_type,
+            claimed_calls=int(calls),
+            claimed_tokens=int(tokens),
+            observed=observed,
+        )
+        calls_billed = artifact.calls
+        tokens_billed = artifact.tokens
+        added = tokens_billed * int(stream["rate_per_token_micro_usdc"]) + calls_billed * int(
             stream["rate_per_call_micro_usdc"]
         )
+        if added <= 0:
+            raise FulfillmentRejected("stream rates price this artifact at zero")
+
+        digest = artifact.artifact_hash.hex()
+        try:
+            conn.execute(
+                """
+                INSERT INTO mpp_artifacts
+                  (stream_id, artifact_hash, body_sha256, calls, tokens,
+                   micro_usdc, settled, ts)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    stream_id,
+                    digest,
+                    artifact.body_sha256.hex(),
+                    calls_billed,
+                    tokens_billed,
+                    int(added),
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise FulfillmentRejected("artifact already metered") from exc
+
         conn.execute(
             """
             UPDATE mpp_streams
@@ -639,17 +769,16 @@ def record_usage(
                    pending_micro_usdc = pending_micro_usdc + ?
              WHERE id = ? AND user_id = ?
             """,
-            (int(calls), int(tokens), int(added), stream_id, user_id),
+            (calls_billed, tokens_billed, int(added), stream_id, user_id),
         )
-        # Re-read to pick up the now-current pending balance.
         stream = _get_owned_stream(conn, user_id, stream_id)
         _emit_event(
             conn,
             user_id=user_id,
             stream=stream,
             kind="record",
-            calls=int(calls),
-            tokens=int(tokens),
+            calls=calls_billed,
+            tokens=tokens_billed,
             micro_usdc=int(added),
             ts=now,
         )
@@ -661,9 +790,42 @@ def record_usage(
 
         conn.commit()
         stream["just_settled_micro_usdc"] = just_settled
+        stream["artifact_hash"] = digest
         return stream
     finally:
         conn.close()
+
+
+def meter_proxy_response(
+    user_id: str,
+    stream_id: int,
+    upstream: str,
+    status_code: int,
+    body: bytes | str | dict | list,
+    content_type: str | None = None,
+) -> dict:
+    """Bill a response the proxy itself observed.
+
+    The stream's `upstream` is the provider scope. A call to a
+    different provider does not debit this stream.
+    """
+    conn = _db()
+    try:
+        stream = _get_owned_stream(conn, user_id, stream_id)
+    finally:
+        conn.close()
+    if stream["upstream"] != upstream:
+        raise FulfillmentRejected("provider outside stream scope")
+    return record_usage(
+        user_id,
+        stream_id,
+        1,
+        0,
+        status_code=status_code,
+        body=body,
+        content_type=content_type,
+        observed=True,
+    )
 
 
 def _settle_locked(
@@ -677,9 +839,22 @@ def _settle_locked(
 
     Returns (post-settle stream, just_settled_micro_usdc).
     """
-    pending = int(stream["pending_micro_usdc"])
-    if pending <= 0:
-        # Still update last_settled_at so the countdown UI resets cleanly.
+    artifacts = _unsettled_artifacts(conn, stream["id"])
+    verified = sum(int(row["micro_usdc"]) for row in artifacts)
+    # Drop pending that has no fulfillment artifact. Those units were
+    # never proven and must not be settled.
+    if int(stream["pending_micro_usdc"]) != verified:
+        conn.execute(
+            """
+            UPDATE mpp_streams
+               SET pending_micro_usdc = ?
+             WHERE id = ? AND user_id = ?
+            """,
+            (verified, stream["id"], user_id),
+        )
+        stream = _get_owned_stream(conn, user_id, stream["id"])
+
+    if verified <= 0 or not artifacts:
         conn.execute(
             "UPDATE mpp_streams SET last_settled_at = ? WHERE id = ? AND user_id = ?",
             (now, stream["id"], user_id),
@@ -695,24 +870,38 @@ def _settle_locked(
         )
         return stream, 0
 
-    # Stub-on-chain: settle_on_chain() is a no-op returning 0; we
-    # always record `pending` as the settled amount so the UI can
-    # show settled $ accumulating. Phase 10.4-real will replace
-    # `settle_on_chain` with a real CPI; if the on-chain returns
-    # < pending (budget cap), the difference must be retained as
-    # remaining pending. For stub, full pending settles every time.
-    _on_chain_amount = settle_on_chain(stream["id"], pending)
-    _ = _on_chain_amount  # currently unused; reserved for 10.4-real
+    root = artifact_root([bytes.fromhex(row["artifact_hash"]) for row in artifacts])
+    outcome = settle_on_chain(stream["id"], verified, root)
+    if outcome.mode == "failed" or (outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0):
+        return stream, 0
 
+    debited = verified if outcome.mode == "stub" else int(outcome.debited_micro_usdc)
+    remaining = debited
+    settled_ids: list[int] = []
+    actually = 0
+    for row in artifacts:
+        cost = int(row["micro_usdc"])
+        if cost <= 0 or cost > remaining:
+            break
+        settled_ids.append(int(row["id"]))
+        remaining -= cost
+        actually += cost
+    if not settled_ids:
+        return stream, 0
+
+    conn.execute(
+        f"UPDATE mpp_artifacts SET settled = 1 WHERE id IN ({','.join('?' for _ in settled_ids)})",
+        tuple(settled_ids),
+    )
     conn.execute(
         """
         UPDATE mpp_streams
-           SET pending_micro_usdc = 0,
+           SET pending_micro_usdc = pending_micro_usdc - ?,
                settled_micro_usdc = settled_micro_usdc + ?,
                last_settled_at    = ?
          WHERE id = ? AND user_id = ?
         """,
-        (pending, now, stream["id"], user_id),
+        (actually, actually, now, stream["id"], user_id),
     )
     stream = _get_owned_stream(conn, user_id, stream["id"])
     _emit_event(
@@ -720,10 +909,10 @@ def _settle_locked(
         user_id=user_id,
         stream=stream,
         kind="settle",
-        micro_usdc=pending,
+        micro_usdc=actually,
         ts=now,
     )
-    return stream, pending
+    return stream, actually
 
 
 def settle_stream(user_id: str, stream_id: int) -> dict:

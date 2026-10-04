@@ -13,6 +13,7 @@
 //!
 //! ix #26 `mpp_settle`:
 //!   - non-settler rejected (NotMppSettler, 6107)
+//!   - missing or zero fulfillment root rejected (UnverifiedFulfillment, 6108)
 //!
 //! ix #27 `withdraw_agent_wallet`:
 //!   - non-owner rejected (NotOwner, 6103)
@@ -159,6 +160,12 @@ fn build_pay_x402_data(amount: u64, nonce: [u8; 16], expires_at: i64, env_hash: 
 fn build_mpp_settle_data(units: u64) -> Vec<u8> {
     let mut data = vec![26u8];
     data.extend_from_slice(&units.to_le_bytes());
+    data
+}
+
+fn build_mpp_settle_data_with_root(units: u64, root: &[u8; 32]) -> Vec<u8> {
+    let mut data = build_mpp_settle_data(units);
+    data.extend_from_slice(root);
     data
 }
 
@@ -478,6 +485,107 @@ fn mpp_settle_non_settler_rejected_with_6107() {
         &ix,
         &accounts,
         &[Check::err(ProgramError::Custom(6107))],
+    );
+}
+
+#[test]
+fn mpp_settle_missing_artifact_rejected_with_6108() {
+    set_sbf_out_dir();
+    let pid = program_id();
+    let mollusk = Mollusk::new(&pid, "keyshield");
+
+    let owner = Pubkey::new_unique();
+    let agent = Pubkey::new_unique();
+    let settler = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let stream_pk = Pubkey::new_unique();
+    let stream_ata = Pubkey::new_unique();
+    let recipient_ata = Pubkey::new_unique();
+    let vault_pk = Pubkey::new_unique();
+
+    let vault_acc = make_vault_with_active_grant(&owner, &agent);
+    let stream_acc = make_stream(&owner, &agent, &settler, &mint, &stream_ata, 1_000, 0, 254, 1);
+    let settler_acc = fresh_owned_account();
+    let stream_ata_acc = empty_token_account(&stream_pk, &mint);
+    let recip_ata_acc = empty_token_account(&owner, &mint);
+    let mint_acc = AccountSharedData::create(1_461_600, vec![0u8; 82], spl_token_id(), false, 0);
+    let token_program = AccountSharedData::create(1, vec![0u8; 1], pid, true, 0);
+
+    // Units only — the pre-fulfillment layout. Settler is authentic.
+    let data = build_mpp_settle_data(5);
+    let ix = Instruction::new_with_bytes(pid, &data, vec![
+        AccountMeta::new_readonly(settler, true),
+        AccountMeta::new_readonly(vault_pk, false),
+        AccountMeta::new(stream_pk, false),
+        AccountMeta::new(stream_ata, false),
+        AccountMeta::new(recipient_ata, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(spl_token_id(), false),
+    ]);
+    let accounts = [
+        (settler, settler_acc),
+        (vault_pk, vault_acc),
+        (stream_pk, stream_acc),
+        (stream_ata, stream_ata_acc),
+        (recipient_ata, recip_ata_acc),
+        (mint, mint_acc),
+        (spl_token_id(), token_program),
+    ];
+
+    mollusk.process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[Check::err(ProgramError::Custom(6108))],
+    );
+}
+
+#[test]
+fn mpp_settle_zero_artifact_root_rejected_with_6108() {
+    set_sbf_out_dir();
+    let pid = program_id();
+    let mollusk = Mollusk::new(&pid, "keyshield");
+
+    let owner = Pubkey::new_unique();
+    let agent = Pubkey::new_unique();
+    let settler = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let stream_pk = Pubkey::new_unique();
+    let stream_ata = Pubkey::new_unique();
+    let recipient_ata = Pubkey::new_unique();
+    let vault_pk = Pubkey::new_unique();
+
+    let vault_acc = make_vault_with_active_grant(&owner, &agent);
+    let stream_acc = make_stream(&owner, &agent, &settler, &mint, &stream_ata, 1_000, 0, 254, 1);
+    let settler_acc = fresh_owned_account();
+    let stream_ata_acc = empty_token_account(&stream_pk, &mint);
+    let recip_ata_acc = empty_token_account(&owner, &mint);
+    let mint_acc = AccountSharedData::create(1_461_600, vec![0u8; 82], spl_token_id(), false, 0);
+    let token_program = AccountSharedData::create(1, vec![0u8; 1], pid, true, 0);
+
+    let data = build_mpp_settle_data_with_root(5, &[0u8; 32]);
+    let ix = Instruction::new_with_bytes(pid, &data, vec![
+        AccountMeta::new_readonly(settler, true),
+        AccountMeta::new_readonly(vault_pk, false),
+        AccountMeta::new(stream_pk, false),
+        AccountMeta::new(stream_ata, false),
+        AccountMeta::new(recipient_ata, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(spl_token_id(), false),
+    ]);
+    let accounts = [
+        (settler, settler_acc),
+        (vault_pk, vault_acc),
+        (stream_pk, stream_acc),
+        (stream_ata, stream_ata_acc),
+        (recipient_ata, recip_ata_acc),
+        (mint, mint_acc),
+        (spl_token_id(), token_program),
+    ];
+
+    mollusk.process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[Check::err(ProgramError::Custom(6108))],
     );
 }
 
