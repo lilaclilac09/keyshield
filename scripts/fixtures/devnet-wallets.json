@@ -1,0 +1,38 @@
+{
+  "cluster": "devnet",
+  "programId": "41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j",
+  "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+  "depositMicroUsdc": 5000000,
+  "pdaSeed": "agent_payment_stream",
+  "vaultSeed": "universal_vault",
+  "wallets": {
+    "user": {
+      "role": "client / stream owner",
+      "env": "KS_USER_WALLET",
+      "defaultPath": "~/.config/solana/id.json"
+    },
+    "provider": {
+      "role": "MPP settler / platform USDC receiver",
+      "env": "KS_PROVIDER_WALLET",
+      "defaultPath": ".keyshield-devnet/mpp-settler-devnet.json"
+    }
+  },
+  "inference": {
+    "openrouter": {
+      "base": "https://openrouter.ai",
+      "proxyPath": "/proxy/openrouter/api/v1/chat/completions",
+      "defaultModel": "meta-llama/llama-3.2-3b-instruct:free"
+    },
+    "ollama": {
+      "base": "http://127.0.0.1:11434",
+      "proxyPath": "/proxy/ollama/v1/chat/completions",
+      "defaultModel": "llama3.2"
+    },
+    "vllm": {
+      "base": "http://127.0.0.1:8000",
+      "proxyPath": "/proxy/vllm/v1/chat/completions",
+      "defaultModel": "Qwen/Qwen2.5-7B-Instruct"
+    }
+  },
+  "note": "Metadata only. Keypair JSON files are never committed."
+}

@@ -251,7 +251,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
         pass
     _velocity_observe(velocity_key, status, content, tokens_total)
 
-    meter_header, bound_hold = _mpp_meter_header(
+    meter_header, bound_hold, artifact_hex, billed_tokens = _mpp_meter_header(
         request,
         user_id,
         upstream,
@@ -278,6 +278,10 @@ async def proxy_route(upstream: str, path: str, request: Request):
         resp.headers["x-ks-mpp-meter"] = meter_header
     if bound_hold:
         resp.headers["x-ks-mpp-hold"] = str(bound_hold)
+    if artifact_hex:
+        resp.headers["x-ks-mpp-artifact"] = str(artifact_hex)
+    if billed_tokens is not None:
+        resp.headers["x-ks-mpp-tokens"] = str(int(billed_tokens))
     return resp
 
 
@@ -383,7 +387,7 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         pass
     _velocity_observe(velocity_key, status, content, tokens_total)
 
-    meter_header, bound_hold = _mpp_meter_header(
+    meter_header, bound_hold, artifact_hex, billed_tokens = _mpp_meter_header(
         request,
         user_id,
         upstream,
@@ -410,6 +414,10 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         resp.headers["x-ks-mpp-meter"] = meter_header
     if bound_hold:
         resp.headers["x-ks-mpp-hold"] = str(bound_hold)
+    if artifact_hex:
+        resp.headers["x-ks-mpp-artifact"] = str(artifact_hex)
+    if billed_tokens is not None:
+        resp.headers["x-ks-mpp-tokens"] = str(int(billed_tokens))
     return resp
 
 
@@ -448,7 +456,7 @@ def _mpp_meter_header(
     content: bytes | str,
     truncated: bool = False,
     hold_id: int | None = None,
-) -> tuple[str | None, int | None]:
+) -> tuple[str | None, int | None, str | None, int | None]:
     """Bind the phase-1 hold to the response this proxy just observed.
 
     Present only when the caller sent `X-Mpp-Stream-Id`. A rejected
@@ -456,16 +464,18 @@ def _mpp_meter_header(
     still returned, and the header says why nothing was billed. The
     estimate lock is released on that path. A successful bind returns
     `held` plus the hold id. Capture is a separate signed step.
+    The artifact hash and billed token count are returned so a live
+    client can sign the capture MAC without recomputing the preimage.
     """
     raw_id = request.headers.get("x-mpp-stream-id")
     if not raw_id:
-        return None, None
+        return None, None, None, None
     if not user_id or user_id == "anonymous":
-        return "rejected:authentication required", None
+        return "rejected:authentication required", None, None, None
     try:
         stream_id = int(raw_id)
     except (TypeError, ValueError):
-        return "rejected:invalid stream id", None
+        return "rejected:invalid stream id", None, None, None
 
     from ..mpp import mpp_streams
     from ..mpp.fulfillment import FulfillmentRejected
@@ -484,22 +494,25 @@ def _mpp_meter_header(
         )
     except FulfillmentRejected as exc:
         logger.info("mpp meter rejected stream=%s: %s", raw_id, exc)
-        return f"rejected:{exc.reason}", None
+        return f"rejected:{exc.reason}", None, None, None
     except mpp_streams.BudgetExceeded:
-        return "rejected:BudgetExceeded", None
+        return "rejected:BudgetExceeded", None, None, None
     except mpp_streams.StreamNotFound:
         _mpp_release(user_id, stream_id, hold_id)
-        return "rejected:stream not found", None
+        return "rejected:stream not found", None, None, None
     except mpp_streams.StreamClosed:
-        return "rejected:stream closed", None
+        return "rejected:stream closed", None, None, None
     except Exception as exc:  # noqa: BLE001
         logger.warning("mpp meter failed stream=%s: %s", raw_id, exc)
         _mpp_release(user_id, stream_id, hold_id)
-        return "rejected:meter error", None
+        return "rejected:meter error", None, None, None
+    artifact = recorded.get("artifact_hash")
+    tokens = recorded.get("tokens_billed")
+    billed = int(tokens) if tokens is not None else None
     if recorded.get("idempotent_replay"):
-        return "idempotent_replay", None
+        return "idempotent_replay", None, artifact, billed
     bound = recorded.get("hold_id") or hold_id
-    return "held", int(bound) if bound else None
+    return "held", int(bound) if bound else None, artifact, billed
 
 
 async def _proxy_helius(api_router, upstream, path, body, api_key, request, interceptor):

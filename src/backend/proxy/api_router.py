@@ -65,6 +65,25 @@ PROVIDERS: dict[str, dict] = {
         "base": "https://eth-mainnet.g.alchemy.com",
         "auth": "bearer",
     },
+    # OpenAI-compatible inference. Bases stay provider-specific so a
+    # live Devnet run can hit OpenRouter / Ollama / vLLM without
+    # KS_UPSTREAM_OVERRIDE_BASE rewriting Helius.
+    "openrouter": {
+        "base": os.getenv("KS_OPENROUTER_BASE", "https://openrouter.ai").rstrip("/"),
+        "auth": "bearer",
+        "extra_headers": {
+            "HTTP-Referer": os.getenv("KS_OPENROUTER_REFERER", "https://keyshield.dev"),
+            "X-Title": os.getenv("KS_OPENROUTER_TITLE", "KeyShield live e2e"),
+        },
+    },
+    "ollama": {
+        "base": os.getenv("KS_OLLAMA_BASE", "http://127.0.0.1:11434").rstrip("/"),
+        "auth": "bearer",
+    },
+    "vllm": {
+        "base": os.getenv("KS_VLLM_BASE", "http://127.0.0.1:8000").rstrip("/"),
+        "auth": "bearer",
+    },
 }
 
 # Test-only knob used by `proxy-rs/tests/oracle_diff/`. When set,

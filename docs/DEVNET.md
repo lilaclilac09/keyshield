@@ -104,6 +104,21 @@ Exit codes: 0 pass, 1 generic failure, 2 env not set, 3 missing tooling.
 
 For one-shot setup-then-test, run `bash scripts/devnet-e2e.sh --setup-first`.
 
+### Stage 4 — live inference + Devnet settle
+
+`scripts/live_e2e_run.ts` opens a 5 USDC stream, calls a real OpenAI-compat
+model through `/proxy/{openrouter|ollama|vllm}/...` with a wallet session,
+meters the SSE body, signs `HMAC-SHA256(session, sha256(preimage))`, and
+dispatches `mpp_settle`. Default is dry-run.
+
+```bash
+npm run live:e2e:dry
+LIVE_E2E=1 OPENROUTER_API_KEY=sk-or-... npm run live:e2e
+```
+
+Verified program id: `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`.
+Wallet fixtures (metadata only): `scripts/fixtures/devnet-wallets.json`.
+
 ---
 
 ## Reading on-chain state
