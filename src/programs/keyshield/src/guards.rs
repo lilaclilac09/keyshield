@@ -82,23 +82,48 @@ pub fn assert_canonical_usdc_mint(
     Ok(())
 }
 
-/// The escrow token account's own mint and owner fields must match the
-/// stream. A second account with the same decimals does not pass.
-pub fn assert_escrow_token_account(
+/// SPL token-account mint field matches `expected_mint`, and the account
+/// itself is owned by the SPL Token program.
+fn assert_token_account_mint(
     token_data: &[u8],
+    token_account_owner: &[u8; 32],
     expected_mint: &[u8; 32],
-    expected_owner: &[u8; 32],
 ) -> Result<(), ProgramError> {
-    if token_data.len() < TOKEN_ACCOUNT_MIN_LEN {
+    if token_account_owner != &SPL_TOKEN_PROGRAM_ID || token_data.len() < TOKEN_ACCOUNT_MIN_LEN {
         return Err(KeyShieldError::InvalidMint.into());
     }
     if &token_data[TOKEN_ACCOUNT_MINT_OFFSET..TOKEN_ACCOUNT_MINT_OFFSET + 32] != expected_mint {
         return Err(KeyShieldError::InvalidMint.into());
     }
+    Ok(())
+}
+
+/// Constraint: `escrow_vault.mint == usdc_mint.key()`.
+///
+/// The escrow account must be owned by the SPL Token program. Its mint
+/// field must equal the USDC mint account passed into the instruction,
+/// and its authority field must be the stream PDA. A second token
+/// account with the same decimals does not pass.
+pub fn assert_escrow_token_account(
+    token_data: &[u8],
+    token_account_owner: &[u8; 32],
+    expected_mint: &[u8; 32],
+    expected_owner: &[u8; 32],
+) -> Result<(), ProgramError> {
+    assert_token_account_mint(token_data, token_account_owner, expected_mint)?;
     if &token_data[TOKEN_ACCOUNT_OWNER_OFFSET..TOKEN_ACCOUNT_OWNER_OFFSET + 32] != expected_owner {
         return Err(KeyShieldError::InvalidMint.into());
     }
     Ok(())
+}
+
+/// Destination token account of a transfer must carry the same USDC mint.
+pub fn assert_destination_mint(
+    token_data: &[u8],
+    token_account_owner: &[u8; 32],
+    usdc_mint: &[u8; 32],
+) -> Result<(), ProgramError> {
+    assert_token_account_mint(token_data, token_account_owner, usdc_mint)
 }
 
 pub fn is_closed_account(discriminator: &[u8]) -> bool {
@@ -106,14 +131,66 @@ pub fn is_closed_account(discriminator: &[u8]) -> bool {
 }
 
 /// Write the tombstone and zero every byte after it.
-pub fn seal_closed_account(buf: &mut [u8]) {
+///
+/// A buffer shorter than the discriminator fails closed. A silent return
+/// would leave the old tag in place.
+pub fn seal_closed_account(buf: &mut [u8]) -> Result<(), ProgramError> {
     if buf.len() < 8 {
-        return;
+        return Err(KeyShieldError::AccountClosed.into());
     }
     buf[..8].copy_from_slice(&CLOSED_ACCOUNT_DISCRIMINATOR);
     for byte in &mut buf[8..] {
         *byte = 0;
     }
+    Ok(())
+}
+
+/// Tombstone an in-vault payment-stream slot.
+///
+/// Bytes `[0..8]` become `CLOSED_ACCOUNT_DISCRIMINATOR`. Bytes `[8..40]`
+/// keep the service hash so a second close can still find the slot.
+/// Every balance, rate, agent, and `is_active` byte after that is zero.
+pub fn seal_embedded_stream_slot(
+    slot: &mut [u8],
+    service_hash: &[u8; 32],
+) -> Result<(), ProgramError> {
+    if slot.len() < 40 {
+        return Err(KeyShieldError::PaymentStreamNotFound.into());
+    }
+    for byte in slot.iter_mut() {
+        *byte = 0;
+    }
+    slot[..8].copy_from_slice(&CLOSED_ACCOUNT_DISCRIMINATOR);
+    slot[8..40].copy_from_slice(service_hash);
+    Ok(())
+}
+
+/// True when this slot was sealed for `service_hash`.
+pub fn embedded_stream_is_closed(slot: &[u8], service_hash: &[u8; 32]) -> bool {
+    slot.len() >= 40
+        && slot[..8] == CLOSED_ACCOUNT_DISCRIMINATOR
+        && &slot[8..40] == service_hash.as_slice()
+}
+
+/// `cumulative + amount` for a token spend.
+///
+/// Overflow is `ArithmeticOverflow` (6113). A sum above `max_spend` is
+/// `MaxSpendExceeded` (6035). A zero amount is `InvalidPaymentAmount`.
+pub fn authorize_cumulative_spend(
+    cumulative: u64,
+    amount: u64,
+    max_spend: u64,
+) -> Result<u64, ProgramError> {
+    if amount == 0 {
+        return Err(KeyShieldError::InvalidPaymentAmount.into());
+    }
+    let new_total = cumulative
+        .checked_add(amount)
+        .ok_or(KeyShieldError::ArithmeticOverflow)?;
+    if new_total > max_spend {
+        return Err(KeyShieldError::MaxSpendExceeded.into());
+    }
+    Ok(new_total)
 }
 
 /// A program-owned stream account is never re-initialized.
@@ -357,16 +434,53 @@ mod tests {
         let mut data = [0u8; 165];
         data[..32].copy_from_slice(&USDC_MINT_MAINNET);
         data[32..64].copy_from_slice(&[4u8; 32]);
-        let err = assert_escrow_token_account(&data, &USDC_MINT_DEVNET, &[4u8; 32]).unwrap_err();
+        let err = assert_escrow_token_account(
+            &data,
+            &SPL_TOKEN_PROGRAM_ID,
+            &USDC_MINT_DEVNET,
+            &[4u8; 32],
+        )
+        .unwrap_err();
         assert_eq!(err, ProgramError::Custom(KeyShieldError::InvalidMint as u32));
-        assert_escrow_token_account(&data, &USDC_MINT_MAINNET, &[4u8; 32]).unwrap();
+        assert_escrow_token_account(
+            &data,
+            &SPL_TOKEN_PROGRAM_ID,
+            &USDC_MINT_MAINNET,
+            &[4u8; 32],
+        )
+        .unwrap();
+        let err = assert_escrow_token_account(
+            &data,
+            &[1u8; 32],
+            &USDC_MINT_MAINNET,
+            &[4u8; 32],
+        )
+        .unwrap_err();
+        assert_eq!(err, ProgramError::Custom(KeyShieldError::InvalidMint as u32));
+        let err = assert_destination_mint(&data, &[1u8; 32], &USDC_MINT_MAINNET).unwrap_err();
+        assert_eq!(err, ProgramError::Custom(KeyShieldError::InvalidMint as u32));
+        assert_destination_mint(&data, &SPL_TOKEN_PROGRAM_ID, &USDC_MINT_MAINNET).unwrap();
     }
 
     #[test]
     fn closed_tombstone_blocks_reopen_and_duplicate_close() {
         let mut buf = [1u8; 64];
         buf[..8].copy_from_slice(&AGENT_PAYMENT_STREAM_DISCRIMINATOR);
-        seal_closed_account(&mut buf);
+        seal_closed_account(&mut buf).unwrap();
+        let mut short = [1u8; 4];
+        let err = seal_closed_account(&mut short).unwrap_err();
+        assert_eq!(err, ProgramError::Custom(KeyShieldError::AccountClosed as u32));
+        let mut hash = [0u8; 32];
+        hash[0] = 9;
+        let mut slot = [7u8; 108];
+        slot[..32].copy_from_slice(&hash);
+        slot[73] = 1;
+        slot[86] = 5;
+        seal_embedded_stream_slot(&mut slot, &hash).unwrap();
+        assert!(embedded_stream_is_closed(&slot, &hash));
+        assert_eq!(&slot[..8], &CLOSED_ACCOUNT_DISCRIMINATOR);
+        assert!(slot[40..].iter().all(|byte| *byte == 0));
+        assert!(!embedded_stream_is_closed(&slot, &[0u8; 32]));
         assert!(is_closed_account(&buf[..8]));
         assert!(buf[8..].iter().all(|byte| *byte == 0));
         let err = refuse_program_owned_reopen(&buf[..8]).unwrap_err();
@@ -486,6 +600,17 @@ mod tests {
             at_cap,
             ProgramError::Custom(KeyShieldError::BudgetExceeded as u32)
         );
+        let wrapped_spend = authorize_cumulative_spend(u64::MAX, 1, u64::MAX).unwrap_err();
+        assert_eq!(
+            wrapped_spend,
+            ProgramError::Custom(KeyShieldError::ArithmeticOverflow as u32)
+        );
+        let over_cap = authorize_cumulative_spend(90, 20, 100).unwrap_err();
+        assert_eq!(
+            over_cap,
+            ProgramError::Custom(KeyShieldError::MaxSpendExceeded as u32)
+        );
+        assert_eq!(authorize_cumulative_spend(90, 10, 100).unwrap(), 100);
         let wrapped = remaining_budget(10, 11).unwrap_err();
         assert_eq!(
             wrapped,

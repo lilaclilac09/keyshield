@@ -158,7 +158,12 @@ pub fn process_open_payment_stream(
     }
     {
         let ata_data = usdc_ata.try_borrow_data()?;
-        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            usdc_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
     }
     crate::guards::assert_stream_pda(program_id, stream.key(), agent.key(), owner.key(), bump)?;
 

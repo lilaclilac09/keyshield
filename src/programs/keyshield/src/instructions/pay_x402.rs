@@ -207,12 +207,7 @@ pub fn process_pay_x402(
             .try_into()
             .map_err(|_| KeyShieldError::BudgetExceeded)?,
     );
-    let new_total = spent_total
-        .checked_add(amount)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if new_total > max_total {
-        return Err(KeyShieldError::BudgetExceeded.into());
-    }
+    let new_total = crate::guards::debit_within_budget(spent_total, amount, max_total)?;
 
     // Replay check — scan ring buffer.
     {
@@ -257,7 +252,16 @@ pub fn process_pay_x402(
     }
     {
         let ata_data = stream_ata.try_borrow_data()?;
-        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            stream_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    {
+        let dest_data = recipient_ata.try_borrow_data()?;
+        crate::guards::assert_destination_mint(&dest_data, recipient_ata.owner(), usdc_mint.key())?;
     }
     crate::guards::assert_stream_pda(
         _program_id,

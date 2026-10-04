@@ -178,7 +178,7 @@ pub fn process_withdraw_agent_wallet(
     // body. The tombstone is written before the CPI so a re-entrant
     // settle sees a closed account. The write reverts if the transfer fails.
     let bump = sbuf[aps_offset::BUMP];
-    crate::guards::seal_closed_account(&mut sbuf);
+    crate::guards::seal_closed_account(&mut sbuf)?;
     drop(sbuf);
 
     {
@@ -187,7 +187,16 @@ pub fn process_withdraw_agent_wallet(
     }
     {
         let ata_data = stream_ata.try_borrow_data()?;
-        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            stream_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    {
+        let dest_data = owner_ata.try_borrow_data()?;
+        crate::guards::assert_destination_mint(&dest_data, owner_ata.owner(), usdc_mint.key())?;
     }
     crate::guards::assert_stream_pda(
         _program_id,
@@ -235,7 +244,7 @@ pub fn process_withdraw_agent_wallet(
         let mut stream_lamports = stream.try_borrow_mut_lamports()?;
         *owner_lamports = owner_lamports
             .checked_add(*stream_lamports)
-            .ok_or(ProgramError::ArithmeticOverflow)?;
+            .ok_or(KeyShieldError::ArithmeticOverflow)?;
         *stream_lamports = 0;
     }
 

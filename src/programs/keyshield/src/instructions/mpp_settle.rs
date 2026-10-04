@@ -348,7 +348,16 @@ pub fn process_mpp_settle(
     }
     {
         let ata_data = stream_ata.try_borrow_data()?;
-        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            stream_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    {
+        let dest_data = recipient_ata.try_borrow_data()?;
+        crate::guards::assert_destination_mint(&dest_data, recipient_ata.owner(), usdc_mint.key())?;
     }
     crate::guards::assert_stream_pda(
         _program_id,

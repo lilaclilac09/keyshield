@@ -136,11 +136,9 @@ pub fn process_grant_agent_payment_access(
         }
     }
 
-    if stream_idx.is_none() {
-        return Err(KeyShieldError::PaymentStreamActive.into()); // Max streams reached
-    }
-
-    let idx = stream_idx.unwrap();
+    let Some(idx) = stream_idx else {
+        return Err(KeyShieldError::PaymentStreamActive.into());
+    };
     let offset = PAYMENT_STREAMS_START + (idx * PAYMENT_STREAM_SIZE);
 
     // Write payment stream
@@ -153,9 +151,12 @@ pub fn process_grant_agent_payment_access(
     vault_data[offset + 78..offset + 86].copy_from_slice(&timestamp.to_le_bytes());
     vault_data[offset + 86..offset + 94].copy_from_slice(&0u64.to_le_bytes()); // pending_amount
 
-    // Update payment_stream_count (offset: 63)
+    // Update payment_stream_count (offset: 63). A wrapped counter would
+    // resurrect a free slot; checked_add fails closed.
     let count = vault_data[63];
-    vault_data[63] = count + 1;
+    vault_data[63] = count
+        .checked_add(1)
+        .ok_or(KeyShieldError::ArithmeticOverflow)?;
 
     // Update updated_at
     vault_data[48..56].copy_from_slice(&timestamp.to_le_bytes());
@@ -244,7 +245,7 @@ pub fn process_settle_payment(
     let amount_due = match unit_type {
         0 | 1 => rate_per_call
             .checked_mul(units_consumed)
-            .ok_or(KeyShieldError::InvalidPaymentAmount)?,
+            .ok_or(KeyShieldError::ArithmeticOverflow)?,
         _ => return Err(KeyShieldError::InvalidPaymentAmount.into()),
     };
 
@@ -266,7 +267,7 @@ pub fn process_settle_payment(
 
             let new_cumulative = cumulative
                 .checked_add(amount_due)
-                .ok_or(KeyShieldError::MaxSpendExceeded)?;
+                .ok_or(KeyShieldError::ArithmeticOverflow)?;
             if new_cumulative > max_spend {
                 return Err(KeyShieldError::MaxSpendExceeded.into());
             }
@@ -379,9 +380,12 @@ pub fn process_pay_for_service(
                         let cumulative = u64::from_le_bytes(vault_data[offset + 69..offset + 77].try_into()
                             .map_err(|_| KeyShieldError::MaxSpendExceeded)?);
 
-                        if cumulative + amount_micro_usdc <= max_spend {
-                            is_authorized_agent = true;
-                        }
+                        crate::guards::authorize_cumulative_spend(
+                            cumulative,
+                            amount_micro_usdc,
+                            max_spend,
+                        )?;
+                        is_authorized_agent = true;
                     }
                 }
                 break;
@@ -451,27 +455,44 @@ pub fn process_close_payment_stream(
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    // Find and close payment stream
+    // Find and close payment stream. The slot's discriminator becomes
+    // the closed tombstone and every balance byte is zeroed, so a later
+    // open cannot read the old rate or pending amount back out.
     let mut found = false;
+    let mut already_closed = false;
 
     for i in 0..MAX_PAYMENT_STREAMS {
         let offset = PAYMENT_STREAMS_START + (i * PAYMENT_STREAM_SIZE);
+        let end = offset + PAYMENT_STREAM_SIZE;
+        if crate::guards::embedded_stream_is_closed(
+            &vault_data[offset..end],
+            &service_url_hash,
+        ) {
+            already_closed = true;
+            continue;
+        }
         if vault_data[offset..offset + 32] == service_url_hash {
             let is_active = vault_data[offset + 73];
+            if is_active == 0 {
+                already_closed = true;
+                continue;
+            }
             let count = vault_data[63];
             let new_count = crate::guards::close_stream_counter(is_active, count)?;
-            vault_data[offset + 73] = 0;
+            crate::guards::seal_embedded_stream_slot(
+                &mut vault_data[offset..end],
+                &service_url_hash,
+            )?;
             vault_data[63] = new_count;
-            // A closed stream cannot carry a leftover pending balance
-            // into a later reopen of the same vault slot.
-            vault_data[offset + 86..offset + 94].copy_from_slice(&0u64.to_le_bytes());
-
             found = true;
             break;
         }
     }
 
     if !found {
+        if already_closed {
+            return Err(KeyShieldError::AccountClosed.into());
+        }
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
 

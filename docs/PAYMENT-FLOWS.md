@@ -210,9 +210,11 @@ honest settler from signing that retry.
 by the SPL Token program, initialized, decimals 6, and equal to
 mainnet `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` or devnet
 `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. A counterfeit mint
-with the same decimals returns `InvalidMint` (6109). The escrow token
-account's own mint and owner fields must be that mint and the stream
-PDA.
+with the same decimals returns `InvalidMint` (6109). The escrow
+constraint is `escrow_vault.mint == usdc_mint.key()`: the token
+account must be owned by the SPL Token program, its mint field must
+equal that USDC mint, and its authority field must be the stream PDA.
+The transfer destination's mint field must equal the same USDC mint.
 
 PDA seeds stay `["agent_payment_stream", agent, owner, bump]`.
 `assert_stream_pda` checks `create_program_address` with the canonical
@@ -221,12 +223,20 @@ bump. A different seed list, including
 program already derives and returns `InvalidPda` (6112).
 
 Withdraw writes `CLOSED_ACCOUNT_DISCRIMINATOR` (`ksc1osed`), zeroes
-every byte after it, then returns the lamports. Open refuses any
-program-owned account: an active discriminator is
+every byte after it, then returns the lamports with `checked_add`.
+Overflow of that lamport move is `ArithmeticOverflow` (6113). Open
+refuses any program-owned account: an active discriminator is
 `PaymentStreamActive` (6051), anything else including the tombstone is
-`AccountClosed` (6110). The legacy vault stream close uses
-`close_stream_counter`, so a second close does not decrement the
-counter again.
+`AccountClosed` (6110). A short buffer cannot skip the tombstone.
+Closing an in-vault payment stream writes the same tombstone over the
+slot, keeps the service hash beside it, and zeroes the rate, agent,
+`is_active`, and pending amount. A second close of that slot returns
+`AccountClosed` (6110) and does not decrement the counter again.
+`pay_x402` and `mpp_settle` debit with `debit_within_budget`
+(`checked_sub` / `checked_add`). `pay_for_service` authorizes
+`cumulative + amount` with `checked_add`: overflow is
+`ArithmeticOverflow` (6113), and a sum above the grant cap is
+`MaxSpendExceeded` (6035).
 
 ### Clock leeway
 

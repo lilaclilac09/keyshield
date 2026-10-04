@@ -70,8 +70,8 @@ pub enum KeyShieldError {
     /// `mpp_settle` carried no fulfillment artifact root. A zero or
     /// missing commitment cannot debit the stream escrow.
     UnverifiedFulfillment = 6108,
-    /// Mint is not canonical USDC, or the escrow token account's mint
-    /// or owner field does not match the stream.
+    /// Mint is not canonical USDC, the escrow account is not owned by
+    /// the SPL Token program, or `escrow_vault.mint != usdc_mint`.
     InvalidMint = 6109,
     /// The stream account is already tombstoned. A second close, or an
     /// open against that tombstone, does not move lamports or balances.
