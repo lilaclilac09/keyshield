@@ -15,6 +15,11 @@ On-chain mode (Phase 10.4-real, this file):
     `fulfillment.py`. Unverified pending is dropped, not paid.
   - Every on-chain submit includes a 32-byte artifact root. A missing
     or all-zero root is refused before the transaction is built.
+  - `max_total_micro_usdc` is the hard cap. `settle_receipt` debits one
+    verified artifact under `BEGIN IMMEDIATE` and rolls back when
+    `settled + cost` would pass the cap. Closed streams reject further
+    record/settle/receipt mutations. A consumed artifact hash is
+    `NonceReused`.
   - Per spec 10 §Q3, x402 and MPP debit the SAME PaymentStream USDC
     ATA on-chain.
 
@@ -32,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -42,6 +48,19 @@ from .fulfillment import FulfillmentRejected, artifact_root, verify_fulfillment
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "data" / "mpp.db"
+
+
+def _resolve_db_path() -> Path:
+    """DB file for this process.
+
+    `KS_MPP_DB` pins a file (the adversarial suite gives each case its
+    own sqlite file). Otherwise `DB_PATH` is used, which tests replace
+    by monkeypatching the module global.
+    """
+    override = os.environ.get("KS_MPP_DB", "").strip()
+    if override:
+        return Path(override)
+    return DB_PATH
 
 # How long an in-flight (no recorded result yet) settle attempt is
 # considered "pending" before a retry can take over. Keeps `settle`
@@ -54,10 +73,12 @@ _PENDING_RECENCY_SECS = 60
 
 
 def _db() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    path = _resolve_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), check_same_thread=False, timeout=5.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS mpp_streams (
             id                          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +96,8 @@ def _db() -> sqlite3.Connection:
             total_calls                 INTEGER NOT NULL DEFAULT 0,
             total_tokens                INTEGER NOT NULL DEFAULT 0,
             pending_micro_usdc          INTEGER NOT NULL DEFAULT 0,
-            settled_micro_usdc          INTEGER NOT NULL DEFAULT 0
+            settled_micro_usdc          INTEGER NOT NULL DEFAULT 0,
+            max_total_micro_usdc        INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_mpp_streams_user
             ON mpp_streams (user_id, opened_at DESC);
@@ -165,6 +187,12 @@ def _db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE mpp_streams ADD COLUMN stream_pda TEXT")
     if "stream_usdc_ata" not in existing_cols:
         conn.execute("ALTER TABLE mpp_streams ADD COLUMN stream_usdc_ata TEXT")
+    # Hard budget cap in micro-USDC. NULL means the row is uncapped
+    # (legacy streams). On-chain this is `max_total_micro_usdc`; a
+    # debit that would pass it is BudgetExceeded (program 6100) and
+    # must not change balances.
+    if "max_total_micro_usdc" not in existing_cols:
+        conn.execute("ALTER TABLE mpp_streams ADD COLUMN max_total_micro_usdc INTEGER")
 
     attempt_cols = {row[1] for row in conn.execute("PRAGMA table_info(mpp_settle_attempts)")}
     if "artifact_root" not in attempt_cols:
@@ -182,7 +210,32 @@ class StreamNotFound(Exception):
 
 
 class StreamClosed(Exception):
-    """Operation requires an open stream but the stream is closed."""
+    """Operation requires an open stream but the stream is closed.
+
+    Message is `StreamAlreadyClosed`. The on-chain counterpart is
+    `PaymentStreamInactive` (6052).
+    """
+
+
+class BudgetExceeded(Exception):
+    """Debit would push settled usage past `max_total_micro_usdc`.
+
+    On-chain counterpart is `BudgetExceeded` (6100). The debit is
+    rolled back; balances stay where they were.
+    """
+
+    def __init__(self, message: str = "BudgetExceeded"):
+        super().__init__(message)
+
+
+class ReplayRejected(Exception):
+    """This fulfillment hash was already consumed by a settlement.
+
+    On-chain counterpart is `NonceReused` (6101).
+    """
+
+    def __init__(self, message: str = "NonceReused"):
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -207,7 +260,8 @@ _STREAM_COLS = (
     "rate_per_call_micro_usdc, rate_per_token_micro_usdc, "
     "settlement_interval_secs, status, opened_at, last_settled_at, "
     "closed_at, total_calls, total_tokens, "
-    "pending_micro_usdc, settled_micro_usdc, tx_signature"
+    "pending_micro_usdc, settled_micro_usdc, tx_signature, "
+    "max_total_micro_usdc"
 )
 
 
@@ -217,6 +271,12 @@ def _row_to_stream(row: tuple) -> dict:
     # name). The dict carries both keys so legacy callers and the new
     # frontend banner both work without surprises.
     sig = row[16] if len(row) > 16 else None
+    cap = row[17] if len(row) > 17 else None
+    if cap is not None:
+        cap = int(cap)
+    settled = int(row[15])
+    # Remaining hard-cap headroom. NULL cap → uncapped, escrow is None.
+    escrow = None if cap is None else cap - settled
     return {
         "id": row[0],
         "user_id": row[1],
@@ -233,8 +293,10 @@ def _row_to_stream(row: tuple) -> dict:
         "total_calls": row[12],
         "total_tokens": row[13],
         "pending_micro_usdc": row[14],
-        "settled_micro_usdc": row[15],
+        "settled_micro_usdc": settled,
         "on_chain_signature": sig,
+        "max_total_micro_usdc": cap,
+        "escrow_micro_usdc": escrow,
     }
 
 
@@ -262,6 +324,42 @@ def _row_to_event(row: tuple) -> dict:
 
 
 # ─── private helpers ─────────────────────────────────────────────────────────
+
+
+def _begin_immediate(conn: sqlite3.Connection) -> None:
+    """Own the write lock for this connection only.
+
+    `isolation_level=None` disables the driver's implicit BEGIN so the
+    explicit `BEGIN IMMEDIATE` is the transaction. Other connections
+    keep the default isolation. Callers COMMIT or ROLLBACK themselves.
+    """
+    conn.isolation_level = None
+    conn.execute("BEGIN IMMEDIATE")
+
+
+def _rollback(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ROLLBACK")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _race_window() -> None:
+    """Optional pause so two debits overlap inside one settlement.
+
+    Set `KS_MPP_RACE_WINDOW_MS` only in tests. Production leaves it
+    unset. The pause sits inside the write transaction, so a correct
+    cap check still serializes; a check-then-act debit does not.
+    """
+    raw = os.environ.get("KS_MPP_RACE_WINDOW_MS", "").strip()
+    if not raw:
+        return
+    try:
+        delay_ms = int(raw)
+    except ValueError:
+        return
+    if delay_ms > 0:
+        time.sleep(delay_ms / 1000)
 
 
 def _get_owned_stream(conn: sqlite3.Connection, user_id: str, stream_id: int) -> dict:
@@ -622,9 +720,14 @@ def open_stream(
     settlement_interval: int,
     stream_pda: str | None = None,
     stream_usdc_ata: str | None = None,
+    max_total_micro_usdc: int | None = None,
 ) -> dict:
     """Open a new MPP stream for `user_id`. Returns the stream row +
-    emits an 'open' event."""
+    emits an 'open' event.
+
+    `max_total_micro_usdc` is the hard budget cap. `None` leaves the
+    stream uncapped. A provided cap must be at least 1.
+    """
     if not agent_pubkey:
         raise ValueError("agent_pubkey is required")
     if rate_per_token < 0 or rate_per_call < 0:
@@ -633,6 +736,10 @@ def open_stream(
         raise ValueError("at least one of rate_per_token / rate_per_call must be > 0")
     if settlement_interval < 5 or settlement_interval > 3600:
         raise ValueError("settlement_interval must be in [5, 3600] seconds")
+    if max_total_micro_usdc is not None:
+        max_total_micro_usdc = int(max_total_micro_usdc)
+        if max_total_micro_usdc < 1:
+            raise ValueError("max_total_micro_usdc must be >= 1")
 
     now = int(time.time())
     conn = _db()
@@ -643,8 +750,8 @@ def open_stream(
               (user_id, agent_pubkey, agent_name, upstream,
                rate_per_call_micro_usdc, rate_per_token_micro_usdc,
                settlement_interval_secs, status, opened_at, last_settled_at,
-               stream_pda, stream_usdc_ata)
-            VALUES (?,?,?,?,?,?,?, 'open', ?, ?, ?, ?)
+               stream_pda, stream_usdc_ata, max_total_micro_usdc)
+            VALUES (?,?,?,?,?,?,?, 'open', ?, ?, ?, ?, ?)
             """,
             (
                 user_id,
@@ -658,6 +765,7 @@ def open_stream(
                 now,
                 stream_pda or None,
                 stream_usdc_ata or None,
+                max_total_micro_usdc,
             ),
         )
         stream_id = cur.lastrowid
@@ -719,7 +827,7 @@ def record_usage(
     try:
         stream = _get_owned_stream(conn, user_id, stream_id)
         if stream["status"] != "open":
-            raise StreamClosed(stream_id)
+            raise StreamClosed("StreamAlreadyClosed")
 
         artifact = verify_fulfillment(
             stream_id=stream_id,
@@ -786,7 +894,14 @@ def record_usage(
         just_settled = 0
         elapsed = now - stream["last_settled_at"]
         if stream["pending_micro_usdc"] > 0 and elapsed >= stream["settlement_interval_secs"]:
-            stream, just_settled = _settle_locked(conn, user_id, stream, now)
+            try:
+                stream, just_settled = _settle_locked(conn, user_id, stream, now)
+            except BudgetExceeded:
+                # Keep the usage row. The interval fired, but paying the
+                # whole unsettled batch would pass the hard cap. A later
+                # settle_receipt can debit a single artifact that fits.
+                just_settled = 0
+                stream = _get_owned_stream(conn, user_id, stream_id)
 
         conn.commit()
         stream["just_settled_micro_usdc"] = just_settled
@@ -841,6 +956,12 @@ def _settle_locked(
     """
     artifacts = _unsettled_artifacts(conn, stream["id"])
     verified = sum(int(row["micro_usdc"]) for row in artifacts)
+    cap = stream.get("max_total_micro_usdc")
+    if verified > 0 and cap is not None and int(stream["settled_micro_usdc"]) + verified > int(cap):
+        # Before any balance UPDATE and before settle_on_chain, so a
+        # nested writer cannot deadlock this transaction and an
+        # over-cap batch is not partially paid.
+        raise BudgetExceeded("BudgetExceeded")
     # Drop pending that has no fulfillment artifact. Those units were
     # never proven and must not be settled.
     if int(stream["pending_micro_usdc"]) != verified:
@@ -918,18 +1039,121 @@ def _settle_locked(
 def settle_stream(user_id: str, stream_id: int) -> dict:
     """Manual settlement. Moves pending → settled (stub: DB-only) and
     emits a 'settle' event. Returns the stream dict with
-    `just_settled_micro_usdc` populated."""
+    `just_settled_micro_usdc` populated.
+
+    A closed stream raises StreamClosed('StreamAlreadyClosed') and
+    does not write balances. A batch that would pass the hard cap
+    raises BudgetExceeded and rolls back.
+    """
     now = int(time.time())
     conn = _db()
     try:
-        stream = _get_owned_stream(conn, user_id, stream_id)
-        if stream["status"] != "open":
-            # Closed streams have nothing pending — close_stream() drains.
-            stream["just_settled_micro_usdc"] = 0
-            return stream
-        stream, just_settled = _settle_locked(conn, user_id, stream, now)
-        conn.commit()
+        _begin_immediate(conn)
+        try:
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            if stream["status"] != "open":
+                raise StreamClosed("StreamAlreadyClosed")
+            stream, just_settled = _settle_locked(conn, user_id, stream, now)
+            conn.execute("COMMIT")
+        except Exception:
+            _rollback(conn)
+            raise
         stream["just_settled_micro_usdc"] = just_settled
+        return stream
+    finally:
+        conn.close()
+
+
+def settle_receipt(user_id: str, stream_id: int, artifact_hash: str) -> dict:
+    """Debit exactly one verified artifact under an immediate write lock.
+
+    Concurrent callers serialize on BEGIN IMMEDIATE. The balance UPDATE
+    is conditional on `status='open'`, enough pending, and
+    `settled + cost <= max_total` (or an uncapped stream). A failed
+    predicate rolls the transaction back, so a racing debit cannot
+    leave a partial write or a negative escrow.
+
+    A consumed hash raises ReplayRejected('NonceReused'). A missing
+    hash raises FulfillmentRejected. A closed stream raises
+    StreamClosed('StreamAlreadyClosed').
+    """
+    digest = str(artifact_hash).strip().lower()
+    if len(digest) != 64:
+        raise FulfillmentRejected("unverified artifact")
+    try:
+        bytes.fromhex(digest)
+    except ValueError as exc:
+        raise FulfillmentRejected("unverified artifact") from exc
+
+    now = int(time.time())
+    conn = _db()
+    try:
+        _begin_immediate(conn)
+        try:
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            if stream["status"] != "open":
+                raise StreamClosed("StreamAlreadyClosed")
+
+            row = conn.execute(
+                """
+                SELECT id, micro_usdc, settled
+                  FROM mpp_artifacts
+                 WHERE stream_id = ? AND artifact_hash = ?
+                """,
+                (int(stream_id), digest),
+            ).fetchone()
+            if row is None:
+                raise FulfillmentRejected("unverified artifact")
+            art_id, cost, already = int(row[0]), int(row[1]), int(row[2])
+            if already:
+                raise ReplayRejected("NonceReused")
+            if cost <= 0:
+                raise FulfillmentRejected("unverified artifact")
+
+            _race_window()
+
+            cur = conn.execute(
+                """
+                UPDATE mpp_streams
+                   SET pending_micro_usdc = pending_micro_usdc - ?,
+                       settled_micro_usdc = settled_micro_usdc + ?,
+                       last_settled_at    = ?
+                 WHERE id = ? AND user_id = ?
+                   AND status = 'open'
+                   AND pending_micro_usdc >= ?
+                   AND (max_total_micro_usdc IS NULL
+                        OR settled_micro_usdc + ? <= max_total_micro_usdc)
+                """,
+                (cost, cost, now, int(stream_id), user_id, cost, cost),
+            )
+            if cur.rowcount != 1:
+                fresh = _get_owned_stream(conn, user_id, stream_id)
+                if fresh["status"] != "open":
+                    raise StreamClosed("StreamAlreadyClosed")
+                raise BudgetExceeded("BudgetExceeded")
+
+            marked = conn.execute(
+                "UPDATE mpp_artifacts SET settled = 1 WHERE id = ? AND settled = 0",
+                (art_id,),
+            )
+            if marked.rowcount != 1:
+                raise ReplayRejected("NonceReused")
+
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            _emit_event(
+                conn,
+                user_id=user_id,
+                stream=stream,
+                kind="settle",
+                micro_usdc=cost,
+                ts=now,
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            _rollback(conn)
+            raise
+        stream["just_settled_micro_usdc"] = cost
+        stream["artifact_hash"] = digest
         return stream
     finally:
         conn.close()

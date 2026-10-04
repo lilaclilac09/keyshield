@@ -165,6 +165,10 @@ async def mpp_open_stream(request: Request):
         if body.get("settlementIntervalSecs") is not None
         else body.get("settlementInterval", 60)
     )
+    raw_cap = body.get("maxTotalMicroUsdc")
+    if raw_cap is None:
+        raw_cap = body.get("max_total_micro_usdc")
+    max_total = int(raw_cap) if raw_cap is not None else None
 
     from ..mpp import mpp_streams
 
@@ -177,6 +181,7 @@ async def mpp_open_stream(request: Request):
             rate_per_token=int(rate_per_token or 0),
             rate_per_call=int(rate_per_call or 0),
             settlement_interval=int(settlement_interval or 60),
+            max_total_micro_usdc=max_total,
         )
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -247,7 +252,8 @@ async def mpp_record_usage(stream_id: int, request: Request):
 @router.post("/mpp/streams/{stream_id}/settle")
 async def mpp_settle_stream(stream_id: int, request: Request):
     """Manual settlement. Moves pending → settled and emits a 'settle'
-    event. Closed streams return unchanged."""
+    event. A closed stream is StreamAlreadyClosed (409). A batch past
+    the hard cap is BudgetExceeded (409) and does not debit."""
     sess, err = _require_auth(request)
     if err:
         return err
@@ -257,6 +263,16 @@ async def mpp_settle_stream(stream_id: int, request: Request):
         stream = mpp_streams.settle_stream(sess["user_id"], stream_id)
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.StreamClosed:
+        return JSONResponse(
+            {"detail": "StreamAlreadyClosed", "code": "stream_closed"},
+            status_code=409,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
     return JSONResponse({"stream": stream})
 
 
@@ -276,6 +292,11 @@ async def mpp_close_stream(stream_id: int, request: Request):
         stream = mpp_streams.close_stream(sess["user_id"], stream_id)
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
     return JSONResponse({"stream": stream})
 
 

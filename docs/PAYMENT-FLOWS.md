@@ -76,7 +76,9 @@ transfer USDC.
 
 1. Agent opens a stream with `POST /mpp/streams`
    `{upstream, rate_per_token_micro_usdc, rate_per_call_micro_usdc,
-   settlement_interval_secs}` and the wallet signs `open_payment_stream`.
+   settlement_interval_secs, max_total_micro_usdc}` and the wallet signs
+   `open_payment_stream`. `max_total_micro_usdc` is the hard cap. A
+   debit that would pass it raises `BudgetExceeded` and rolls back.
 2. The stream row stores the provider scope (`upstream`), the PDA, and
    the USDC escrow ATA.
 3. Each proxied call that sends `X-Mpp-Stream-Id` is metered from the
@@ -92,9 +94,14 @@ transfer USDC.
    artifact hashes into one root and submits `mpp_settle`. The
    instruction debits `units × cost_per_unit` only when that root is
    present and has not been replayed. Pending balance with no artifact
-   is dropped, not paid.
+   is dropped, not paid. One artifact can also settle on its own via
+   `settle_receipt`: the debit takes `BEGIN IMMEDIATE`, checks the
+   hard cap in the same write, and rolls back on overflow. Reusing a
+   consumed artifact hash raises `NonceReused` and does not debit again.
 5. Either party can close the stream (`POST /mpp/streams/{id}/close`);
    final settlement runs immediately, still only for verified artifacts.
+   After `status=closed`, record, settle, and receipt raise
+   `StreamAlreadyClosed` and leave balances unchanged.
 
 **Why faster than x402:** x402 is a 402 → pay → retry round-trip on
 every call (~200ms). MPP is a one-time stream-open + per-call usage
