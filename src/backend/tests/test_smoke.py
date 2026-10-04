@@ -16,15 +16,40 @@ def test_app_imports() -> None:
     assert hasattr(app, "router")
 
 
+def _registered_paths(app) -> set[str]:
+    """Collect paths from top-level routes and included routers.
+
+    Current FastAPI/Starlette stores ``include_router`` as
+    ``_IncludedRouter`` (no ``.path``). Walking ``original_router``
+    is how ``/health`` shows up.
+    """
+    paths: set[str] = set()
+
+    def walk(routes) -> None:
+        for route in routes:
+            path = getattr(route, "path", None)
+            if path:
+                paths.add(path)
+            nested = getattr(route, "routes", None)
+            if nested:
+                walk(nested)
+            original = getattr(route, "original_router", None)
+            if original is not None:
+                walk(getattr(original, "routes", []) or [])
+
+    walk(getattr(app, "routes", []) or [])
+    return paths
+
+
 def test_routes_register() -> None:
     """All major route modules must register at least one endpoint."""
     from src.backend.app import app
 
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
+    paths = _registered_paths(app)
     # Spot-check that the architectural surface is wired.
     assert (
         "/health" in paths or "/health/" in paths or any(p.startswith("/health") for p in paths)
-    ), "expected /health endpoint registered"
+    ), f"expected /health endpoint registered; saw {sorted(paths)[:12]}"
 
 
 def test_settings_loads() -> None:
