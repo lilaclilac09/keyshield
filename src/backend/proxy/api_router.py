@@ -275,6 +275,79 @@ async def call_rest(
     return content, status, "MISS"
 
 
+def wants_upstream_stream(body: bytes, accept: str | None) -> bool:
+    """True when the caller asked the upstream for a streamed body.
+
+    SSE (`Accept: text/event-stream`) and JSON `{"stream": true}` both
+    qualify. Those responses are assembled chunk by chunk so a dropped
+    socket can be billed for the prefix that arrived.
+    """
+    if accept and "text/event-stream" in accept.lower():
+        return True
+    if not body:
+        return False
+    try:
+        parsed = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(parsed, dict) and parsed.get("stream") is True
+
+
+async def call_rest_streaming(
+    provider_name: str,
+    method: str,
+    path: str,
+    body: bytes,
+    api_key: str,
+    extra_headers: dict | None = None,
+    *,
+    interceptor: PaymentInterceptor | None = None,
+) -> tuple[bytes, int, str, bool]:
+    """Read an upstream body until it ends or the socket drops.
+
+    Returns `(body, status, cache_status, complete)`. `complete` is
+    false when bytes were already received and the connection then
+    failed. A failure before the first byte returns an empty body and
+    status 502 so the caller does not meter the request.
+    """
+    if provider_name not in PROVIDERS:
+        raise ValueError(f"unknown provider: {provider_name}")
+
+    url, headers = _build_url_and_headers(provider_name, path, api_key)
+    if extra_headers:
+        headers.update(extra_headers)
+    headers["content-type"] = "application/json"
+    if interceptor is not None:
+        # Payment retry wraps a buffered call. A streamed debit still
+        # goes through the same header injection when the interceptor
+        # only adds headers up front.
+        extra = getattr(interceptor, "headers", None)
+        if isinstance(extra, dict):
+            headers.update(extra)
+
+    client = _CLIENTS[provider_name]
+    request = client.build_request(method=method, url=url, headers=headers, content=body)
+    try:
+        response = await client.send(request, stream=True)
+    except httpx.TransportError:
+        return b"", 502, "MISS", False
+
+    chunks = bytearray()
+    complete = True
+    try:
+        async for chunk in response.aiter_bytes():
+            if chunk:
+                chunks.extend(chunk)
+    except httpx.TransportError:
+        complete = False
+    finally:
+        await response.aclose()
+
+    if not chunks and not complete:
+        return b"", 502, "MISS", False
+    return bytes(chunks), int(response.status_code), "MISS", complete
+
+
 # ─── Oliver move #2: parallel batch ──────────────────────────────────────────
 async def batch_helius(requests: list[dict], api_key: str) -> list[dict]:
     """Fire all Helius RPC calls in parallel, return in order."""

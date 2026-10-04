@@ -23,26 +23,43 @@ exactly once at first failed load.
 
 ### Byte layout (mpp_settle ix data field)
 
-After the dispatcher strips the discriminator, on-chain expects 8
-bytes (u64 little-endian, `units_consumed`). Full ix data wire is:
+After the dispatcher strips the discriminator, on-chain expects 112
+bytes: `units_consumed` (u64), a 32-byte fulfillment artifact root,
+`settlement_seq` (u64), a 32-byte capture signature, and a 32-byte
+request hash. A missing or all-zero root, signature, or request hash
+is `UnverifiedFulfillment` (6108). Sequence 0, or any sequence
+`<= last_settled_seq`, is `SettlementReplay` (6111) and does not
+debit. A strictly greater sequence, including a gap, is accepted.
+The honest settler still sends `last_settled_seq + 1`. Full ix
+data wire is:
 
-  [0]:    discriminator = 26 (0x1a)
-  [1..9]: amount as u64 little-endian
+  [0]:      discriminator = 26 (0x1a)
+  [1..9]:   amount as u64 little-endian
+  [9..41]:  artifact root (sha256 of the request hash)
+  [41..49]: settlement_seq as u64 little-endian
+  [49..81]: capture signature (HMAC-SHA256 of the artifact hash)
+  [81..113]: request hash (32-byte fulfillment hash of this receipt)
 
-This module's `build_mpp_settle_ix_data(amount)` returns the FULL
-9-byte payload. Spec 10 Q3 documents this as `units_consumed`; the
+This module's `build_mpp_settle_ix_data` returns the full 113-byte
+payload. Spec 10 Q3 documents the first u64 as `units_consumed`; the
 on-chain ix multiplies by `cost_per_unit` to get the actual debit.
-The caller (mpp_streams.settle_on_chain) currently passes the
-already-priced amount as `amount_micro_usdc`, which means Phase
-10.4-real expects the on-chain `cost_per_unit` to be set to 1 in
-OpenPaymentStream — or this module needs a follow-up to convert
-micro-USDC → units. See ROADMAP P0a follow-ups.
+The caller (mpp_streams.settle_on_chain) passes the already-priced
+amount as `amount_micro_usdc`, which means the on-chain
+`cost_per_unit` is 1 for streams opened by this stack — the u64
+matches micro-USDC. The artifact root is produced only after
+`fulfillment.py` accepts the upstream response. The sequence on the
+honest path is the stream's `last_settled_seq + 1`. The capture
+signature is the consumer session MAC; the program checks that those
+32 bytes are present and non-zero. The request hash is the artifact
+hash itself and is stored in the stream's reserved root slot.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import struct
 from dataclasses import dataclass
 from typing import Optional
 
@@ -268,28 +285,128 @@ def _b58encode_pure(b: bytes) -> str:
 # so anyone reading this file knows the exact byte that goes on the
 # wire.
 MPP_SETTLE_DISCRIMINATOR = 26  # 0x1a
+ED25519_PROGRAM_ID = "Ed25519SigVerify111111111111111111111111111"
+INSTRUCTIONS_SYSVAR_ID = "Sysvar1nstructions1111111111111111111111111"
 
 
-def build_mpp_settle_ix_data(amount_micro_usdc: int) -> bytes:
+def settlement_binding_hash(
+    stream_pubkey: bytes, seq: int, amount: int, artifact_hash: bytes
+) -> bytes:
+    """sha256(stream || seq_le || debit_le || artifact).
+
+    The Ed25519 precompile signs this 32-byte message. `mpp_settle`
+    reads it back from instruction 0 through the instructions sysvar.
+    """
+    if not isinstance(stream_pubkey, (bytes, bytearray)) or len(stream_pubkey) != 32:
+        raise ValueError("stream_pubkey must be 32 bytes")
+    if not isinstance(artifact_hash, (bytes, bytearray)) or len(artifact_hash) != 32:
+        raise ValueError("artifact_hash must be 32 bytes")
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0 or seq > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("seq must be a u64")
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount < 0
+        or amount > 0xFFFFFFFFFFFFFFFF
+    ):
+        raise ValueError("amount must be a u64")
+    preimage = (
+        bytes(stream_pubkey)
+        + int(seq).to_bytes(8, "little")
+        + int(amount).to_bytes(8, "little")
+        + bytes(artifact_hash)
+    )
+    return hashlib.sha256(preimage).digest()
+
+
+def build_ed25519_ix_data(public_key: bytes, signature: bytes, message: bytes) -> bytes:
+    """144-byte Ed25519 precompile payload. Offsets point at this instruction."""
+    if (
+        not isinstance(public_key, (bytes, bytearray))
+        or len(public_key) != 32
+        or not isinstance(signature, (bytes, bytearray))
+        or len(signature) != 64
+        or not isinstance(message, (bytes, bytearray))
+        or len(message) != 32
+    ):
+        raise ValueError("ed25519 ix expects a 32-byte key, 64-byte signature, and 32-byte message")
+    # signature at 16, pubkey at 80, message at 112. u16::MAX means
+    # "data lives in this instruction".
+    offsets = struct.pack("<7H", 16, 0xFFFF, 80, 0xFFFF, 112, 32, 0xFFFF)
+    return bytes([1, 0]) + offsets + bytes(signature) + bytes(public_key) + bytes(message)
+
+
+def build_mpp_settle_ix_data(
+    amount_micro_usdc: int,
+    artifact_root: bytes,
+    settlement_seq: int = 1,
+    capture_signature: bytes | None = None,
+    request_hash: bytes | None = None,
+    session_bit_index: int | None = None,
+) -> bytes:
     """Construct the full ix data payload for `mpp_settle`.
 
     Layout (matches `programs/keyshield/src/instructions/mpp_settle.rs`
     after the dispatcher strips byte 0):
 
-      [0]:    discriminator = 26 (0x1a)
-      [1..9]: amount as u64 little-endian
+      [0]:       discriminator = 26 (0x1a)
+      [1..9]:    amount as u64 little-endian
+      [9..41]:   fulfillment artifact root
+      [41..49]:  settlement sequence, first legal value is 1
+      [49..81]:  consumer capture signature
+      [81..113]: request hash of this receipt
 
-    On-chain treats the u64 as `units_consumed` and computes
+    On-chain treats the first u64 as `units_consumed` and computes
     `units_consumed * cost_per_unit_micro_usdc` to produce the actual
-    debit. Spec 10 Q3 calls this `units_consumed`. We pass the
-    pre-priced amount today (assumes cost_per_unit=1); see ROADMAP
-    P0a follow-up for unit conversion.
+    debit. We pass the pre-priced amount (cost_per_unit=1). The root
+    must be the 32-byte commitment from `fulfillment.artifact_root`;
+    an all-zero root is rejected here and again on-chain. The honest
+    sequence is the stream's last accepted sequence plus one. Any
+    sequence `<= last_settled_seq` is `SettlementReplay` before the
+    debit. The signature is HMAC-SHA256(session key, artifact hash).
+    An all-zero signature is rejected here and again on-chain. The
+    request hash is the 32-byte fulfillment hash. The full payload
+    is 113 bytes. Root and sequence are validated before the
+    signature, and the signature before the request hash.
     """
     if amount_micro_usdc < 0:
         raise ValueError("amount_micro_usdc must be non-negative")
     if amount_micro_usdc > 0xFFFFFFFFFFFFFFFF:
         raise ValueError("amount_micro_usdc exceeds u64 range")
-    return bytes([MPP_SETTLE_DISCRIMINATOR]) + int(amount_micro_usdc).to_bytes(8, "little")
+    if not isinstance(artifact_root, (bytes, bytearray)) or len(artifact_root) != 32:
+        raise ValueError("artifact_root must be 32 bytes")
+    if bytes(artifact_root) == bytes(32):
+        raise ValueError("artifact_root must be a non-zero fulfillment commitment")
+    if isinstance(settlement_seq, bool) or not isinstance(settlement_seq, int):
+        raise ValueError("settlement_seq must be a positive u64")
+    if settlement_seq < 1 or settlement_seq > 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("settlement_seq must be a positive u64")
+    if not isinstance(capture_signature, (bytes, bytearray)) or len(capture_signature) != 32:
+        raise ValueError("capture signature must be 32 non-zero bytes")
+    if bytes(capture_signature) == bytes(32):
+        raise ValueError("capture signature must be 32 non-zero bytes")
+    if not isinstance(request_hash, (bytes, bytearray)) or len(request_hash) != 32:
+        raise ValueError("request_hash must be 32 non-zero bytes")
+    if bytes(request_hash) == bytes(32):
+        raise ValueError("request_hash must be 32 non-zero bytes")
+    payload = (
+        bytes([MPP_SETTLE_DISCRIMINATOR])
+        + int(amount_micro_usdc).to_bytes(8, "little")
+        + bytes(artifact_root)
+        + int(settlement_seq).to_bytes(8, "little")
+        + bytes(capture_signature)
+        + bytes(request_hash)
+    )
+    if session_bit_index is None:
+        return payload
+    if (
+        isinstance(session_bit_index, bool)
+        or not isinstance(session_bit_index, int)
+        or session_bit_index < 0
+        or session_bit_index > 0xFFFFFFFF
+    ):
+        raise ValueError("session_bit_index must be a u32")
+    return payload + int(session_bit_index).to_bytes(4, "little")
 
 
 @dataclass(frozen=True)
@@ -315,11 +432,28 @@ class _SimpleInstruction:
     data: bytes
 
 
+def build_ed25519_verify_ix(
+    public_key: bytes, signature: bytes, message: bytes
+) -> _SimpleInstruction:
+    """Ed25519 precompile instruction. Place it at transaction index 0."""
+    return _SimpleInstruction(
+        program_id=ED25519_PROGRAM_ID,
+        accounts=(),
+        data=build_ed25519_ix_data(public_key, signature, message),
+    )
+
+
 def build_mpp_settle_ix(
     config: MppConfig,
     stream_pda: str,
     stream_ata: str,
     amount: int,
+    artifact_root: bytes,
+    settlement_seq: int = 1,
+    capture_signature: bytes | None = None,
+    request_hash: bytes | None = None,
+    session_bit_index: int | None = None,
+    revocation_bitmap: str | None = None,
 ) -> _SimpleInstruction:
     """Build the full mpp_settle instruction.
 
@@ -337,12 +471,18 @@ def build_mpp_settle_ix(
       4. [writable]  Recipient USDC ATA          (config.platform_usdc_ata)
       5. []          USDC mint                   (config.usdc_mint)
       6. []          SPL Token Program
+      7. []          Instructions sysvar. Instruction 0 of the same
+                     transaction is the Ed25519 precompile over
+                     `settlement_binding_hash`.
+      8. []          Revocation bitmap, only when `session_bit_index`
+                     is set.
 
-    The user-provided spec sketch listed the keyshield program in slot
-    7; the actual on-chain code doesn't read it, so the program is
-    only the `program_id` of the ix itself (not an account). We follow
-    the on-chain truth.
+    A 113-byte payload leaves the bitmap off. A session index appends
+    4 bytes and requires the bitmap account.
     """
+    if (session_bit_index is None) != (revocation_bitmap is None):
+        raise ValueError("session_bit_index and revocation_bitmap are set together")
+
     if not config.vault_pda:
         # Caller (settle_on_chain) treats vault_pda absence as
         # "PDA not opened" → return 0. We still raise here because
@@ -389,11 +529,31 @@ def build_mpp_settle_ix(
             is_signer=False,
             is_writable=False,
         ),
+        _SimpleAccountMeta(
+            pubkey=INSTRUCTIONS_SYSVAR_ID,
+            is_signer=False,
+            is_writable=False,
+        ),
     )
+    if revocation_bitmap is not None:
+        accounts = accounts + (
+            _SimpleAccountMeta(
+                pubkey=revocation_bitmap,
+                is_signer=False,
+                is_writable=False,
+            ),
+        )
     return _SimpleInstruction(
         program_id=config.keyshield_program_id,
         accounts=accounts,
-        data=build_mpp_settle_ix_data(amount),
+        data=build_mpp_settle_ix_data(
+            amount,
+            artifact_root,
+            settlement_seq,
+            capture_signature,
+            request_hash,
+            session_bit_index,
+        ),
     )
 
 
@@ -407,7 +567,11 @@ class MppSubmitError(Exception):
     interval retries."""
 
 
-async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> tuple[int, str]:
+async def submit_mpp_settle(
+    config: MppConfig,
+    ix: _SimpleInstruction,
+    prefix_ix: _SimpleInstruction | None = None,
+) -> tuple[int, str]:
     """Wrap the ix in a Solana Transaction, sign with the settler
     keypair, submit via RPC.
 
@@ -449,6 +613,20 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> tuple[
             accounts=metas,
             data=ix.data,
         )
+        prefix = None
+        if prefix_ix is not None:
+            prefix = SoldersInstruction(  # type: ignore[union-attr]
+                program_id=Pubkey.from_string(prefix_ix.program_id),  # type: ignore[union-attr]
+                accounts=[
+                    AccountMeta(  # type: ignore[union-attr]
+                        pubkey=Pubkey.from_string(a.pubkey),  # type: ignore[union-attr]
+                        is_signer=a.is_signer,
+                        is_writable=a.is_writable,
+                    )
+                    for a in prefix_ix.accounts
+                ],
+                data=prefix_ix.data,
+            )
     except Exception as e:  # noqa: BLE001
         raise MppSubmitError(f"failed to build solders ix: {e}") from e
 
@@ -483,7 +661,7 @@ async def submit_mpp_settle(config: MppConfig, ix: _SimpleInstruction) -> tuple[
         # 2. build + sign tx
         try:
             msg = Message.new_with_blockhash(  # type: ignore[union-attr]
-                [sd_ix],
+                [prefix, sd_ix] if prefix is not None else [sd_ix],
                 kp.pubkey(),
                 blockhash,
             )

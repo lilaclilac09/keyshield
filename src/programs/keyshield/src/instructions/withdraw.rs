@@ -84,9 +84,11 @@ pub fn process_withdraw_agent_wallet(
     if sbuf.len() < AgentPaymentStream::SIZE {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
-    if &sbuf[aps_offset::DISCRIMINATOR..aps_offset::DISCRIMINATOR + 8]
-        != AGENT_PAYMENT_STREAM_DISCRIMINATOR.as_ref()
-    {
+    let discriminator = &sbuf[aps_offset::DISCRIMINATOR..aps_offset::DISCRIMINATOR + 8];
+    if crate::guards::is_closed_account(discriminator) {
+        return Err(KeyShieldError::AccountClosed.into());
+    }
+    if discriminator != AGENT_PAYMENT_STREAM_DISCRIMINATOR.as_ref() {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
 
@@ -122,8 +124,6 @@ pub fn process_withdraw_agent_wallet(
     if &stream_ata_pk != stream_ata.key() {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
-
-    let bump = sbuf[aps_offset::BUMP];
 
     // Confirm grant has been revoked
     {
@@ -174,9 +174,37 @@ pub fn process_withdraw_agent_wallet(
         }
     }
 
-    // Mark stream inactive before the CPI so a re-entry cannot grab it.
-    sbuf[aps_offset::IS_ACTIVE] = 0;
+    // Read the canonical bump before the tombstone zeroes the account
+    // body. The tombstone is written before the CPI so a re-entrant
+    // settle sees a closed account. The write reverts if the transfer fails.
+    let bump = sbuf[aps_offset::BUMP];
+    crate::guards::seal_closed_account(&mut sbuf)?;
     drop(sbuf);
+
+    {
+        let mint_data = usdc_mint.try_borrow_data()?;
+        crate::guards::assert_canonical_usdc_mint(usdc_mint.key(), usdc_mint.owner(), &mint_data)?;
+    }
+    {
+        let ata_data = stream_ata.try_borrow_data()?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            stream_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    {
+        let dest_data = owner_ata.try_borrow_data()?;
+        crate::guards::assert_destination_mint(&dest_data, owner_ata.owner(), usdc_mint.key())?;
+    }
+    crate::guards::assert_stream_pda(
+        _program_id,
+        stream.key(),
+        &stream_agent,
+        &stream_owner,
+        bump,
+    )?;
 
     // CPI 1: drain remaining USDC into owner's ATA (if non-zero)
     let bump_arr = [bump];
@@ -208,20 +236,16 @@ pub fn process_withdraw_agent_wallet(
     }
     .invoke_signed(&[pda_signer])?;
 
-    // Close the AgentPaymentStream PDA itself by reclaiming all
-    // its lamports to `owner` and zeroing the data. The runtime
-    // garbage-collects accounts whose lamports == 0 and data == 0.
+    // Reclaim rent. The tombstone stays in the first 8 bytes so a
+    // same-transaction reopen cannot treat the account as fresh.
+    // Lamports move to the owner with checked addition.
     {
         let mut owner_lamports = owner.try_borrow_mut_lamports()?;
         let mut stream_lamports = stream.try_borrow_mut_lamports()?;
         *owner_lamports = owner_lamports
             .checked_add(*stream_lamports)
-            .ok_or(ProgramError::ArithmeticOverflow)?;
+            .ok_or(KeyShieldError::ArithmeticOverflow)?;
         *stream_lamports = 0;
-    }
-    let mut buf = stream.try_borrow_mut_data()?;
-    for byte in buf.iter_mut() {
-        *byte = 0;
     }
 
     Ok(())

@@ -11,6 +11,8 @@ pub mod open_stream;
 pub mod pay_x402;
 pub mod mpp_settle;
 pub mod withdraw;
+pub mod clawback;
+pub mod revocation;
 
 /// Instruction discriminator enum
 ///
@@ -44,6 +46,8 @@ pub enum Instruction {
     PayX402 = 25,
     MppSettle = 26,
     WithdrawAgentWallet = 27,
+    ForceClawback = 28,
+    SetRevocationBit = 29,
 
     // Legacy Payment Stream instructions (30-39)
     GrantAgentPaymentAccess = 30,
@@ -76,6 +80,8 @@ impl Instruction {
             25 => Some(Instruction::PayX402),
             26 => Some(Instruction::MppSettle),
             27 => Some(Instruction::WithdrawAgentWallet),
+            28 => Some(Instruction::ForceClawback),
+            29 => Some(Instruction::SetRevocationBit),
 
             // Legacy Payment Stream
             30 => Some(Instruction::GrantAgentPaymentAccess),

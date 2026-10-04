@@ -133,9 +133,11 @@ pub fn process_pay_x402(
         }
     }
 
-    // Time bound.
-    let now = Clock::get()?.unix_timestamp;
-    if now > expires_at {
+    // Time bound. A bounded leeway absorbs cluster slot drift without
+    // accepting a payment that is more than CLOCK_LEEWAY_SECS late.
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
+    if crate::guards::unix_expired(now, expires_at) {
         return Err(KeyShieldError::PaymentStreamExpired.into());
     }
 
@@ -206,12 +208,7 @@ pub fn process_pay_x402(
             .try_into()
             .map_err(|_| KeyShieldError::BudgetExceeded)?,
     );
-    let new_total = spent_total
-        .checked_add(amount)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if new_total > max_total {
-        return Err(KeyShieldError::BudgetExceeded.into());
-    }
+    let new_total = crate::guards::debit_within_budget(spent_total, amount, max_total)?;
 
     // Replay check — scan ring buffer.
     {
@@ -242,11 +239,40 @@ pub fn process_pay_x402(
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
+    sbuf[aps_offset::LAST_ACTIVE_SLOT..aps_offset::LAST_ACTIVE_SLOT + 8]
+        .copy_from_slice(&clock.slot.to_le_bytes());
 
     // Capture bump + agent + owner before we drop the mutable borrow,
     // so we can reconstruct PDA seeds for the CPI signer below.
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
+
+    // Canonical mint, escrow binding, and PDA bump are checked after
+    // the budget and nonce returns so those errors stay stable.
+    {
+        let mint_data = usdc_mint.try_borrow_data()?;
+        crate::guards::assert_canonical_usdc_mint(usdc_mint.key(), usdc_mint.owner(), &mint_data)?;
+    }
+    {
+        let ata_data = stream_ata.try_borrow_data()?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            stream_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    {
+        let dest_data = recipient_ata.try_borrow_data()?;
+        crate::guards::assert_destination_mint(&dest_data, recipient_ata.owner(), usdc_mint.key())?;
+    }
+    crate::guards::assert_stream_pda(
+        _program_id,
+        stream.key(),
+        &stream_agent,
+        &stream_owner,
+        bump,
+    )?;
 
     // CPI to SPL Token: transfer_checked from stream's ATA to the
     // recipient ATA, signed by the AgentPaymentStream PDA.

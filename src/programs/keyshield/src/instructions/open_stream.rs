@@ -30,7 +30,7 @@ use crate::{
         aps_offset, AgentPaymentStream, ConsumedNonce,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE, AGENT_GRANT_REVOKED_AT_OFFSET,
         CONSUMED_NONCES_LEN, MAX_AGENTS, UniversalVault,
-        AGENT_PAYMENT_STREAM_DISCRIMINATOR,
+        AGENT_PAYMENT_STREAM_DISCRIMINATOR, DEFAULT_DISPUTE_TIMEOUT_SLOTS,
     },
 };
 
@@ -149,8 +149,26 @@ pub fn process_open_payment_stream(
     }
     drop(vault_data);
 
+    // Canonical USDC mint + escrow binding. A counterfeit mint with
+    // decimals == 6 fails the allowlist. The token account's own mint
+    // and owner fields must match this stream PDA.
+    {
+        let mint_data = usdc_mint.try_borrow_data()?;
+        crate::guards::assert_canonical_usdc_mint(usdc_mint.key(), usdc_mint.owner(), &mint_data)?;
+    }
+    {
+        let ata_data = usdc_ata.try_borrow_data()?;
+        crate::guards::assert_escrow_token_account(
+            &ata_data,
+            usdc_ata.owner(),
+            usdc_mint.key(),
+            stream.key(),
+        )?;
+    }
+    crate::guards::assert_stream_pda(program_id, stream.key(), agent.key(), owner.key(), bump)?;
+
     // Allocate the AgentPaymentStream PDA
-    // Seeds: ["agent_payment_stream", agent_pubkey, owner_pubkey].
+    // Seeds: ["agent_payment_stream", agent_pubkey, owner_pubkey, bump].
     let bump_arr = [bump];
     let stream_seeds = seeds!(APS_SEED, agent.key().as_ref(), owner.key().as_ref(), &bump_arr);
     let stream_signer = Signer::from(&stream_seeds);
@@ -158,14 +176,10 @@ pub fn process_open_payment_stream(
     let rent = Rent::get()?;
     let min_balance = rent.minimum_balance(AgentPaymentStream::SIZE);
 
-    let already_owned = stream.is_owned_by(program_id);
-    if already_owned {
-        // Re-init: must currently be a non-discriminated buffer or we
-        // refuse — never silently clobber an active stream.
+    if stream.is_owned_by(program_id) {
         let existing = stream.try_borrow_data()?;
-        if existing.len() >= 8 && existing[0..8] == AGENT_PAYMENT_STREAM_DISCRIMINATOR {
-            return Err(KeyShieldError::PaymentStreamActive.into());
-        }
+        let disc: &[u8] = if existing.len() >= 8 { &existing[..8] } else { &[] };
+        return crate::guards::refuse_program_owned_reopen(disc);
     } else if stream.lamports() == 0 && stream.data_is_empty() {
         CreateAccount {
             from: owner,
@@ -200,7 +214,8 @@ pub fn process_open_payment_stream(
     }
 
     // Initialize stream fields
-    let now = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     let mut buf = stream.try_borrow_mut_data()?;
     if buf.len() < AgentPaymentStream::SIZE {
         return Err(ProgramError::AccountDataTooSmall);
@@ -237,6 +252,10 @@ pub fn process_open_payment_stream(
         .copy_from_slice(&now.to_le_bytes());
     buf[aps_offset::CREATED_AT..aps_offset::CREATED_AT + 8]
         .copy_from_slice(&now.to_le_bytes());
+    buf[aps_offset::LAST_ACTIVE_SLOT..aps_offset::LAST_ACTIVE_SLOT + 8]
+        .copy_from_slice(&clock.slot.to_le_bytes());
+    buf[aps_offset::DISPUTE_TIMEOUT_SLOTS..aps_offset::DISPUTE_TIMEOUT_SLOTS + 8]
+        .copy_from_slice(&DEFAULT_DISPUTE_TIMEOUT_SLOTS.to_le_bytes());
     // Ring buffer head = 0; entries already zeroed.
     let _ = (CONSUMED_NONCES_LEN, ConsumedNonce::SIZE);
 

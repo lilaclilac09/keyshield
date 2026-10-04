@@ -165,6 +165,10 @@ async def mpp_open_stream(request: Request):
         if body.get("settlementIntervalSecs") is not None
         else body.get("settlementInterval", 60)
     )
+    raw_cap = body.get("maxTotalMicroUsdc")
+    if raw_cap is None:
+        raw_cap = body.get("max_total_micro_usdc")
+    max_total = int(raw_cap) if raw_cap is not None else None
 
     from ..mpp import mpp_streams
 
@@ -177,6 +181,7 @@ async def mpp_open_stream(request: Request):
             rate_per_token=int(rate_per_token or 0),
             rate_per_call=int(rate_per_call or 0),
             settlement_interval=int(settlement_interval or 60),
+            max_total_micro_usdc=max_total,
         )
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -188,16 +193,34 @@ async def mpp_open_stream(request: Request):
 
 @router.post("/mpp/streams/{stream_id}/record")
 async def mpp_record_usage(stream_id: int, request: Request):
-    """Log usage on a stream. Auto-settles if elapsed time since last
-    settle is >= the stream's settlement_interval_secs."""
+    """Log usage on a stream. Binds a hold to the artifact hash.
+    Does not capture; the consumer signs a separate capture request."""
     sess, err = _require_auth(request)
     if err:
         return err
+    import base64
+
     body = await request.json()
     tokens = int(body.get("tokens", 0) or 0)
     calls = int(body.get("calls", 0) or 0)
+    status_code = body.get("status_code")
+    raw_body = body.get("body")
+    if raw_body is None and body.get("body_b64"):
+        try:
+            raw_body = base64.b64decode(body["body_b64"], validate=True)
+        except Exception:
+            return JSONResponse({"detail": "body_b64 is not valid base64"}, status_code=400)
+    if status_code is None or raw_body is None:
+        return JSONResponse(
+            {
+                "detail": "fulfillment artifact required: status_code and body",
+                "code": "unverified_fulfillment",
+            },
+            status_code=400,
+        )
 
     from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
 
     try:
         stream = mpp_streams.record_usage(
@@ -205,13 +228,142 @@ async def mpp_record_usage(stream_id: int, request: Request):
             stream_id=stream_id,
             calls=calls,
             tokens=tokens,
+            status_code=int(status_code),
+            body=raw_body,
+            content_type=body.get("content_type"),
         )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except mpp_streams.StreamClosed:
         return JSONResponse({"detail": "stream is closed"}, status_code=409)
+    except FulfillmentRejected as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
+    return JSONResponse({"stream": stream})
+
+
+# ─── 4b. POST /mpp/streams/{id}/hold ──────────────────────────────────────
+
+
+@router.post("/mpp/streams/{stream_id}/hold")
+async def mpp_hold_estimate(stream_id: int, request: Request):
+    """Phase 1. Lock an estimated cost in the stream's available escrow."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    estimate = body.get("estimateMicroUsdc", body.get("estimate"))
+    upstream = body.get("upstream")
+    from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
+
+    if not upstream:
+        try:
+            owned = _fetch_owned_stream(sess["user_id"], stream_id)
+        except mpp_streams.StreamNotFound:
+            return JSONResponse({"detail": "stream not found"}, status_code=404)
+        upstream = owned["upstream"]
+    try:
+        stream = mpp_streams.hold_estimate(
+            sess["user_id"],
+            stream_id,
+            str(upstream),
+            None if estimate is None else int(estimate),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.StreamClosed:
+        return JSONResponse(
+            {"detail": "StreamAlreadyClosed", "code": "stream_closed"},
+            status_code=409,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
+    except FulfillmentRejected as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    return JSONResponse({"stream": stream, "hold_id": stream.get("hold_id")})
+
+
+# ─── 4c. POST /mpp/streams/{id}/capture ───────────────────────────────────
+
+
+@router.post("/mpp/streams/{stream_id}/capture")
+async def mpp_capture(stream_id: int, request: Request):
+    """Phase 3. Settle one artifact when the session MAC verifies.
+
+    The session key is the bearer token. The signature is
+    HMAC-SHA256(token, artifact_hash).
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    token = request.headers.get("Authorization", "")
+    session_key = token[7:] if token.startswith("Bearer ") else ""
+    body = await request.json()
+    artifact = body.get("artifactHash") or body.get("artifact_hash")
+    signature = body.get("signature")
+    if not artifact or signature is None:
+        return JSONResponse(
+            {"detail": "artifactHash and signature are required", "code": "unverified_fulfillment"},
+            status_code=400,
+        )
+    from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
+
+    try:
+        stream = mpp_streams.settle_receipt(
+            sess["user_id"],
+            stream_id,
+            str(artifact),
+            session_key=session_key,
+            signature=signature,
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.StreamClosed:
+        return JSONResponse(
+            {"detail": "StreamAlreadyClosed", "code": "stream_closed"},
+            status_code=409,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
+    except mpp_streams.CaptureRejected as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "capture_rejected"},
+            status_code=409,
+        )
+    except mpp_streams.HoldExpired as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "hold_expired"},
+            status_code=409,
+        )
+    except mpp_streams.ReplayRejected as e:
+        return JSONResponse({"detail": str(e), "code": "replay"}, status_code=409)
+    except FulfillmentRejected as e:
+        return JSONResponse(
+            {"detail": str(e), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
     return JSONResponse({"stream": stream})
 
 
@@ -220,8 +372,10 @@ async def mpp_record_usage(stream_id: int, request: Request):
 
 @router.post("/mpp/streams/{stream_id}/settle")
 async def mpp_settle_stream(stream_id: int, request: Request):
-    """Manual settlement. Moves pending → settled and emits a 'settle'
-    event. Closed streams return unchanged."""
+    """Drop pending that has no artifact. Does not capture.
+
+    A closed stream is StreamAlreadyClosed (409). Capture is
+    POST /mpp/streams/{id}/capture with the session MAC."""
     sess, err = _require_auth(request)
     if err:
         return err
@@ -231,6 +385,16 @@ async def mpp_settle_stream(stream_id: int, request: Request):
         stream = mpp_streams.settle_stream(sess["user_id"], stream_id)
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.StreamClosed:
+        return JSONResponse(
+            {"detail": "StreamAlreadyClosed", "code": "stream_closed"},
+            status_code=409,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
     return JSONResponse({"stream": stream})
 
 
@@ -239,7 +403,7 @@ async def mpp_settle_stream(stream_id: int, request: Request):
 
 @router.post("/mpp/streams/{stream_id}/close")
 async def mpp_close_stream(stream_id: int, request: Request):
-    """Close a stream. Final settle (if pending) + status='closed'.
+    """Close a stream. Open holds return to available balance.
     Idempotent: closing an already-closed stream is a no-op."""
     sess, err = _require_auth(request)
     if err:
@@ -250,6 +414,11 @@ async def mpp_close_stream(stream_id: int, request: Request):
         stream = mpp_streams.close_stream(sess["user_id"], stream_id)
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
     return JSONResponse({"stream": stream})
 
 

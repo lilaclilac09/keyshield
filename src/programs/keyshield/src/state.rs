@@ -410,12 +410,21 @@ impl ConsumedNonce {
     }
 }
 
+/// Slots of silence before `force_clawback` can return the escrow.
+/// About 15 minutes at a 400ms slot time. A stored timeout of 0 uses
+/// this default so a zeroed field cannot drain the stream immediately.
+pub const DEFAULT_DISPUTE_TIMEOUT_SLOTS: u64 = 2250;
+
 /// Standalone Payment Stream PDA introduced by spec 10 for the embedded
 /// wallet pillar. Each agent gets its own account; the agent's
 /// EphemeralSigner spends out of `usdc_ata`.
 ///
-/// Layout is `repr(C)` so byte offsets are stable across builds. The
-/// `discriminator` field is the version tag - bump if fields change.
+/// This is the zero-copy `StreamState`. `#[repr(C)]` fixes the byte
+/// layout. Every field is a primitive or a fixed array. Handlers read
+/// `aps_offset` and do not heap-unpack `String` or `Vec`.
+///
+/// Bytes 0..3367 match the previous account. `last_active_slot` and
+/// `dispute_timeout_slots` are appended after `_reserved`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct AgentPaymentStream {
@@ -462,6 +471,13 @@ pub struct AgentPaymentStream {
 
     /// 1 = stream is open and accepting payments; 0 = closed (after
     /// `withdraw_agent_wallet`).
+    ///
+    /// There is no `StreamStatus` enum and no `PendingVerification` or
+    /// `Settled` variant. `mpp_settle` debits `spent_total` while this
+    /// flag stays 1. The account does not pass through a verification
+    /// status; the fulfillment gate is the artifact root on that
+    /// instruction. Python `mpp_streams.status` is the same pair:
+    /// `open` until `close`, which sets `closed`.
     pub is_active: u8,
 
     /// PDA bump byte (so the program can re-sign as the stream).
@@ -487,13 +503,31 @@ pub struct AgentPaymentStream {
     /// Replay-protection ring buffer.
     pub consumed_nonces: [ConsumedNonce; CONSUMED_NONCES_LEN],
 
-    /// Reserved for future fields (bumps discriminator if used).
+    /// Settlement idempotency region. Layout (see `guards`):
+    /// `[0..32]` last request hash, `[32..40]` `last_settled_seq` as
+    /// u64 LE, `[40..64]` three 8-byte fingerprints of recent request
+    /// hashes. `seq <= last_settled_seq` does not debit. A remembered
+    /// request hash does not debit.
     pub _reserved: [u8; 64],
+
+    /// Slot of the last `open`, `pay_x402`, or `mpp_settle`.
+    /// `force_clawback` compares `Clock::slot` with this field.
+    pub last_active_slot: u64,
+
+    /// Silence window, in slots. Zero means
+    /// `DEFAULT_DISPUTE_TIMEOUT_SLOTS` (2250).
+    pub dispute_timeout_slots: u64,
 }
+
+/// Zero-copy stream account. Same layout as `AgentPaymentStream`.
+pub type StreamState = AgentPaymentStream;
 
 impl AgentPaymentStream {
     pub const SIZE: usize = 8 + 32 * 5 + 8 * 4 + 4 + 1 + 1 + 2 + 8 + 8 + 1 + 7
-        + (CONSUMED_NONCES_LEN * ConsumedNonce::SIZE) + 64;
+        + (CONSUMED_NONCES_LEN * ConsumedNonce::SIZE)
+        + 64
+        + 8
+        + 8;
 
     /// Decimals for SPL USDC. Hard-coded - every USDC mint we accept
     /// has 6 decimals.
@@ -541,7 +575,12 @@ pub mod aps_offset {
     pub const NONCES_HEAD: usize = 224;
     // pad1 [225..232]
     pub const NONCES: usize = 232;
-    // reserved at NONCES + 64*48 = 232 + 3072 = 3304
+    /// `NONCES + CONSUMED_NONCES_LEN * 48` = 232 + 3072.
+    /// Bytes [0..32] of this region are the last settled request hash.
+    pub const RESERVED: usize = 3304;
+    /// Appended after the 64-byte reserved region. Offsets 0..3367 stay.
+    pub const LAST_ACTIVE_SLOT: usize = RESERVED + 64;
+    pub const DISPUTE_TIMEOUT_SLOTS: usize = LAST_ACTIVE_SLOT + 8;
 }
 
 /// Byte offset of `AgentGrant.revoked_at` within the 128-byte grant
