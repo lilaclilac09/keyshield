@@ -154,17 +154,20 @@ def test_record_rejects_bad_responses_and_replays(db):
     assert recorded["total_calls"] == 1
     assert recorded["total_tokens"] == 10
 
-    with pytest.raises(FulfillmentRejected, match="already metered"):
-        mpp_streams.record_usage(
-            "alice",
-            stream["id"],
-            1,
-            10,
-            status_code=200,
-            body=CHAT,
-        )
+    replay = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    assert replay["idempotent_replay"] is True
+    assert replay["artifact_hash"] == recorded["artifact_hash"]
     still = mpp_streams.list_streams("alice")["streams"][0]
     assert still["pending_micro_usdc"] == 1020
+    assert still["total_calls"] == 1
+    assert still["total_tokens"] == 10
 
 
 def test_proxy_observation_ignores_failed_and_foreign_providers(db):

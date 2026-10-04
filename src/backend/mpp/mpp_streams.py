@@ -1465,14 +1465,21 @@ def _record_usage_locked(
                 now,
             ),
         )
-    except sqlite3.IntegrityError as exc:
-        _persist_release_and_raise(
-            conn,
-            hold_id,
-            stream_id,
-            FulfillmentRejected("artifact already metered"),
-            exc,
-        )
+    except sqlite3.IntegrityError:
+        # The fulfillment hash is the request signature. A retry of the
+        # same body, with or without X-Idempotency-Key, hits the unique
+        # (stream_id, artifact_hash) row. Roll the new increment back
+        # and return the already-metered receipt. The session token is
+        # not an idempotency key by itself.
+        _rollback(conn)
+        if hold_id:
+            _begin_immediate(conn)
+            _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            _commit(conn)
+        else:
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+        return _idempotent_replay(fresh, digest)
 
     if request_key:
         if prior is None:

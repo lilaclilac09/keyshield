@@ -304,8 +304,12 @@ A finished SSE body bills the `usage` object on its `data:` lines.
 `X-Idempotency-Key` is stored in `mpp_request_keys` in the same
 commit as the usage row. The same key with no additional tokens
 returns `x-ks-mpp-meter: idempotent_replay`, releases the new estimate
-hold, and does not increment counters. A longer observation bills only
-the token delta and does not charge a second call. Capture advances
+hold, and does not increment counters. The session token is not an
+idempotency key. The fulfillment hash is: `mpp_artifacts` is unique
+on `(stream_id, artifact_hash)`, so a retry of the same body without
+the header is also `idempotent_replay` and does not increment
+pending. A longer observation bills only the token delta and does not
+charge a second call. Capture advances
 `last_settled_seq` when the DB is the ledger (no chain settler
 configured) or when the chain accepts the sequence. The receipt's
 `sequence_number` is that new value, and `request_hash` is the

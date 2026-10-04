@@ -9,6 +9,7 @@
 //! Mollusk-driven happy/error path tests for the four new ixs live in
 //! `embedded_wallet_mollusk.rs` and require `cargo build-sbf` first.
 
+use keyshield::instructions::open_stream::APS_SEED;
 use keyshield::state::{
     aps_offset, AgentPaymentStream, ConsumedNonce, AGENT_GRANTS_START,
     AGENT_GRANT_REVOKED_AT_OFFSET, AGENT_GRANT_SIZE, AGENT_PAYMENT_STREAM_DISCRIMINATOR,
@@ -104,6 +105,14 @@ fn aps_consumed_nonces_fit_inside_account() {
         nonces_end,
         AgentPaymentStream::SIZE
     );
+}
+
+#[test]
+fn stream_pda_seed_is_agent_payment_stream() {
+    // Host-safe: do not call create_program_address. The audit sketch
+    // `["stream", user, provider, stream_id]` is a different derivation.
+    assert_eq!(APS_SEED, b"agent_payment_stream");
+    assert_ne!(APS_SEED, b"stream");
 }
 
 #[test]

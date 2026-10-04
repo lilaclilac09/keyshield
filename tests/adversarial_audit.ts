@@ -227,8 +227,8 @@ elif scenario == "replay":
         replay = explain(exc)
     remeter = None
     try:
-        record(stream["id"], "one-receipt")
-        remeter = "no-error"
+        remetered = record(stream["id"], "one-receipt")
+        remeter = "idempotent_replay" if remetered.get("idempotent_replay") else "no-error"
     except Exception as exc:
         remeter = explain(exc)
     again = mpp_streams.settle_stream("alice", stream["id"])
@@ -346,7 +346,7 @@ describe("KeyShield Adversarial & Settlement Verification Audit", () => {
 
     expect(report.just_settled).to.equal(800);
     expect(String(report.replay)).to.contain("NonceReused");
-    expect(String(report.remeter)).to.contain("artifact already metered");
+    expect(String(report.remeter)).to.contain("idempotent_replay");
     expect(report.second_batch).to.equal(0);
     expect(final.settled).to.equal(800);
     expect(final.pending).to.equal(0);

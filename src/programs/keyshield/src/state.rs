@@ -272,7 +272,23 @@ impl AgentGrant {
     }
 
     pub fn is_expired(&self, current_time: u64) -> bool {
-        self.is_active == 0 || (self.created_at > 0 && current_time > self.created_at + self.session_timeout)
+        if self.is_active == 0 {
+            return true;
+        }
+        if self.created_at == 0 {
+            return false;
+        }
+        // Same window as `guards::session_expired`: deadline + 30s
+        // leeway, checked. Overflow fails closed. Instruction handlers
+        // call `session_expired` directly; this helper must not wrap.
+        match self
+            .created_at
+            .checked_add(self.session_timeout)
+            .and_then(|deadline| deadline.checked_add(30))
+        {
+            Some(deadline) => current_time > deadline,
+            None => true,
+        }
     }
 
     pub fn check_rate_limit(&self, _current_time: u64, calls_this_hour: u32, tokens_this_min: u32) -> bool {
@@ -665,6 +681,28 @@ impl UniversalVault {
 
     pub fn is_payment_enabled(&self) -> bool {
         (self.vault_flags & 0x08) != 0
+    }
+}
+
+#[cfg(test)]
+mod grant_expiry {
+    use super::AgentGrant;
+    use pinocchio::pubkey::Pubkey;
+
+    #[test]
+    fn grant_expiry_uses_leeway_and_fails_closed_on_overflow() {
+        let mut grant = AgentGrant::new(Pubkey::default(), 0, 0, 0, 0, 0, false);
+        grant.created_at = 1_000;
+        grant.session_timeout = 0;
+        assert!(!grant.is_expired(1_030));
+        assert!(grant.is_expired(1_031));
+        grant.created_at = u64::MAX - 5;
+        grant.session_timeout = 100;
+        assert!(grant.is_expired(10));
+        grant.is_active = 0;
+        grant.created_at = 1_000;
+        grant.session_timeout = 10_000;
+        assert!(grant.is_expired(1_000));
     }
 }
 
