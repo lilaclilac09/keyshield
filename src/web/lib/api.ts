@@ -116,6 +116,87 @@ export interface BuildOpenTxBody {
   settlementIntervalSecsOverride?: number;
 }
 
+export async function openMppStreamRow(body: {
+  agentPubkey: string;
+  agentName?: string;
+  upstream: string;
+  maxTotalMicroUsdc: number;
+  ratePerTokenMicroUsdc?: number;
+  ratePerCallMicroUsdc?: number;
+  settlementIntervalSecs?: number;
+}): Promise<{ stream: { id: number } }> {
+  const r = await apiFetch('/mpp/streams', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'open stream failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'open stream failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultCreateTx(ownerPubkey: string): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-create-tx', {
+    method: 'POST',
+    body: JSON.stringify({ ownerPubkey }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-create-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-create-tx failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultEnablePaymentsTx(ownerPubkey: string): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-enable-payments-tx', {
+    method: 'POST',
+    body: JSON.stringify({ ownerPubkey }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-enable-payments-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-enable-payments-tx failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultGrantTx(
+  ownerPubkey: string,
+  agentPubkey: string,
+  maxSpendMicroUsdc: number,
+): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-grant-tx', {
+    method: 'POST',
+    body: JSON.stringify({
+      ownerPubkey,
+      agentPubkey,
+      paymentStreamEnabled: true,
+      maxSpendMicroUsdc,
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-grant-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-grant-tx failed');
+  }
+  return r.json();
+}
+
+export async function captureMppStream(
+  streamId: number,
+  artifactHash: string,
+  signatureHex: string,
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/capture`, {
+    method: 'POST',
+    body: JSON.stringify({ artifactHash, signature: signatureHex }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'capture failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'capture failed');
+  }
+  return r.json();
+}
+
 export async function buildOpenStreamTx(
   streamId: number,
   body: BuildOpenTxBody,

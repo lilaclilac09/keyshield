@@ -401,6 +401,11 @@ def test_open_stream_persists_pda_and_ata(db):
     pda, ata = mpp_streams._get_stream_pda_ata(stream["id"])
     assert pda == _b58(bytes([0x11]) * 32)
     assert ata == _b58(bytes([0x22]) * 32)
+    listed = mpp_streams.list_streams("alice")
+    row = next(s for s in listed["streams"] if s["id"] == stream["id"])
+    assert row["stream_pda"] == pda
+    assert row["stream_usdc_ata"] == ata
+    assert row["pending_artifact_hash"] is None
 
 
 def test_settle_on_chain_fails_closed_when_live_config_missing_pda(db, monkeypatch):

@@ -336,7 +336,8 @@ _STREAM_COLS = (
     "settlement_interval_secs, status, opened_at, last_settled_at, "
     "closed_at, total_calls, total_tokens, "
     "pending_micro_usdc, settled_micro_usdc, tx_signature, "
-    "max_total_micro_usdc, last_settled_seq, held_micro_usdc"
+    "max_total_micro_usdc, last_settled_seq, held_micro_usdc, "
+    "stream_pda, stream_usdc_ata"
 )
 
 
@@ -377,6 +378,8 @@ def _row_to_stream(row: tuple) -> dict:
         "escrow_micro_usdc": escrow,
         "last_settled_seq": seq,
         "held_micro_usdc": held,
+        "stream_pda": row[20] if len(row) > 20 else None,
+        "stream_usdc_ata": row[21] if len(row) > 21 else None,
     }
 
 
@@ -2107,6 +2110,16 @@ def list_streams(user_id: str) -> dict:
             (user_id,),
         ).fetchall()
         streams = [_row_to_stream(r) for r in rows]
+        for stream in streams:
+            art = conn.execute(
+                """
+                SELECT artifact_hash FROM mpp_artifacts
+                 WHERE stream_id = ? AND settled = 0
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (int(stream["id"]),),
+            ).fetchone()
+            stream["pending_artifact_hash"] = art[0] if art else None
 
         streams_total = len(streams)
         streams_open = sum(1 for s in streams if s["status"] == "open")
