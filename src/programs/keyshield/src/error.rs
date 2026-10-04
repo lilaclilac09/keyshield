@@ -81,6 +81,9 @@ pub enum KeyShieldError {
     /// Stream account address is not the canonical
     /// `["agent_payment_stream", agent, owner, bump]` PDA.
     InvalidPda = 6112,
+    /// `checked_add` / `checked_sub` failed. Distinct from
+    /// `BudgetExceeded`, which is a cap check on a value that fit in u64.
+    ArithmeticOverflow = 6113,
 }
 
 impl From<KeyShieldError> for ProgramError {

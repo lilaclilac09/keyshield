@@ -462,6 +462,13 @@ pub struct AgentPaymentStream {
 
     /// 1 = stream is open and accepting payments; 0 = closed (after
     /// `withdraw_agent_wallet`).
+    ///
+    /// There is no `StreamStatus` enum and no `PendingVerification` or
+    /// `Settled` variant. `mpp_settle` debits `spent_total` while this
+    /// flag stays 1. The account does not pass through a verification
+    /// status; the fulfillment gate is the artifact root on that
+    /// instruction. Python `mpp_streams.status` is the same pair:
+    /// `open` until `close`, which sets `closed`.
     pub is_active: u8,
 
     /// PDA bump byte (so the program can re-sign as the stream).

@@ -247,27 +247,22 @@ pub fn process_mpp_settle(
     );
     let amount = cost_per_unit
         .checked_mul(units_consumed)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if amount == 0 {
-        return Err(KeyShieldError::InvalidPaymentAmount.into());
-    }
+        .ok_or(KeyShieldError::ArithmeticOverflow)?;
 
     let max_total = u64::from_le_bytes(
         sbuf[aps_offset::MAX_TOTAL..aps_offset::MAX_TOTAL + 8]
             .try_into()
-            .map_err(|_| KeyShieldError::BudgetExceeded)?,
+            .map_err(|_| KeyShieldError::ArithmeticOverflow)?,
     );
     let spent_total = u64::from_le_bytes(
         sbuf[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]
             .try_into()
-            .map_err(|_| KeyShieldError::BudgetExceeded)?,
+            .map_err(|_| KeyShieldError::ArithmeticOverflow)?,
     );
-    let new_total = spent_total
-        .checked_add(amount)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if new_total > max_total {
-        return Err(KeyShieldError::BudgetExceeded.into());
-    }
+    // `remaining = max - spent` via checked_sub. amount > remaining is
+    // BudgetExceeded. Overflow of the multiply, the subtraction, or
+    // the following addition is ArithmeticOverflow (6113).
+    let new_total = crate::guards::debit_within_budget(spent_total, amount, max_total)?;
 
     let now = Clock::get()?.unix_timestamp;
     sbuf[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]

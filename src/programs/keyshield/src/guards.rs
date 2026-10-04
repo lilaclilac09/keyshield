@@ -191,21 +191,38 @@ pub fn close_stream_counter(is_active: u8, count: u8) -> Result<u8, ProgramError
         .ok_or_else(|| KeyShieldError::InvalidPaymentAmount.into())
 }
 
+/// `max_total - spent`. A spent total already above the cap is
+/// `ArithmeticOverflow` (6113), not a wrapped remainder.
+pub fn remaining_budget(max_total: u64, spent: u64) -> Result<u64, ProgramError> {
+    max_total
+        .checked_sub(spent)
+        .ok_or(KeyShieldError::ArithmeticOverflow.into())
+}
+
+/// Debit `amount` only when it fits in `remaining_budget`.
+///
+/// `amount > remaining` is `BudgetExceeded` (6100). `checked_sub` or
+/// `checked_add` failing is `ArithmeticOverflow` (6113). A zero amount
+/// is `InvalidPaymentAmount`.
+pub fn debit_within_budget(spent: u64, amount: u64, max_total: u64) -> Result<u64, ProgramError> {
+    if amount == 0 {
+        return Err(KeyShieldError::InvalidPaymentAmount.into());
+    }
+    let remaining = remaining_budget(max_total, spent)?;
+    if amount > remaining {
+        return Err(KeyShieldError::BudgetExceeded.into());
+    }
+    spent
+        .checked_add(amount)
+        .ok_or(KeyShieldError::ArithmeticOverflow.into())
+}
+
 /// Price `units` and add it to `spent`, failing closed on overflow.
 pub fn checked_debit(spent: u64, rate: u64, units: u64, max_total: u64) -> Result<u64, ProgramError> {
     let amount = rate
         .checked_mul(units)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if amount == 0 {
-        return Err(KeyShieldError::InvalidPaymentAmount.into());
-    }
-    let new_total = spent
-        .checked_add(amount)
-        .ok_or(KeyShieldError::BudgetExceeded)?;
-    if new_total > max_total {
-        return Err(KeyShieldError::BudgetExceeded.into());
-    }
-    Ok(new_total)
+        .ok_or(KeyShieldError::ArithmeticOverflow)?;
+    debit_within_budget(spent, amount, max_total)
 }
 
 fn root_fingerprint(root: &[u8; 32]) -> [u8; 8] {
@@ -398,5 +415,28 @@ mod tests {
         assert_eq!(checked_debit(10, 2, 4, 100).unwrap(), 18);
         assert!(checked_debit(u64::MAX - 1, 2, 2, u64::MAX).is_err());
         assert!(checked_debit(90, 2, 6, 100).is_err());
+    }
+
+    #[test]
+    fn settlement_amount_cannot_exceed_remaining_budget() {
+        assert_eq!(remaining_budget(100, 40).unwrap(), 60);
+        assert_eq!(debit_within_budget(40, 60, 100).unwrap(), 100);
+        let over = debit_within_budget(40, 61, 100).unwrap_err();
+        assert_eq!(over, ProgramError::Custom(KeyShieldError::BudgetExceeded as u32));
+        let at_cap = debit_within_budget(u64::MAX, 1, u64::MAX).unwrap_err();
+        assert_eq!(
+            at_cap,
+            ProgramError::Custom(KeyShieldError::BudgetExceeded as u32)
+        );
+        let wrapped = remaining_budget(10, 11).unwrap_err();
+        assert_eq!(
+            wrapped,
+            ProgramError::Custom(KeyShieldError::ArithmeticOverflow as u32)
+        );
+        let mul = checked_debit(1, u64::MAX, 2, u64::MAX).unwrap_err();
+        assert_eq!(
+            mul,
+            ProgramError::Custom(KeyShieldError::ArithmeticOverflow as u32)
+        );
     }
 }
