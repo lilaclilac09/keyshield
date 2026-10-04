@@ -349,7 +349,7 @@ pub fn process_access_with_agent(
                     );
 
                     let timestamp = Clock::get()?.unix_timestamp as u64;
-                    if timestamp > created_at + session_timeout {
+                    if crate::guards::session_expired(timestamp, created_at, session_timeout) {
                         return Err(KeyShieldError::AgentGrantExpired.into());
                     }
 

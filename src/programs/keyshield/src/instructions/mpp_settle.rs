@@ -53,8 +53,29 @@ pub fn parse_artifact_root(data: &[u8]) -> Result<[u8; 32], ProgramError> {
     Ok(root)
 }
 
+#[cfg(test)]
 fn artifact_root_replayed(prev: &[u8], root: &[u8; 32]) -> bool {
     prev.len() == 32 && prev.iter().any(|&byte| byte != 0) && prev == root
+}
+
+/// Root plus the monotonic sequence that follows it.
+///
+/// Fewer than 48 bytes, or a zero root, is `UnverifiedFulfillment`.
+/// Sequence 0 is `SettlementReplay` — the first accepted sequence is 1.
+pub fn parse_settlement(data: &[u8]) -> Result<([u8; 32], u64), ProgramError> {
+    if data.len() < 48 {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    let root = parse_artifact_root(&data[..40])?;
+    let seq = u64::from_le_bytes(
+        data[40..48]
+            .try_into()
+            .map_err(|_| KeyShieldError::SettlementReplay)?,
+    );
+    if seq == 0 {
+        return Err(KeyShieldError::SettlementReplay.into());
+    }
+    Ok((root, seq))
 }
 
 /// Process `mpp_settle` (ix #26).
@@ -72,8 +93,11 @@ fn artifact_root_replayed(prev: &[u8], root: &[u8; 32]) -> bool {
 /// ### Data (after dispatcher strips discriminator)
 /// `units_consumed` (8) u64 — units to settle since last call.
 /// `artifact_root` (32) — sha256 of the batch's fulfillment hashes.
-/// = 40 bytes minimum. A shorter payload or an all-zero root returns
+/// `settlement_seq` (8) u64 — must equal `last_settled_seq + 1`.
+/// = 48 bytes minimum. A shorter payload or an all-zero root returns
 /// `UnverifiedFulfillment` (6108) after the settler is authenticated.
+/// A repeated sequence returns `SettlementReplay` (6111). A remembered
+/// root returns `NonceReused` (6101).
 pub fn process_mpp_settle(
     _program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -135,16 +159,12 @@ pub fn process_mpp_settle(
     // signer still reports NotMppSettler, and before any balance write
     // or token transfer. The preimage (response bytes) was verified
     // off-chain; this rejects a settle that skipped that step.
-    if sbuf.len() < aps_offset::RESERVED + 32 {
+    // Sequence and the root ring are checked once the amount is known,
+    // still before the transfer.
+    if sbuf.len() < aps_offset::RESERVED + crate::guards::RESERVED_LEN {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
-    let artifact_root = parse_artifact_root(data)?;
-    if artifact_root_replayed(
-        &sbuf[aps_offset::RESERVED..aps_offset::RESERVED + 32],
-        &artifact_root,
-    ) {
-        return Err(KeyShieldError::NonceReused.into());
-    }
+    let (artifact_root, settlement_seq) = parse_settlement(data)?;
 
     // mint + ATA consistency.
     let stream_mint_bytes: [u8; 32] = sbuf[aps_offset::USDC_MINT..aps_offset::USDC_MINT + 32]
@@ -254,10 +274,30 @@ pub fn process_mpp_settle(
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
-    sbuf[aps_offset::RESERVED..aps_offset::RESERVED + 32].copy_from_slice(&artifact_root);
+    crate::guards::accept_settlement(
+        &mut sbuf[aps_offset::RESERVED..aps_offset::RESERVED + crate::guards::RESERVED_LEN],
+        &artifact_root,
+        settlement_seq,
+    )?;
 
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
+
+    {
+        let mint_data = usdc_mint.try_borrow_data()?;
+        crate::guards::assert_canonical_usdc_mint(usdc_mint.key(), usdc_mint.owner(), &mint_data)?;
+    }
+    {
+        let ata_data = stream_ata.try_borrow_data()?;
+        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+    }
+    crate::guards::assert_stream_pda(
+        _program_id,
+        stream.key(),
+        &stream_agent,
+        &stream_owner,
+        bump,
+    )?;
 
     // CPI: PDA-signed transfer_checked.
     let bump_arr = [bump];
@@ -284,7 +324,7 @@ pub fn process_mpp_settle(
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact_root_replayed, parse_artifact_root};
+    use super::{artifact_root_replayed, parse_artifact_root, parse_settlement};
     use crate::error::KeyShieldError;
     use crate::state::{aps_offset, AgentPaymentStream};
     use pinocchio::program_error::ProgramError;
@@ -322,6 +362,41 @@ mod tests {
 
     #[test]
     fn reserved_region_can_hold_the_root() {
-        assert!(aps_offset::RESERVED + 32 <= AgentPaymentStream::SIZE);
+        assert!(aps_offset::RESERVED + 64 <= AgentPaymentStream::SIZE);
+    }
+
+    #[test]
+    fn payload_without_sequence_is_unverified() {
+        let mut data = [0u8; 40];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        let err = parse_settlement(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn zero_sequence_is_replay() {
+        let mut data = [0u8; 48];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        let err = parse_settlement(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
+    }
+
+    #[test]
+    fn first_sequence_parses() {
+        let mut data = [0u8; 48];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 7;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        let (root, seq) = parse_settlement(&data).unwrap();
+        assert_eq!(root[0], 7);
+        assert_eq!(seq, 1);
     }
 }

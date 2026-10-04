@@ -242,12 +242,9 @@ pub fn process_settle_payment(
     let unit_type = vault_data[offset + 72];
 
     let amount_due = match unit_type {
-        0 => rate_per_call * units_consumed, // per_call
-        1 => {
-            // For per_token, we'd need rate_per_token
-            // Simplified: assume rate_per_call is actually rate_per_token
-            rate_per_call * units_consumed
-        }
+        0 | 1 => rate_per_call
+            .checked_mul(units_consumed)
+            .ok_or(KeyShieldError::InvalidPaymentAmount)?,
         _ => return Err(KeyShieldError::InvalidPaymentAmount.into()),
     };
 
@@ -267,13 +264,15 @@ pub fn process_settle_payment(
             let cumulative = u64::from_le_bytes(vault_data[grant_offset + 69..grant_offset + 77].try_into()
                 .map_err(|_| KeyShieldError::MaxSpendExceeded)?);
 
-            // Check if adding this payment would exceed max
-            if cumulative + amount_due > max_spend {
+            let new_cumulative = cumulative
+                .checked_add(amount_due)
+                .ok_or(KeyShieldError::MaxSpendExceeded)?;
+            if new_cumulative > max_spend {
                 return Err(KeyShieldError::MaxSpendExceeded.into());
             }
 
-            // Update cumulative spend
-            vault_data[grant_offset + 69..grant_offset + 77].copy_from_slice(&(cumulative + amount_due).to_le_bytes());
+            vault_data[grant_offset + 69..grant_offset + 77]
+                .copy_from_slice(&new_cumulative.to_le_bytes());
             break;
         }
     }
@@ -458,11 +457,14 @@ pub fn process_close_payment_stream(
     for i in 0..MAX_PAYMENT_STREAMS {
         let offset = PAYMENT_STREAMS_START + (i * PAYMENT_STREAM_SIZE);
         if vault_data[offset..offset + 32] == service_url_hash {
-            vault_data[offset + 73] = 0; // is_active = 0
-
-            // Decrement count
+            let is_active = vault_data[offset + 73];
             let count = vault_data[63];
-            vault_data[63] = count.saturating_sub(1);
+            let new_count = crate::guards::close_stream_counter(is_active, count)?;
+            vault_data[offset + 73] = 0;
+            vault_data[63] = new_count;
+            // A closed stream cannot carry a leftover pending balance
+            // into a later reopen of the same vault slot.
+            vault_data[offset + 86..offset + 94].copy_from_slice(&0u64.to_le_bytes());
 
             found = true;
             break;

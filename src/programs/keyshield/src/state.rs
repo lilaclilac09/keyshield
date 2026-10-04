@@ -487,9 +487,10 @@ pub struct AgentPaymentStream {
     /// Replay-protection ring buffer.
     pub consumed_nonces: [ConsumedNonce; CONSUMED_NONCES_LEN],
 
-    /// First 32 bytes store the last settled fulfillment artifact root
-    /// (`sha256` of the batch's artifact hashes). The rest is reserved.
-    /// A second `mpp_settle` with the same root is rejected as a replay.
+    /// Settlement idempotency region. Layout (see `guards`):
+    /// `[0..32]` last artifact root, `[32..40]` `last_settled_seq` as
+    /// u64 LE, `[40..64]` three 8-byte fingerprints of recent roots.
+    /// A replayed sequence or a remembered root does not debit.
     pub _reserved: [u8; 64],
 }
 

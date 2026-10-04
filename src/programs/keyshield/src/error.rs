@@ -70,6 +70,17 @@ pub enum KeyShieldError {
     /// `mpp_settle` carried no fulfillment artifact root. A zero or
     /// missing commitment cannot debit the stream escrow.
     UnverifiedFulfillment = 6108,
+    /// Mint is not canonical USDC, or the escrow token account's mint
+    /// or owner field does not match the stream.
+    InvalidMint = 6109,
+    /// The stream account is already tombstoned. A second close, or an
+    /// open against that tombstone, does not move lamports or balances.
+    AccountClosed = 6110,
+    /// Settlement sequence is not `last_settled_seq + 1`.
+    SettlementReplay = 6111,
+    /// Stream account address is not the canonical
+    /// `["agent_payment_stream", agent, owner, bump]` PDA.
+    InvalidPda = 6112,
 }
 
 impl From<KeyShieldError> for ProgramError {

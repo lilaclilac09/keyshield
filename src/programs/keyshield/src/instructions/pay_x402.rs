@@ -133,9 +133,10 @@ pub fn process_pay_x402(
         }
     }
 
-    // Time bound.
+    // Time bound. A bounded leeway absorbs cluster slot drift without
+    // accepting a payment that is more than CLOCK_LEEWAY_SECS late.
     let now = Clock::get()?.unix_timestamp;
-    if now > expires_at {
+    if crate::guards::unix_expired(now, expires_at) {
         return Err(KeyShieldError::PaymentStreamExpired.into());
     }
 
@@ -247,6 +248,24 @@ pub fn process_pay_x402(
     // so we can reconstruct PDA seeds for the CPI signer below.
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
+
+    // Canonical mint, escrow binding, and PDA bump are checked after
+    // the budget and nonce returns so those errors stay stable.
+    {
+        let mint_data = usdc_mint.try_borrow_data()?;
+        crate::guards::assert_canonical_usdc_mint(usdc_mint.key(), usdc_mint.owner(), &mint_data)?;
+    }
+    {
+        let ata_data = stream_ata.try_borrow_data()?;
+        crate::guards::assert_escrow_token_account(&ata_data, usdc_mint.key(), stream.key())?;
+    }
+    crate::guards::assert_stream_pda(
+        _program_id,
+        stream.key(),
+        &stream_agent,
+        &stream_owner,
+        bump,
+    )?;
 
     // CPI to SPL Token: transfer_checked from stream's ATA to the
     // recipient ATA, signed by the AgentPaymentStream PDA.

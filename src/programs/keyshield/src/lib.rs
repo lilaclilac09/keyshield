@@ -37,6 +37,7 @@ macro_rules! borrow_vault_mut {
 }
 
 pub mod error;
+pub mod guards;
 pub mod instructions;
 pub mod pda;
 pub mod state;
