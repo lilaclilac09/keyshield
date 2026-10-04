@@ -302,3 +302,82 @@ def test_settle_on_chain_refuses_a_zero_root(db):
     stream = _open()
     with pytest.raises(FulfillmentRejected, match="non-zero"):
         mpp_streams.settle_on_chain(stream["id"], 1000, bytes(32))
+
+
+def _b58(raw: bytes) -> str:
+    return mpp_onchain._b58encode_pure(raw)
+
+
+def _live_cfg():
+    ata = _b58(bytes([0x22]) * 32)
+    return mpp_onchain.MppConfig(
+        secret_key=bytes(range(64)),
+        settler_pubkey=_b58(bytes([0x33]) * 32),
+        platform_usdc_ata=ata,
+        keyshield_program_id="11111111111111111111111111111111",
+        usdc_mint=mpp_onchain.USDC_MINT_MAINNET,
+        vault_pda="11111111111111111111111111111111",
+        rpc_url="http://127.0.0.1:8899",
+    )
+
+
+def test_settle_on_chain_refuses_live_submit_without_owner_ed25519(db, monkeypatch):
+    pda = _b58(bytes([0x11]) * 32)
+    ata = _b58(bytes([0x22]) * 32)
+    submitted: list = []
+
+    async def fake_submit(config, ix, prefix_ix=None):
+        submitted.append(prefix_ix)
+        return (1000, "sig")
+
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", _live_cfg)
+    monkeypatch.setattr(mpp_streams, "_get_stream_pda_ata", lambda sid: (pda, ata))
+    monkeypatch.setattr(mpp_onchain, "submit_mpp_settle", fake_submit)
+
+    out = mpp_streams.settle_on_chain(
+        1, 1000, bytes(range(32)), 1, bytes(range(32)), bytes(range(32))
+    )
+    assert out.mode == "failed"
+    assert out.debited_micro_usdc == 0
+    assert submitted == []
+
+
+def test_settle_on_chain_prefixes_owner_ed25519_on_live_submit(db, monkeypatch):
+    from nacl.signing import SigningKey
+
+    stream_key = bytes([0x11]) * 32
+    request_hash = bytes(range(32))
+    pda = _b58(stream_key)
+    ata = _b58(bytes([0x22]) * 32)
+    sk = SigningKey(bytes([7]) * 32)
+    owner = bytes(sk.verify_key)
+    message = mpp_onchain.settlement_binding_hash(stream_key, 1, 1000, request_hash)
+    owner_sig = bytes(sk.sign(message).signature)
+    submitted: list = []
+
+    async def fake_submit(config, ix, prefix_ix=None):
+        submitted.append(prefix_ix)
+        return (1000, "sig")
+
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", _live_cfg)
+    monkeypatch.setattr(mpp_streams, "_get_stream_pda_ata", lambda sid: (pda, ata))
+    monkeypatch.setattr(mpp_onchain, "submit_mpp_settle", fake_submit)
+
+    out = mpp_streams.settle_on_chain(
+        1,
+        1000,
+        bytes(range(32, 64)),
+        1,
+        bytes(range(32)),
+        request_hash,
+        owner_pubkey=owner,
+        owner_signature=owner_sig,
+    )
+    assert out.mode == "submitted"
+    assert out.debited_micro_usdc == 1000
+    assert len(submitted) == 1
+    prefix = submitted[0]
+    assert prefix is not None
+    assert prefix.program_id == mpp_onchain.ED25519_PROGRAM_ID
+    assert prefix.data[80:112] == owner
+    assert prefix.data[112:144] == message

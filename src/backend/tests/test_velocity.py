@@ -115,3 +115,24 @@ def test_ed25519_ix_places_the_message_at_the_honest_offset():
     ix = mpp_onchain.build_ed25519_verify_ix(pubkey, signature, message)
     assert ix.program_id == mpp_onchain.ED25519_PROGRAM_ID
     assert ix.accounts == ()
+
+
+def test_settlement_ed25519_prefix_binds_owner_and_tuple():
+    stream = bytes([0x11]) * 32
+    artifact = bytes([0x22]) * 32
+    owner = bytes([0x33]) * 32
+    signature = bytes([0x44]) * 64
+    prefix = mpp_onchain.build_settlement_ed25519_prefix(
+        stream, 7, 1000, artifact, owner, signature
+    )
+    message = mpp_onchain.settlement_binding_hash(stream, 7, 1000, artifact)
+    assert prefix.program_id == mpp_onchain.ED25519_PROGRAM_ID
+    assert prefix.data[80:112] == owner
+    assert prefix.data[112:144] == message
+    assert prefix.data[16:80] == signature
+    hex_owner = owner.hex()
+    hex_sig = signature.hex()
+    again = mpp_onchain.build_settlement_ed25519_prefix(
+        stream.hex(), 7, 1000, artifact.hex(), hex_owner, hex_sig
+    )
+    assert again.data == prefix.data

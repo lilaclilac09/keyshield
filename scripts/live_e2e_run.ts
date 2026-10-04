@@ -212,6 +212,31 @@ export function signUtf8Ed25519(kp: Keypair, message: string): string {
   return ed25519Sign(null, Buffer.from(message, "utf8"), key).toString("base64");
 }
 
+export function settlementBindingHash(
+  stream: PublicKey,
+  seq: number,
+  amount: number,
+  artifact: Buffer,
+): Buffer {
+  if (artifact.length !== 32) throw new LiveE2EError("artifact hash must be 32 bytes");
+  return sha256(Buffer.concat([stream.toBuffer(), u64le(seq), u64le(amount), artifact]));
+}
+
+export function signSettlementBinding(
+  kp: Keypair,
+  stream: PublicKey,
+  seq: number,
+  amount: number,
+  artifactHex: string,
+): string {
+  const artifact = Buffer.from(artifactHex.replace(/^0x/i, ""), "hex");
+  const message = settlementBindingHash(stream, seq, amount, artifact);
+  const seed = Buffer.from(kp.secretKey.slice(0, 32));
+  const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]);
+  const key = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+  return ed25519Sign(null, message, key).toString("hex");
+}
+
 function jsonToIx(ix: {
   programId: string;
   keys: { pubkey: string; isSigner: boolean; isWritable: boolean }[];
@@ -350,7 +375,12 @@ async function sendIxs(
   return sig;
 }
 
-export async function pythonParityCheck(): Promise<{ hash: string; tokens: number; mac: string }> {
+export async function pythonParityCheck(): Promise<{
+  hash: string;
+  tokens: number;
+  mac: string;
+  binding: string;
+}> {
   const body = Buffer.from(
     'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"total_tokens":12}}\n\n',
     "utf8",
@@ -369,11 +399,13 @@ export async function pythonParityCheck(): Promise<{ hash: string; tokens: numbe
   const script = `
 from src.backend.mpp.fulfillment import canonical_preimage, sha256
 from src.backend.mpp.capture import sign_artifact_hash
+from src.backend.mpp.mpp_onchain import settlement_binding_hash
 body = b'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"total_tokens":12}}\\n\\n'
 pre = canonical_preimage(stream_id=7, upstream="openrouter", status_code=200, body=body, calls=1, tokens=12)
 digest = sha256(pre).hex()
 mac = sign_artifact_hash(${JSON.stringify(session)}, digest).hex()
-print(digest, 12, mac)
+binding = settlement_binding_hash(bytes([0x11]) * 32, 1, 120, bytes.fromhex(digest)).hex()
+print(digest, 12, mac, binding)
 `;
   const run = spawnSync(py, ["-c", script], {
     cwd: ROOT,
@@ -383,11 +415,20 @@ print(digest, 12, mac)
   if (run.status !== 0) {
     throw new LiveE2EError(`python parity failed: ${(run.stderr || run.stdout || "").slice(0, 400)}`, 1);
   }
-  const [hash, tokens, mac] = run.stdout.trim().split(/\s+/);
+  const [hash, tokens, mac, binding] = run.stdout.trim().split(/\s+/);
   if (hash !== localHash) throw new LiveE2EError(`artifact hash mismatch ts=${localHash} py=${hash}`);
   if (mac !== localMac) throw new LiveE2EError(`capture MAC mismatch ts=${localMac} py=${mac}`);
   if (Number(tokens) !== 12) throw new LiveE2EError(`token fixture drifted: ${tokens}`);
-  return { hash, tokens: 12, mac };
+  const localBinding = settlementBindingHash(
+    new PublicKey(Buffer.alloc(32, 0x11)),
+    1,
+    120,
+    Buffer.from(localHash, "hex"),
+  ).toString("hex");
+  if (binding !== localBinding) {
+    throw new LiveE2EError(`binding hash mismatch ts=${localBinding} py=${binding}`);
+  }
+  return { hash, tokens: 12, mac, binding };
 }
 
 async function walletLogin(cfg: LiveConfig, user: Keypair): Promise<string> {
@@ -434,6 +475,7 @@ async function dryRun(cfg: LiveConfig): Promise<number> {
   detail("provider present", existsSync(cfg.providerWalletPath) ? "yes" : "missing (live only)");
   const parity = await pythonParityCheck();
   ok(`sha256(preimage) + HMAC-SHA256 match Python (${parity.hash.slice(0, 12)}…)`);
+  ok(`Ed25519 binding sha256(stream||seq||debit||artifact) matches Python (${parity.binding.slice(0, 12)}…)`);
 
   const tokens = 12;
   const debit = expectedDebitMicro(tokens, cfg.ratePerToken, 0, cfg.ratePerCall);
@@ -446,7 +488,7 @@ async function dryRun(cfg: LiveConfig): Promise<number> {
   console.log(`    1. POST /mpp/streams  deposit=${cfg.deposit} rate=${cfg.ratePerToken}/token`);
   console.log(`    2. wallet-login → POST ${PROVIDER_PATH[cfg.provider].path}`);
   console.log("    3. Accept: text/event-stream + stream:true; read x-ks-mpp-meter/tokens");
-  console.log("    4. HMAC(session, artifact) → POST /capture → mpp_settle");
+  console.log("    4. HMAC(session, artifact) + owner Ed25519 binding → POST /capture → mpp_settle");
   console.log("    5. assert spent_total == tokens_used * price_per_token");
   console.log("    6. close + revoke + withdraw; remaining USDC → client ATA");
 
@@ -649,18 +691,24 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
     });
   }
   const signature = signCapture(token, artifact);
+  const expected = expectedDebitMicro(tokensUsed, cfg.ratePerToken, 0, cfg.ratePerCall);
+  const ownerSignature = signSettlementBinding(user, streamPda, 1, expected, artifact);
   detail("artifact", artifact);
   const captured = await apiOk(
     cfg,
     `/mpp/streams/${streamId}/capture`,
     {
       method: "POST",
-      body: JSON.stringify({ artifactHash: artifact, signature }),
+      body: JSON.stringify({
+        artifactHash: artifact,
+        signature,
+        ownerPubkey: user.publicKey.toBase58(),
+        ownerSignature,
+      }),
     },
     token,
   );
   const settled = Number(captured.stream.just_settled_micro_usdc ?? captured.stream.settled_micro_usdc);
-  const expected = expectedDebitMicro(tokensUsed, cfg.ratePerToken, 0, cfg.ratePerCall);
   detail("settled", `${settled} micro-USDC`);
   detail("expected", `${expected} = ${tokensUsed} × ${cfg.ratePerToken}`);
   if (settled !== expected) {

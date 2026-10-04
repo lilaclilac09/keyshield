@@ -556,6 +556,8 @@ def settle_on_chain(
     settlement_seq: int = 1,
     capture_signature: bytes | None = None,
     request_hash: bytes | None = None,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
@@ -670,6 +672,47 @@ def settle_on_chain(
         )
         return SettleOutcome(0, "failed")
 
+    # Instruction 0 must be the owner Ed25519 over
+    # sha256(stream || seq || debit || artifact). A live submit
+    # without that prefix is 6114 on-chain — fail here instead.
+    if owner_pubkey is None or owner_signature is None:
+        logger.warning(
+            "mpp_settle stream %s: refusing live submit without owner Ed25519 binding",
+            stream_id,
+        )
+        _record_settle_attempt(
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error="missing owner Ed25519 binding",
+            artifact_root=root_hex,
+        )
+        return SettleOutcome(0, "failed")
+    try:
+        stream_key = mpp_onchain.coerce_pubkey32(pda)
+        prefix_ix = mpp_onchain.build_settlement_ed25519_prefix(
+            stream_key,
+            settlement_seq,
+            micro_usdc,
+            request_hash,
+            owner_pubkey,
+            owner_signature,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mpp_settle ed25519 prefix failed for stream %s: %s", stream_id, e)
+        _record_settle_attempt(
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error=str(e),
+            artifact_root=root_hex,
+        )
+        return SettleOutcome(0, "failed")
+
     # Pick the right way to run an async coroutine. If we're inside a
     # running event loop (FastAPI request handler called settle_on_chain
     # directly without a thread executor), asyncio.run() raises — fall
@@ -683,10 +726,12 @@ def settle_on_chain(
     try:
         if running_loop is not None:
             debited, tx_sig = _run_async_in_thread(
-                mpp_onchain.submit_mpp_settle(config, ix),
+                mpp_onchain.submit_mpp_settle(config, ix, prefix_ix=prefix_ix),
             )
         else:
-            debited, tx_sig = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
+            debited, tx_sig = asyncio.run(
+                mpp_onchain.submit_mpp_settle(config, ix, prefix_ix=prefix_ix)
+            )
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
         replayed = _is_artifact_replay(str(e)) or (
@@ -1666,6 +1711,8 @@ def settle_receipt(
     artifact_hash: str,
     session_key: str | None = None,
     signature: bytes | str | None = None,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> dict:
     """Phase 3. Capture one artifact after the consumer MAC verifies.
 
@@ -1709,6 +1756,8 @@ def settle_receipt(
                 signature=signature,
                 now=now,
                 coerce_signature=coerce_signature,
+                owner_pubkey=owner_pubkey,
+                owner_signature=owner_signature,
             )
             _commit(conn)
             return stream
@@ -1729,6 +1778,8 @@ def _capture_locked(
     signature: bytes | str | None,
     now: int,
     coerce_signature,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> dict:
     stream = _get_owned_stream(conn, user_id, stream_id)
     if stream["status"] != "open":
@@ -1803,7 +1854,16 @@ def _capture_locked(
     next_seq = last_seq + 1
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
-    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig, request_hash)
+    outcome = settle_on_chain(
+        int(stream_id),
+        cost,
+        root,
+        next_seq,
+        sig,
+        request_hash,
+        owner_pubkey=owner_pubkey,
+        owner_signature=owner_signature,
+    )
     if outcome.mode == "failed" or (
         outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
     ):
