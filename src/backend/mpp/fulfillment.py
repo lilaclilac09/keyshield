@@ -79,6 +79,35 @@ def sha256(data: bytes) -> bytes:
     return hashlib.sha256(data).digest()
 
 
+def assert_settlement_artifact(
+    digest: bytes | bytearray | str | None,
+    *,
+    what: str = "artifact hash",
+) -> bytes:
+    """Refuse settlement unless ``digest`` is 32 non-zero bytes.
+
+    The proxy metering handler and ``settle_on_chain`` both call this
+    before a capture MAC is accepted or an ``mpp_settle`` ix is built.
+    A short, missing, or all-zero hash cannot reach the settler.
+    """
+    raw: bytes | bytearray | None
+    if isinstance(digest, str):
+        text = digest.strip().lower()
+        if text.startswith("0x"):
+            text = text[2:]
+        try:
+            raw = bytes.fromhex(text)
+        except ValueError as exc:
+            raise FulfillmentRejected(f"{what} must be 32 bytes") from exc
+    else:
+        raw = digest
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) != 32:
+        raise FulfillmentRejected(f"{what} must be 32 bytes")
+    if bytes(raw) == bytes(32):
+        raise FulfillmentRejected(f"settlement requires a non-zero {what}")
+    return bytes(raw)
+
+
 def coerce_body(body: bytes | bytearray | str | dict | list) -> bytes:
     if isinstance(body, (bytes, bytearray)):
         return bytes(body)
@@ -372,10 +401,12 @@ def verify_fulfillment(
         calls=calls,
         tokens=tokens,
     )
+    artifact_hash = assert_settlement_artifact(sha256(preimage))
+    body_sha256 = assert_settlement_artifact(sha256(raw), what="body hash")
     return VerifiedArtifact(
         preimage=preimage,
-        artifact_hash=sha256(preimage),
-        body_sha256=sha256(raw),
+        artifact_hash=artifact_hash,
+        body_sha256=body_sha256,
         calls=calls,
         tokens=tokens,
     )

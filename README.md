@@ -5,8 +5,8 @@
 <h1 align="center">KeyShield</h1>
 
 <p align="center">
-  <strong>Stop copy-pasting API keys.</strong><br/>
-  iCloud Keychain for your API keys — store once, plug in anywhere, calls get accelerated.
+  <strong>A non-custodial session-key sandbox for agent commerce.</strong><br/>
+  Store keys once. Agents hold a session token, never the raw secret. Calls settle on Solana after fulfillment proves out.
 </p>
 
 <p align="center">
@@ -44,7 +44,29 @@ Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 | **10x more secure** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same zero-knowledge model as iCloud Keychain, built for API secrets. |
 | **10x faster calls** | Rust proxy with two-tier cache (memory + disk) and single-flight dedup. 50 identical `getBalance` calls hit the network once. Hot-path Solana RPCs land in the 50–80ms band without changing your client code. |
 
-### How it flows
+### Architecture
+
+KeyShield is a **non-custodial session-key sandbox for agent commerce**.
+The human (or the agent's operator) encrypts provider keys on-device
+(WebAuthn-PRF → HKDF → AES-256-GCM). The Cloudflare sync-worker stores
+ciphertext only. At request time the client decrypts locally, the
+Python proxy injects `X-Upstream-API-Key` once, and the key is never
+persisted. The agent process holds a session token (`ksv2_…`), not
+`sk-` / `gsk_` material.
+
+The on-chain program is **pinocchio**, not Anchor. Instruction handlers
+are `no_std`, read `aps_offset` instead of deserializing heap types,
+and stay inside a tight CU budget: mint / PDA / tombstone checks run
+after the cheap early returns so a bad settler or a zero-byte artifact
+fails before `TransferChecked`.
+
+**Two-phase commit closes the settlement vs fulfillment gap.** Phase 1
+(`hold_estimate`) locks micro-USDC in the stream ledger. Phase 2
+(`verify_fulfillment` + `assert_settlement_artifact`) hashes the
+upstream body and refuses empty, error, or short digests. Phase 3
+(`settle_receipt`) accepts `HMAC-SHA256(session, artifact)` and only
+then builds `mpp_settle`. A 502, a truncated SSE, or a missing 32-byte
+hash cannot debit the Devnet escrow.
 
 ```
   You ──► Store keys in vault (dashboard or Chrome extension)
@@ -52,13 +74,13 @@ Dashboard for humans. SDK & CLI for agents. Same vault underneath.
              ├── encrypted in your browser (AES-256-GCM)
              └── server only holds ciphertext
                     │
-  Your code ──► Plug in the SDK (3 lines, same OpenAI API)
+  Your agent ──► session token (never the raw key)
                     │
-                    └──► Rust proxy ──► upstream provider
+                    └──► Python proxy ──► upstream (OpenRouter / Ollama / vLLM / …)
                             │
-                            ├── raw key injected once, discarded immediately
-                            ├── response cache: 50–80ms hot path
-                            └── USDC micropayment settled on Solana
+                            ├── hold → verify artifact (32-byte sha256) → capture
+                            ├── Rust hot-path cache: 50–80ms Solana RPCs
+                            └── pinocchio mpp_settle on Devnet USDC
 ```
 
 ### Same vault. Two interfaces.

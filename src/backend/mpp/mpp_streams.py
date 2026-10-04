@@ -52,6 +52,7 @@ from .capture import verify_artifact_signature
 from .fulfillment import (
     FulfillmentRejected,
     artifact_root,
+    assert_settlement_artifact,
     canonical_preimage,
     coerce_body,
     sha256,
@@ -74,6 +75,7 @@ def _resolve_db_path() -> Path:
     if override:
         return Path(override)
     return DB_PATH
+
 
 # How long an in-flight (no recorded result yet) settle attempt is
 # considered "pending" before a retry can take over. Keeps `settle`
@@ -519,11 +521,7 @@ def _is_artifact_replay(error: str) -> bool:
 def _is_sequence_replay(error: str) -> bool:
     """True when the chain rejected `settlement_seq` because `seq <= last_settled_seq`."""
     text = error.lower()
-    return (
-        "settlementreplay" in text
-        or "0x17df" in text
-        or "custom program error: 6111" in text
-    )
+    return "settlementreplay" in text or "0x17df" in text or "custom program error: 6111" in text
 
 
 def _stub_ledger() -> bool:
@@ -585,11 +583,12 @@ def settle_on_chain(
     ts-bucket) within `_PENDING_RECENCY_SECS` returns the prior
     result instead of re-submitting.
     """
-    if not isinstance(artifact_root_bytes, (bytes, bytearray)) or len(artifact_root_bytes) != 32:
-        raise FulfillmentRejected("settlement requires a 32-byte fulfillment artifact root")
-    if bytes(artifact_root_bytes) == bytes(32):
-        raise FulfillmentRejected("settlement requires a non-zero fulfillment artifact root")
-    if isinstance(settlement_seq, bool) or not isinstance(settlement_seq, int) or settlement_seq < 1:
+    artifact_root_bytes = assert_settlement_artifact(artifact_root_bytes, what="artifact root")
+    if (
+        isinstance(settlement_seq, bool)
+        or not isinstance(settlement_seq, int)
+        or settlement_seq < 1
+    ):
         raise ReplayRejected("SettlementReplay")
     if (
         not isinstance(capture_signature, (bytes, bytearray))
@@ -597,15 +596,8 @@ def settle_on_chain(
         or bytes(capture_signature) == bytes(32)
     ):
         raise FulfillmentRejected("capture signature required")
-    if (
-        not isinstance(request_hash, (bytes, bytearray))
-        or len(request_hash) != 32
-        or bytes(request_hash) == bytes(32)
-    ):
-        raise FulfillmentRejected("request_hash required")
+    request_hash = assert_settlement_artifact(request_hash, what="request_hash")
     capture_signature = bytes(capture_signature)
-    artifact_root_bytes = bytes(artifact_root_bytes)
-    request_hash = bytes(request_hash)
     root_hex = artifact_root_bytes.hex()
 
     if micro_usdc <= 0:
@@ -1320,9 +1312,7 @@ def _record_usage_locked(
 ) -> dict:
     stream = _get_owned_stream(conn, user_id, stream_id)
     if stream["status"] != "open":
-        _persist_release_and_raise(
-            conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed")
-        )
+        _persist_release_and_raise(conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed"))
 
     try:
         artifact = verify_fulfillment(
@@ -1813,9 +1803,7 @@ def _capture_locked(
     next_seq = last_seq + 1
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
-    outcome = settle_on_chain(
-        int(stream_id), cost, root, next_seq, sig, request_hash
-    )
+    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig, request_hash)
     if outcome.mode == "failed" or (
         outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
     ):
@@ -1951,7 +1939,6 @@ def close_stream(user_id: str, stream_id: int) -> dict:
         return stream
     finally:
         conn.close()
-
 
 
 def record_tx_signature(

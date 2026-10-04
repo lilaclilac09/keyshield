@@ -12,6 +12,7 @@ from src.backend.mpp.capture import sign_artifact_hash
 from src.backend.mpp.fulfillment import (
     FulfillmentRejected,
     artifact_root,
+    assert_settlement_artifact,
     verify_fulfillment,
 )
 
@@ -45,6 +46,20 @@ def _open(upstream: str = "openai"):
         rate_per_call=1000,
         settlement_interval=5,
     )
+
+
+def test_settlement_artifact_must_be_32_nonzero_bytes():
+    digest = bytes(range(32))
+    assert assert_settlement_artifact(digest) == digest
+    assert assert_settlement_artifact(digest.hex()) == digest
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        assert_settlement_artifact(b"short")
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        assert_settlement_artifact("abcd")
+    with pytest.raises(FulfillmentRejected, match="non-zero"):
+        assert_settlement_artifact(bytes(32))
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        mpp_streams.settle_on_chain(1, 10, b"short", 1, bytes(range(32)), bytes(range(32)))
 
 
 def test_empty_error_and_garbage_are_not_billable():
@@ -265,9 +280,7 @@ def test_verified_usage_holds_until_signed_capture(db):
     root = artifact_root([bytes.fromhex(row[1])])
     request_hash = bytes.fromhex(row[1])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(
-        1020, root, 1, signature, request_hash
-    )
+    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature, request_hash)
     assert len(payload) == 113
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020

@@ -2,7 +2,10 @@
 //!
 //! Contains both legacy Vault (for backward compatibility) and new UniversalVault
 
+use pinocchio::program_error::ProgramError;
 use pinocchio::pubkey::Pubkey;
+
+use crate::error::KeyShieldError;
 
 // ==================== LEGACY VAULT (Backward Compatibility) ====================
 
@@ -549,6 +552,27 @@ impl AgentPaymentStream {
     /// has 6 decimals.
     pub const USDC_DECIMALS: u8 = 6;
 
+    /// `max_total - spent` with `checked_sub`. Overflow is 6113.
+    pub fn remaining_budget(&self) -> Result<u64, ProgramError> {
+        self.max_total_micro_usdc
+            .checked_sub(self.spent_total_micro_usdc)
+            .ok_or_else(|| KeyShieldError::ArithmeticOverflow.into())
+    }
+
+    /// `spent + amount` with `checked_add`. Over the cap is 6100.
+    pub fn apply_debit(&mut self, amount: u64) -> Result<u64, ProgramError> {
+        let remaining = self.remaining_budget()?;
+        if amount > remaining {
+            return Err(KeyShieldError::BudgetExceeded.into());
+        }
+        let next = self
+            .spent_total_micro_usdc
+            .checked_add(amount)
+            .ok_or(KeyShieldError::ArithmeticOverflow)?;
+        self.spent_total_micro_usdc = next;
+        Ok(next)
+    }
+
     /// Search the ring buffer for a matching (envelope_hash, nonce)
     /// pair. Returns `true` if the pair has already been consumed.
     pub fn nonce_already_consumed(
@@ -696,13 +720,46 @@ mod grant_expiry {
         grant.session_timeout = 0;
         assert!(!grant.is_expired(1_030));
         assert!(grant.is_expired(1_031));
-        grant.created_at = u64::MAX - 5;
+        grant.created_at = u64::MAX.checked_sub(5).unwrap();
         grant.session_timeout = 100;
         assert!(grant.is_expired(10));
         grant.is_active = 0;
         grant.created_at = 1_000;
         grant.session_timeout = 10_000;
         assert!(grant.is_expired(1_000));
+    }
+}
+
+#[cfg(test)]
+mod stream_checked_math {
+    use super::AgentPaymentStream;
+    use crate::error::KeyShieldError;
+    use pinocchio::program_error::ProgramError;
+
+    fn blank() -> AgentPaymentStream {
+        unsafe { core::mem::zeroed() }
+    }
+
+    fn code(err: ProgramError) -> u32 {
+        match err {
+            ProgramError::Custom(c) => c,
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn remaining_budget_and_debit_use_checked_ops() {
+        let mut stream = blank();
+        stream.max_total_micro_usdc = 100;
+        stream.spent_total_micro_usdc = 40;
+        assert_eq!(stream.remaining_budget().unwrap(), 60);
+        assert_eq!(stream.apply_debit(10).unwrap(), 50);
+        assert_eq!(stream.spent_total_micro_usdc, 50);
+        let over = stream.apply_debit(100).unwrap_err();
+        assert_eq!(code(over), KeyShieldError::BudgetExceeded as u32);
+        stream.spent_total_micro_usdc = 200;
+        let overflow = stream.remaining_budget().unwrap_err();
+        assert_eq!(code(overflow), KeyShieldError::ArithmeticOverflow as u32);
     }
 }
 

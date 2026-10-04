@@ -478,7 +478,7 @@ def _mpp_meter_header(
         return "rejected:invalid stream id", None, None, None
 
     from ..mpp import mpp_streams
-    from ..mpp.fulfillment import FulfillmentRejected
+    from ..mpp.fulfillment import FulfillmentRejected, assert_settlement_artifact
 
     payload = content if isinstance(content, (bytes, bytearray)) else str(content).encode()
     try:
@@ -509,6 +509,11 @@ def _mpp_meter_header(
     artifact = recorded.get("artifact_hash")
     tokens = recorded.get("tokens_billed")
     billed = int(tokens) if tokens is not None else None
+    try:
+        assert_settlement_artifact(artifact)
+    except (FulfillmentRejected, TypeError, ValueError):
+        _mpp_release(user_id, stream_id, hold_id)
+        return "rejected:unverified artifact", None, None, None
     if recorded.get("idempotent_replay"):
         return "idempotent_replay", None, artifact, billed
     bound = recorded.get("hold_id") or hold_id

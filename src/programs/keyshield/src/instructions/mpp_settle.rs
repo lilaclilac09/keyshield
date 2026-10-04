@@ -192,6 +192,13 @@ pub fn process_mpp_settle(
     if sbuf.len() < AgentPaymentStream::SIZE {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
+    // Pinocchio equivalent of an Anchor `constraint = disc != closed`.
+    // Withdraw / clawback already wrote `ksc1osed` and zeroed the body.
+    if crate::guards::is_closed_account(
+        &sbuf[aps_offset::DISCRIMINATOR..aps_offset::DISCRIMINATOR + 8],
+    ) {
+        return Err(KeyShieldError::AccountClosed.into());
+    }
     if &sbuf[aps_offset::DISCRIMINATOR..aps_offset::DISCRIMINATOR + 8]
         != AGENT_PAYMENT_STREAM_DISCRIMINATOR.as_ref()
     {
