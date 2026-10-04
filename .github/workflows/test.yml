@@ -53,6 +53,11 @@ jobs:
             src/proxy/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
+      - name: Test keyshield host invariants (no SBF)
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test -p keyshield --lib --test bankrun_invariants --test fuzz_invariants --test embedded_wallet_layout -- --test-threads=1
+
       - name: Test proxy-rs (unit tests, must pass)
         env:
           KS_PYTHON: python3
