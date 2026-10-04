@@ -62,6 +62,9 @@ fn artifact_root_replayed(prev: &[u8], root: &[u8; 32]) -> bool {
 ///
 /// Fewer than 48 bytes, or a zero root, is `UnverifiedFulfillment`.
 /// Sequence 0 is `SettlementReplay` — the first accepted sequence is 1.
+/// This parser stops at 48 bytes so a payload that has a root and a
+/// sequence, but no capture signature, still fails closed in
+/// `parse_capture_signature` rather than here.
 pub fn parse_settlement(data: &[u8]) -> Result<([u8; 32], u64), ProgramError> {
     if data.len() < 48 {
         return Err(KeyShieldError::UnverifiedFulfillment.into());
@@ -76,6 +79,26 @@ pub fn parse_settlement(data: &[u8]) -> Result<([u8; 32], u64), ProgramError> {
         return Err(KeyShieldError::SettlementReplay.into());
     }
     Ok((root, seq))
+}
+
+/// Consumer capture signature that follows the 48-byte settlement body.
+///
+/// The metering service checks HMAC-SHA256(session key, artifact hash)
+/// before it builds this instruction. The program does not know that
+/// secret. It rejects a missing or all-zero signature so a settle with
+/// only a root cannot move USDC. A non-zero signature is not proof by
+/// itself — the honest settler submits the MAC the ledger already
+/// verified.
+pub fn parse_capture_signature(data: &[u8]) -> Result<[u8; 32], ProgramError> {
+    if data.len() < 80 {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    let mut signature = [0u8; 32];
+    signature.copy_from_slice(&data[48..80]);
+    if signature == [0u8; 32] {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    Ok(signature)
 }
 
 /// Process `mpp_settle` (ix #26).
@@ -94,10 +117,17 @@ pub fn parse_settlement(data: &[u8]) -> Result<([u8; 32], u64), ProgramError> {
 /// `units_consumed` (8) u64 — units to settle since last call.
 /// `artifact_root` (32) — sha256 of the batch's fulfillment hashes.
 /// `settlement_seq` (8) u64 — must equal `last_settled_seq + 1`.
-/// = 48 bytes minimum. A shorter payload or an all-zero root returns
-/// `UnverifiedFulfillment` (6108) after the settler is authenticated.
-/// A repeated sequence returns `SettlementReplay` (6111). A remembered
-/// root returns `NonceReused` (6101).
+/// `capture_signature` (32) — consumer MAC over the artifact hash.
+/// = 80 bytes. A shorter payload, an all-zero root, or an all-zero
+/// signature returns `UnverifiedFulfillment` (6108) after the settler
+/// is authenticated. A repeated sequence returns `SettlementReplay`
+/// (6111). A remembered root returns `NonceReused` (6101).
+///
+/// The escrow USDC stays in the stream ATA until this instruction.
+/// Estimated cost is locked in the off-chain ledger (`held_micro_usdc`)
+/// and returns to the available balance when the hold expires or the
+/// capture signature does not verify. This instruction is the capture:
+/// it debits only after the signature bytes are present.
 pub fn process_mpp_settle(
     _program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -165,6 +195,8 @@ pub fn process_mpp_settle(
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
     let (artifact_root, settlement_seq) = parse_settlement(data)?;
+    // Present and non-zero. The HMAC itself was checked off-chain.
+    let _capture_signature = parse_capture_signature(data)?;
 
     // mint + ATA consistency.
     let stream_mint_bytes: [u8; 32] = sbuf[aps_offset::USDC_MINT..aps_offset::USDC_MINT + 32]
@@ -319,7 +351,9 @@ pub fn process_mpp_settle(
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact_root_replayed, parse_artifact_root, parse_settlement};
+    use super::{
+        artifact_root_replayed, parse_artifact_root, parse_capture_signature, parse_settlement,
+    };
     use crate::error::KeyShieldError;
     use crate::state::{aps_offset, AgentPaymentStream};
     use pinocchio::program_error::ProgramError;
@@ -393,5 +427,46 @@ mod tests {
         let (root, seq) = parse_settlement(&data).unwrap();
         assert_eq!(root[0], 7);
         assert_eq!(seq, 1);
+    }
+
+    #[test]
+    fn settlement_without_capture_signature_is_unverified() {
+        let mut data = [0u8; 48];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        let (root, seq) = parse_settlement(&data).unwrap();
+        assert_eq!(root[0], 1);
+        assert_eq!(seq, 1);
+        let err = parse_capture_signature(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn zero_capture_signature_is_unverified() {
+        let mut data = [0u8; 80];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        let err = parse_capture_signature(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn non_zero_capture_signature_parses() {
+        let mut data = [0u8; 80];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        data[48] = 9;
+        let signature = parse_capture_signature(&data).unwrap();
+        assert_eq!(signature[0], 9);
+        assert_ne!(signature, [0u8; 32]);
     }
 }

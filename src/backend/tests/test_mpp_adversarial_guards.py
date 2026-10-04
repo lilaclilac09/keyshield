@@ -9,12 +9,16 @@ import httpx
 import pytest
 
 from src.backend.mpp import mpp_onchain, mpp_streams
+from src.backend.mpp.capture import sign_artifact_hash
 from src.backend.mpp.fulfillment import (
     FulfillmentRejected,
+    artifact_root,
     received_token_ceiling,
     verify_fulfillment,
 )
-from src.backend.mpp.mpp_streams import ReplayRejected
+from src.backend.mpp.mpp_streams import BudgetExceeded, CaptureRejected, HoldExpired, ReplayRejected
+
+SESSION = "ks-session-consumer"
 from src.backend.proxy import api_router
 
 CHAT = json.dumps(
@@ -164,17 +168,130 @@ def test_replayed_receipt_does_not_advance_sequence_or_balance(db):
         status_code=200,
         body=CHAT,
     )
-    paid = mpp_streams.settle_receipt("alice", stream["id"], recorded["artifact_hash"])
+    signature = sign_artifact_hash(SESSION, recorded["artifact_hash"])
+    paid = mpp_streams.settle_receipt(
+        "alice",
+        stream["id"],
+        recorded["artifact_hash"],
+        session_key=SESSION,
+        signature=signature,
+    )
     assert paid["settled_micro_usdc"] == recorded["pending_micro_usdc"]
+    assert paid["held_micro_usdc"] == 0
     assert paid["last_settled_seq"] == 1
     with pytest.raises(ReplayRejected, match="NonceReused"):
-        mpp_streams.settle_receipt("alice", stream["id"], recorded["artifact_hash"])
+        mpp_streams.settle_receipt(
+            "alice",
+            stream["id"],
+            recorded["artifact_hash"],
+            session_key=SESSION,
+            signature=signature,
+        )
     fresh = mpp_streams.list_streams("alice")["streams"][0]
     assert fresh["settled_micro_usdc"] == paid["settled_micro_usdc"]
     assert fresh["pending_micro_usdc"] == 0
     assert fresh["last_settled_seq"] == 1
     with pytest.raises(ReplayRejected, match="SettlementReplay"):
         mpp_streams.settle_on_chain(stream["id"], 1000, bytes([1]) + bytes(31), 0)
+
+
+def test_hold_reduces_available_escrow_and_second_hold_stops_at_the_cap(db):
+    stream = _open()
+    first = mpp_streams.hold_estimate("alice", stream["id"], "openai", 800)
+    assert first["held_micro_usdc"] == 800
+    assert first["pending_micro_usdc"] == 0
+    assert first["settled_micro_usdc"] == 0
+    assert first["escrow_micro_usdc"] == 50_000 - 800
+    second = mpp_streams.hold_estimate("alice", stream["id"], "openai", 800)
+    assert second["held_micro_usdc"] == 1600
+    assert second["escrow_micro_usdc"] == 50_000 - 1600
+    with pytest.raises(BudgetExceeded, match="BudgetExceeded"):
+        mpp_streams.hold_estimate("alice", stream["id"], "openai", 50_000)
+    fresh = mpp_streams.list_streams("alice")["streams"][0]
+    assert fresh["held_micro_usdc"] == 1600
+    assert fresh["settled_micro_usdc"] == 0
+    assert fresh["escrow_micro_usdc"] == 50_000 - 1600
+
+
+def test_bad_signature_releases_hold_and_a_later_valid_signature_captures(db):
+    stream = _open()
+    recorded = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    assert recorded["held_micro_usdc"] == recorded["pending_micro_usdc"]
+    with pytest.raises(CaptureRejected, match="invalid capture signature"):
+        mpp_streams.settle_receipt(
+            "alice",
+            stream["id"],
+            recorded["artifact_hash"],
+            session_key=SESSION,
+            signature=b"\x01" * 32,
+        )
+    released = mpp_streams.list_streams("alice")["streams"][0]
+    assert released["settled_micro_usdc"] == 0
+    assert released["pending_micro_usdc"] == 0
+    assert released["held_micro_usdc"] == 0
+    assert released["escrow_micro_usdc"] == 50_000
+
+    signature = sign_artifact_hash(SESSION, recorded["artifact_hash"])
+    paid = mpp_streams.settle_receipt(
+        "alice",
+        stream["id"],
+        recorded["artifact_hash"],
+        session_key=SESSION,
+        signature=signature,
+    )
+    assert paid["settled_micro_usdc"] == recorded["pending_micro_usdc"]
+    assert paid["pending_micro_usdc"] == 0
+    assert paid["held_micro_usdc"] == 0
+    assert paid["last_settled_seq"] == 1
+    root = artifact_root([bytes.fromhex(recorded["artifact_hash"])])
+    payload = mpp_onchain.build_mpp_settle_ix_data(
+        paid["settled_micro_usdc"],
+        root,
+        1,
+        signature,
+    )
+    assert len(payload) == 81
+    assert payload[49:81] == signature
+
+
+def test_expired_hold_returns_the_lock_to_available_balance(db):
+    stream = _open()
+    recorded = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    signature = sign_artifact_hash(SESSION, recorded["artifact_hash"])
+    conn = mpp_streams._db()
+    conn.execute(
+        "UPDATE mpp_holds SET expires_at = 0 WHERE stream_id = ?",
+        (stream["id"],),
+    )
+    conn.commit()
+    conn.close()
+    with pytest.raises(HoldExpired, match="hold expired"):
+        mpp_streams.settle_receipt(
+            "alice",
+            stream["id"],
+            recorded["artifact_hash"],
+            session_key=SESSION,
+            signature=signature,
+        )
+    fresh = mpp_streams.list_streams("alice")["streams"][0]
+    assert fresh["settled_micro_usdc"] == 0
+    assert fresh["pending_micro_usdc"] == 0
+    assert fresh["held_micro_usdc"] == 0
+    assert fresh["escrow_micro_usdc"] == 50_000
 
 
 def test_stream_cut_checkpoints_bytes_and_empty_cut_returns_502():

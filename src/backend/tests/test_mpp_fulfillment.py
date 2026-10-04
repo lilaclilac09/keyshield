@@ -8,11 +8,14 @@ import time
 import pytest
 
 from src.backend.mpp import mpp_onchain, mpp_streams
+from src.backend.mpp.capture import sign_artifact_hash
 from src.backend.mpp.fulfillment import (
     FulfillmentRejected,
     artifact_root,
     verify_fulfillment,
 )
+
+SESSION = "ks-session-consumer"
 
 CHAT = json.dumps(
     {
@@ -210,7 +213,7 @@ def test_unverified_pending_is_not_settled(db):
     assert settled["pending_micro_usdc"] == 0
 
 
-def test_verified_usage_settles_and_builds_a_non_zero_root(db):
+def test_verified_usage_holds_until_signed_capture(db):
     stream = _open()
     conn = mpp_streams._db()
     conn.execute(
@@ -228,9 +231,24 @@ def test_verified_usage_settles_and_builds_a_non_zero_root(db):
         status_code=200,
         body=CHAT,
     )
-    assert recorded["just_settled_micro_usdc"] == 1020
-    assert recorded["pending_micro_usdc"] == 0
-    assert recorded["settled_micro_usdc"] == 1020
+    assert recorded["just_settled_micro_usdc"] == 0
+    assert recorded["pending_micro_usdc"] == 1020
+    assert recorded["held_micro_usdc"] == 1020
+    assert recorded["settled_micro_usdc"] == 0
+
+    signature = sign_artifact_hash(SESSION, recorded["artifact_hash"])
+    paid = mpp_streams.settle_receipt(
+        "alice",
+        stream["id"],
+        recorded["artifact_hash"],
+        session_key=SESSION,
+        signature=signature,
+    )
+    assert paid["just_settled_micro_usdc"] == 1020
+    assert paid["pending_micro_usdc"] == 0
+    assert paid["held_micro_usdc"] == 0
+    assert paid["settled_micro_usdc"] == 1020
+    assert paid["last_settled_seq"] == 1
 
     conn = mpp_streams._db()
     row = conn.execute(
@@ -241,17 +259,19 @@ def test_verified_usage_settles_and_builds_a_non_zero_root(db):
     assert row[0] == 1
     root = artifact_root([bytes.fromhex(row[1])])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1)
-    assert len(payload) == 49
+    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature)
+    assert len(payload) == 81
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020
     assert payload[9:41] == root
     assert int.from_bytes(payload[41:49], "little") == 1
-    assert recorded["last_settled_seq"] == 1
+    assert payload[49:81] == signature
     with pytest.raises(ValueError, match="non-zero"):
         mpp_onchain.build_mpp_settle_ix_data(1020, bytes(32))
     with pytest.raises(ValueError, match="settlement_seq"):
         mpp_onchain.build_mpp_settle_ix_data(1020, root, 0)
+    with pytest.raises(ValueError, match="capture signature"):
+        mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, bytes(32))
 
 
 def test_settle_on_chain_refuses_a_zero_root(db):

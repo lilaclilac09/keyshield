@@ -15,11 +15,15 @@ On-chain mode (Phase 10.4-real, this file):
     `fulfillment.py`. Unverified pending is dropped, not paid.
   - Every on-chain submit includes a 32-byte artifact root. A missing
     or all-zero root is refused before the transaction is built.
-  - `max_total_micro_usdc` is the hard cap. `settle_receipt` debits one
-    verified artifact under `BEGIN IMMEDIATE` and rolls back when
-    `settled + cost` would pass the cap. Closed streams reject further
-    record/settle/receipt mutations. A consumed artifact hash is
-    `NonceReused`.
+  - `max_total_micro_usdc` is the hard cap. Available escrow is
+    `cap - settled - held`. Phase 1 locks an estimate in
+    `held_micro_usdc`. Phase 2 binds that hold to the SHA-256 artifact
+    hash. Phase 3 (`settle_receipt`) captures only when the consumer
+    session key's HMAC over that hash verifies, then submits
+    `mpp_settle`. A bad signature or an expired hold returns the lock
+    to the available balance. Unsigned interval settlement does not
+    debit. Closed streams reject further record/settle/receipt
+    mutations. A consumed artifact hash is `NonceReused`.
   - Per spec 10 §Q3, x402 and MPP debit the SAME PaymentStream USDC
     ATA on-chain.
 
@@ -27,7 +31,8 @@ Tables (created lazily on first call to `_db()`):
   - mpp_streams:          one row per opened stream
   - mpp_events:           append-only audit log of open/record/settle/close
   - mpp_settle_attempts:  idempotency log for on-chain mpp_settle submissions
-  - mpp_artifacts:        verified fulfillment hashes awaiting settlement
+  - mpp_artifacts:        verified fulfillment hashes awaiting capture
+  - mpp_holds:            estimated-cost locks (held → captured/released/expired)
 
 The DB lives at v2-mvp/data/mpp.db so resetting MPP state doesn't nuke
 usage history. Same lifecycle pattern as `usage.DB_PATH`.
@@ -43,6 +48,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .capture import verify_artifact_signature
 from .fulfillment import (
     FulfillmentRejected,
     artifact_root,
@@ -185,6 +191,21 @@ def _db() -> sqlite3.Connection:
             artifact_hash TEXT    NOT NULL,
             PRIMARY KEY (stream_id, request_id)
         );
+
+        -- Phase-1 lock. `artifact_hash` stays NULL until the upstream
+        -- body is hashed and bound. status is held, captured, released,
+        -- or expired. Expiry returns the lock to available balance.
+        CREATE TABLE IF NOT EXISTS mpp_holds (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            stream_id       INTEGER NOT NULL,
+            artifact_hash   TEXT,
+            micro_usdc      INTEGER NOT NULL,
+            status          TEXT    NOT NULL DEFAULT 'held',
+            expires_at      INTEGER NOT NULL,
+            created_at      INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_mpp_holds_stream
+            ON mpp_holds (stream_id, status, expires_at);
     """)
 
     # Spec 10 Phase 10.5 wallet sign-off — idempotent column adds. Once
@@ -219,6 +240,13 @@ def _db() -> sqlite3.Connection:
     if "last_settled_seq" not in existing_cols:
         conn.execute(
             "ALTER TABLE mpp_streams ADD COLUMN last_settled_seq INTEGER NOT NULL DEFAULT 0"
+        )
+    # Micro-USDC locked by an open hold. Available escrow is
+    # cap - settled - held. Capture moves held into settled; release
+    # and expiry move it back to available.
+    if "held_micro_usdc" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE mpp_streams ADD COLUMN held_micro_usdc INTEGER NOT NULL DEFAULT 0"
         )
 
     attempt_cols = {row[1] for row in conn.execute("PRAGMA table_info(mpp_settle_attempts)")}
@@ -265,6 +293,23 @@ class ReplayRejected(Exception):
         super().__init__(message)
 
 
+class CaptureRejected(Exception):
+    """The consumer session MAC over the artifact hash did not verify.
+
+    The hold is released back to available balance before this is raised.
+    """
+
+    def __init__(self, message: str = "invalid capture signature"):
+        super().__init__(message)
+
+
+class HoldExpired(Exception):
+    """The estimate lock timed out and returned to available balance."""
+
+    def __init__(self, message: str = "hold expired"):
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class SettleOutcome:
     """Result of one attempt to submit `mpp_settle`.
@@ -288,7 +333,7 @@ _STREAM_COLS = (
     "settlement_interval_secs, status, opened_at, last_settled_at, "
     "closed_at, total_calls, total_tokens, "
     "pending_micro_usdc, settled_micro_usdc, tx_signature, "
-    "max_total_micro_usdc, last_settled_seq"
+    "max_total_micro_usdc, last_settled_seq, held_micro_usdc"
 )
 
 
@@ -300,11 +345,13 @@ def _row_to_stream(row: tuple) -> dict:
     sig = row[16] if len(row) > 16 else None
     cap = row[17] if len(row) > 17 else None
     seq = int(row[18]) if len(row) > 18 and row[18] is not None else 0
+    held = int(row[19]) if len(row) > 19 and row[19] is not None else 0
     if cap is not None:
         cap = int(cap)
     settled = int(row[15])
-    # Remaining hard-cap headroom. NULL cap → uncapped, escrow is None.
-    escrow = None if cap is None else cap - settled
+    # Remaining hard-cap headroom after settled debits and open holds.
+    # NULL cap → uncapped, escrow is None.
+    escrow = None if cap is None else cap - settled - held
     return {
         "id": row[0],
         "user_id": row[1],
@@ -326,6 +373,7 @@ def _row_to_stream(row: tuple) -> dict:
         "max_total_micro_usdc": cap,
         "escrow_micro_usdc": escrow,
         "last_settled_seq": seq,
+        "held_micro_usdc": held,
     }
 
 
@@ -507,12 +555,16 @@ def settle_on_chain(
     micro_usdc: int,
     artifact_root_bytes: bytes,
     settlement_seq: int = 1,
+    capture_signature: bytes | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
     `artifact_root_bytes` is the 32-byte fulfillment commitment for
     this batch. A missing or zero root raises FulfillmentRejected and
     does not touch the chain — invoiced units alone are not enough.
+    `capture_signature` is the 32-byte consumer MAC. A missing or
+    all-zero signature raises FulfillmentRejected after the root
+    check, so a zero root still reports that error first.
 
     Stub-fallback (`mode="stub"`) runs whenever:
       - any required env var (KS_MPP_SETTLER_KEY, KS_PLATFORM_USDC_ATA,
@@ -535,6 +587,13 @@ def settle_on_chain(
         raise FulfillmentRejected("settlement requires a non-zero fulfillment artifact root")
     if isinstance(settlement_seq, bool) or not isinstance(settlement_seq, int) or settlement_seq < 1:
         raise ReplayRejected("SettlementReplay")
+    if (
+        not isinstance(capture_signature, (bytes, bytearray))
+        or len(capture_signature) != 32
+        or bytes(capture_signature) == bytes(32)
+    ):
+        raise FulfillmentRejected("capture signature required")
+    capture_signature = bytes(capture_signature)
     artifact_root_bytes = bytes(artifact_root_bytes)
     root_hex = artifact_root_bytes.hex()
 
@@ -590,6 +649,7 @@ def settle_on_chain(
             micro_usdc,
             artifact_root_bytes,
             settlement_seq,
+            capture_signature,
         )
     except Exception as e:  # noqa: BLE001
         # build_mpp_settle_ix raises if vault_pda is missing — same
@@ -887,6 +947,293 @@ def _idempotent_replay(stream: dict, artifact_hash: str) -> dict:
     return stream
 
 
+def _hold_ttl_secs() -> int:
+    """How long an estimate stays locked before it returns to available."""
+    raw = os.environ.get("KS_MPP_HOLD_TTL_SECS", "").strip()
+    if not raw:
+        return 120
+    try:
+        ttl = int(raw)
+    except ValueError:
+        return 120
+    return ttl if ttl > 0 else 120
+
+
+def _commit(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("COMMIT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _release_hold_row(
+    conn: sqlite3.Connection,
+    hold_id: int,
+    new_status: str,
+    stream_id: int | None = None,
+) -> bool:
+    """Move one `held` row back to available balance.
+
+    A hold with no artifact hash only decreases `held_micro_usdc`.
+    A bound hold also decreases `pending_micro_usdc`. Settled balance
+    stays put. A row that is not `held`, or that belongs to another
+    stream, is left alone.
+    """
+    row = conn.execute(
+        """
+        SELECT stream_id, artifact_hash, micro_usdc, status
+          FROM mpp_holds WHERE id = ?
+        """,
+        (int(hold_id),),
+    ).fetchone()
+    if row is None or row[3] != "held":
+        return False
+    owner_stream, artifact_hash, micro, _status = row
+    if stream_id is not None and int(owner_stream) != int(stream_id):
+        return False
+    micro = int(micro)
+    if micro < 0:
+        return False
+    if artifact_hash:
+        updated = conn.execute(
+            """
+            UPDATE mpp_streams
+               SET held_micro_usdc = held_micro_usdc - ?,
+                   pending_micro_usdc = pending_micro_usdc - ?
+             WHERE id = ?
+               AND held_micro_usdc >= ?
+               AND pending_micro_usdc >= ?
+            """,
+            (micro, micro, int(owner_stream), micro, micro),
+        )
+    else:
+        updated = conn.execute(
+            """
+            UPDATE mpp_streams
+               SET held_micro_usdc = held_micro_usdc - ?
+             WHERE id = ? AND held_micro_usdc >= ?
+            """,
+            (micro, int(owner_stream), micro),
+        )
+    if updated.rowcount != 1:
+        return False
+    marked = conn.execute(
+        "UPDATE mpp_holds SET status = ? WHERE id = ? AND status = 'held'",
+        (new_status, int(hold_id)),
+    )
+    return marked.rowcount == 1
+
+
+def _expire_stream_holds(conn: sqlite3.Connection, stream_id: int, now: int) -> None:
+    rows = conn.execute(
+        """
+        SELECT id FROM mpp_holds
+         WHERE stream_id = ? AND status = 'held' AND expires_at <= ?
+        """,
+        (int(stream_id), int(now)),
+    ).fetchall()
+    for (hold_id,) in rows:
+        _release_hold_row(conn, int(hold_id), "expired", int(stream_id))
+
+
+def _release_open_holds(conn: sqlite3.Connection, stream_id: int) -> None:
+    rows = conn.execute(
+        "SELECT id FROM mpp_holds WHERE stream_id = ? AND status = 'held'",
+        (int(stream_id),),
+    ).fetchall()
+    for (hold_id,) in rows:
+        _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+
+
+def _expire_committed(stream_id: int, now: int) -> None:
+    """Release expired holds and commit that write on its own connection."""
+    conn = _db()
+    try:
+        _begin_immediate(conn)
+        try:
+            _expire_stream_holds(conn, stream_id, now)
+            _commit(conn)
+        except Exception:
+            _rollback(conn)
+            raise
+    finally:
+        conn.close()
+
+
+def _parse_estimate(estimate, stream: dict) -> int:
+    if estimate is None or estimate == "":
+        estimate = int(stream["rate_per_call_micro_usdc"] or 0)
+        if estimate <= 0:
+            estimate = int(stream["rate_per_token_micro_usdc"] or 0)
+    if isinstance(estimate, bool):
+        raise ValueError("estimate must be a positive integer")
+    try:
+        amount = int(estimate)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("estimate must be a positive integer") from exc
+    if amount <= 0:
+        raise ValueError("estimate must be a positive integer")
+    return amount
+
+
+def _cap_lock_update(
+    conn: sqlite3.Connection,
+    user_id: str,
+    stream_id: int,
+    *,
+    calls: int,
+    tokens: int,
+    pending_delta: int,
+    held_delta: int,
+) -> bool:
+    """Apply usage counters and a hold delta when the cap still allows it."""
+    cur = conn.execute(
+        """
+        UPDATE mpp_streams
+           SET total_calls = total_calls + ?,
+               total_tokens = total_tokens + ?,
+               pending_micro_usdc = pending_micro_usdc + ?,
+               held_micro_usdc = held_micro_usdc + ?
+         WHERE id = ? AND user_id = ? AND status = 'open'
+           AND held_micro_usdc + ? >= 0
+           AND pending_micro_usdc + ? >= 0
+           AND (max_total_micro_usdc IS NULL
+                OR settled_micro_usdc + held_micro_usdc + ? <= max_total_micro_usdc)
+        """,
+        (
+            int(calls),
+            int(tokens),
+            int(pending_delta),
+            int(held_delta),
+            int(stream_id),
+            user_id,
+            int(held_delta),
+            int(pending_delta),
+            int(held_delta),
+        ),
+    )
+    return cur.rowcount == 1
+
+
+def _insert_hold(
+    conn: sqlite3.Connection,
+    stream_id: int,
+    micro: int,
+    artifact_hash: str | None,
+    now: int,
+) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO mpp_holds
+          (stream_id, artifact_hash, micro_usdc, status, expires_at, created_at)
+        VALUES (?, ?, ?, 'held', ?, ?)
+        """,
+        (
+            int(stream_id),
+            artifact_hash,
+            int(micro),
+            int(now) + _hold_ttl_secs(),
+            int(now),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def hold_estimate(
+    user_id: str,
+    stream_id: int,
+    upstream: str,
+    estimate_micro_usdc: int | None = None,
+) -> dict:
+    """Phase 1. Lock `estimate_micro_usdc` inside the escrow balance.
+
+    Increases `held_micro_usdc` only. Pending and settled stay put.
+    Available escrow is `cap - settled - held`. A lock that would pass
+    the cap raises BudgetExceeded and writes nothing.
+    """
+    now = int(time.time())
+    _expire_committed(int(stream_id), now)
+    conn = _db()
+    try:
+        _begin_immediate(conn)
+        try:
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            if stream["status"] != "open":
+                raise StreamClosed("StreamAlreadyClosed")
+            if stream["upstream"] != upstream:
+                raise FulfillmentRejected("provider outside stream scope")
+            estimate = _parse_estimate(estimate_micro_usdc, stream)
+            locked = _cap_lock_update(
+                conn,
+                user_id,
+                stream_id,
+                calls=0,
+                tokens=0,
+                pending_delta=0,
+                held_delta=estimate,
+            )
+            if not locked:
+                fresh = _get_owned_stream(conn, user_id, stream_id)
+                if fresh["status"] != "open":
+                    raise StreamClosed("StreamAlreadyClosed")
+                raise BudgetExceeded("BudgetExceeded")
+            hold_id = _insert_hold(conn, stream_id, estimate, None, now)
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            _emit_event(
+                conn,
+                user_id=user_id,
+                stream=stream,
+                kind="hold",
+                micro_usdc=estimate,
+                ts=now,
+            )
+            _commit(conn)
+        except Exception:
+            _rollback(conn)
+            raise
+        stream["hold_id"] = hold_id
+        stream["just_settled_micro_usdc"] = 0
+        return stream
+    finally:
+        conn.close()
+
+
+def release_hold(user_id: str, stream_id: int, hold_id: int) -> dict:
+    """Return one hold to the available balance. Already-finished holds no-op."""
+    conn = _db()
+    try:
+        _begin_immediate(conn)
+        try:
+            _get_owned_stream(conn, user_id, stream_id)
+            _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+            stream = _get_owned_stream(conn, user_id, stream_id)
+            _commit(conn)
+        except Exception:
+            _rollback(conn)
+            raise
+        return stream
+    finally:
+        conn.close()
+
+
+def _persist_release_and_raise(
+    conn: sqlite3.Connection,
+    hold_id: int | None,
+    stream_id: int,
+    exc: Exception,
+    cause: BaseException | None = None,
+) -> None:
+    """Roll the usage writes back, keep a release of `hold_id`, then raise."""
+    _rollback(conn)
+    if hold_id:
+        _begin_immediate(conn)
+        _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+        _commit(conn)
+    if cause is not None:
+        raise exc from cause
+    raise exc
+
+
 def record_usage(
     user_id: str,
     stream_id: int,
@@ -899,33 +1246,73 @@ def record_usage(
     observed: bool = False,
     request_id: str | None = None,
     truncated: bool = False,
+    hold_id: int | None = None,
 ) -> dict:
-    """Meter one upstream response against an open stream.
+    """Phase 2. Hash the upstream body and bind it to a hold.
 
-    `body` is the fulfillment preimage's payload. Empty, error, and
-    garbage responses raise FulfillmentRejected and do not change
-    pending balance. Client-claimed `calls` / `tokens` are capped at
-    what the payload proves. `observed=True` is the proxy path, which
-    bills one call plus the `usage` object in the body.
+    Empty, error, and garbage responses raise FulfillmentRejected.
+    The estimate hold, when `hold_id` is set, is released and the
+    pending balance does not move. A priced artifact increases pending
+    and keeps the same number of micro-USDC in `held_micro_usdc`.
 
-    `request_id` is the caller's idempotency key. A retry that does
-    not observe more tokens returns the stream unchanged. A retry that
-    observed a longer prefix bills only the token increase and does
-    not charge another call. `truncated=True` bills the bytes in hand,
-    not an advertised total the socket never delivered.
-
-    Auto-settles when elapsed >= settlement_interval, and only for
-    artifacts that passed verification. Returns the stream dict plus
-    `just_settled_micro_usdc` and `artifact_hash`.
+    This does not settle. `just_settled_micro_usdc` stays 0 until a
+    capture signature verifies.
     """
     now = int(time.time())
     request_key = (request_id or "").strip() or None
+    bound_hold = int(hold_id) if hold_id else None
+    _expire_committed(int(stream_id), now)
     conn = _db()
     try:
-        stream = _get_owned_stream(conn, user_id, stream_id)
-        if stream["status"] != "open":
-            raise StreamClosed("StreamAlreadyClosed")
+        _begin_immediate(conn)
+        try:
+            stream = _record_usage_locked(
+                conn,
+                user_id=user_id,
+                stream_id=stream_id,
+                calls=calls,
+                tokens=tokens,
+                status_code=status_code,
+                body=body,
+                content_type=content_type,
+                observed=observed,
+                request_key=request_key,
+                truncated=truncated,
+                hold_id=bound_hold,
+                now=now,
+            )
+            _commit(conn)
+            return stream
+        except Exception:
+            _rollback(conn)
+            raise
+    finally:
+        conn.close()
 
+
+def _record_usage_locked(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    stream_id: int,
+    calls: int,
+    tokens: int,
+    status_code: int,
+    body: bytes | str | dict | list,
+    content_type: str | None,
+    observed: bool,
+    request_key: str | None,
+    truncated: bool,
+    hold_id: int | None,
+    now: int,
+) -> dict:
+    stream = _get_owned_stream(conn, user_id, stream_id)
+    if stream["status"] != "open":
+        _persist_release_and_raise(
+            conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed")
+        )
+
+    try:
         artifact = verify_fulfillment(
             stream_id=stream_id,
             upstream=stream["upstream"],
@@ -937,155 +1324,226 @@ def record_usage(
             observed=observed,
             truncated=truncated,
         )
-        prior = None
-        if request_key:
-            prior = conn.execute(
-                """
-                SELECT calls, tokens, micro_usdc, artifact_hash
-                  FROM mpp_request_keys
-                 WHERE stream_id = ? AND request_id = ?
-                """,
-                (int(stream_id), request_key),
-            ).fetchone()
-            if prior is not None and artifact.tokens <= int(prior[1]):
-                return _idempotent_replay(stream, str(prior[3]))
+    except FulfillmentRejected as exc:
+        _persist_release_and_raise(conn, hold_id, stream_id, exc)
 
+    prior = None
+    if request_key:
+        prior = conn.execute(
+            """
+            SELECT calls, tokens, micro_usdc, artifact_hash
+              FROM mpp_request_keys
+             WHERE stream_id = ? AND request_id = ?
+            """,
+            (int(stream_id), request_key),
+        ).fetchone()
+        if prior is not None and artifact.tokens <= int(prior[1]):
+            if hold_id:
+                _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            return _idempotent_replay(fresh, str(prior[3]))
+
+    if prior is not None:
+        calls_billed = 0
+        tokens_billed = artifact.tokens - int(prior[1])
+    else:
+        calls_billed = artifact.calls
+        tokens_billed = artifact.tokens
+    added = tokens_billed * int(stream["rate_per_token_micro_usdc"]) + calls_billed * int(
+        stream["rate_per_call_micro_usdc"]
+    )
+    if added <= 0:
         if prior is not None:
-            calls_billed = 0
-            tokens_billed = artifact.tokens - int(prior[1])
-        else:
-            calls_billed = artifact.calls
-            tokens_billed = artifact.tokens
-        added = tokens_billed * int(stream["rate_per_token_micro_usdc"]) + calls_billed * int(
-            stream["rate_per_call_micro_usdc"]
+            if hold_id:
+                _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            return _idempotent_replay(fresh, str(prior[3]))
+        _persist_release_and_raise(
+            conn,
+            hold_id,
+            stream_id,
+            FulfillmentRejected("stream rates price this artifact at zero"),
         )
-        if added <= 0:
-            if prior is not None:
-                return _idempotent_replay(stream, str(prior[3]))
-            raise FulfillmentRejected("stream rates price this artifact at zero")
 
-        if calls_billed == artifact.calls and tokens_billed == artifact.tokens:
-            digest = artifact.artifact_hash.hex()
-            body_sha = artifact.body_sha256.hex()
-        else:
-            raw = coerce_body(body)
-            preimage = canonical_preimage(
-                stream_id=stream_id,
-                upstream=stream["upstream"],
-                status_code=int(status_code),
-                body=bytes(raw),
-                calls=calls_billed,
-                tokens=tokens_billed,
-            )
-            digest = sha256(preimage).hex()
-            body_sha = sha256(bytes(raw)).hex()
-        try:
-            conn.execute(
-                """
-                INSERT INTO mpp_artifacts
-                  (stream_id, artifact_hash, body_sha256, calls, tokens,
-                   micro_usdc, settled, ts)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-                """,
-                (
-                    stream_id,
-                    digest,
-                    body_sha,
-                    calls_billed,
-                    tokens_billed,
-                    int(added),
-                    now,
-                ),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise FulfillmentRejected("artifact already metered") from exc
+    if calls_billed == artifact.calls and tokens_billed == artifact.tokens:
+        digest = artifact.artifact_hash.hex()
+        body_sha = artifact.body_sha256.hex()
+    else:
+        raw = coerce_body(body)
+        preimage = canonical_preimage(
+            stream_id=stream_id,
+            upstream=stream["upstream"],
+            status_code=int(status_code),
+            body=bytes(raw),
+            calls=calls_billed,
+            tokens=tokens_billed,
+        )
+        digest = sha256(preimage).hex()
+        body_sha = sha256(bytes(raw)).hex()
 
-        if request_key:
-            if prior is None:
-                try:
-                    conn.execute(
-                        """
-                        INSERT INTO mpp_request_keys
-                          (stream_id, request_id, calls, tokens, micro_usdc, artifact_hash)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            int(stream_id),
-                            request_key,
-                            int(artifact.calls),
-                            int(artifact.tokens),
-                            int(added),
-                            digest,
-                        ),
-                    )
-                except sqlite3.IntegrityError as exc:
-                    raise ReplayRejected("NonceReused") from exc
-            else:
-                updated = conn.execute(
+    active_hold = _active_hold(conn, hold_id, stream_id)
+    if active_hold is not None and int(active_hold[2]) <= now:
+        _release_hold_row(conn, int(active_hold[0]), "expired", int(stream_id))
+        active_hold = None
+
+    if active_hold is not None:
+        locked = int(active_hold[1])
+        delta = int(added) - locked
+        placed = _cap_lock_update(
+            conn,
+            user_id,
+            stream_id,
+            calls=calls_billed,
+            tokens=tokens_billed,
+            pending_delta=int(added),
+            held_delta=delta,
+        )
+        if not placed:
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            if fresh["status"] != "open":
+                _persist_release_and_raise(
+                    conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed")
+                )
+            _persist_release_and_raise(conn, hold_id, stream_id, BudgetExceeded("BudgetExceeded"))
+        marked = conn.execute(
+            """
+            UPDATE mpp_holds
+               SET micro_usdc = ?, artifact_hash = ?
+             WHERE id = ? AND stream_id = ? AND status = 'held'
+            """,
+            (int(added), digest, int(active_hold[0]), int(stream_id)),
+        )
+        if marked.rowcount != 1:
+            _persist_release_and_raise(conn, hold_id, stream_id, BudgetExceeded("BudgetExceeded"))
+        bound_id = int(active_hold[0])
+    else:
+        placed = _cap_lock_update(
+            conn,
+            user_id,
+            stream_id,
+            calls=calls_billed,
+            tokens=tokens_billed,
+            pending_delta=int(added),
+            held_delta=int(added),
+        )
+        if not placed:
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            if fresh["status"] != "open":
+                _persist_release_and_raise(
+                    conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed")
+                )
+            _persist_release_and_raise(conn, hold_id, stream_id, BudgetExceeded("BudgetExceeded"))
+        bound_id = _insert_hold(conn, stream_id, int(added), digest, now)
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO mpp_artifacts
+              (stream_id, artifact_hash, body_sha256, calls, tokens,
+               micro_usdc, settled, ts)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            """,
+            (
+                stream_id,
+                digest,
+                body_sha,
+                calls_billed,
+                tokens_billed,
+                int(added),
+                now,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        _persist_release_and_raise(
+            conn,
+            hold_id,
+            stream_id,
+            FulfillmentRejected("artifact already metered"),
+            exc,
+        )
+
+    if request_key:
+        if prior is None:
+            try:
+                conn.execute(
                     """
-                    UPDATE mpp_request_keys
-                       SET calls = ?,
-                           tokens = ?,
-                           micro_usdc = micro_usdc + ?,
-                           artifact_hash = ?
-                     WHERE stream_id = ? AND request_id = ? AND tokens = ?
+                    INSERT INTO mpp_request_keys
+                      (stream_id, request_id, calls, tokens, micro_usdc, artifact_hash)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        int(stream_id),
+                        request_key,
                         int(artifact.calls),
                         int(artifact.tokens),
                         int(added),
                         digest,
-                        int(stream_id),
-                        request_key,
-                        int(prior[1]),
                     ),
                 )
-                if updated.rowcount != 1:
-                    raise ReplayRejected("NonceReused")
+            except sqlite3.IntegrityError as exc:
+                _persist_release_and_raise(
+                    conn, hold_id, stream_id, ReplayRejected("NonceReused"), exc
+                )
+        else:
+            updated = conn.execute(
+                """
+                UPDATE mpp_request_keys
+                   SET calls = ?,
+                       tokens = ?,
+                       micro_usdc = micro_usdc + ?,
+                       artifact_hash = ?
+                 WHERE stream_id = ? AND request_id = ? AND tokens = ?
+                """,
+                (
+                    int(artifact.calls),
+                    int(artifact.tokens),
+                    int(added),
+                    digest,
+                    int(stream_id),
+                    request_key,
+                    int(prior[1]),
+                ),
+            )
+            if updated.rowcount != 1:
+                _persist_release_and_raise(conn, hold_id, stream_id, ReplayRejected("NonceReused"))
 
-        conn.execute(
-            """
-            UPDATE mpp_streams
-               SET total_calls        = total_calls + ?,
-                   total_tokens       = total_tokens + ?,
-                   pending_micro_usdc = pending_micro_usdc + ?
-             WHERE id = ? AND user_id = ?
-            """,
-            (calls_billed, tokens_billed, int(added), stream_id, user_id),
-        )
-        stream = _get_owned_stream(conn, user_id, stream_id)
-        _emit_event(
-            conn,
-            user_id=user_id,
-            stream=stream,
-            kind="record",
-            calls=calls_billed,
-            tokens=tokens_billed,
-            micro_usdc=int(added),
-            ts=now,
-        )
+    stream = _get_owned_stream(conn, user_id, stream_id)
+    _emit_event(
+        conn,
+        user_id=user_id,
+        stream=stream,
+        kind="record",
+        calls=calls_billed,
+        tokens=tokens_billed,
+        micro_usdc=int(added),
+        ts=now,
+    )
+    stream["just_settled_micro_usdc"] = 0
+    stream["artifact_hash"] = digest
+    stream["idempotent_replay"] = False
+    stream["calls_billed"] = calls_billed
+    stream["tokens_billed"] = tokens_billed
+    stream["hold_id"] = bound_id
+    return stream
 
-        just_settled = 0
-        elapsed = now - stream["last_settled_at"]
-        if stream["pending_micro_usdc"] > 0 and elapsed >= stream["settlement_interval_secs"]:
-            try:
-                stream, just_settled = _settle_locked(conn, user_id, stream, now)
-            except BudgetExceeded:
-                # Keep the usage row. The interval fired, but paying the
-                # whole unsettled batch would pass the hard cap. A later
-                # settle_receipt can debit a single artifact that fits.
-                just_settled = 0
-                stream = _get_owned_stream(conn, user_id, stream_id)
 
-        conn.commit()
-        stream["just_settled_micro_usdc"] = just_settled
-        stream["artifact_hash"] = digest
-        stream["idempotent_replay"] = False
-        stream["calls_billed"] = calls_billed
-        stream["tokens_billed"] = tokens_billed
-        return stream
-    finally:
-        conn.close()
+def _active_hold(
+    conn: sqlite3.Connection,
+    hold_id: int | None,
+    stream_id: int,
+):
+    if not hold_id:
+        return None
+    row = conn.execute(
+        """
+        SELECT id, micro_usdc, expires_at, status, stream_id
+          FROM mpp_holds WHERE id = ?
+        """,
+        (int(hold_id),),
+    ).fetchone()
+    if row is None or int(row[4]) != int(stream_id) or row[3] != "held":
+        return None
+    return row
 
 
 def meter_proxy_response(
@@ -1097,11 +1555,13 @@ def meter_proxy_response(
     content_type: str | None = None,
     request_id: str | None = None,
     truncated: bool = False,
+    hold_id: int | None = None,
 ) -> dict:
     """Bill a response the proxy itself observed.
 
     The stream's `upstream` is the provider scope. A call to a
-    different provider does not debit this stream.
+    different provider does not debit this stream. `hold_id` is the
+    phase-1 estimate lock; a rejected body releases it.
     """
     conn = _db()
     try:
@@ -1109,6 +1569,8 @@ def meter_proxy_response(
     finally:
         conn.close()
     if stream["upstream"] != upstream:
+        if hold_id:
+            release_hold(user_id, stream_id, int(hold_id))
         raise FulfillmentRejected("provider outside stream scope")
     return record_usage(
         user_id,
@@ -1121,30 +1583,21 @@ def meter_proxy_response(
         observed=True,
         request_id=request_id,
         truncated=truncated,
+        hold_id=hold_id,
     )
 
 
-def _settle_locked(
+def _drop_unverified_pending(
     conn: sqlite3.Connection,
     user_id: str,
     stream: dict,
-    now: int,
-) -> tuple[dict, int]:
-    """Move pending → settled + emit a 'settle' event. Caller manages
-    the commit boundary.
+) -> dict:
+    """Pending with no artifact row is not capturable. Drop it.
 
-    Returns (post-settle stream, just_settled_micro_usdc).
+    Does not move settled balance and does not submit `mpp_settle`.
     """
     artifacts = _unsettled_artifacts(conn, stream["id"])
     verified = sum(int(row["micro_usdc"]) for row in artifacts)
-    cap = stream.get("max_total_micro_usdc")
-    if verified > 0 and cap is not None and int(stream["settled_micro_usdc"]) + verified > int(cap):
-        # Before any balance UPDATE and before settle_on_chain, so a
-        # nested writer cannot deadlock this transaction and an
-        # over-cap batch is not partially paid.
-        raise BudgetExceeded("BudgetExceeded")
-    # Drop pending that has no fulfillment artifact. Those units were
-    # never proven and must not be settled.
     if int(stream["pending_micro_usdc"]) != verified:
         conn.execute(
             """
@@ -1155,96 +1608,18 @@ def _settle_locked(
             (verified, stream["id"], user_id),
         )
         stream = _get_owned_stream(conn, user_id, stream["id"])
-
-    if verified <= 0 or not artifacts:
-        conn.execute(
-            "UPDATE mpp_streams SET last_settled_at = ? WHERE id = ? AND user_id = ?",
-            (now, stream["id"], user_id),
-        )
-        stream = _get_owned_stream(conn, user_id, stream["id"])
-        _emit_event(
-            conn,
-            user_id=user_id,
-            stream=stream,
-            kind="settle",
-            micro_usdc=0,
-            ts=now,
-        )
-        return stream, 0
-
-    root = artifact_root([bytes.fromhex(row["artifact_hash"]) for row in artifacts])
-    last_seq = int(stream.get("last_settled_seq") or 0)
-    next_seq = last_seq + 1
-    outcome = settle_on_chain(stream["id"], verified, root, next_seq)
-    if outcome.mode == "failed" or (outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0):
-        return stream, 0
-    advance_seq = outcome.mode == "submitted" or (outcome.mode == "stub" and _stub_ledger())
-
-    debited = verified if outcome.mode == "stub" else int(outcome.debited_micro_usdc)
-    remaining = debited
-    settled_ids: list[int] = []
-    actually = 0
-    for row in artifacts:
-        cost = int(row["micro_usdc"])
-        if cost <= 0 or cost > remaining:
-            break
-        settled_ids.append(int(row["id"]))
-        remaining -= cost
-        actually += cost
-    if not settled_ids:
-        return stream, 0
-
-    conn.execute(
-        f"UPDATE mpp_artifacts SET settled = 1 WHERE id IN ({','.join('?' for _ in settled_ids)})",
-        tuple(settled_ids),
-    )
-    if advance_seq:
-        moved = conn.execute(
-            """
-            UPDATE mpp_streams
-               SET pending_micro_usdc = pending_micro_usdc - ?,
-                   settled_micro_usdc = settled_micro_usdc + ?,
-                   last_settled_at    = ?,
-                   last_settled_seq   = ?
-             WHERE id = ? AND user_id = ? AND last_settled_seq = ?
-            """,
-            (actually, actually, now, next_seq, stream["id"], user_id, last_seq),
-        )
-        if moved.rowcount != 1:
-            raise ReplayRejected("SettlementReplay")
-    else:
-        conn.execute(
-            """
-            UPDATE mpp_streams
-               SET pending_micro_usdc = pending_micro_usdc - ?,
-                   settled_micro_usdc = settled_micro_usdc + ?,
-                   last_settled_at    = ?
-             WHERE id = ? AND user_id = ?
-            """,
-            (actually, actually, now, stream["id"], user_id),
-        )
-    stream = _get_owned_stream(conn, user_id, stream["id"])
-    _emit_event(
-        conn,
-        user_id=user_id,
-        stream=stream,
-        kind="settle",
-        micro_usdc=actually,
-        ts=now,
-    )
-    return stream, actually
+    return stream
 
 
 def settle_stream(user_id: str, stream_id: int) -> dict:
-    """Manual settlement. Moves pending → settled (stub: DB-only) and
-    emits a 'settle' event. Returns the stream dict with
-    `just_settled_micro_usdc` populated.
+    """Reconcile unverified pending. Does not capture.
 
-    A closed stream raises StreamClosed('StreamAlreadyClosed') and
-    does not write balances. A batch that would pass the hard cap
-    raises BudgetExceeded and rolls back.
+    A closed stream raises StreamClosed. Expired holds return to the
+    available balance before the pending check. `just_settled_micro_usdc`
+    is 0: only `settle_receipt` with a capture signature debits.
     """
     now = int(time.time())
+    _expire_committed(int(stream_id), now)
     conn = _db()
     try:
         _begin_immediate(conn)
@@ -1252,30 +1627,53 @@ def settle_stream(user_id: str, stream_id: int) -> dict:
             stream = _get_owned_stream(conn, user_id, stream_id)
             if stream["status"] != "open":
                 raise StreamClosed("StreamAlreadyClosed")
-            stream, just_settled = _settle_locked(conn, user_id, stream, now)
-            conn.execute("COMMIT")
+            stream = _drop_unverified_pending(conn, user_id, stream)
+            _commit(conn)
         except Exception:
             _rollback(conn)
             raise
-        stream["just_settled_micro_usdc"] = just_settled
+        stream["just_settled_micro_usdc"] = 0
         return stream
     finally:
         conn.close()
 
 
-def settle_receipt(user_id: str, stream_id: int, artifact_hash: str) -> dict:
-    """Debit exactly one verified artifact under an immediate write lock.
+def _hold_for_artifact(conn: sqlite3.Connection, stream_id: int, digest: str):
+    return conn.execute(
+        """
+        SELECT id, micro_usdc, status, expires_at
+          FROM mpp_holds
+         WHERE stream_id = ? AND artifact_hash = ?
+         ORDER BY id DESC
+         LIMIT 1
+        """,
+        (int(stream_id), digest),
+    ).fetchone()
 
-    Concurrent callers serialize on BEGIN IMMEDIATE. The balance UPDATE
-    is conditional on `status='open'`, enough pending, and
-    `settled + cost <= max_total` (or an uncapped stream). A failed
-    predicate rolls the transaction back, so a racing debit cannot
-    leave a partial write or a negative escrow.
 
-    A consumed hash raises ReplayRejected('NonceReused'). A missing
-    hash raises FulfillmentRejected. A closed stream raises
-    StreamClosed('StreamAlreadyClosed').
+def settle_receipt(
+    user_id: str,
+    stream_id: int,
+    artifact_hash: str,
+    session_key: str | None = None,
+    signature: bytes | str | None = None,
+) -> dict:
+    """Phase 3. Capture one artifact after the consumer MAC verifies.
+
+    Unknown hashes raise FulfillmentRejected before the signature is
+    checked. A closed stream raises StreamAlreadyClosed before that.
+    An already-settled hash raises ReplayRejected and does not release
+    the capture. An expired hold returns the lock, then raises
+    HoldExpired. A bad signature releases the hold (pending and held
+    both decrease) and raises CaptureRejected. A later valid signature
+    can lock the cost again and capture it when the cap still allows.
+
+    The on-chain debit runs only on this path. Stub mode, with no
+    chain settler configured, still moves the ledger and advances
+    `last_settled_seq`.
     """
+    from .capture import coerce_signature
+
     digest = str(artifact_hash).strip().lower()
     if len(digest) != 64:
         raise FulfillmentRejected("unverified artifact")
@@ -1285,133 +1683,227 @@ def settle_receipt(user_id: str, stream_id: int, artifact_hash: str) -> dict:
         raise FulfillmentRejected("unverified artifact") from exc
 
     now = int(time.time())
+    _expire_committed(int(stream_id), now)
+    conn = _db()
+    try:
+        _begin_immediate(conn)
+        try:
+            stream = _capture_locked(
+                conn,
+                user_id=user_id,
+                stream_id=stream_id,
+                digest=digest,
+                session_key=session_key,
+                signature=signature,
+                now=now,
+                coerce_signature=coerce_signature,
+            )
+            _commit(conn)
+            return stream
+        except Exception:
+            _rollback(conn)
+            raise
+    finally:
+        conn.close()
+
+
+def _capture_locked(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    stream_id: int,
+    digest: str,
+    session_key: str | None,
+    signature: bytes | str | None,
+    now: int,
+    coerce_signature,
+) -> dict:
+    stream = _get_owned_stream(conn, user_id, stream_id)
+    if stream["status"] != "open":
+        raise StreamClosed("StreamAlreadyClosed")
+
+    row = conn.execute(
+        """
+        SELECT id, micro_usdc, settled
+          FROM mpp_artifacts
+         WHERE stream_id = ? AND artifact_hash = ?
+        """,
+        (int(stream_id), digest),
+    ).fetchone()
+    if row is None:
+        raise FulfillmentRejected("unverified artifact")
+    art_id, cost, already = int(row[0]), int(row[1]), int(row[2])
+    if already:
+        raise ReplayRejected("NonceReused")
+    if cost <= 0:
+        raise FulfillmentRejected("unverified artifact")
+
+    hold = _hold_for_artifact(conn, stream_id, digest)
+    if hold is None:
+        raise FulfillmentRejected("unverified artifact")
+    hold_id, _hold_micro, hold_status, hold_exp = int(hold[0]), int(hold[1]), hold[2], int(hold[3])
+    if hold_status == "expired" or (hold_status == "held" and hold_exp <= now):
+        if hold_status == "held":
+            _release_hold_row(conn, hold_id, "expired", int(stream_id))
+        _commit(conn)
+        raise HoldExpired("hold expired")
+    if hold_status == "captured":
+        raise ReplayRejected("NonceReused")
+
+    if not verify_artifact_signature(session_key or "", digest, signature):
+        if hold_status == "held":
+            _release_hold_row(conn, hold_id, "released", int(stream_id))
+            _commit(conn)
+        raise CaptureRejected("invalid capture signature")
+
+    try:
+        sig = coerce_signature(signature)
+    except ValueError as exc:
+        raise CaptureRejected("invalid capture signature") from exc
+
+    if hold_status == "released":
+        relocked = _cap_lock_update(
+            conn,
+            user_id,
+            stream_id,
+            calls=0,
+            tokens=0,
+            pending_delta=cost,
+            held_delta=cost,
+        )
+        if not relocked:
+            raise BudgetExceeded("BudgetExceeded")
+        conn.execute(
+            """
+            UPDATE mpp_holds
+               SET status = 'held', micro_usdc = ?, expires_at = ?
+             WHERE id = ? AND status = 'released'
+            """,
+            (cost, now + _hold_ttl_secs(), hold_id),
+        )
+
+    _race_window()
+    root = artifact_root([bytes.fromhex(digest)])
+    last_seq = int(stream.get("last_settled_seq") or 0)
+    next_seq = last_seq + 1
+    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig)
+    if outcome.mode == "failed" or (
+        outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
+    ):
+        _rollback(conn)
+        raise CaptureRejected("settlement failed")
+    advance_seq = outcome.mode == "submitted" or (outcome.mode == "stub" and _stub_ledger())
+
+    if advance_seq:
+        cur = conn.execute(
+            """
+            UPDATE mpp_streams
+               SET pending_micro_usdc = pending_micro_usdc - ?,
+                   held_micro_usdc = held_micro_usdc - ?,
+                   settled_micro_usdc = settled_micro_usdc + ?,
+                   last_settled_at = ?,
+                   last_settled_seq = last_settled_seq + 1
+             WHERE id = ? AND user_id = ?
+               AND status = 'open'
+               AND pending_micro_usdc >= ?
+               AND held_micro_usdc >= ?
+               AND (max_total_micro_usdc IS NULL
+                    OR settled_micro_usdc + ? <= max_total_micro_usdc)
+            """,
+            (cost, cost, cost, now, int(stream_id), user_id, cost, cost, cost),
+        )
+    else:
+        cur = conn.execute(
+            """
+            UPDATE mpp_streams
+               SET pending_micro_usdc = pending_micro_usdc - ?,
+                   held_micro_usdc = held_micro_usdc - ?,
+                   settled_micro_usdc = settled_micro_usdc + ?,
+                   last_settled_at = ?
+             WHERE id = ? AND user_id = ?
+               AND status = 'open'
+               AND pending_micro_usdc >= ?
+               AND held_micro_usdc >= ?
+               AND (max_total_micro_usdc IS NULL
+                    OR settled_micro_usdc + ? <= max_total_micro_usdc)
+            """,
+            (cost, cost, cost, now, int(stream_id), user_id, cost, cost, cost),
+        )
+    if cur.rowcount != 1:
+        fresh = _get_owned_stream(conn, user_id, stream_id)
+        if fresh["status"] != "open":
+            raise StreamClosed("StreamAlreadyClosed")
+        raise BudgetExceeded("BudgetExceeded")
+
+    marked = conn.execute(
+        "UPDATE mpp_artifacts SET settled = 1 WHERE id = ? AND settled = 0",
+        (art_id,),
+    )
+    if marked.rowcount != 1:
+        raise ReplayRejected("NonceReused")
+    conn.execute(
+        "UPDATE mpp_holds SET status = 'captured' WHERE id = ?",
+        (hold_id,),
+    )
+    stream = _get_owned_stream(conn, user_id, stream_id)
+    _emit_event(
+        conn,
+        user_id=user_id,
+        stream=stream,
+        kind="settle",
+        micro_usdc=cost,
+        ts=now,
+    )
+    stream["just_settled_micro_usdc"] = cost
+    stream["artifact_hash"] = digest
+    return stream
+
+
+def close_stream(user_id: str, stream_id: int) -> dict:
+    """Release open holds back to available balance, then mark closed.
+
+    Does not capture. Closing an already-closed stream returns the row
+    with `just_settled_micro_usdc=0`.
+    """
+    now = int(time.time())
     conn = _db()
     try:
         _begin_immediate(conn)
         try:
             stream = _get_owned_stream(conn, user_id, stream_id)
-            if stream["status"] != "open":
-                raise StreamClosed("StreamAlreadyClosed")
-
-            row = conn.execute(
+            if stream["status"] == "closed":
+                _commit(conn)
+                stream["just_settled_micro_usdc"] = 0
+                return stream
+            _release_open_holds(conn, stream_id)
+            conn.execute(
                 """
-                SELECT id, micro_usdc, settled
-                  FROM mpp_artifacts
-                 WHERE stream_id = ? AND artifact_hash = ?
+                UPDATE mpp_streams
+                   SET pending_micro_usdc = 0,
+                       held_micro_usdc = 0,
+                       status = 'closed',
+                       closed_at = ?
+                 WHERE id = ? AND user_id = ? AND status = 'open'
                 """,
-                (int(stream_id), digest),
-            ).fetchone()
-            if row is None:
-                raise FulfillmentRejected("unverified artifact")
-            art_id, cost, already = int(row[0]), int(row[1]), int(row[2])
-            if already:
-                raise ReplayRejected("NonceReused")
-            if cost <= 0:
-                raise FulfillmentRejected("unverified artifact")
-
-            _race_window()
-
-            if _stub_ledger():
-                cur = conn.execute(
-                    """
-                    UPDATE mpp_streams
-                       SET pending_micro_usdc = pending_micro_usdc - ?,
-                           settled_micro_usdc = settled_micro_usdc + ?,
-                           last_settled_at    = ?,
-                           last_settled_seq   = last_settled_seq + 1
-                     WHERE id = ? AND user_id = ?
-                       AND status = 'open'
-                       AND pending_micro_usdc >= ?
-                       AND (max_total_micro_usdc IS NULL
-                            OR settled_micro_usdc + ? <= max_total_micro_usdc)
-                    """,
-                    (cost, cost, now, int(stream_id), user_id, cost, cost),
-                )
-            else:
-                cur = conn.execute(
-                    """
-                    UPDATE mpp_streams
-                       SET pending_micro_usdc = pending_micro_usdc - ?,
-                           settled_micro_usdc = settled_micro_usdc + ?,
-                           last_settled_at    = ?
-                     WHERE id = ? AND user_id = ?
-                       AND status = 'open'
-                       AND pending_micro_usdc >= ?
-                       AND (max_total_micro_usdc IS NULL
-                            OR settled_micro_usdc + ? <= max_total_micro_usdc)
-                    """,
-                    (cost, cost, now, int(stream_id), user_id, cost, cost),
-                )
-            if cur.rowcount != 1:
-                fresh = _get_owned_stream(conn, user_id, stream_id)
-                if fresh["status"] != "open":
-                    raise StreamClosed("StreamAlreadyClosed")
-                raise BudgetExceeded("BudgetExceeded")
-
-            marked = conn.execute(
-                "UPDATE mpp_artifacts SET settled = 1 WHERE id = ? AND settled = 0",
-                (art_id,),
+                (now, stream_id, user_id),
             )
-            if marked.rowcount != 1:
-                raise ReplayRejected("NonceReused")
-
             stream = _get_owned_stream(conn, user_id, stream_id)
             _emit_event(
                 conn,
                 user_id=user_id,
                 stream=stream,
-                kind="settle",
-                micro_usdc=cost,
+                kind="close",
                 ts=now,
             )
-            conn.execute("COMMIT")
+            _commit(conn)
         except Exception:
             _rollback(conn)
             raise
-        stream["just_settled_micro_usdc"] = cost
-        stream["artifact_hash"] = digest
+        stream["just_settled_micro_usdc"] = 0
         return stream
     finally:
         conn.close()
 
-
-def close_stream(user_id: str, stream_id: int) -> dict:
-    """Final settle (if pending) + status='closed' + closed_at=now.
-    Idempotent: closing an already-closed stream returns the row
-    unchanged with `just_settled_micro_usdc=0`."""
-    now = int(time.time())
-    conn = _db()
-    try:
-        stream = _get_owned_stream(conn, user_id, stream_id)
-        if stream["status"] == "closed":
-            stream["just_settled_micro_usdc"] = 0
-            return stream
-
-        just_settled = 0
-        if stream["pending_micro_usdc"] > 0:
-            stream, just_settled = _settle_locked(conn, user_id, stream, now)
-
-        conn.execute(
-            """
-            UPDATE mpp_streams
-               SET status = 'closed', closed_at = ?
-             WHERE id = ? AND user_id = ?
-            """,
-            (now, stream_id, user_id),
-        )
-        stream = _get_owned_stream(conn, user_id, stream_id)
-        _emit_event(
-            conn,
-            user_id=user_id,
-            stream=stream,
-            kind="close",
-            ts=now,
-        )
-        conn.commit()
-        stream["just_settled_micro_usdc"] = just_settled
-        return stream
-    finally:
-        conn.close()
 
 
 def record_tx_signature(
@@ -1470,9 +1962,26 @@ def record_tx_signature(
 
 def list_streams(user_id: str) -> dict:
     """Return all streams for a user, newest first, plus a summary
-    block matching the frontend's MppSummary shape."""
+    block matching the frontend's MppSummary shape.
+
+    Expired holds are released before the rows are read, so available
+    escrow includes locks whose TTL has passed.
+    """
+    now = int(time.time())
     conn = _db()
     try:
+        _begin_immediate(conn)
+        try:
+            ids = conn.execute(
+                "SELECT id FROM mpp_streams WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+            for (stream_id,) in ids:
+                _expire_stream_holds(conn, int(stream_id), now)
+            _commit(conn)
+        except Exception:
+            _rollback(conn)
+            raise
         rows = conn.execute(
             f"SELECT {_STREAM_COLS} FROM mpp_streams WHERE user_id = ? ORDER BY opened_at DESC",
             (user_id,),

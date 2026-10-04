@@ -81,9 +81,24 @@ def main() -> int:
         )
         return 1
     artifact_root = bytes.fromhex(root_hex)
+    sig_hex = os.environ.get("KS_MPP_CAPTURE_SIGNATURE", "").strip()
+    if len(sig_hex) != 64:
+        print(
+            "✗ refusing to settle without KS_MPP_CAPTURE_SIGNATURE "
+            "(64 hex chars). mpp_settle captures only when the consumer "
+            "session MAC is attached.",
+            file=sys.stderr,
+        )
+        return 1
+    capture_signature = bytes.fromhex(sig_hex)
     print(f"\n▶ settle_on_chain({stream_id}, micro_usdc={units})")
     t0 = time.perf_counter()
-    outcome = mpp_streams.settle_on_chain(stream_id, units, artifact_root)
+    outcome = mpp_streams.settle_on_chain(
+        stream_id,
+        units,
+        artifact_root,
+        capture_signature=capture_signature,
+    )
     debited = outcome.debited_micro_usdc
     dt = time.perf_counter() - t0
     print(f"    mode            : {outcome.mode}")

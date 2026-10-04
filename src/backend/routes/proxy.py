@@ -60,6 +60,64 @@ def _bearer(request: Request) -> str | None:
     return auth[7:] if auth.startswith("Bearer ") else None
 
 
+def _mpp_stream_id(request: Request) -> int | None:
+    raw = request.headers.get("x-mpp-stream-id")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mpp_acquire_hold(request: Request, user_id: str, upstream: str):
+    """Phase 1. Lock the estimated cost before the upstream call.
+
+    BudgetExceeded returns 409 and the caller must not call upstream.
+    A missing stream or a closed stream does not block the call; metering
+    reports that rejection after the response is in hand.
+    """
+    stream_id = _mpp_stream_id(request)
+    if stream_id is None or not user_id or user_id == "anonymous":
+        return None, None
+    from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
+
+    raw_est = request.headers.get("x-mpp-estimate-micro-usdc")
+    estimate = None
+    if raw_est is not None and str(raw_est).strip() != "":
+        try:
+            estimate = int(str(raw_est).strip())
+        except ValueError:
+            estimate = None
+    try:
+        held = mpp_streams.hold_estimate(user_id, stream_id, upstream, estimate)
+    except mpp_streams.BudgetExceeded:
+        return None, JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
+    except (
+        mpp_streams.StreamNotFound,
+        mpp_streams.StreamClosed,
+        FulfillmentRejected,
+        ValueError,
+    ):
+        return None, None
+    return held.get("hold_id"), None
+
+
+def _mpp_release(user_id: str, stream_id: int | None, hold_id: int | None) -> None:
+    if not hold_id or stream_id is None:
+        return
+    try:
+        from ..mpp import mpp_streams
+
+        mpp_streams.release_hold(user_id, stream_id, int(hold_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("mpp hold release failed stream=%s hold=%s: %s", stream_id, hold_id, exc)
+
+
 def _is_helius(upstream: str) -> bool:
     return upstream in ("helius", "helius-rpc", "helius-das", "helius-enhanced")
 
@@ -91,6 +149,10 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     body = await request.body()
     interceptor = _get_x402_interceptor()
+    hold_id, hold_err = _mpp_acquire_hold(request, user_id, upstream)
+    if hold_err is not None:
+        return hold_err
+    stream_id = _mpp_stream_id(request)
     t0 = time.perf_counter()
 
     stream_complete = None
@@ -104,14 +166,17 @@ async def proxy_route(upstream: str, path: str, request: Request):
                 api_router, upstream, path, body, api_key, request, interceptor
             )
     except PaymentRequired as exc:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse(
             {"error": "payment_required", "x402": exc.raw},
             status_code=402,
         )
     except ValueError as exc:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     if stream_complete is False and not content:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -133,13 +198,14 @@ async def proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
-    meter_header = _mpp_meter_header(
+    meter_header, bound_hold = _mpp_meter_header(
         request,
         user_id,
         upstream,
         status,
         content,
         truncated=stream_complete is False,
+        hold_id=hold_id,
     )
 
     try:
@@ -157,6 +223,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
         resp.headers["x-ks-stream-complete"] = "1" if stream_complete else "0"
     if meter_header:
         resp.headers["x-ks-mpp-meter"] = meter_header
+    if bound_hold:
+        resp.headers["x-ks-mpp-hold"] = str(bound_hold)
     return resp
 
 
@@ -210,6 +278,10 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     api_key = row[0]
     body = await request.body()
     interceptor = _get_x402_interceptor()
+    hold_id, hold_err = _mpp_acquire_hold(request, user_id, upstream)
+    if hold_err is not None:
+        return hold_err
+    stream_id = _mpp_stream_id(request)
     t0 = time.perf_counter()
 
     stream_complete = None
@@ -223,11 +295,14 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
                 api_router, upstream, path, body, api_key, request, interceptor
             )
     except PaymentRequired as exc:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse({"error": "payment_required", "x402": exc.raw}, status_code=402)
     except ValueError as exc:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse({"error": str(exc)}, status_code=404)
 
     if stream_complete is False and not content:
+        _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -248,13 +323,14 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
-    meter_header = _mpp_meter_header(
+    meter_header, bound_hold = _mpp_meter_header(
         request,
         user_id,
         upstream,
         status,
         content,
         truncated=stream_complete is False,
+        hold_id=hold_id,
     )
 
     try:
@@ -272,6 +348,8 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         resp.headers["x-ks-stream-complete"] = "1" if stream_complete else "0"
     if meter_header:
         resp.headers["x-ks-mpp-meter"] = meter_header
+    if bound_hold:
+        resp.headers["x-ks-mpp-hold"] = str(bound_hold)
     return resp
 
 
@@ -309,22 +387,25 @@ def _mpp_meter_header(
     status: int,
     content: bytes | str,
     truncated: bool = False,
-) -> str | None:
-    """Record MPP usage from the response this proxy just observed.
+    hold_id: int | None = None,
+) -> tuple[str | None, int | None]:
+    """Bind the phase-1 hold to the response this proxy just observed.
 
     Present only when the caller sent `X-Mpp-Stream-Id`. A rejected
     fulfillment does not fail the proxy call — the upstream body is
-    still returned, and the header says why nothing was billed.
+    still returned, and the header says why nothing was billed. The
+    estimate lock is released on that path. A successful bind returns
+    `held` plus the hold id. Capture is a separate signed step.
     """
     raw_id = request.headers.get("x-mpp-stream-id")
     if not raw_id:
-        return None
+        return None, None
     if not user_id or user_id == "anonymous":
-        return "rejected:authentication required"
+        return "rejected:authentication required", None
     try:
         stream_id = int(raw_id)
     except (TypeError, ValueError):
-        return "rejected:invalid stream id"
+        return "rejected:invalid stream id", None
 
     from ..mpp import mpp_streams
     from ..mpp.fulfillment import FulfillmentRejected
@@ -339,20 +420,26 @@ def _mpp_meter_header(
             body=payload,
             request_id=request.headers.get("x-idempotency-key"),
             truncated=truncated,
+            hold_id=hold_id,
         )
     except FulfillmentRejected as exc:
         logger.info("mpp meter rejected stream=%s: %s", raw_id, exc)
-        return f"rejected:{exc.reason}"
+        return f"rejected:{exc.reason}", None
+    except mpp_streams.BudgetExceeded:
+        return "rejected:BudgetExceeded", None
     except mpp_streams.StreamNotFound:
-        return "rejected:stream not found"
+        _mpp_release(user_id, stream_id, hold_id)
+        return "rejected:stream not found", None
     except mpp_streams.StreamClosed:
-        return "rejected:stream closed"
+        return "rejected:stream closed", None
     except Exception as exc:  # noqa: BLE001
         logger.warning("mpp meter failed stream=%s: %s", raw_id, exc)
-        return "rejected:meter error"
+        _mpp_release(user_id, stream_id, hold_id)
+        return "rejected:meter error", None
     if recorded.get("idempotent_replay"):
-        return "idempotent_replay"
-    return "recorded"
+        return "idempotent_replay", None
+    bound = recorded.get("hold_id") or hold_id
+    return "held", int(bound) if bound else None
 
 
 async def _proxy_helius(api_router, upstream, path, body, api_key, request, interceptor):

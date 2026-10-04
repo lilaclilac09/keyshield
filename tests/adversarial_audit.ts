@@ -32,6 +32,19 @@ for key in ("KS_MPP_SETTLER_KEY", "KS_PLATFORM_USDC_ATA", "KS_KEYSHIELD_PROGRAM_
     os.environ.pop(key, None)
 
 from src.backend.mpp import mpp_streams
+from src.backend.mpp.capture import sign_artifact_hash
+
+SESSION = "ks-session-consumer"
+
+def capture(stream_id, digest):
+    signature = sign_artifact_hash(SESSION, bytes.fromhex(digest))
+    return mpp_streams.settle_receipt(
+        "alice",
+        stream_id,
+        digest,
+        session_key=SESSION,
+        signature=signature,
+    )
 
 def explain(exc):
     return type(exc).__name__ + ":" + str(exc)
@@ -46,6 +59,7 @@ def snapshot():
         "status": row["status"],
         "pending": row["pending_micro_usdc"],
         "settled": row["settled_micro_usdc"],
+        "held": row["held_micro_usdc"],
         "escrow": row["escrow_micro_usdc"],
         "cap": row["max_total_micro_usdc"],
     }
@@ -98,21 +112,26 @@ out = {}
 if scenario == "concurrent":
     stream = open_stream(800, 1000)
     first = record(stream["id"], "alpha-receipt")
-    second = record(stream["id"], "beta-receipt")
-    assert first["artifact_hash"] != second["artifact_hash"]
-    assert second["pending_micro_usdc"] == 1600
-    assert second["settled_micro_usdc"] == 0
+    assert first["pending_micro_usdc"] == 800
+    assert first["held_micro_usdc"] == 800
+    assert first["settled_micro_usdc"] == 0
     results = []
     errors = []
-    def settle(digest):
+    def settle_first():
         try:
-            settled = mpp_streams.settle_receipt("alice", stream["id"], digest)
+            settled = capture(stream["id"], first["artifact_hash"])
             results.append(settled["just_settled_micro_usdc"])
         except Exception as exc:
             errors.append(explain(exc))
+    def second_record():
+        try:
+            record(stream["id"], "beta-receipt")
+            errors.append("no-error")
+        except Exception as exc:
+            errors.append(explain(exc))
     threads = [
-        threading.Thread(target=settle, args=(first["artifact_hash"],)),
-        threading.Thread(target=settle, args=(second["artifact_hash"],)),
+        threading.Thread(target=settle_first),
+        threading.Thread(target=second_record),
     ]
     for thread in threads:
         thread.start()
@@ -199,10 +218,10 @@ elif scenario == "replay":
     stream = open_stream(800, 5000)
     recorded = record(stream["id"], "one-receipt")
     digest = recorded["artifact_hash"]
-    first = mpp_streams.settle_receipt("alice", stream["id"], digest)
+    first = capture(stream["id"], digest)
     replay = None
     try:
-        mpp_streams.settle_receipt("alice", stream["id"], digest)
+        capture(stream["id"], digest)
         replay = "no-error"
     except Exception as exc:
         replay = explain(exc)
@@ -236,6 +255,7 @@ interface Balances {
   status: string;
   pending: number;
   settled: number;
+  held: number;
   escrow: number | null;
   cap: number | null;
 }
@@ -270,7 +290,8 @@ describe("KeyShield Adversarial & Settlement Verification Audit", () => {
     expect(errors).to.have.length(1);
     expect(errors[0]).to.contain("BudgetExceeded");
     expect(final.settled).to.equal(800);
-    expect(final.pending).to.equal(800);
+    expect(final.pending).to.equal(0);
+    expect(final.held).to.equal(0);
     expect(final.escrow).to.equal(200);
     expect(final.cap).to.equal(1000);
     expect(report.debited).to.equal(800);
@@ -329,6 +350,7 @@ describe("KeyShield Adversarial & Settlement Verification Audit", () => {
     expect(report.second_batch).to.equal(0);
     expect(final.settled).to.equal(800);
     expect(final.pending).to.equal(0);
+    expect(final.held).to.equal(0);
     expect(final.escrow).to.equal(4200);
     expect(report.debited).to.equal(800);
     assert.isAtLeast(final.settled, 0);
