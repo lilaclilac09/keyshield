@@ -381,3 +381,63 @@ def test_settle_on_chain_prefixes_owner_ed25519_on_live_submit(db, monkeypatch):
     assert prefix.program_id == mpp_onchain.ED25519_PROGRAM_ID
     assert prefix.data[80:112] == owner
     assert prefix.data[112:144] == message
+
+
+def test_create_universal_vault_ix_layout():
+    data = mpp_onchain.build_create_universal_vault_ix_data(255)
+    assert data == bytes([10, 255])
+    with pytest.raises(ValueError, match="bump"):
+        mpp_onchain.build_create_universal_vault_ix_data(256)
+    ix = mpp_onchain.build_create_universal_vault_ix(
+        program_id="11111111111111111111111111111111",
+        owner_pubkey=_b58(bytes([0x11]) * 32),
+        vault_pda=_b58(bytes([0x22]) * 32),
+        bump=254,
+    )
+    assert ix.data == bytes([10, 254])
+    assert [a.is_signer for a in ix.accounts] == [True, False, False]
+    assert [a.is_writable for a in ix.accounts] == [True, True, False]
+    assert ix.accounts[2].pubkey == mpp_onchain.SYSTEM_PROGRAM_ID
+
+
+def test_update_universal_policy_flags_layout():
+    data = mpp_onchain.build_update_universal_policy_flags_ix_data(0x08)
+    assert data[0] == 11
+    assert int.from_bytes(data[1:5], "little") == 0x08
+    assert data[5] == 0
+    assert len(data) == 6
+
+
+def test_grant_agent_access_ix_layout():
+    agent = bytes(range(32))
+    data = mpp_onchain.build_grant_agent_access_ix_data(
+        agent,
+        key_group=255,
+        rate_limit_calls=10,
+        rate_limit_tokens=20,
+        session_timeout=7200,
+        max_spend_micro_usdc=5_000_000,
+        payment_stream_enabled=True,
+    )
+    assert len(data) == 61
+    assert data[0] == 20
+    assert data[1:33] == agent
+    assert data[33] == 255
+    assert int.from_bytes(data[34:38], "little") == 10
+    assert int.from_bytes(data[38:42], "little") == 20
+    assert int.from_bytes(data[42:50], "little") == 7200
+    assert int.from_bytes(data[50:58], "little") == 5_000_000
+    assert data[58] == 1
+    assert int.from_bytes(data[59:61], "little") == 0
+    ix = mpp_onchain.build_grant_agent_access_ix(
+        program_id="11111111111111111111111111111111",
+        owner_pubkey=_b58(bytes([0x11]) * 32),
+        vault_pda=_b58(bytes([0x22]) * 32),
+        agent_pubkey=_b58(agent),
+        payment_stream_enabled=True,
+        max_spend_micro_usdc=5_000_000,
+    )
+    assert ix.data[0] == 20
+    assert len(ix.accounts) == 2
+    assert ix.accounts[0].is_signer and ix.accounts[0].is_writable
+    assert ix.accounts[1].is_writable and not ix.accounts[1].is_signer

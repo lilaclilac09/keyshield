@@ -775,11 +775,17 @@ async def submit_mpp_settle(
 
 OPEN_PAYMENT_STREAM_DISCRIMINATOR = 24  # 0x18
 WITHDRAW_AGENT_WALLET_DISCRIMINATOR = 27  # 0x1b
+CREATE_UNIVERSAL_VAULT_DISCRIMINATOR = 10
+UPDATE_UNIVERSAL_POLICY_DISCRIMINATOR = 11
+GRANT_AGENT_ACCESS_DISCRIMINATOR = 20
+PAYMENT_ENABLED_FLAG = 0x08
 
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 
 # Matches `APS_SEED` in programs/keyshield/src/instructions/open_stream.rs:38
 APS_SEED = b"agent_payment_stream"
+# Matches `VAULT_SEED` in programs/keyshield/src/instructions/universal_vault.rs:23
+VAULT_SEED = b"universal_vault"
 
 
 def derive_agent_payment_stream_pda(
@@ -1086,4 +1092,194 @@ def build_withdraw_agent_wallet_ix(
         program_id=config.keyshield_program_id,
         accounts=accounts,
         data=build_withdraw_agent_wallet_ix_data(withdraw_amount_micro_usdc),
+    )
+
+
+# ─── Universal Vault + agent grant (required before open_payment_stream) ──
+#
+# open_stream.rs and mpp_settle.rs both fail closed without a UniversalVault
+# (`univault` disc, 6010) and an active AgentGrant slot (`is_active=1`,
+# `revoked_at=0`). LIVE_E2E and the wallet sign-off CTAs must create the
+# vault, set PAYMENT_ENABLED (0x08), then grant the agent before ix #24.
+
+
+def derive_universal_vault_pda(
+    owner_pubkey: str,
+    program_id: str,
+) -> tuple[str, int]:
+    """Derive the UniversalVault PDA for `owner`.
+
+    Seeds: ["universal_vault", owner_pubkey]
+    Mirrors `seeds!(VAULT_SEED, owner.key(), bump)` in universal_vault.rs.
+    """
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders not installed — cannot derive vault PDA. Install via `pip install solders`.",
+        )
+    try:
+        owner_pk = Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
+        program_pk = Pubkey.from_string(program_id)  # type: ignore[union-attr]
+    except Exception as e:  # noqa: BLE001
+        raise MppSubmitError(f"invalid pubkey for vault PDA derivation: {e}") from e
+
+    pda, bump = Pubkey.find_program_address(  # type: ignore[union-attr]
+        [VAULT_SEED, bytes(owner_pk)],
+        program_pk,
+    )
+    return (str(pda), bump)
+
+
+def build_create_universal_vault_ix_data(bump: int) -> bytes:
+    """Wire: [0]=10 CreateUniversalVault, [1]=vault_bump.
+
+    Dispatcher strips byte 0; handler reads `data[0]` as the bump.
+    """
+    if not 0 <= bump <= 0xFF:
+        raise ValueError("bump must fit u8 (0..=255)")
+    return bytes([CREATE_UNIVERSAL_VAULT_DISCRIMINATOR, bump])
+
+
+def build_create_universal_vault_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    bump: int,
+) -> _SimpleInstruction:
+    """Accounts match universal_vault.rs:35-38.
+
+    0. [signer, writable] owner
+    1. [writable]         UniversalVault PDA
+    2. []                 System Program
+    """
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_create_universal_vault_ix_data(bump),
+    )
+
+
+def build_update_universal_policy_flags_ix_data(flags: int) -> bytes:
+    """Wire: [0]=11, [1..5]=flags u32 LE, [5]=update_type 0 (set_flags).
+
+    Dispatcher strips byte 0; handler needs 5 body bytes (flags + type).
+    """
+    if flags < 0 or flags > 0xFFFFFFFF:
+        raise ValueError("flags must fit u32")
+    return (
+        bytes([UPDATE_UNIVERSAL_POLICY_DISCRIMINATOR])
+        + int(flags).to_bytes(4, "little")
+        + bytes([0])
+    )
+
+
+def build_update_universal_policy_flags_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    flags: int = PAYMENT_ENABLED_FLAG,
+) -> _SimpleInstruction:
+    """Accounts match universal_vault.rs:142-144.
+
+    0. [signer]   owner
+    1. [writable] UniversalVault
+    """
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=False),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_update_universal_policy_flags_ix_data(flags),
+    )
+
+
+def build_grant_agent_access_ix_data(
+    agent_pubkey: bytes | str,
+    *,
+    key_group: int = 255,
+    rate_limit_calls: int = 0,
+    rate_limit_tokens: int = 0,
+    session_timeout: int = 0,
+    max_spend_micro_usdc: int = 0,
+    payment_stream_enabled: bool = False,
+) -> bytes:
+    """Wire matches agent_access.rs:37-46 / encodeGrantAgentAccessData.
+
+    [0]      discriminator = 20
+    [1..33]  agent_pubkey
+    [33]     key_group (255 = universal)
+    [34..38] rate_limit_calls u32 LE
+    [38..42] rate_limit_tokens u32 LE
+    [42..50] session_timeout u64 LE
+    [50..58] max_spend_micro_usdc u64 LE
+    [58]     payment_stream_enabled
+    [59..61] zk_proof_length u16 LE (=0, direct pubkey path)
+
+    Total 61 bytes. Dispatcher strip leaves the 60-byte minimum the
+    handler checks. `payment_stream_enabled=1` requires vault flag 0x08.
+    """
+    agent = coerce_pubkey32(agent_pubkey)
+    if not 0 <= key_group <= 0xFF:
+        raise ValueError("key_group must fit u8")
+    for name, val, width in (
+        ("rate_limit_calls", rate_limit_calls, 0xFFFFFFFF),
+        ("rate_limit_tokens", rate_limit_tokens, 0xFFFFFFFF),
+        ("session_timeout", session_timeout, 0xFFFFFFFFFFFFFFFF),
+        ("max_spend_micro_usdc", max_spend_micro_usdc, 0xFFFFFFFFFFFFFFFF),
+    ):
+        if val < 0 or val > width:
+            raise ValueError(f"{name}={val} out of range")
+    return (
+        bytes([GRANT_AGENT_ACCESS_DISCRIMINATOR])
+        + agent
+        + bytes([key_group])
+        + int(rate_limit_calls).to_bytes(4, "little")
+        + int(rate_limit_tokens).to_bytes(4, "little")
+        + int(session_timeout).to_bytes(8, "little")
+        + int(max_spend_micro_usdc).to_bytes(8, "little")
+        + bytes([1 if payment_stream_enabled else 0])
+        + (0).to_bytes(2, "little")
+    )
+
+
+def build_grant_agent_access_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    agent_pubkey: bytes | str,
+    *,
+    key_group: int = 255,
+    rate_limit_calls: int = 0,
+    rate_limit_tokens: int = 0,
+    session_timeout: int = 0,
+    max_spend_micro_usdc: int = 0,
+    payment_stream_enabled: bool = False,
+) -> _SimpleInstruction:
+    """Accounts match agent_access.rs:33-35.
+
+    0. [signer, writable] owner
+    1. [writable]         UniversalVault
+    """
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_grant_agent_access_ix_data(
+            agent_pubkey,
+            key_group=key_group,
+            rate_limit_calls=rate_limit_calls,
+            rate_limit_tokens=rate_limit_tokens,
+            session_timeout=session_timeout,
+            max_spend_micro_usdc=max_spend_micro_usdc,
+            payment_stream_enabled=payment_stream_enabled,
+        ),
     )

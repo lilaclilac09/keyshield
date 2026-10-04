@@ -5,6 +5,7 @@
  * Connects one LLM call through KeyShield's Python proxy to a Solana
  * Devnet AgentPaymentStream:
  *
+ *   0. Create Universal Vault (ix 10) + PAYMENT_ENABLED + GrantAgentAccess
  *   1. Open a 5 USDC stream (off-chain row + on-chain open_payment_stream)
  *   2. Client agent calls /proxy/<provider>/... with a session token
  *   3. Stream via SSE; proxy meters tokens (x-ks-mpp-meter / tokens)
@@ -31,9 +32,11 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  ComputeBudgetProgram,
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
@@ -46,7 +49,18 @@ export const VAULT_SEED = Buffer.from("universal_vault");
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ATA_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 export const LIVE_DISC = "ksaywal1";
+export const VAULT_DISC = "univault";
+export const CREATE_VAULT_DISC = 10;
+export const UPDATE_POLICY_DISC = 11;
+export const GRANT_ACCESS_DISC = 20;
 export const REVOKE_DISC = 21;
+export const VAULT_FLAGS_OFFSET = 56;
+export const PAYMENT_ENABLED_FLAG = 0x08;
+export const AGENT_GRANTS_START = 768;
+export const AGENT_GRANT_SIZE = 128;
+export const GRANT_IS_ACTIVE_OFFSET = 58;
+export const AGENT_GRANT_REVOKED_AT_OFFSET = 120;
+export const MAX_AGENTS = 8;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(ROOT, "scripts/fixtures/devnet-wallets.json");
@@ -85,6 +99,12 @@ export function expandHome(p: string): string {
 export function u16le(n: number): Buffer {
   const b = Buffer.alloc(2);
   b.writeUInt16LE(n >>> 0, 0);
+  return b;
+}
+
+export function u32le(n: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32LE(n >>> 0, 0);
   return b;
 }
 
@@ -188,6 +208,96 @@ export function deriveStreamPda(programId: PublicKey, agent: PublicKey, owner: P
 
 export function deriveVaultPda(programId: PublicKey, owner: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([VAULT_SEED, owner.toBuffer()], programId);
+}
+
+export function buildCreateUniversalVaultIx(
+  programId: PublicKey,
+  owner: PublicKey,
+  vaultPda: PublicKey,
+  bump: number,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: owner, isSigner: true, isWritable: true },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([CREATE_VAULT_DISC, bump]),
+  });
+}
+
+export function buildUpdateUniversalPolicyFlagsIx(
+  programId: PublicKey,
+  owner: PublicKey,
+  vaultPda: PublicKey,
+  flags = PAYMENT_ENABLED_FLAG,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: owner, isSigner: true, isWritable: false },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+    ],
+    data: Buffer.concat([Buffer.from([UPDATE_POLICY_DISC]), u32le(flags), Buffer.from([0])]),
+  });
+}
+
+export function buildGrantAgentAccessIx(args: {
+  programId: PublicKey;
+  owner: PublicKey;
+  vaultPda: PublicKey;
+  agent: PublicKey;
+  keyGroup?: number;
+  rateLimitCalls?: number;
+  rateLimitTokens?: number;
+  sessionTimeout?: number;
+  maxSpendMicroUsdc?: number;
+  paymentStreamEnabled?: boolean;
+}): TransactionInstruction {
+  const keyGroup = args.keyGroup ?? 255;
+  const rateCalls = args.rateLimitCalls ?? 0;
+  const rateTokens = args.rateLimitTokens ?? 0;
+  const timeout = args.sessionTimeout ?? 0;
+  const maxSpend = args.maxSpendMicroUsdc ?? 0;
+  const pay = args.paymentStreamEnabled ? 1 : 0;
+  const data = Buffer.concat([
+    Buffer.from([GRANT_ACCESS_DISC]),
+    args.agent.toBuffer(),
+    Buffer.from([keyGroup]),
+    u32le(rateCalls),
+    u32le(rateTokens),
+    u64le(timeout),
+    u64le(maxSpend),
+    Buffer.from([pay]),
+    u16le(0),
+  ]);
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.owner, isSigner: true, isWritable: true },
+      { pubkey: args.vaultPda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export function vaultHasPaymentsEnabled(data: Buffer): boolean {
+  if (data.length < VAULT_FLAGS_OFFSET + 4) return false;
+  return (data.readUInt32LE(VAULT_FLAGS_OFFSET) & PAYMENT_ENABLED_FLAG) !== 0;
+}
+
+export function vaultHasActiveGrant(data: Buffer, agent: PublicKey): boolean {
+  if (data.length < AGENT_GRANTS_START + AGENT_GRANT_SIZE) return false;
+  const want = agent.toBuffer();
+  for (let i = 0; i < MAX_AGENTS; i++) {
+    const off = AGENT_GRANTS_START + i * AGENT_GRANT_SIZE;
+    if (!data.subarray(off, off + 32).equals(want)) continue;
+    if (data[off + GRANT_IS_ACTIVE_OFFSET] !== 1) continue;
+    const revoked = data.readBigInt64LE(off + AGENT_GRANT_REVOKED_AT_OFFSET);
+    if (revoked === 0n) return true;
+  }
+  return false;
 }
 
 export function readTokenAmount(data: Buffer): bigint {
@@ -434,6 +544,70 @@ print(digest, 12, mac, binding)
   return { hash, tokens: 12, mac, binding };
 }
 
+async function ensureVaultAndGrant(
+  conn: Connection,
+  cfg: LiveConfig,
+  user: Keypair,
+  agent: PublicKey,
+): Promise<PublicKey> {
+  const [derivedVault, vaultBump] = deriveVaultPda(cfg.programId, user.publicKey);
+  if (cfg.vaultPda && cfg.vaultPda !== derivedVault.toBase58()) {
+    throw new LiveE2EError(
+      `KS_VAULT_PDA ${cfg.vaultPda} ≠ derived ${derivedVault.toBase58()} for USER ${user.publicKey.toBase58()}`,
+    );
+  }
+  detail("vault PDA", `${derivedVault.toBase58()} bump=${vaultBump}`);
+
+  let info = await conn.getAccountInfo(derivedVault);
+  if (!info) {
+    const sig = await sendIxs(conn, user, [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      buildCreateUniversalVaultIx(cfg.programId, user.publicKey, derivedVault, vaultBump),
+    ]);
+    detail("create vault", sig);
+    info = await conn.getAccountInfo(derivedVault);
+    if (!info) throw new LiveE2EError("Universal Vault missing after CreateUniversalVault");
+  }
+  const disc = info.data.subarray(0, 8).toString("utf8");
+  if (disc !== VAULT_DISC) {
+    throw new LiveE2EError(`vault disc ${disc} ≠ ${VAULT_DISC}`);
+  }
+  ok(`Universal Vault on-chain (${info.data.length} bytes)`);
+
+  if (!vaultHasPaymentsEnabled(info.data)) {
+    const sig = await sendIxs(conn, user, [
+      buildUpdateUniversalPolicyFlagsIx(cfg.programId, user.publicKey, derivedVault, PAYMENT_ENABLED_FLAG),
+    ]);
+    detail("enable payments", sig);
+    info = await conn.getAccountInfo(derivedVault);
+    if (!info || !vaultHasPaymentsEnabled(info.data)) {
+      throw new LiveE2EError("vault_flags PAYMENT_ENABLED (0x08) not set after UpdateUniversalPolicy");
+    }
+  }
+  ok("vault_flags.PAYMENT_ENABLED (0x08)");
+
+  if (!vaultHasActiveGrant(info.data, agent)) {
+    const sig = await sendIxs(conn, user, [
+      buildGrantAgentAccessIx({
+        programId: cfg.programId,
+        owner: user.publicKey,
+        vaultPda: derivedVault,
+        agent,
+        sessionTimeout: 0,
+        maxSpendMicroUsdc: cfg.deposit,
+        paymentStreamEnabled: true,
+      }),
+    ]);
+    detail("grant agent", sig);
+    info = await conn.getAccountInfo(derivedVault);
+    if (!info || !vaultHasActiveGrant(info.data, agent)) {
+      throw new LiveE2EError(`agent grant not active for ${agent.toBase58()}`);
+    }
+  }
+  ok(`agent grant active for ${agent.toBase58()}`);
+  return derivedVault;
+}
+
 async function walletLogin(cfg: LiveConfig, user: Keypair): Promise<string> {
   if (cfg.sessionToken) return cfg.sessionToken;
   const challenge = await apiOk(cfg, "/auth/wallet-challenge");
@@ -488,7 +662,9 @@ async function dryRun(cfg: LiveConfig): Promise<number> {
   ok(`settlement math: ${tokens} tokens × ${cfg.ratePerToken} = ${debit} micro-USDC`);
 
   banner("1–6. planned live path");
+  console.log("    0. CreateUniversalVault (ix 10) + PAYMENT_ENABLED (0x08) + GrantAgentAccess (ix 20)");
   console.log(`    1. POST /mpp/streams  deposit=${cfg.deposit} rate=${cfg.ratePerToken}/token`);
+  console.log("       then owner-signed open_payment_stream (ix 24)");
   console.log(`    2. wallet-login → POST ${PROVIDER_PATH[cfg.provider].path}`);
   console.log("    3. Accept: text/event-stream + stream:true; read x-ks-mpp-meter/tokens");
   console.log("    4. HMAC(session, artifact) + owner Ed25519 binding → POST /capture → mpp_settle");
@@ -567,6 +743,16 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
   const token = await walletLogin(cfg, user);
   ok("wallet-login (or KS_SESSION_TOKEN)");
 
+  banner("0c. Universal Vault + agent grant");
+  if (cfg.onchain) {
+    const ensured = await ensureVaultAndGrant(conn, cfg, user, agent);
+    if (!ensured.equals(vaultPda)) {
+      throw new LiveE2EError(`ensured vault ${ensured.toBase58()} ≠ resolved ${vaultPda.toBase58()}`);
+    }
+  } else {
+    ok("skipped vault/grant (LIVE_E2E_ONCHAIN=0)");
+  }
+
   banner("1. initialize 5 USDC payment stream");
   const opened = await apiOk(
     cfg,
@@ -589,6 +775,12 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
   detail("stream id", streamId);
   let openSig = "";
   if (cfg.onchain) {
+    const existingStream = await conn.getAccountInfo(streamPda);
+    if (existingStream && existingStream.data.subarray(0, 8).toString("utf8") === LIVE_DISC) {
+      throw new LiveE2EError(
+        `stream PDA ${streamPda.toBase58()} already initialized — close/withdraw or use a new USER/agent pair`,
+      );
+    }
     const built = await apiOk(
       cfg,
       `/mpp/streams/${streamId}/build-open-tx`,

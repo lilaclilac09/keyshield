@@ -247,3 +247,11 @@ is in `.gitignore` if you've added it; otherwise add
    You'll need to send USDC from `https://faucet.circle.com/` to the
    stream ATA before the first `mpp_settle` will succeed (otherwise
    the SPL TransferChecked will fail with `InsufficientFunds`).
+
+6. **Universal Vault + agent grant before `open_payment_stream`.**
+   `LIVE_E2E=1` now sends CreateUniversalVault (ix 10) for USER,
+   UpdateUniversalPolicy `PAYMENT_ENABLED` (0x08), then
+   GrantAgentAccess (ix 20) for the agent pubkey. Opening without
+   those accounts is `0x177a` / 6010. Re-running against an already
+   initialized stream PDA fails closed — close/withdraw or use a
+   new USER/agent pair.

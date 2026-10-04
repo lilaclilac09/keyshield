@@ -608,3 +608,151 @@ async def mpp_record_tx(stream_id: int, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"stream": stream})
+
+
+# ─── 10. POST /mpp/vault/build-create-tx ──────────────────────────────────
+
+
+@router.post("/mpp/vault/build-create-tx")
+async def mpp_build_create_vault_tx(request: Request):
+    """Build CreateUniversalVault (ix #10). Owner-signed.
+
+    Required before `open_payment_stream` — missing vault is 6010.
+    Body: `{ ownerPubkey, vaultPda?, bump? }`. Omitted PDA/bump are
+    derived from `["universal_vault", owner]`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip()
+    bump_raw = body.get("bump")
+    try:
+        if not vault_pda or bump_raw is None:
+            vault_pda, bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        else:
+            bump = int(bump_raw)
+        ix = mpp_onchain.build_create_universal_vault_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            bump=bump,
+        )
+    except (mpp_onchain.MppSubmitError, ValueError) as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    response["bump"] = bump
+    return JSONResponse(response)
+
+
+@router.post("/mpp/vault/build-enable-payments-tx")
+async def mpp_build_enable_payments_tx(request: Request):
+    """Build UpdateUniversalPolicy type=0 with PAYMENT_ENABLED (0x08).
+
+    GrantAgentAccess with `paymentStreamEnabled=1` requires this flag.
+    Body: `{ ownerPubkey, vaultPda? }`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip() or config.vault_pda
+    if not vault_pda:
+        try:
+            vault_pda, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        except mpp_onchain.MppSubmitError as e:
+            return JSONResponse({"detail": str(e)}, status_code=400)
+    flags = int(body.get("flags") or mpp_onchain.PAYMENT_ENABLED_FLAG)
+    try:
+        ix = mpp_onchain.build_update_universal_policy_flags_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            flags=flags,
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    return JSONResponse(response)
+
+
+@router.post("/mpp/vault/build-grant-tx")
+async def mpp_build_grant_tx(request: Request):
+    """Build GrantAgentAccess (ix #20). Owner-signed.
+
+    Registers the agent in a UniversalVault slot. `open_payment_stream`
+    and `mpp_settle` both require `is_active=1` and `revoked_at=0`.
+    Body: `{ ownerPubkey, agentPubkey, vaultPda?, paymentStreamEnabled?,
+    maxSpendMicroUsdc?, sessionTimeoutSecs? }`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+        agent_pubkey = str(body["agentPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip() or config.vault_pda
+    if not vault_pda:
+        try:
+            vault_pda, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        except mpp_onchain.MppSubmitError as e:
+            return JSONResponse({"detail": str(e)}, status_code=400)
+    try:
+        ix = mpp_onchain.build_grant_agent_access_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            agent_pubkey=agent_pubkey,
+            key_group=int(body.get("keyGroup") or 255),
+            rate_limit_calls=int(body.get("rateLimitCalls") or 0),
+            rate_limit_tokens=int(body.get("rateLimitTokens") or 0),
+            session_timeout=int(body.get("sessionTimeoutSecs") or 0),
+            max_spend_micro_usdc=int(body.get("maxSpendMicroUsdc") or 0),
+            payment_stream_enabled=bool(body.get("paymentStreamEnabled", True)),
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    return JSONResponse(response)
+

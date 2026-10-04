@@ -80,7 +80,13 @@ proxy returns that body to the caller and releases the estimate.
 
 `POST /mpp/streams` takes `{upstream, rate_per_token_micro_usdc,
 rate_per_call_micro_usdc, settlement_interval_secs,
-max_total_micro_usdc}`. The wallet signs `open_payment_stream`. The
+max_total_micro_usdc}`. On-chain open is three owner-signed steps
+before ix #24: `CreateUniversalVault` (ix 10), `UpdateUniversalPolicy`
+type 0 with `PAYMENT_ENABLED` (`0x08`), then `GrantAgentAccess` (ix 20)
+for the agent pubkey. Missing vault is `6010`; missing/inactive grant
+is `AgentGrantNotFound`. Builders live at
+`POST /mpp/vault/build-create-tx`, `build-enable-payments-tx`, and
+`build-grant-tx`. The wallet then signs `open_payment_stream`. The
 row stores the provider scope (`upstream`), the PDA, and the USDC
 escrow ATA. `max_total_micro_usdc` is the hard cap. Available escrow
 is `cap - settled_micro_usdc - held_micro_usdc`. On-chain USDC stays
