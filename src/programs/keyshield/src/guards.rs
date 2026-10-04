@@ -43,6 +43,8 @@ pub const MINT_ACCOUNT_LEN: usize = 82;
 pub const TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
 pub const TOKEN_ACCOUNT_OWNER_OFFSET: usize = 32;
 pub const TOKEN_ACCOUNT_MIN_LEN: usize = 72;
+/// SPL token account amount (u64 LE).
+pub const TOKEN_ACCOUNT_AMOUNT_OFFSET: usize = 64;
 
 /// How far `Clock::get().unix_timestamp` may sit past a deadline before
 /// the program treats the session or envelope as expired. Thirty seconds
@@ -50,7 +52,9 @@ pub const TOKEN_ACCOUNT_MIN_LEN: usize = 72;
 /// authorization open.
 pub const CLOCK_LEEWAY_SECS: i64 = 30;
 
-/// `AgentPaymentStream._reserved` layout. Account size stays 3368.
+/// `AgentPaymentStream._reserved` layout. The account is 3384 bytes:
+/// offsets 0..3367 are unchanged, then `last_active_slot` and
+/// `dispute_timeout_slots`.
 pub const RESERVED_ROOT: usize = 0;
 pub const RESERVED_SEQ: usize = 32;
 pub const RESERVED_RING: usize = 40;

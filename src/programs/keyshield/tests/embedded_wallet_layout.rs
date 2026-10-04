@@ -46,8 +46,15 @@ fn empty_stream() -> Vec<u8> {
 fn aps_size_matches_offsets_module() {
     // The reserved field starts at NONCES + CONSUMED_NONCES_LEN * ConsumedNonce::SIZE.
     let nonces_end = aps_offset::NONCES + CONSUMED_NONCES_LEN * ConsumedNonce::SIZE;
-    // 64 bytes of trailing _reserved.
-    assert_eq!(nonces_end + 64, AgentPaymentStream::SIZE);
+    // 64 bytes of _reserved, then last_active_slot and dispute_timeout_slots.
+    assert_eq!(nonces_end + 64 + 16, AgentPaymentStream::SIZE);
+    assert_eq!(aps_offset::LAST_ACTIVE_SLOT, 3368);
+    assert_eq!(aps_offset::DISPUTE_TIMEOUT_SLOTS, 3376);
+    assert_eq!(AgentPaymentStream::SIZE, 3384);
+    assert_eq!(
+        core::mem::size_of::<AgentPaymentStream>(),
+        AgentPaymentStream::SIZE
+    );
 }
 
 #[test]
@@ -70,6 +77,9 @@ fn aps_offsets_are_strictly_ascending() {
         ("CREATED_AT", aps_offset::CREATED_AT),
         ("NONCES_HEAD", aps_offset::NONCES_HEAD),
         ("NONCES", aps_offset::NONCES),
+        ("RESERVED", aps_offset::RESERVED),
+        ("LAST_ACTIVE_SLOT", aps_offset::LAST_ACTIVE_SLOT),
+        ("DISPUTE_TIMEOUT_SLOTS", aps_offset::DISPUTE_TIMEOUT_SLOTS),
     ];
     for w in offsets.windows(2) {
         let (a_name, a) = w[0];

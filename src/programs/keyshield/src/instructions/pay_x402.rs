@@ -135,7 +135,8 @@ pub fn process_pay_x402(
 
     // Time bound. A bounded leeway absorbs cluster slot drift without
     // accepting a payment that is more than CLOCK_LEEWAY_SECS late.
-    let now = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     if crate::guards::unix_expired(now, expires_at) {
         return Err(KeyShieldError::PaymentStreamExpired.into());
     }
@@ -238,6 +239,8 @@ pub fn process_pay_x402(
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
+    sbuf[aps_offset::LAST_ACTIVE_SLOT..aps_offset::LAST_ACTIVE_SLOT + 8]
+        .copy_from_slice(&clock.slot.to_le_bytes());
 
     // Capture bump + agent + owner before we drop the mutable borrow,
     // so we can reconstruct PDA seeds for the CPI signer below.

@@ -246,6 +246,52 @@ plus `CLOCK_LEEWAY_SECS` (30). `unix_expired` / `session_expired` use
 settlement because the advisory `settlement_interval_secs` has passed;
 cluster slot drift cannot lock already-earned escrow.
 
+### Velocity, Ed25519 binding, clawback, revocation
+
+`/proxy` and `/vproxy` admit a session before the MPP hold and before
+the upstream call. The in-memory limiter caps requests per second,
+tokens per second, and micro-USDC per minute
+(`KS_VELOCITY_MAX_REQUESTS_PER_SEC` 25,
+`KS_VELOCITY_MAX_TOKENS_PER_SEC` 8000,
+`KS_VELOCITY_MAX_MICRO_USDC_PER_MIN` 1000000). A rejected admit is not
+counted. HTTP 429 uses `velocity_limited`. Three consecutive upstream
+HTTP 5xx responses or empty bodies set the session to `Suspended`
+(HTTP 423, `session_suspended`). A non-empty status below 500 resets
+that streak. HTTP 402 and a missing upstream route do not. A process
+restart clears the counters.
+
+`mpp_settle` reads the instructions sysvar (account 7) after the
+112-byte body parses. Instruction 0 must be the Ed25519 precompile.
+Its message is `sha256(stream_pubkey || seq_le || debit_le || artifact)`.
+The public key is the stream owner. The program does not verify the
+signature bytes again. A missing sysvar or a mismatch is
+`InvalidSettlementSignature` (6114), before `spent_total` is written.
+`settlement_binding_hash` builds that preimage. The 113-byte payload
+is unchanged. An optional `u32` session index after those 112 bytes,
+together with the owner's revocation bitmap (account 8), returns
+`SessionRevoked` (6116) when that bit is set.
+
+`AgentPaymentStream` stays `#[repr(C)]` with fixed arrays. Handlers
+read `aps_offset` and do not unpack `String` or `Vec`. `StreamState`
+is that account. `last_active_slot` and `dispute_timeout_slots` are
+appended at offsets 3368 and 3376. The account is 3384 bytes. Offsets
+0..3367 are unchanged. Open writes the current slot and a timeout of
+2250. `pay_x402` and `mpp_settle` refresh `last_active_slot`.
+
+`force_clawback` (discriminator 28) is owner-signed. It requires
+`Clock.slot > last_active_slot + dispute_timeout_slots`. A stored
+timeout of 0 means 2250. Equality stays inside the window
+(`DisputeWindowActive`, 6115). Overflow is `ArithmeticOverflow`
+(6113). The owner check returns `NotOwner` (6103) first. The
+instruction transfers the SPL token balance at offset 64, closes the
+ATA, tombstones the stream, and returns the stream lamports with
+`checked_add`.
+
+`SetRevocationBit` (discriminator 29) maintains one bitmap PDA per
+owner, seeds `["revocation_bitmap", owner, bump]`, 16384 bytes /
+131072 bits. An out-of-range index fails closed. The payment-stream
+PDA seeds are unchanged.
+
 ### Partial streams and idempotency
 
 `/proxy` and `/vproxy` stream the upstream body when `Accept` contains

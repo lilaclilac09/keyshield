@@ -107,6 +107,50 @@ def _mpp_acquire_hold(request: Request, user_id: str, upstream: str):
     return held.get("hold_id"), None
 
 
+def _header_u64(request: Request, name: str) -> int:
+    raw = request.headers.get(name)
+    if raw is None or str(raw).strip() == "":
+        return 0
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return 0
+    return value if value > 0 else 0
+
+
+def _velocity_admit(request: Request, user_id: str):
+    """Sliding window before the hold and before the upstream call."""
+    from ..proxy.velocity import SessionSuspended, VelocityLimited, limiter, session_key
+
+    key = session_key(_bearer(request), user_id)
+    try:
+        limiter.admit(
+            key,
+            est_micro=_header_u64(request, "x-mpp-estimate-micro-usdc"),
+            est_tokens=_header_u64(request, "x-ks-est-tokens"),
+        )
+    except SessionSuspended:
+        return key, JSONResponse(
+            {"detail": "Suspended", "code": "session_suspended"},
+            status_code=423,
+        )
+    except VelocityLimited as exc:
+        return key, JSONResponse(
+            {"detail": exc.detail, "code": "velocity_limited"},
+            status_code=429,
+        )
+    return key, None
+
+
+def _velocity_observe(key: str, status: int, content, tokens: int) -> None:
+    try:
+        from ..proxy.velocity import limiter
+
+        limiter.observe(key, status, content, tokens)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("velocity observe failed: %s", exc)
+
+
 def _mpp_release(user_id: str, stream_id: int | None, hold_id: int | None) -> None:
     if not hold_id or stream_id is None:
         return
@@ -147,6 +191,10 @@ async def proxy_route(upstream: str, path: str, request: Request):
     sess = sess_mod.get(_bearer(request) or "") or {}
     user_id = sess.get("user_id") or sess.get("userId") or "anonymous"
 
+    velocity_key, velocity_err = _velocity_admit(request, user_id)
+    if velocity_err is not None:
+        return velocity_err
+
     body = await request.body()
     interceptor = _get_x402_interceptor()
     hold_id, hold_err = _mpp_acquire_hold(request, user_id, upstream)
@@ -166,6 +214,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
                 api_router, upstream, path, body, api_key, request, interceptor
             )
     except PaymentRequired as exc:
+        # A 402 challenge is not an upstream 5xx or an empty body.
         _mpp_release(user_id, stream_id, hold_id)
         return JSONResponse(
             {"error": "payment_required", "x402": exc.raw},
@@ -177,12 +226,15 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     if stream_complete is False and not content:
         _mpp_release(user_id, stream_id, hold_id)
+        _velocity_observe(velocity_key, 502, b"", 0)
         return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
+    tokens_total = 0
     try:
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
+        tokens_total = int(tokens_in or 0) + int(tokens_out or 0)
         usage_mod.log_call(
             user_id=user_id,
             upstream=upstream,
@@ -197,6 +249,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
         )
     except Exception:
         pass
+    _velocity_observe(velocity_key, status, content, tokens_total)
 
     meter_header, bound_hold = _mpp_meter_header(
         request,
@@ -276,6 +329,9 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
             status_code=422,
         )
     api_key = row[0]
+    velocity_key, velocity_err = _velocity_admit(request, user_id)
+    if velocity_err is not None:
+        return velocity_err
     body = await request.body()
     interceptor = _get_x402_interceptor()
     hold_id, hold_err = _mpp_acquire_hold(request, user_id, upstream)
@@ -303,11 +359,14 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
 
     if stream_complete is False and not content:
         _mpp_release(user_id, stream_id, hold_id)
+        _velocity_observe(velocity_key, 502, b"", 0)
         return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
+    tokens_total = 0
     try:
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
+        tokens_total = int(tokens_in or 0) + int(tokens_out or 0)
         usage_mod.log_call(
             user_id=user_id,
             upstream=upstream,
@@ -322,6 +381,7 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         )
     except Exception:
         pass
+    _velocity_observe(velocity_key, status, content, tokens_total)
 
     meter_header, bound_hold = _mpp_meter_header(
         request,

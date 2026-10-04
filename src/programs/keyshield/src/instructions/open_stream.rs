@@ -30,7 +30,7 @@ use crate::{
         aps_offset, AgentPaymentStream, ConsumedNonce,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE, AGENT_GRANT_REVOKED_AT_OFFSET,
         CONSUMED_NONCES_LEN, MAX_AGENTS, UniversalVault,
-        AGENT_PAYMENT_STREAM_DISCRIMINATOR,
+        AGENT_PAYMENT_STREAM_DISCRIMINATOR, DEFAULT_DISPUTE_TIMEOUT_SLOTS,
     },
 };
 
@@ -214,7 +214,8 @@ pub fn process_open_payment_stream(
     }
 
     // Initialize stream fields
-    let now = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     let mut buf = stream.try_borrow_mut_data()?;
     if buf.len() < AgentPaymentStream::SIZE {
         return Err(ProgramError::AccountDataTooSmall);
@@ -251,6 +252,10 @@ pub fn process_open_payment_stream(
         .copy_from_slice(&now.to_le_bytes());
     buf[aps_offset::CREATED_AT..aps_offset::CREATED_AT + 8]
         .copy_from_slice(&now.to_le_bytes());
+    buf[aps_offset::LAST_ACTIVE_SLOT..aps_offset::LAST_ACTIVE_SLOT + 8]
+        .copy_from_slice(&clock.slot.to_le_bytes());
+    buf[aps_offset::DISPUTE_TIMEOUT_SLOTS..aps_offset::DISPUTE_TIMEOUT_SLOTS + 8]
+        .copy_from_slice(&DEFAULT_DISPUTE_TIMEOUT_SLOTS.to_le_bytes());
     // Ring buffer head = 0; entries already zeroed.
     let _ = (CONSUMED_NONCES_LEN, ConsumedNonce::SIZE);
 

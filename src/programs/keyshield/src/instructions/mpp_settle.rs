@@ -132,6 +132,10 @@ pub fn parse_request_hash(data: &[u8]) -> Result<[u8; 32], ProgramError> {
 ///                 service provider's collection ATA).
 /// 5. `[]`         USDC mint.
 /// 6. `[]`         SPL Token Program.
+/// 7. `[]`         Instructions sysvar. Read after the 112-byte body
+///                 parses. Instruction 0 must be the Ed25519 precompile.
+/// 8. `[]`         Revocation bitmap. Read only when a u32 session
+///                 index follows the 112-byte body.
 ///
 /// ### Data (after dispatcher strips discriminator)
 /// `units_consumed` (8) u64 — units to settle since last call.
@@ -309,6 +313,31 @@ pub fn process_mpp_settle(
         .checked_mul(units_consumed)
         .ok_or(KeyShieldError::ArithmeticOverflow)?;
 
+    // Ed25519 precompile at instruction 0. A missing sysvar or a
+    // message that is not sha256(stream || seq || debit || artifact)
+    // is InvalidSettlementSignature (6114) and does not debit.
+    {
+        let ix_sysvar = accounts
+            .get(7)
+            .ok_or(KeyShieldError::InvalidSettlementSignature)?;
+        let instructions = pinocchio::sysvars::instructions::Instructions::try_from(ix_sysvar)
+            .map_err(|_| KeyShieldError::InvalidSettlementSignature)?;
+        crate::ed25519_bind::assert_settlement_instructions(
+            &instructions,
+            stream.key(),
+            settlement_seq,
+            amount,
+            &request_hash,
+            &stream_owner,
+        )?;
+    }
+    crate::instructions::revocation::reject_revoked_session(
+        _program_id,
+        accounts,
+        data,
+        &stream_owner,
+    )?;
+
     let max_total = u64::from_le_bytes(
         sbuf[aps_offset::MAX_TOTAL..aps_offset::MAX_TOTAL + 8]
             .try_into()
@@ -333,11 +362,14 @@ pub fn process_mpp_settle(
         settlement_seq,
     )?;
 
-    let now = Clock::get()?.unix_timestamp;
+    let clock = Clock::get()?;
+    let now = clock.unix_timestamp;
     sbuf[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
+    sbuf[aps_offset::LAST_ACTIVE_SLOT..aps_offset::LAST_ACTIVE_SLOT + 8]
+        .copy_from_slice(&clock.slot.to_le_bytes());
 
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);

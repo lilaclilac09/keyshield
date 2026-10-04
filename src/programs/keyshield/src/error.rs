@@ -84,6 +84,14 @@ pub enum KeyShieldError {
     /// `checked_add` / `checked_sub` failed. Distinct from
     /// `BudgetExceeded`, which is a cap check on a value that fit in u64.
     ArithmeticOverflow = 6113,
+    /// Instruction 0 is not an Ed25519 precompile over
+    /// `sha256(stream || seq || debit || artifact)`, or the instructions
+    /// sysvar is missing.
+    InvalidSettlementSignature = 6114,
+    /// `force_clawback` ran before `last_active_slot + dispute_timeout_slots`.
+    DisputeWindowActive = 6115,
+    /// The session bit in the owner's revocation bitmap is set.
+    SessionRevoked = 6116,
 }
 
 impl From<KeyShieldError> for ProgramError {

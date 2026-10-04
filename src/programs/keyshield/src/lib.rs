@@ -36,6 +36,7 @@ macro_rules! borrow_vault_mut {
     }};
 }
 
+pub mod ed25519_bind;
 pub mod error;
 pub mod guards;
 pub mod instructions;
@@ -67,6 +68,8 @@ use instructions::{
     pay_x402::process_pay_x402,
     mpp_settle::process_mpp_settle,
     withdraw::process_withdraw_agent_wallet,
+    clawback::process_force_clawback,
+    revocation::process_set_revocation_bit,
     Instruction,
 };
 use pinocchio::{
@@ -130,6 +133,8 @@ fn process_instruction(
         Instruction::PayX402 => process_pay_x402(program_id, accounts, data),
         Instruction::MppSettle => process_mpp_settle(program_id, accounts, data),
         Instruction::WithdrawAgentWallet => process_withdraw_agent_wallet(program_id, accounts, data),
+        Instruction::ForceClawback => process_force_clawback(program_id, accounts, data),
+        Instruction::SetRevocationBit => process_set_revocation_bit(program_id, accounts, data),
 
 
         // Payment Stream instructions
@@ -167,6 +172,8 @@ mod tests {
         assert_eq!(Instruction::try_from_u8(25), Some(Instruction::PayX402));
         assert_eq!(Instruction::try_from_u8(26), Some(Instruction::MppSettle));
         assert_eq!(Instruction::try_from_u8(27), Some(Instruction::WithdrawAgentWallet));
+        assert_eq!(Instruction::try_from_u8(28), Some(Instruction::ForceClawback));
+        assert_eq!(Instruction::try_from_u8(29), Some(Instruction::SetRevocationBit));
         
         // Payment Stream
         assert_eq!(Instruction::try_from_u8(30), Some(Instruction::GrantAgentPaymentAccess));
@@ -177,7 +184,7 @@ mod tests {
         // Invalid
         assert_eq!(Instruction::try_from_u8(3), None);
         assert_eq!(Instruction::try_from_u8(9), None);
-        assert_eq!(Instruction::try_from_u8(28), None);
+        assert_eq!(Instruction::try_from_u8(34), None);
         assert_eq!(Instruction::try_from_u8(99), None);
     }
 }
