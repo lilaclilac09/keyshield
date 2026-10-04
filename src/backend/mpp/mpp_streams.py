@@ -631,11 +631,15 @@ def settle_on_chain(
     if not (pda and ata):
         if not _PDA_MISSING_WARNED.get(stream_id):
             logger.warning(
-                "mpp_settle stream %s: PDA/ATA not opened on-chain "
-                "(open_stream still DB-only) — stub-fallback returning 0",
+                "mpp_settle stream %s: PDA/ATA not recorded — "
+                "pass streamPda/streamUsdcAta on open or record-tx",
                 stream_id,
             )
             _PDA_MISSING_WARNED[stream_id] = True
+        # Settler env is live: do not stub-credit the ledger. Capture
+        # must 409 so the client can persist the PDA and retry.
+        if not _stub_ledger():
+            return SettleOutcome(0, "failed")
         return SettleOutcome(0, "stub")
 
     # Idempotency check.

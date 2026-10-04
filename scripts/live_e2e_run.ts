@@ -713,7 +713,11 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
   const user = loadKeypair(cfg.userWalletPath);
   const providerKp = loadKeypair(cfg.providerWalletPath);
   const conn = new Connection(cfg.rpcUrl, "confirmed");
-  const agent = process.env.KS_AGENT_PUBKEY ? new PublicKey(process.env.KS_AGENT_PUBKEY) : user.publicKey;
+  // Fresh agent per run so ["agent_payment_stream", agent, owner] is unique
+  // after a previous live open. Pin with KS_AGENT_PUBKEY to reuse.
+  const agent = process.env.KS_AGENT_PUBKEY
+    ? new PublicKey(process.env.KS_AGENT_PUBKEY)
+    : Keypair.generate().publicKey;
   const [streamPda, bump] = deriveStreamPda(cfg.programId, agent, user.publicKey);
   const ownerAta = deriveAta(user.publicKey, cfg.usdcMint);
   const streamAta = deriveAta(streamPda, cfg.usdcMint);
@@ -721,6 +725,7 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
 
   banner("0. wallets + RPC");
   detail("user", user.publicKey.toBase58());
+  detail("agent", agent.toBase58());
   detail("provider/settler", providerKp.publicKey.toBase58());
   detail("stream PDA", `${streamPda.toBase58()} bump=${bump}`);
   detail("owner USDC ATA", ownerAta.toBase58());
@@ -767,6 +772,8 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
         ratePerCallMicroUsdc: cfg.ratePerCall,
         settlementIntervalSecs: 60,
         maxTotalMicroUsdc: cfg.deposit,
+        streamPda: streamPda.toBase58(),
+        streamUsdcAta: streamAta.toBase58(),
       }),
     },
     token,
@@ -810,7 +817,14 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
     await apiOk(
       cfg,
       `/mpp/streams/${streamId}/record-tx`,
-      { method: "POST", body: JSON.stringify({ tx_signature: openSig }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          tx_signature: openSig,
+          streamPda: streamPda.toBase58(),
+          streamUsdcAta: streamAta.toBase58(),
+        }),
+      },
       token,
     );
     const acc = await conn.getAccountInfo(streamPda);

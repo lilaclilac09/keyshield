@@ -169,6 +169,12 @@ async def mpp_open_stream(request: Request):
     if raw_cap is None:
         raw_cap = body.get("max_total_micro_usdc")
     max_total = int(raw_cap) if raw_cap is not None else None
+    stream_pda = body.get("streamPda") or body.get("stream_pda")
+    stream_usdc_ata = (
+        body.get("streamUsdcAta")
+        or body.get("stream_usdc_ata")
+        or body.get("usdcAta")
+    )
 
     from ..mpp import mpp_streams
 
@@ -181,6 +187,8 @@ async def mpp_open_stream(request: Request):
             rate_per_token=int(rate_per_token or 0),
             rate_per_call=int(rate_per_call or 0),
             settlement_interval=int(settlement_interval or 60),
+            stream_pda=str(stream_pda).strip() if stream_pda else None,
+            stream_usdc_ata=str(stream_usdc_ata).strip() if stream_usdc_ata else None,
             max_total_micro_usdc=max_total,
         )
     except ValueError as e:
@@ -598,11 +606,19 @@ async def mpp_record_tx(stream_id: int, request: Request):
     sig = str(body.get("tx_signature") or body.get("txSignature") or "").strip()
     if not sig:
         return JSONResponse({"detail": "tx_signature is required"}, status_code=400)
+    stream_pda = body.get("streamPda") or body.get("stream_pda")
+    stream_usdc_ata = body.get("streamUsdcAta") or body.get("stream_usdc_ata")
 
     from ..mpp import mpp_streams
 
     try:
-        stream = mpp_streams.record_tx_signature(sess["user_id"], stream_id, sig)
+        stream = mpp_streams.record_tx_signature(
+            sess["user_id"],
+            stream_id,
+            sig,
+            stream_pda=str(stream_pda).strip() if stream_pda else None,
+            stream_usdc_ata=str(stream_usdc_ata).strip() if stream_usdc_ata else None,
+        )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except ValueError as e:

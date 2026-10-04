@@ -383,6 +383,39 @@ def test_settle_on_chain_prefixes_owner_ed25519_on_live_submit(db, monkeypatch):
     assert prefix.data[112:144] == message
 
 
+def test_open_stream_persists_pda_and_ata(db):
+    stream = mpp_streams.open_stream(
+        user_id="alice",
+        agent_pubkey="agent-1",
+        agent_name="bot",
+        upstream="openai",
+        rate_per_token=2,
+        rate_per_call=1000,
+        settlement_interval=5,
+        stream_pda=_b58(bytes([0x11]) * 32),
+        stream_usdc_ata=_b58(bytes([0x22]) * 32),
+    )
+    pda, ata = mpp_streams._get_stream_pda_ata(stream["id"])
+    assert pda == _b58(bytes([0x11]) * 32)
+    assert ata == _b58(bytes([0x22]) * 32)
+
+
+def test_settle_on_chain_fails_closed_when_live_config_missing_pda(db, monkeypatch):
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", _live_cfg)
+    monkeypatch.setattr(mpp_streams, "_stub_ledger", lambda: False)
+    monkeypatch.setattr(mpp_streams, "_get_stream_pda_ata", lambda sid: (None, None))
+    out = mpp_streams.settle_on_chain(
+        1,
+        1000,
+        bytes(range(32, 64)),
+        1,
+        bytes(range(32)),
+        bytes(range(32, 64)),
+    )
+    assert out.mode == "failed"
+    assert out.debited_micro_usdc == 0
+
+
 def test_create_universal_vault_ix_layout():
     data = mpp_onchain.build_create_universal_vault_ix_data(255)
     assert data == bytes([10, 255])
