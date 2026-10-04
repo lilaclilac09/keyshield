@@ -36,27 +36,33 @@ export function deriveStreamPda(agentPubkey: PublicKey, ownerPubkey: PublicKey, 
   );
 }
 
-export interface BuildTxResponse {
+export interface BuildTxIx {
   programId: string;
   keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   data: string;
 }
 
-export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
-  const ix = new TransactionInstruction({
+export interface BuildTxResponse extends BuildTxIx {
+  streamUsdcAta?: string;
+  vaultPda?: string;
+  prereqIxs?: BuildTxIx[];
+}
+
+function ixFromJson(resp: BuildTxIx): TransactionInstruction {
+  return new TransactionInstruction({
     programId: new PublicKey(resp.programId),
     keys: resp.keys.map(k => ({
       pubkey: new PublicKey(k.pubkey),
       isSigner: k.isSigner,
       isWritable: k.isWritable,
     })),
-    // TransactionInstruction#data wants a Node Buffer; b64decode returns a
-    // browser-safe Uint8Array. Buffer.from(Uint8Array) is a noop in Node and
-    // a polyfill in browser builds (Vite ships buffer polyfill via
-    // wallet-adapter-base), and matches the runtime shape Solana expects.
     data: Buffer.from(b64decode(resp.data)),
   });
-  return new Transaction().add(ix);
+}
+
+export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
+  const prereqs = resp.prereqIxs ?? [];
+  return new Transaction().add(...prereqs.map(ixFromJson), ixFromJson(resp));
 }
 
 export async function signAndConfirmTx(

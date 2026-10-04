@@ -679,6 +679,23 @@ def settle_on_chain(
     # Instruction 0 must be the owner Ed25519 over
     # sha256(stream || seq || debit || artifact). A live submit
     # without that prefix is 6114 on-chain — fail here instead.
+    # When the encrypted owner keystore is loaded, sign here so
+    # capture does not need a Phantom signature.
+    if owner_pubkey is None or owner_signature is None:
+        try:
+            from . import owner_keystore
+
+            auto = owner_keystore.try_sign_settlement_binding(
+                pda,
+                settlement_seq,
+                micro_usdc,
+                request_hash,
+            )
+        except Exception:  # noqa: BLE001
+            auto = None
+        if auto is not None:
+            owner_pubkey, owner_signature = auto
+            logger.info("mpp_settle stream %s: owner binding signed from keystore", stream_id)
     if owner_pubkey is None or owner_signature is None:
         logger.warning(
             "mpp_settle stream %s: refusing live submit without owner Ed25519 binding",

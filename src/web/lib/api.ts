@@ -154,15 +154,60 @@ export async function buildWithdrawTx(
   return r.json();
 }
 
-export async function recordMppTxSignature(streamId: number, txSignature: string): Promise<void> {
+export async function recordMppTxSignature(
+  streamId: number,
+  txSignature: string,
+  extra?: { streamPda?: string; streamUsdcAta?: string },
+): Promise<void> {
   const r = await apiFetch(`/mpp/streams/${streamId}/record-tx`, {
     method: 'POST',
-    body: JSON.stringify({ tx_signature: txSignature }),
+    body: JSON.stringify({
+      tx_signature: txSignature,
+      streamPda: extra?.streamPda,
+      streamUsdcAta: extra?.streamUsdcAta,
+    }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: 'record-tx failed' }));
     throw new Error((err as { detail: string }).detail ?? 'record-tx failed');
   }
+}
+
+export async function autosignOpenStream(body: {
+  agentPubkey: string;
+  agentName?: string;
+  upstream: string;
+  maxTotalMicroUsdc: number;
+  ratePerTokenMicroUsdc?: number;
+  ratePerCallMicroUsdc?: number;
+  settlementIntervalSecs?: number;
+}): Promise<Record<string, unknown>> {
+  const r = await apiFetch('/mpp/autosign/open', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'autosign open failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'autosign open failed');
+  }
+  return r.json();
+}
+
+export async function autosignWithdrawStream(
+  streamId: number,
+  withdrawAmountMicroUsdc?: number,
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/submit-withdraw-tx`, {
+    method: 'POST',
+    body: JSON.stringify(
+      withdrawAmountMicroUsdc == null ? {} : { withdrawAmountMicroUsdc },
+    ),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'autosign withdraw failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'autosign withdraw failed');
+  }
+  return r.json();
 }
 
 // Re-export

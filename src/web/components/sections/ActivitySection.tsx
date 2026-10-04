@@ -7,6 +7,7 @@ import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/Paym
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
 import { apiFetch } from '../../lib/auth';
+import { autosignOpenStream, autosignWithdrawStream } from '../../lib/api';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -50,22 +51,32 @@ export const ActivitySection: React.FC = () => {
   const [topupMsg, setTopupMsg] = useState('');
   const [topupOk, setTopupOk] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [autosignPubkey, setAutosignPubkey] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState('');
+  const [openUpstream, setOpenUpstream] = useState('openai');
+  const [openCap, setOpenCap] = useState('0.01');
+  const [openBusy, setOpenBusy] = useState(false);
+  const [openMsg, setOpenMsg] = useState('');
+  const [openOk, setOpenOk] = useState(false);
+  const [withdrawBusy, setWithdrawBusy] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [hRes, sRes, bRes, mRes, mEvRes] = await Promise.all([
+      const [hRes, sRes, bRes, mRes, mEvRes, aRes] = await Promise.all([
         apiFetch('/usage/history?limit=30'),
         apiFetch('/usage/stats'),
         apiFetch('/billing/balance'),
         apiFetch('/mpp/streams'),
         apiFetch('/mpp/events?limit=20'),
+        apiFetch('/mpp/autosign/status'),
       ]);
       if (hRes.ok) { const d = await hRes.json(); setHistory(d.history ?? []); }
-      if (sRes.ok) { const d = await sRes.json(); setStats(d.stats ?? []); }
+      if (sRes.ok) { const d = await sRes.json(); setStats(Array.isArray(d.stats) ? d.stats : []); }
       if (bRes.ok) { setBilling(await bRes.json()); }
       if (mRes.ok) { const d = await mRes.json(); setMppStreams(d.streams ?? []); setMppSummary(d.summary ?? null); }
       if (mEvRes.ok) { const d = await mEvRes.json(); setMppEvents(d.events ?? []); }
+      if (aRes.ok) { const d = await aRes.json(); setAutosignPubkey(d.loaded ? d.pubkey : null); }
     } catch {}
     finally { setLoading(false); }
   }, []);
@@ -86,6 +97,42 @@ export const ActivitySection: React.FC = () => {
       if (bRes.ok) setBilling(await bRes.json());
     } catch (e) { setTopupMsg(e instanceof Error ? e.message : 'Network error'); }
     finally { setTopupBusy(false); }
+  };
+
+  const handleOpenStream = async () => {
+    const cap = parseFloat(openCap);
+    if (!openAgent.trim() || !cap || cap <= 0) return;
+    setOpenBusy(true); setOpenMsg(''); setOpenOk(false);
+    try {
+      const d = await autosignOpenStream({
+        agentPubkey: openAgent.trim(),
+        agentName: openAgent.trim().slice(0, 8),
+        upstream: openUpstream.trim() || 'openai',
+        maxTotalMicroUsdc: Math.round(cap * 1_000_000),
+        ratePerTokenMicroUsdc: 1,
+        ratePerCallMicroUsdc: 0,
+      });
+      setOpenOk(true);
+      setOpenMsg(`Opened stream — tx ${(d.txSignature as string | undefined)?.slice(0, 8) ?? ''}…`);
+      setOpenAgent('');
+      await refresh();
+    } catch (e) {
+      setOpenMsg(e instanceof Error ? e.message : 'Open failed');
+    } finally {
+      setOpenBusy(false);
+    }
+  };
+
+  const handleWithdraw = async (streamId: number) => {
+    setWithdrawBusy(streamId);
+    try {
+      await autosignWithdrawStream(streamId);
+      await refresh();
+    } catch {
+      /* list refresh still runs */
+    } finally {
+      setWithdrawBusy(null);
+    }
   };
 
   const TABS: { id: Tab; label: string }[] = [
@@ -172,6 +219,19 @@ export const ActivitySection: React.FC = () => {
         </div>
       )}
 
+      {tab === 'topup' && (
+        <Card title="Top Up" description="Add prepaid credit. This is the Activity ledger, not an on-chain transfer.">
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
+              <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+            </div>
+            <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+          </div>
+          {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
+        </Card>
+      )}
+
       {/* MPP Streams */}
       {tab === 'mpp' && (
         <div className="space-y-4">
@@ -183,6 +243,26 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
+          <Card title="Open payment stream" description={autosignPubkey ? `Auto-sign on ${autosignPubkey.slice(0, 4)}…${autosignPubkey.slice(-4)} — no Phantom prompt.` : 'Owner keystore is not loaded. Open stays disabled until the encrypted key is sealed.'}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Agent pubkey</label>
+                <input value={openAgent} onChange={e => setOpenAgent(e.target.value)} placeholder="base58" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Upstream</label>
+                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder="openai" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Cap (USDC)</label>
+                <input type="number" min="0.000001" step="0.01" value={openCap} onChange={e => setOpenCap(e.target.value)} className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-white/10" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <Button variant="primary" size="md" onClick={handleOpenStream} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy}>Open stream</Button>
+            </div>
+            {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
+          </Card>
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (
@@ -192,6 +272,9 @@ export const ActivitySection: React.FC = () => {
                     <div className="flex items-center gap-2"><span className="text-[13px] text-white font-medium">{s.agent_name || s.agent_pubkey.slice(0, 8)}</span><Badge variant={s.status === 'open' ? 'success' : 'neutral'}>{s.status}</Badge></div>
                     <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} \xb7 {s.total_calls} calls \xb7 settled {fmtCost(s.settled_micro_usdc / 1_000_000)}</div>
                   </div>
+                  {s.status === 'open' && autosignPubkey && (
+                    <Button variant="destructive" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s.id)}>Withdraw</Button>
+                  )}
                   {s.on_chain_signature && <a href={`https://explorer.solana.com/tx/${s.on_chain_signature}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-[11px] text-white hover:underline">View TX</a>}
                 </div>
               ))

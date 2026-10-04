@@ -772,3 +772,95 @@ async def mpp_build_grant_tx(request: Request):
     response["vaultPda"] = vault_pda
     return JSONResponse(response)
 
+
+# ─── 13. Owner auto-sign (encrypted keystore, no Phantom) ─────────────────
+
+
+def _autosign_error(exc: Exception) -> JSONResponse:
+    from ..mpp.owner_keystore import OwnerKeystoreError
+    from ..mpp.owner_submit import OwnerSubmitError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    if isinstance(exc, OwnerKeystoreError):
+        return JSONResponse({"detail": "owner keystore unavailable"}, status_code=503)
+    if isinstance(exc, (OwnerSubmitError, MppSubmitError, ValueError)):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    logger.exception("mpp autosign failed")
+    return JSONResponse({"detail": "autosign failed"}, status_code=500)
+
+
+@router.get("/mpp/autosign/status")
+async def mpp_autosign_status(request: Request):
+    """Pubkey only. Used by Activity MPP tab to show auto-sign is on."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import owner_keystore
+
+    status = owner_keystore.owner_status()
+    return JSONResponse(status)
+
+
+@router.post("/mpp/autosign/open")
+async def mpp_autosign_open(request: Request):
+    """Vault + grant + open + record-tx, owner-signed from the keystore."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit
+
+    try:
+        result = await owner_submit.submit_full_open(sess["user_id"], body)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-open-tx")
+async def mpp_submit_open_tx(stream_id: int, request: Request):
+    """Sign and send the 3-ix open bundle for an existing off-chain row."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    raw_cap = body.get("maxTotalMicroUsdc", body.get("max_total_micro_usdc"))
+    if raw_cap is None:
+        return JSONResponse({"detail": "maxTotalMicroUsdc is required"}, status_code=400)
+    from ..mpp import owner_submit, mpp_streams
+
+    try:
+        result = await owner_submit.submit_open_for_stream(
+            sess["user_id"],
+            stream_id,
+            int(raw_cap),
+            owner_usdc_ata=body.get("usdcAta") or body.get("ownerUsdcAta"),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-withdraw-tx")
+async def mpp_submit_withdraw_tx(stream_id: int, request: Request):
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    raw = body.get("withdrawAmountMicroUsdc", body.get("withdraw_amount_micro_usdc"))
+    from ..mpp import owner_submit, mpp_streams
+
+    try:
+        result = await owner_submit.submit_withdraw(
+            sess["user_id"],
+            stream_id,
+            None if raw is None else int(raw),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+

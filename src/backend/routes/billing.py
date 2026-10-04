@@ -74,7 +74,8 @@ async def usage_stats(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     stats = usage_mod.get_stats(user_id)
-    return JSONResponse({"stats": stats})
+    rows = stats.get("stats", []) if isinstance(stats, dict) else stats
+    return JSONResponse({"stats": rows})
 
 
 @router.get("/usage/history")
@@ -83,7 +84,11 @@ async def usage_history(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    history = usage_mod.get_history(user_id)
+    try:
+        limit = int(request.query_params.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    history = usage_mod.get_history(user_id, limit)
     return JSONResponse({"history": history})
 
 
@@ -94,14 +99,17 @@ async def billing_balance(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     balance_usd = usage_mod.get_balance(user_id)
+    stats = usage_mod.get_stats(user_id)
+    rows = stats.get("stats", []) if isinstance(stats, dict) else []
+    spent = sum((row.get("cost_usd") or 0) for row in rows)
     if isinstance(balance_usd, dict):
         b = float(balance_usd.get("balance_usd", balance_usd.get("usd_balance", 0)))
-        total = float(balance_usd.get("total_spent_usd", 0))
-        free = float(balance_usd.get("free_credit_usd", 0))
+        total = float(balance_usd.get("total_spent_usd", spent))
+        free = float(balance_usd.get("free_credit_usd", usage_mod.FREE_CREDIT_USD))
     else:
         b = float(balance_usd or 0)
-        total = 0.0
-        free = 0.0
+        total = float(spent)
+        free = float(usage_mod.FREE_CREDIT_USD)
     return JSONResponse(
         {
             "balance_usd": round(b, 6),
