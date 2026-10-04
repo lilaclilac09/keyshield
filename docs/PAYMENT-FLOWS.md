@@ -63,45 +63,100 @@ Verifies SPL transfer to your token account. Same memo binding + idempotency.
 processing 10K records. Per-call x402 round-trips waste 200ms each;
 prepaid balance might be wrong-sized.
 
-**Status:** **IMPLEMENTED**, with a fulfillment gate. The Solana program
-(`state.rs`, `instructions/mpp_settle.rs`) tracks the stream PDA, the
-USDC escrow ATA, and the hard `max_total_micro_usdc` budget. Python
-metering lives in `src/backend/mpp/mpp_streams.py` and
-`src/backend/mpp/fulfillment.py`. Settlement submits ix #26 only when
-the batch has a non-zero artifact root. On-chain, a missing or
-all-zero root returns `UnverifiedFulfillment` (6108) and does not
-transfer USDC.
+**Status:** **IMPLEMENTED** as a strict two-phase settlement. Phase 1
+verifies the artifact off-chain. Phase 2 signs `mpp_settle` only for
+artifacts that passed. The Solana program (`state.rs`,
+`instructions/mpp_settle.rs`) holds the stream PDA, the USDC escrow
+ATA, and the hard cap `max_total_micro_usdc`. Python metering lives in
+`src/backend/mpp/fulfillment.py` and `src/backend/mpp/mpp_streams.py`.
 
-### Flow
+An empty payload or a failed upstream does **not** debit escrow. The
+proxy returns that body to the caller and records nothing billable.
 
-1. Agent opens a stream with `POST /mpp/streams`
-   `{upstream, rate_per_token_micro_usdc, rate_per_call_micro_usdc,
-   settlement_interval_secs, max_total_micro_usdc}` and the wallet signs
-   `open_payment_stream`. `max_total_micro_usdc` is the hard cap. A
-   debit that would pass it raises `BudgetExceeded` and rolls back.
-2. The stream row stores the provider scope (`upstream`), the PDA, and
-   the USDC escrow ATA.
-3. Each proxied call that sends `X-Mpp-Stream-Id` is metered from the
-   response the proxy actually received. `fulfillment.py` rebuilds the
-   preimage (`stream`, provider, HTTP status, `sha256(body)`, units)
-   and accepts it only when the body is a 2xx payload with real
-   content. Empty bodies, error statuses, error JSON, and garbage are
-   not billed. The response header `x-ks-mpp-meter` is `recorded` or
-   `rejected:<reason>`. `POST /mpp/streams/{id}/record` requires the
-   same `status_code` + `body` and caps claimed tokens at `usage` in
-   that body. The same artifact hash cannot be metered twice.
-4. Every `settlement_interval_secs`, the server folds the unsettled
-   artifact hashes into one root and submits `mpp_settle`. The
-   instruction debits `units × cost_per_unit` only when that root is
-   present and has not been replayed. Pending balance with no artifact
-   is dropped, not paid. One artifact can also settle on its own via
-   `settle_receipt`: the debit takes `BEGIN IMMEDIATE`, checks the
-   hard cap in the same write, and rolls back on overflow. Reusing a
-   consumed artifact hash raises `NonceReused` and does not debit again.
-5. Either party can close the stream (`POST /mpp/streams/{id}/close`);
-   final settlement runs immediately, still only for verified artifacts.
-   After `status=closed`, record, settle, and receipt raise
-   `StreamAlreadyClosed` and leave balances unchanged.
+### Open
+
+`POST /mpp/streams` takes `{upstream, rate_per_token_micro_usdc,
+rate_per_call_micro_usdc, settlement_interval_secs,
+max_total_micro_usdc}`. The wallet signs `open_payment_stream`. The
+row stores the provider scope (`upstream`), the PDA, and the USDC
+escrow ATA. `max_total_micro_usdc` is the hard cap for later debits.
+
+### Phase 1 — verify the artifact off-chain (no signature)
+
+The session proxy (`/proxy/...` and `/vproxy/...`) forwards the
+upstream call first. The session token only identifies `user_id`. It
+does not move USDC. Metering runs after the response bytes are in
+hand, and only when the request sent `X-Mpp-Stream-Id`.
+
+`fulfillment.verify_fulfillment` rebuilds the preimage
+(`stream_id`, provider, HTTP status, `sha256(body)`, calls, tokens)
+and the artifact hash `sha256(preimage)`. It accepts the body only
+when all of the following hold:
+
+- HTTP status is 2xx
+- the body is non-empty and not whitespace
+- the JSON is not an error envelope and not garbage text
+- claimed tokens do not exceed `usage` in the body
+- the stream `upstream` matches the provider that was called
+
+Empty, 5xx, error JSON, and garbage raise `FulfillmentRejected`.
+Pending balance, settled balance, and escrow stay unchanged. The
+proxy still returns the upstream body. `x-ks-mpp-meter` is
+`rejected:<reason>`. `POST /mpp/streams/{id}/record` uses the same
+check. The same artifact hash cannot be inserted twice
+(`artifact already metered`).
+
+### Phase 2 — sign the settlement only after phase 1
+
+Nothing in phase 2 builds or signs a transaction until phase 1 has
+left at least one unsettled artifact row.
+
+1. Load unsettled artifact hashes. Pending with no artifact is
+   dropped, not paid. Zero verified units means `settle_on_chain` is
+   not called.
+2. Hard cap, still off-chain and still unsigned: if
+   `settled + verified > max_total_micro_usdc`, raise
+   `BudgetExceeded` and roll back. `settle_receipt` applies the same
+   predicate inside `BEGIN IMMEDIATE`
+   (`status = open`, pending covers the cost, `settled + cost <= cap`).
+   A failed predicate leaves balances unchanged.
+3. Root = `sha256` of the artifact hashes in order.
+   `settle_on_chain` refuses a missing or all-zero root before the
+   instruction is built. Only then does the settler sign ix #26.
+4. On-chain `process_mpp_settle`, after settler authentication and
+   before `TransferChecked`:
+   - missing or all-zero root → `UnverifiedFulfillment` (6108)
+   - root equal to the last settled root → `NonceReused` (6101)
+   - `cost_per_unit * units` and `spent + amount` use `checked_mul`
+     and `checked_add`; `spent + amount > max_total` →
+     `BudgetExceeded` (6100)
+   - the SPL transfer is the escrow debit
+5. A failed instruction reverts the `spent_total` write with the
+   transaction. A closed stream (`is_active == 0`) returns
+   `PaymentStreamInactive` (6052) with no balance write. Python
+   `record` / `settle` / `settle_receipt` on `status=closed` raise
+   `StreamAlreadyClosed` the same way.
+6. `POST /mpp/streams/{id}/close` runs phase 2 once for whatever
+   verified artifacts are still unsettled, then marks the stream
+   closed.
+
+The chain does not see the HTTP body. It checks that a non-zero
+commitment was presented and that this commitment is not the one
+stored in `AgentPaymentStream._reserved[0..32]`. The settler is
+trusted to pass the root phase 1 computed. The account remembers one
+root: after a newer root is settled, an older root can be submitted
+again. Phase 1's unique artifact hash is what stops the honest
+settler from signing that retry.
+
+### Hard cap (`AgentPaymentStream.max_total_micro_usdc`)
+
+`spent_total_micro_usdc` only increases, via `checked_add`. There is
+no subtract on that field, so the cap check is not an underflow.
+`checked_mul` / `checked_add` fail closed as `BudgetExceeded` instead
+of wrapping. The stream PDA is writable, so the runtime serializes
+two `mpp_settle` transactions on the same account; the second reads
+the updated `spent_total`. The same immediate replay of one root is
+rejected. A distinct new root is a new debit, bounded by the cap.
 
 **Why faster than x402:** x402 is a 402 → pay → retry round-trip on
 every call (~200ms). MPP is a one-time stream-open + per-call usage
