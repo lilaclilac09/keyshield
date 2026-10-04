@@ -18,6 +18,7 @@
     "docs:pitch-pdf": "marp docs/pitch/PITCH_DECK.md --allow-local-files -o docs/pitch/PITCH_DECK.pdf",
     "test": "npm run test --workspaces --if-present",
     "test:bankrun": "vitest run tests/bankrun_security.test.ts",
+    "test:fault": "vitest run tests/proxy_fault_injection.test.ts",
     "test:invariants": "cargo test -p keyshield --lib --test bankrun_invariants --test fuzz_invariants --test embedded_wallet_layout -- --test-threads=1",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test:e2e": "playwright test"
