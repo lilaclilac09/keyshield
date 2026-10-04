@@ -29,6 +29,41 @@ AGENT_PUBKEY = "9UTmrBezGq9U6LXzKwMQgBdfxMCv5ZDXjetPJCjNtJgS"
 PLATFORM_USDC_ATA = os.environ["KS_PLATFORM_USDC_ATA"]
 
 
+def _owner_binding(
+    stream_pda: str, seq: int, amount: int, request_hash: bytes
+) -> tuple[bytes, bytes]:
+    """Owner Ed25519 over sha256(stream || seq || debit || artifact).
+
+    Live `mpp_settle` is 6114 without instruction 0. Prefer a ready
+    signature (`KS_MPP_OWNER_PUBKEY` + `KS_MPP_OWNER_SIGNATURE`) or
+    sign here with `KS_MPP_OWNER_KEY` (base58 or hex 64-byte keypair).
+    """
+    pub = os.environ.get("KS_MPP_OWNER_PUBKEY", "").strip()
+    sig = os.environ.get("KS_MPP_OWNER_SIGNATURE", "").strip()
+    secret = os.environ.get("KS_MPP_OWNER_KEY", "").strip()
+    if secret and not sig:
+        from nacl.signing import SigningKey
+
+        text = secret[2:] if secret.startswith(("0x", "0X")) else secret
+        hex_chars = set("0123456789abcdefABCDEF")
+        raw = (
+            bytes.fromhex(text)
+            if len(text) in (64, 128) and all(c in hex_chars for c in text)
+            else mpp_onchain._b58decode(secret)
+        )
+        sk = SigningKey(raw[:32])
+        message = mpp_onchain.settlement_binding_hash(
+            mpp_onchain.coerce_pubkey32(stream_pda), seq, amount, request_hash
+        )
+        return bytes(sk.verify_key), bytes(sk.sign(message).signature)
+    if not pub or not sig:
+        raise SystemExit(
+            "✗ refusing live settle without owner Ed25519 binding "
+            "(KS_MPP_OWNER_PUBKEY + KS_MPP_OWNER_SIGNATURE, or KS_MPP_OWNER_KEY)"
+        )
+    return mpp_onchain.coerce_pubkey32(pub), mpp_onchain.coerce_ed25519_signature(sig)
+
+
 def main() -> int:
     cfg = mpp_onchain.load_mpp_config()
     if cfg is None:
@@ -101,6 +136,7 @@ def main() -> int:
         )
         return 1
     request_hash = bytes.fromhex(hash_hex)
+    owner_pub, owner_sig = _owner_binding(STREAM_PDA, 1, units, request_hash)
     print(f"\n▶ settle_on_chain({stream_id}, micro_usdc={units})")
     t0 = time.perf_counter()
     outcome = mpp_streams.settle_on_chain(
@@ -109,6 +145,8 @@ def main() -> int:
         artifact_root,
         capture_signature=capture_signature,
         request_hash=request_hash,
+        owner_pubkey=owner_pub,
+        owner_signature=owner_sig,
     )
     debited = outcome.debited_micro_usdc
     dt = time.perf_counter() - t0

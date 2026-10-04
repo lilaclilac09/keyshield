@@ -37,7 +37,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 SETUP_FIRST=0
-PAY_SCRIPT="${KS_PAY_SCRIPT:-$REPO_ROOT/scripts/pay.sh}"
+PAY_SCRIPT="${KS_PAY_SCRIPT:-}"
+if [[ -z "$PAY_SCRIPT" ]]; then
+  for cand in \
+    "$REPO_ROOT/scripts/pay.sh" \
+    "$REPO_ROOT/src/scripts/pay.sh" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pay.sh"
+  do
+    if [[ -f "$cand" ]]; then
+      PAY_SCRIPT="$cand"
+      break
+    fi
+  done
+  PAY_SCRIPT="${PAY_SCRIPT:-$REPO_ROOT/scripts/pay.sh}"
+fi
 for arg in "$@"; do
   case "$arg" in
     --setup-first) SETUP_FIRST=1 ;;

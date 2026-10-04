@@ -319,6 +319,8 @@ async def mpp_capture(stream_id: int, request: Request):
     body = await request.json()
     artifact = body.get("artifactHash") or body.get("artifact_hash")
     signature = body.get("signature")
+    owner_pubkey = body.get("ownerPubkey") or body.get("owner_pubkey")
+    owner_signature = body.get("ownerSignature") or body.get("owner_signature")
     if not artifact or signature is None:
         return JSONResponse(
             {"detail": "artifactHash and signature are required", "code": "unverified_fulfillment"},
@@ -334,6 +336,8 @@ async def mpp_capture(stream_id: int, request: Request):
             str(artifact),
             session_key=session_key,
             signature=signature,
+            owner_pubkey=owner_pubkey,
+            owner_signature=owner_signature,
         )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)

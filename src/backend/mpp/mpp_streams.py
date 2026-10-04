@@ -52,6 +52,7 @@ from .capture import verify_artifact_signature
 from .fulfillment import (
     FulfillmentRejected,
     artifact_root,
+    assert_settlement_artifact,
     canonical_preimage,
     coerce_body,
     sha256,
@@ -74,6 +75,7 @@ def _resolve_db_path() -> Path:
     if override:
         return Path(override)
     return DB_PATH
+
 
 # How long an in-flight (no recorded result yet) settle attempt is
 # considered "pending" before a retry can take over. Keeps `settle`
@@ -519,11 +521,7 @@ def _is_artifact_replay(error: str) -> bool:
 def _is_sequence_replay(error: str) -> bool:
     """True when the chain rejected `settlement_seq` because `seq <= last_settled_seq`."""
     text = error.lower()
-    return (
-        "settlementreplay" in text
-        or "0x17df" in text
-        or "custom program error: 6111" in text
-    )
+    return "settlementreplay" in text or "0x17df" in text or "custom program error: 6111" in text
 
 
 def _stub_ledger() -> bool:
@@ -558,6 +556,8 @@ def settle_on_chain(
     settlement_seq: int = 1,
     capture_signature: bytes | None = None,
     request_hash: bytes | None = None,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
@@ -585,11 +585,12 @@ def settle_on_chain(
     ts-bucket) within `_PENDING_RECENCY_SECS` returns the prior
     result instead of re-submitting.
     """
-    if not isinstance(artifact_root_bytes, (bytes, bytearray)) or len(artifact_root_bytes) != 32:
-        raise FulfillmentRejected("settlement requires a 32-byte fulfillment artifact root")
-    if bytes(artifact_root_bytes) == bytes(32):
-        raise FulfillmentRejected("settlement requires a non-zero fulfillment artifact root")
-    if isinstance(settlement_seq, bool) or not isinstance(settlement_seq, int) or settlement_seq < 1:
+    artifact_root_bytes = assert_settlement_artifact(artifact_root_bytes, what="artifact root")
+    if (
+        isinstance(settlement_seq, bool)
+        or not isinstance(settlement_seq, int)
+        or settlement_seq < 1
+    ):
         raise ReplayRejected("SettlementReplay")
     if (
         not isinstance(capture_signature, (bytes, bytearray))
@@ -597,15 +598,8 @@ def settle_on_chain(
         or bytes(capture_signature) == bytes(32)
     ):
         raise FulfillmentRejected("capture signature required")
-    if (
-        not isinstance(request_hash, (bytes, bytearray))
-        or len(request_hash) != 32
-        or bytes(request_hash) == bytes(32)
-    ):
-        raise FulfillmentRejected("request_hash required")
+    request_hash = assert_settlement_artifact(request_hash, what="request_hash")
     capture_signature = bytes(capture_signature)
-    artifact_root_bytes = bytes(artifact_root_bytes)
-    request_hash = bytes(request_hash)
     root_hex = artifact_root_bytes.hex()
 
     if micro_usdc <= 0:
@@ -678,6 +672,47 @@ def settle_on_chain(
         )
         return SettleOutcome(0, "failed")
 
+    # Instruction 0 must be the owner Ed25519 over
+    # sha256(stream || seq || debit || artifact). A live submit
+    # without that prefix is 6114 on-chain — fail here instead.
+    if owner_pubkey is None or owner_signature is None:
+        logger.warning(
+            "mpp_settle stream %s: refusing live submit without owner Ed25519 binding",
+            stream_id,
+        )
+        _record_settle_attempt(
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error="missing owner Ed25519 binding",
+            artifact_root=root_hex,
+        )
+        return SettleOutcome(0, "failed")
+    try:
+        stream_key = mpp_onchain.coerce_pubkey32(pda)
+        prefix_ix = mpp_onchain.build_settlement_ed25519_prefix(
+            stream_key,
+            settlement_seq,
+            micro_usdc,
+            request_hash,
+            owner_pubkey,
+            owner_signature,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("mpp_settle ed25519 prefix failed for stream %s: %s", stream_id, e)
+        _record_settle_attempt(
+            stream_id,
+            micro_usdc,
+            now_ts,
+            success=False,
+            debited=0,
+            error=str(e),
+            artifact_root=root_hex,
+        )
+        return SettleOutcome(0, "failed")
+
     # Pick the right way to run an async coroutine. If we're inside a
     # running event loop (FastAPI request handler called settle_on_chain
     # directly without a thread executor), asyncio.run() raises — fall
@@ -691,10 +726,12 @@ def settle_on_chain(
     try:
         if running_loop is not None:
             debited, tx_sig = _run_async_in_thread(
-                mpp_onchain.submit_mpp_settle(config, ix),
+                mpp_onchain.submit_mpp_settle(config, ix, prefix_ix=prefix_ix),
             )
         else:
-            debited, tx_sig = asyncio.run(mpp_onchain.submit_mpp_settle(config, ix))
+            debited, tx_sig = asyncio.run(
+                mpp_onchain.submit_mpp_settle(config, ix, prefix_ix=prefix_ix)
+            )
     except Exception as e:  # noqa: BLE001
         logger.warning("mpp_settle submit failed for stream %s: %s", stream_id, e)
         replayed = _is_artifact_replay(str(e)) or (
@@ -1320,9 +1357,7 @@ def _record_usage_locked(
 ) -> dict:
     stream = _get_owned_stream(conn, user_id, stream_id)
     if stream["status"] != "open":
-        _persist_release_and_raise(
-            conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed")
-        )
+        _persist_release_and_raise(conn, hold_id, stream_id, StreamClosed("StreamAlreadyClosed"))
 
     try:
         artifact = verify_fulfillment(
@@ -1465,14 +1500,21 @@ def _record_usage_locked(
                 now,
             ),
         )
-    except sqlite3.IntegrityError as exc:
-        _persist_release_and_raise(
-            conn,
-            hold_id,
-            stream_id,
-            FulfillmentRejected("artifact already metered"),
-            exc,
-        )
+    except sqlite3.IntegrityError:
+        # The fulfillment hash is the request signature. A retry of the
+        # same body, with or without X-Idempotency-Key, hits the unique
+        # (stream_id, artifact_hash) row. Roll the new increment back
+        # and return the already-metered receipt. The session token is
+        # not an idempotency key by itself.
+        _rollback(conn)
+        if hold_id:
+            _begin_immediate(conn)
+            _release_hold_row(conn, int(hold_id), "released", int(stream_id))
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+            _commit(conn)
+        else:
+            fresh = _get_owned_stream(conn, user_id, stream_id)
+        return _idempotent_replay(fresh, digest)
 
     if request_key:
         if prior is None:
@@ -1669,6 +1711,8 @@ def settle_receipt(
     artifact_hash: str,
     session_key: str | None = None,
     signature: bytes | str | None = None,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> dict:
     """Phase 3. Capture one artifact after the consumer MAC verifies.
 
@@ -1712,6 +1756,8 @@ def settle_receipt(
                 signature=signature,
                 now=now,
                 coerce_signature=coerce_signature,
+                owner_pubkey=owner_pubkey,
+                owner_signature=owner_signature,
             )
             _commit(conn)
             return stream
@@ -1732,6 +1778,8 @@ def _capture_locked(
     signature: bytes | str | None,
     now: int,
     coerce_signature,
+    owner_pubkey: bytes | str | None = None,
+    owner_signature: bytes | str | None = None,
 ) -> dict:
     stream = _get_owned_stream(conn, user_id, stream_id)
     if stream["status"] != "open":
@@ -1807,7 +1855,14 @@ def _capture_locked(
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
     outcome = settle_on_chain(
-        int(stream_id), cost, root, next_seq, sig, request_hash
+        int(stream_id),
+        cost,
+        root,
+        next_seq,
+        sig,
+        request_hash,
+        owner_pubkey=owner_pubkey,
+        owner_signature=owner_signature,
     )
     if outcome.mode == "failed" or (
         outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
@@ -1944,7 +1999,6 @@ def close_stream(user_id: str, stream_id: int) -> dict:
         return stream
     finally:
         conn.close()
-
 
 
 def record_tx_signature(

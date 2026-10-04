@@ -108,8 +108,12 @@ time hold, record, capture, settle, or list runs.
 The proxy forwards the call. When the body is in hand,
 `fulfillment.verify_fulfillment` rebuilds the preimage
 (`stream_id`, provider, HTTP status, `sha256(body)`, calls, tokens)
-and the artifact hash `sha256(preimage)`. It accepts the body only
-when all of the following hold:
+and the artifact hash `sha256(preimage)`. `assert_settlement_artifact`
+then checks that hash (and the body SHA-256) is exactly 32 non-zero
+bytes. The proxy metering handler (`_mpp_meter_header`) repeats that
+length check before it returns `x-ks-mpp-meter: held`. Capture will
+not sign `mpp_settle` without that 32-byte digest. It accepts the
+body only when all of the following hold:
 
 - HTTP status is 2xx
 - the body is non-empty and not whitespace
@@ -151,6 +155,15 @@ instruction is built.
   the same artifact again when the cap still allows it.
 - Valid signature → pending and held decrease, settled increases, the
   hold is `captured`, and `settle_on_chain` runs.
+
+A live submit also needs the stream owner's Ed25519 over
+`sha256(stream_pubkey || seq_le || debit_le || request_hash)`.
+`POST /mpp/streams/{id}/capture` accepts `ownerPubkey` and
+`ownerSignature`. `settle_on_chain` prepends that precompile as
+instruction 0. A missing or unparsable binding returns `mode=failed`
+and does not send a transaction that the program would reject as
+`InvalidSettlementSignature` (6114). Stub-fallback (no settler env)
+still skips the prefix.
 
 The signed payload is 113 bytes: discriminator `26`, `units` (u64), the
 32-byte root (`sha256` of the request hash), `settlement_seq` (u64),
@@ -304,8 +317,12 @@ A finished SSE body bills the `usage` object on its `data:` lines.
 `X-Idempotency-Key` is stored in `mpp_request_keys` in the same
 commit as the usage row. The same key with no additional tokens
 returns `x-ks-mpp-meter: idempotent_replay`, releases the new estimate
-hold, and does not increment counters. A longer observation bills only
-the token delta and does not charge a second call. Capture advances
+hold, and does not increment counters. The session token is not an
+idempotency key. The fulfillment hash is: `mpp_artifacts` is unique
+on `(stream_id, artifact_hash)`, so a retry of the same body without
+the header is also `idempotent_replay` and does not increment
+pending. A longer observation bills only the token delta and does not
+charge a second call. Capture advances
 `last_settled_seq` when the DB is the ledger (no chain settler
 configured) or when the chain accepts the sequence. The receipt's
 `sequence_number` is that new value, and `request_hash` is the
@@ -380,15 +397,24 @@ Content-Type: application/json
    payment on-chain, credits balance, retries the proxy call, returns
    the upstream response.
 
-**Status:** **HALF IMPLEMENTED.** The 402 response path works — server
-emits the right body shape. The verification step at
-`v2-mvp/src/server.py:1067` is `# TODO: verify body.payment_proof on-chain`
-— currently any payment_proof string up to $10 credits without
-on-chain check. Needs:
-- Base RPC client (alchemy or Coinbase) to verify USDC transfer
-- Same idempotency table as Solana topup (`evm_topups` keyed by tx hash)
+**Status:** **IMPLEMENTED** in `src/backend/proxy/x402_verify.py` (the
+old `v2-mvp/src/server.py:1067` stub is gone). `verify_on_chain`
+decodes the Base USDC `Transfer` log and `x402_claims` makes
+`payment_proof` unique. Without `KS_X402_BASE_RPC_URL` +
+`KS_X402_RECEIVER_ADDRESS` the verifier returns `stub-fallback`; set
+`KS_X402_VERIFY_REQUIRED=1` to refuse that path in production.
 
-This is one of the Stage 2 work items in `proxy-rs/ADR-002-architecture.md`.
+MPP settlement is a different gate: the Python proxy meters only after
+`fulfillment.verify_fulfillment` + `assert_settlement_artifact` (32-byte
+non-zero hash). `settle_on_chain` repeats that check before it builds
+the 113-byte `mpp_settle` payload. Empty / short / all-zero artifacts
+cannot be signed.
+
+On-chain `mpp_settle` is pinocchio, not Anchor. The equivalent of
+Anchor mint/close constraints is `guards::assert_canonical_usdc_mint`
+plus `guards::seal_closed_account` (`ksc1osed` + zero the body) on
+withdraw and clawback. A settle against a tombstone is `AccountClosed`
+(6110).
 
 ## Why three paths
 
@@ -411,4 +437,4 @@ A person buying their AI coworker $50 of credit → Prepaid + Solana.
 | Prepaid SOL | `ActivitySection.tsx` topup card | `server.py:billing_topup_solana`, `billing_solana.py` | Solana SystemProgram transfer + Memo |
 | Prepaid USDC | same | `server.py:billing_topup_solana_usdc` | SPL token transfer + Memo |
 | MPP streaming | Activity / stream open tx | `routes/mpp.py`, `mpp/mpp_streams.py`, `mpp/fulfillment.py`, `mpp/capture.py`; proxy holds on `X-Mpp-Stream-Id` | `programs/keyshield` `mpp_settle` requires artifact root and capture signature |
-| x402 | agent SDK (not browser) | `server.py:_x402_body` (response shape OK) + `billing_topup` (verify TODO) | Base USDC transfer |
+| x402 | agent SDK (not browser) | `proxy/x402_verify.py` (`verify_on_chain` + unique `payment_proof`) | Base USDC transfer |

@@ -82,26 +82,12 @@ jobs:
   python-backend:
     name: Python backend smoke test
     runs-on: ubuntu-latest
-    # Lightweight gate: confirms the FastAPI app imports cleanly + tests pass.
-    # Railway builds the Docker image on push to main; this job exists so PRs
-    # fail fast on broken imports before Railway's build cycle catches them.
-    # Path filtering happens in the steps below via `dorny/paths-filter` so we
-    # don't have to split this into a separate workflow.
+    # Always run. dorny/paths-filter needs pull-requests:read and this
+    # token cannot list PR files (`Resource not accessible by integration`).
     steps:
       - uses: actions/checkout@v4
 
-      - name: Detect Python backend changes
-        id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            backend:
-              - 'src/backend/**'
-              - 'Dockerfile.python'
-              - '.github/workflows/node-tests.yml'
-
       - name: Set up Python
-        if: steps.changes.outputs.backend == 'true' || github.event_name == 'push'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -109,28 +95,61 @@ jobs:
           cache-dependency-path: src/backend/requirements.txt
 
       - name: Install backend deps
-        if: steps.changes.outputs.backend == 'true' || github.event_name == 'push'
         run: |
           pip install --upgrade pip
           pip install -r src/backend/requirements.txt
-          # pytest isn't in requirements.txt because runtime images don't
-          # ship test deps. Install it here for the optional test step.
           pip install pytest pytest-asyncio
 
       - name: Smoke test — FastAPI app imports + boots
-        if: steps.changes.outputs.backend == 'true' || github.event_name == 'push'
         env:
-          # App factory pulls these from env; provide CI-safe defaults so
-          # import doesn't fail on missing config.
           SERVER_SECRET: 'CI-SMOKE-TEST-SECRET-32-BYTES-MIN'
           KS_INTERNAL_SECRET: 'ci-smoke-test'
+          PYTHONPATH: ${{ github.workspace }}
         run: python -c "from src.backend.app import app; print(f'{len(app.routes)} routes loaded')"
 
       - name: Run backend pytest suite
-        # src/backend/tests/ exists with at least one test file
-        # (test_security_fixes.py); run it on -x to fail fast.
-        if: steps.changes.outputs.backend == 'true' || github.event_name == 'push'
         env:
           SERVER_SECRET: 'CI-SMOKE-TEST-SECRET-32-BYTES-MIN'
           KS_INTERNAL_SECRET: 'ci-smoke-test'
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest src/backend/tests/ -x
+
+  mpp-harness:
+    name: MPP Stages 3–4 harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: src/backend/requirements.txt
+
+      - name: Install backend + harness deps
+        run: |
+          pip install --upgrade pip
+          pip install -r src/backend/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Stage 3 — SSE disconnect / 502 / empty / garbage
+        env:
+          KS_PYTHON: python3
+          PYTHONPATH: ${{ github.workspace }}
+          SERVER_SECRET: 'CI-HARNESS-SECRET-32-BYTES-MIN!!'
+        run: npm run test:fault
+
+      - name: Stage 4 — live e2e dry-run
+        env:
+          KS_PYTHON: python3
+          PYTHONPATH: ${{ github.workspace }}
+        run: npm run live:e2e:dry

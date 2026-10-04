@@ -12,6 +12,7 @@ from src.backend.mpp.capture import sign_artifact_hash
 from src.backend.mpp.fulfillment import (
     FulfillmentRejected,
     artifact_root,
+    assert_settlement_artifact,
     verify_fulfillment,
 )
 
@@ -45,6 +46,20 @@ def _open(upstream: str = "openai"):
         rate_per_call=1000,
         settlement_interval=5,
     )
+
+
+def test_settlement_artifact_must_be_32_nonzero_bytes():
+    digest = bytes(range(32))
+    assert assert_settlement_artifact(digest) == digest
+    assert assert_settlement_artifact(digest.hex()) == digest
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        assert_settlement_artifact(b"short")
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        assert_settlement_artifact("abcd")
+    with pytest.raises(FulfillmentRejected, match="non-zero"):
+        assert_settlement_artifact(bytes(32))
+    with pytest.raises(FulfillmentRejected, match="must be 32 bytes"):
+        mpp_streams.settle_on_chain(1, 10, b"short", 1, bytes(range(32)), bytes(range(32)))
 
 
 def test_empty_error_and_garbage_are_not_billable():
@@ -154,17 +169,20 @@ def test_record_rejects_bad_responses_and_replays(db):
     assert recorded["total_calls"] == 1
     assert recorded["total_tokens"] == 10
 
-    with pytest.raises(FulfillmentRejected, match="already metered"):
-        mpp_streams.record_usage(
-            "alice",
-            stream["id"],
-            1,
-            10,
-            status_code=200,
-            body=CHAT,
-        )
+    replay = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    assert replay["idempotent_replay"] is True
+    assert replay["artifact_hash"] == recorded["artifact_hash"]
     still = mpp_streams.list_streams("alice")["streams"][0]
     assert still["pending_micro_usdc"] == 1020
+    assert still["total_calls"] == 1
+    assert still["total_tokens"] == 10
 
 
 def test_proxy_observation_ignores_failed_and_foreign_providers(db):
@@ -262,9 +280,7 @@ def test_verified_usage_holds_until_signed_capture(db):
     root = artifact_root([bytes.fromhex(row[1])])
     request_hash = bytes.fromhex(row[1])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(
-        1020, root, 1, signature, request_hash
-    )
+    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature, request_hash)
     assert len(payload) == 113
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020
@@ -286,3 +302,82 @@ def test_settle_on_chain_refuses_a_zero_root(db):
     stream = _open()
     with pytest.raises(FulfillmentRejected, match="non-zero"):
         mpp_streams.settle_on_chain(stream["id"], 1000, bytes(32))
+
+
+def _b58(raw: bytes) -> str:
+    return mpp_onchain._b58encode_pure(raw)
+
+
+def _live_cfg():
+    ata = _b58(bytes([0x22]) * 32)
+    return mpp_onchain.MppConfig(
+        secret_key=bytes(range(64)),
+        settler_pubkey=_b58(bytes([0x33]) * 32),
+        platform_usdc_ata=ata,
+        keyshield_program_id="11111111111111111111111111111111",
+        usdc_mint=mpp_onchain.USDC_MINT_MAINNET,
+        vault_pda="11111111111111111111111111111111",
+        rpc_url="http://127.0.0.1:8899",
+    )
+
+
+def test_settle_on_chain_refuses_live_submit_without_owner_ed25519(db, monkeypatch):
+    pda = _b58(bytes([0x11]) * 32)
+    ata = _b58(bytes([0x22]) * 32)
+    submitted: list = []
+
+    async def fake_submit(config, ix, prefix_ix=None):
+        submitted.append(prefix_ix)
+        return (1000, "sig")
+
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", _live_cfg)
+    monkeypatch.setattr(mpp_streams, "_get_stream_pda_ata", lambda sid: (pda, ata))
+    monkeypatch.setattr(mpp_onchain, "submit_mpp_settle", fake_submit)
+
+    out = mpp_streams.settle_on_chain(
+        1, 1000, bytes(range(32)), 1, bytes(range(32)), bytes(range(32))
+    )
+    assert out.mode == "failed"
+    assert out.debited_micro_usdc == 0
+    assert submitted == []
+
+
+def test_settle_on_chain_prefixes_owner_ed25519_on_live_submit(db, monkeypatch):
+    from nacl.signing import SigningKey
+
+    stream_key = bytes([0x11]) * 32
+    request_hash = bytes(range(32))
+    pda = _b58(stream_key)
+    ata = _b58(bytes([0x22]) * 32)
+    sk = SigningKey(bytes([7]) * 32)
+    owner = bytes(sk.verify_key)
+    message = mpp_onchain.settlement_binding_hash(stream_key, 1, 1000, request_hash)
+    owner_sig = bytes(sk.sign(message).signature)
+    submitted: list = []
+
+    async def fake_submit(config, ix, prefix_ix=None):
+        submitted.append(prefix_ix)
+        return (1000, "sig")
+
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", _live_cfg)
+    monkeypatch.setattr(mpp_streams, "_get_stream_pda_ata", lambda sid: (pda, ata))
+    monkeypatch.setattr(mpp_onchain, "submit_mpp_settle", fake_submit)
+
+    out = mpp_streams.settle_on_chain(
+        1,
+        1000,
+        bytes(range(32, 64)),
+        1,
+        bytes(range(32)),
+        request_hash,
+        owner_pubkey=owner,
+        owner_signature=owner_sig,
+    )
+    assert out.mode == "submitted"
+    assert out.debited_micro_usdc == 1000
+    assert len(submitted) == 1
+    prefix = submitted[0]
+    assert prefix is not None
+    assert prefix.program_id == mpp_onchain.ED25519_PROGRAM_ID
+    assert prefix.data[80:112] == owner
+    assert prefix.data[112:144] == message

@@ -4,8 +4,10 @@ export default defineConfig({
   test: {
     include: [
       "tests/adversarial_audit.ts",
+      "tests/bankrun_security.test.ts",
+      "tests/proxy_fault_injection.test.ts",
       "**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
-    testTimeout: 20000,
+    testTimeout: 120000,
   },
 });

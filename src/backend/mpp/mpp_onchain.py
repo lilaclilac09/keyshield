@@ -443,6 +443,64 @@ def build_ed25519_verify_ix(
     )
 
 
+def coerce_pubkey32(value: bytes | str) -> bytes:
+    """32-byte Solana pubkey from raw bytes, hex, or base58."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("0x", "0X")):
+            text = text[2:]
+        hexish = len(text) == 64 and all(c in "0123456789abcdefABCDEF" for c in text)
+        raw = bytes.fromhex(text) if hexish else _b58decode(text)
+    else:
+        raw = bytes(value)
+    if len(raw) != 32:
+        raise ValueError("pubkey must be 32 bytes")
+    return raw
+
+
+def coerce_ed25519_signature(value: bytes | str) -> bytes:
+    """64-byte Ed25519 signature from raw bytes or hex."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("0x", "0X")):
+            text = text[2:]
+        raw = bytes.fromhex(text)
+    else:
+        raw = bytes(value)
+    if len(raw) != 64:
+        raise ValueError("ed25519 signature must be 64 bytes")
+    return raw
+
+
+def build_settlement_ed25519_prefix(
+    stream_pubkey: bytes | str,
+    seq: int,
+    amount: int,
+    artifact_hash: bytes | str,
+    owner_pubkey: bytes | str,
+    owner_signature: bytes | str,
+) -> _SimpleInstruction:
+    """Instruction 0 for a live `mpp_settle`.
+
+    Message is `sha256(stream || seq_le || debit_le || artifact)`.
+    The public key must be the stream owner. A missing prefix is 6114.
+    """
+    stream = coerce_pubkey32(stream_pubkey)
+    owner = coerce_pubkey32(owner_pubkey)
+    if isinstance(artifact_hash, str):
+        text = artifact_hash.strip()
+        if text.startswith(("0x", "0X")):
+            text = text[2:]
+        artifact = bytes.fromhex(text)
+    else:
+        artifact = bytes(artifact_hash)
+    if len(artifact) != 32:
+        raise ValueError("artifact hash must be 32 bytes")
+    message = settlement_binding_hash(stream, seq, amount, artifact)
+    signature = coerce_ed25519_signature(owner_signature)
+    return build_ed25519_verify_ix(owner, signature, message)
+
+
 def build_mpp_settle_ix(
     config: MppConfig,
     stream_pda: str,

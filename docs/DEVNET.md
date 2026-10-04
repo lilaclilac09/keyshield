@@ -104,6 +104,50 @@ Exit codes: 0 pass, 1 generic failure, 2 env not set, 3 missing tooling.
 
 For one-shot setup-then-test, run `bash scripts/devnet-e2e.sh --setup-first`.
 
+### Stage 3 — proxy fault injection (no chain debit)
+
+`tests/proxy_fault_injection.test.ts` starts a Node mock upstream and
+drives `/proxy` through `tests/proxy_fault_injection_driver.py`. Chain
+env is unset so a fault cannot sign `mpp_settle`.
+
+| Case | Upstream | Expected meter |
+|---|---|---|
+| (a) SSE drop after ~300 of 1000 advertised tokens | TCP destroy mid-body | `held`, tokens = delivered only |
+| (b) 502 / 504 | JSON error | `rejected:…`, balances unmutated |
+| (c) HTTP 200 empty body | zero-byte 200 | `rejected:empty payload` |
+| (d) Truncated JSON | broken object | `rejected:garbage payload` |
+
+```bash
+npm run test:fault
+```
+
+### Stage 4 — live inference + Devnet settle
+
+`scripts/live_e2e_run.ts` opens a 5 USDC stream, calls a real OpenAI-compat
+model through `/proxy/{openrouter|ollama|vllm}/...` with a wallet session,
+meters the SSE body, signs `HMAC-SHA256(session, sha256(preimage))`, signs
+the owner Ed25519 binding
+`sha256(stream || seq || debit || artifact)` as instruction 0, and
+dispatches `mpp_settle`. Default is dry-run.
+
+The cloud agent cannot create an OpenRouter key or send you Devnet USDC.
+You (the operator) do this:
+
+```bash
+npm run live:e2e:setup          # writes gitignored keypairs + live-e2e.env
+# 1. https://openrouter.ai/keys  →  export OPENROUTER_API_KEY=sk-or-...
+#    or: ollama serve && ollama pull llama3.2 && export KS_LIVE_PROVIDER=ollama
+# 2. Fund the printed USER pubkey: ≥0.01 SOL + 5 USDC
+#    USDC mint 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+#    https://faucet.circle.com  and  https://faucet.solana.com
+set -a && source .keyshield-devnet/live-e2e.env && set +a
+npm run live:e2e:dry
+LIVE_E2E=1 npm run live:e2e
+```
+
+Verified program id: `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`.
+Wallet fixtures (metadata only): `scripts/fixtures/devnet-wallets.json`.
+
 ---
 
 ## Reading on-chain state
@@ -175,22 +219,17 @@ is in `.gitignore` if you've added it; otherwise add
 
 ---
 
-## Blockers / known gaps (as of 2026-05-06)
+## Blockers / known gaps (as of 2026-10-04)
 
-1. **`scripts/pay.sh` does not yet exist.** It is the missing harness
-   that drives a real per-call x402 + MPP settlement against the
-   running server. `devnet-e2e.sh` will fail loudly with
-   `pay.sh missing` until it lands. Implementing it is a separate
-   task — see ROADMAP.md.
+1. **`scripts/pay.sh` lives at `src/scripts/pay.sh`.** Older copies of
+   this guide said it was missing. Point `devnet-e2e.sh` at that path
+   if a wrapper still looks in the repo root.
 
-2. **`v2-mvp/src/mpp_onchain.py` does not yet exist.** The server
-   has no real-RPC code path: every settlement is currently the
-   stub-fallback, and `verified_mode` is always `"stub"`. The e2e
-   script will FAIL with `verified_mode != real` until that path
-   ships. The Python side needs to (a) sign an `mpp_settle` ix
-   with `KS_MPP_SETTLER_KEY`, (b) submit it via `KS_SOLANA_RPC_URL`,
-   (c) record the resulting signature on the stream, and (d) flip
-   `verified_mode` to `"real"`.
+2. **Real settle is `src/backend/mpp/mpp_onchain.py`.** The archived
+   `v2-mvp/src/mpp_onchain.py` path is gone. Live submit now requires
+   an owner Ed25519 prefix (`build_settlement_ed25519_prefix`) or the
+   program returns 6114. Stub-fallback still runs when settler env is
+   unset.
 
 3. **PDA derivation in `devnet-setup.sh`** uses
    `solana find-program-derived-address`, which requires solana-cli

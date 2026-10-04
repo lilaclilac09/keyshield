@@ -20,3 +20,8 @@ pinocchio-system = { workspace = true }
 [dev-dependencies]
 mollusk-svm = "0.0.12"
 solana-sdk = "2.1"
+proptest = "1"
+
+[[test]]
+name = "fuzz_invariants"
+path = "../../../tests/fuzz_invariants.rs"
