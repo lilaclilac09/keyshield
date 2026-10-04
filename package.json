@@ -23,6 +23,7 @@
     "test:harness": "npm run test:bankrun && npm run test:fault && npm run live:e2e:dry",
     "live:e2e": "npx --yes tsx scripts/live_e2e_run.ts",
     "live:e2e:dry": "npx --yes tsx scripts/live_e2e_run.ts --dry-run",
+    "live:e2e:setup": "npx --yes tsx scripts/live_e2e_setup.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test:e2e": "playwright test"
   },

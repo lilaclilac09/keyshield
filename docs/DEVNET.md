@@ -130,9 +130,19 @@ the owner Ed25519 binding
 `sha256(stream || seq || debit || artifact)` as instruction 0, and
 dispatches `mpp_settle`. Default is dry-run.
 
+The cloud agent cannot create an OpenRouter key or send you Devnet USDC.
+You (the operator) do this:
+
 ```bash
+npm run live:e2e:setup          # writes gitignored keypairs + live-e2e.env
+# 1. https://openrouter.ai/keys  →  export OPENROUTER_API_KEY=sk-or-...
+#    or: ollama serve && ollama pull llama3.2 && export KS_LIVE_PROVIDER=ollama
+# 2. Fund the printed USER pubkey: ≥0.01 SOL + 5 USDC
+#    USDC mint 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+#    https://faucet.circle.com  and  https://faucet.solana.com
+set -a && source .keyshield-devnet/live-e2e.env && set +a
 npm run live:e2e:dry
-LIVE_E2E=1 OPENROUTER_API_KEY=sk-or-... npm run live:e2e
+LIVE_E2E=1 npm run live:e2e
 ```
 
 Verified program id: `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`.

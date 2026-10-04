@@ -92,14 +92,19 @@ ok "stack is up"
 # ── 1. login ────────────────────────────────────────────────────────────────
 
 section "1. login as $DEMO_USER"
-LOGIN_BODY=$(curl -sf -X POST "$API_BASE/auth/login" \
-  -H 'content-type: application/json' \
-  -d "{\"userId\":\"$DEMO_USER\",\"password\":\"$DEMO_PW\"}")
-TOKEN=$(echo "$LOGIN_BODY" | jget token)
-if [[ -z "$TOKEN" ]]; then
-  die "login returned no token; body was: $LOGIN_BODY"
+if [[ -n "${KS_SESSION_TOKEN:-}" ]]; then
+  TOKEN="$KS_SESSION_TOKEN"
+  ok "using KS_SESSION_TOKEN (${TOKEN:0:12}…)"
+else
+  LOGIN_BODY=$(curl -s -X POST "$API_BASE/auth/login" \
+    -H 'content-type: application/json' \
+    -d "{\"userId\":\"$DEMO_USER\",\"password\":\"$DEMO_PW\"}")
+  TOKEN=$(echo "$LOGIN_BODY" | jget token)
+  if [[ -z "$TOKEN" ]]; then
+    die "/auth/login is wallet/passkey only (403). export KS_SESSION_TOKEN=ksv2_... from wallet-login, or use npm run live:e2e. body: $LOGIN_BODY"
+  fi
+  ok "got bearer token (${TOKEN:0:12}…)"
 fi
-ok "got bearer token (${TOKEN:0:12}…)"
 
 AUTH=(-H "authorization: Bearer $TOKEN")
 
@@ -233,3 +238,8 @@ echo "    export KS_VAULT_PDA=<owner UniversalVault PDA>"
 echo "    export KS_SOLANA_RPC_URL=https://api.devnet.solana.com   # for testing"
 echo
 echo "  then re-run: bash scripts/pay.sh"
+
+# Last JSON object on stdout is the contract for src/scripts/devnet-e2e.sh
+PAY_NDJSON_MODE="${MODE:-stub}"
+[[ "$PAY_NDJSON_MODE" == "stub-fallback" ]] && PAY_NDJSON_MODE=stub
+python3 -c "import json; print(json.dumps({'verified_mode': '$PAY_NDJSON_MODE', 'settled_micro_usdc': int('${SETTLED:-0}' or 0), 'tx_signature': '', 'stream_pda': ''}))"

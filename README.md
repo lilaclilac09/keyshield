@@ -156,7 +156,8 @@ and is not a reason to leave the harness uncommitted.
 npm run test:harness          # Stages 1 + 3 + 4 dry-run
 npm run test:fault            # Stage 3 only
 npm run live:e2e:dry          # Stage 4 crypto + path check
-LIVE_E2E=1 npm run live:e2e   # Stage 4 live (wallets + OPENROUTER_API_KEY)
+npm run live:e2e:setup        # gitignored wallets; YOU still add the inference key + USDC
+LIVE_E2E=1 npm run live:e2e   # Stage 4 live (OPENROUTER_API_KEY or ollama)
 ```
 
 Stage 3 does not sign `mpp_settle`. Stage 4 live prepends the owner

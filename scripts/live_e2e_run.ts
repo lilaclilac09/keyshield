@@ -306,7 +306,10 @@ export function resolveConfig(argv = process.argv.slice(2)): LiveConfig {
   if (!PROVIDER_PATH[provider]) {
     throw new LiveE2EError(`KS_LIVE_PROVIDER must be openrouter|ollama|vllm, got ${provider}`, 2);
   }
-  const userDefault = expandHome("~/.config/solana/id.json");
+  const generatedUser = join(ROOT, ".keyshield-devnet/user-devnet.json");
+  const userDefault = existsSync(generatedUser)
+    ? generatedUser
+    : expandHome("~/.config/solana/id.json");
   const providerDefault = join(ROOT, ".keyshield-devnet/mpp-settler-devnet.json");
   return {
     dryRun,
@@ -513,13 +516,22 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
 ╚══════════════════════════════════════════════════════════════╝`);
 
   if (!existsSync(cfg.userWalletPath)) {
-    throw new LiveE2EError(`user wallet missing: ${cfg.userWalletPath}`, 2);
+    throw new LiveE2EError(
+      `user wallet missing: ${cfg.userWalletPath}. Run: npm run live:e2e:setup`,
+      2,
+    );
   }
   if (!existsSync(cfg.providerWalletPath)) {
-    throw new LiveE2EError(`provider wallet missing: ${cfg.providerWalletPath}`, 2);
+    throw new LiveE2EError(
+      `provider wallet missing: ${cfg.providerWalletPath}. Run: npm run live:e2e:setup`,
+      2,
+    );
   }
-  if (!cfg.upstreamKey && cfg.provider === "openrouter") {
-    throw new LiveE2EError("OPENROUTER_API_KEY / KS_UPSTREAM_API_KEY required for OpenRouter", 2);
+  if (cfg.provider === "openrouter" && !process.env.OPENROUTER_API_KEY && !process.env.KS_UPSTREAM_API_KEY) {
+    throw new LiveE2EError(
+      "YOU must set OPENROUTER_API_KEY (https://openrouter.ai/keys) or KS_LIVE_PROVIDER=ollama after `ollama serve`",
+      2,
+    );
   }
 
   const user = loadKeypair(cfg.userWalletPath);
@@ -836,6 +848,16 @@ if (invoked) {
     (err) => {
       const code = err instanceof LiveE2EError ? err.exitCode : 1;
       console.error(`\n${c.err("LIVE-E2E FAIL")}: ${err instanceof Error ? err.message : err}`);
+      if (code === 2) {
+        console.error(`
+This agent cannot create an OpenRouter key or Circle USDC.
+  1. npm run live:e2e:setup
+  2. export OPENROUTER_API_KEY=sk-or-...   OR   KS_LIVE_PROVIDER=ollama
+  3. Fund the USER pubkey with ≥0.01 SOL + 5 USDC (https://faucet.circle.com)
+  4. set -a && source .keyshield-devnet/live-e2e.env && set +a
+  5. LIVE_E2E=1 npm run live:e2e
+`);
+      }
       process.exit(code);
     },
   );

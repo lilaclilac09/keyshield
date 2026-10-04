@@ -9,7 +9,7 @@
     "user": {
       "role": "client / stream owner",
       "env": "KS_USER_WALLET",
-      "defaultPath": "~/.config/solana/id.json"
+      "defaultPath": ".keyshield-devnet/user-devnet.json"
     },
     "provider": {
       "role": "MPP settler / platform USDC receiver",
