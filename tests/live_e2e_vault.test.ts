@@ -3,16 +3,20 @@ import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import {
   AGENT_GRANT_SIZE,
   AGENT_GRANTS_START,
+  ATA_PROGRAM_ID,
   CREATE_VAULT_DISC,
   GRANT_ACCESS_DISC,
   GRANT_IS_ACTIVE_OFFSET,
   PAYMENT_ENABLED_FLAG,
+  TOKEN_PROGRAM_ID,
   UPDATE_POLICY_DISC,
   VAULT_DISC,
   VAULT_FLAGS_OFFSET,
+  buildCreateAtaIdempotentIx,
   buildCreateUniversalVaultIx,
   buildGrantAgentAccessIx,
   buildUpdateUniversalPolicyFlagsIx,
+  deriveAta,
   deriveVaultPda,
   vaultHasActiveGrant,
   vaultHasPaymentsEnabled,
@@ -80,5 +84,16 @@ describe("live e2e vault + grant builders", () => {
     data[off + GRANT_IS_ACTIVE_OFFSET] = 0;
     expect(vaultHasActiveGrant(data, agent)).toBe(false);
     expect(data.length).toBeGreaterThan(AGENT_GRANTS_START + AGENT_GRANT_SIZE);
+  });
+
+  it("CreateIdempotent ATA ix is disc 1 for the settler dest", () => {
+    const payer = Keypair.generate().publicKey;
+    const owner = Keypair.generate().publicKey;
+    const mint = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+    const ata = deriveAta(owner, mint);
+    const ix = buildCreateAtaIdempotentIx(payer, ata, owner, mint);
+    expect(ix.programId.equals(ATA_PROGRAM_ID)).toBe(true);
+    expect(Buffer.from(ix.data)).toEqual(Buffer.from([1]));
+    expect(ix.keys[5].pubkey.equals(TOKEN_PROGRAM_ID)).toBe(true);
   });
 });

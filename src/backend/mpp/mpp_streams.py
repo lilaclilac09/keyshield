@@ -867,6 +867,10 @@ def _record_settle_attempt(
             # Duplicate (same stream/amount/ts) — fine, the prior
             # row is the source of truth.
             pass
+        except sqlite3.OperationalError as e:
+            # Capture holds BEGIN IMMEDIATE across the RPC submit.
+            # Do not turn a chain failure into HTTP 500.
+            logger.warning("mpp_settle_attempts insert skipped: %s", e)
     finally:
         conn.close()
 

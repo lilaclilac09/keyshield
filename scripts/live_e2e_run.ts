@@ -202,6 +202,26 @@ export function deriveAta(owner: PublicKey, mint: PublicKey): PublicKey {
   )[0];
 }
 
+export function buildCreateAtaIdempotentIx(
+  payer: PublicKey,
+  ata: PublicKey,
+  owner: PublicKey,
+  mint: PublicKey,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: ATA_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: ata, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([1]),
+  });
+}
+
 export function deriveStreamPda(programId: PublicKey, agent: PublicKey, owner: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([APS_SEED, agent.toBuffer(), owner.toBuffer()], programId);
 }
@@ -740,6 +760,24 @@ async function liveRun(cfg: LiveConfig): Promise<number> {
     detail("owner USDC", `${ownerAtaBefore} micro-USDC`);
     if (ownerAtaBefore < BigInt(cfg.deposit)) {
       throw new LiveE2EError(`need ${cfg.deposit} micro-USDC, ATA has ${ownerAtaBefore}`, 2);
+    }
+  }
+  const settlerAta = deriveAta(providerKp.publicKey, cfg.usdcMint);
+  if (cfg.onchain) {
+    const dest = await conn.getAccountInfo(settlerAta);
+    if (!dest) {
+      const ataSig = await sendIxs(conn, user, [
+        buildCreateAtaIdempotentIx(user.publicKey, settlerAta, providerKp.publicKey, cfg.usdcMint),
+      ]);
+      detail("settler USDC ATA", `${settlerAta.toBase58()} ${ataSig}`);
+    } else {
+      detail("settler USDC ATA", settlerAta.toBase58());
+    }
+    const platform = process.env.KS_PLATFORM_USDC_ATA?.trim();
+    if (platform && platform !== settlerAta.toBase58()) {
+      throw new LiveE2EError(
+        `KS_PLATFORM_USDC_ATA ${platform} ≠ settler ATA ${settlerAta.toBase58()}`,
+      );
     }
   }
   ok("wallets ready");
