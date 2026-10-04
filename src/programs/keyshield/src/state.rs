@@ -495,9 +495,10 @@ pub struct AgentPaymentStream {
     pub consumed_nonces: [ConsumedNonce; CONSUMED_NONCES_LEN],
 
     /// Settlement idempotency region. Layout (see `guards`):
-    /// `[0..32]` last artifact root, `[32..40]` `last_settled_seq` as
-    /// u64 LE, `[40..64]` three 8-byte fingerprints of recent roots.
-    /// A replayed sequence or a remembered root does not debit.
+    /// `[0..32]` last request hash, `[32..40]` `last_settled_seq` as
+    /// u64 LE, `[40..64]` three 8-byte fingerprints of recent request
+    /// hashes. `seq <= last_settled_seq` does not debit. A remembered
+    /// request hash does not debit.
     pub _reserved: [u8; 64],
 }
 

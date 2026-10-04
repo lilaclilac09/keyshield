@@ -249,6 +249,8 @@ def test_verified_usage_holds_until_signed_capture(db):
     assert paid["held_micro_usdc"] == 0
     assert paid["settled_micro_usdc"] == 1020
     assert paid["last_settled_seq"] == 1
+    assert paid["sequence_number"] == 1
+    assert paid["request_hash"] == recorded["artifact_hash"]
 
     conn = mpp_streams._db()
     row = conn.execute(
@@ -258,20 +260,26 @@ def test_verified_usage_holds_until_signed_capture(db):
     conn.close()
     assert row[0] == 1
     root = artifact_root([bytes.fromhex(row[1])])
+    request_hash = bytes.fromhex(row[1])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature)
-    assert len(payload) == 81
+    payload = mpp_onchain.build_mpp_settle_ix_data(
+        1020, root, 1, signature, request_hash
+    )
+    assert len(payload) == 113
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020
     assert payload[9:41] == root
     assert int.from_bytes(payload[41:49], "little") == 1
     assert payload[49:81] == signature
+    assert payload[81:113] == request_hash
     with pytest.raises(ValueError, match="non-zero"):
         mpp_onchain.build_mpp_settle_ix_data(1020, bytes(32))
     with pytest.raises(ValueError, match="settlement_seq"):
         mpp_onchain.build_mpp_settle_ix_data(1020, root, 0)
     with pytest.raises(ValueError, match="capture signature"):
         mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, bytes(32))
+    with pytest.raises(ValueError, match="request_hash"):
+        mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature)
 
 
 def test_settle_on_chain_refuses_a_zero_root(db):

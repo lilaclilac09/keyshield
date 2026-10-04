@@ -179,6 +179,8 @@ def test_replayed_receipt_does_not_advance_sequence_or_balance(db):
     assert paid["settled_micro_usdc"] == recorded["pending_micro_usdc"]
     assert paid["held_micro_usdc"] == 0
     assert paid["last_settled_seq"] == 1
+    assert paid["sequence_number"] == 1
+    assert paid["request_hash"] == recorded["artifact_hash"]
     with pytest.raises(ReplayRejected, match="NonceReused"):
         mpp_streams.settle_receipt(
             "alice",
@@ -193,6 +195,90 @@ def test_replayed_receipt_does_not_advance_sequence_or_balance(db):
     assert fresh["last_settled_seq"] == 1
     with pytest.raises(ReplayRejected, match="SettlementReplay"):
         mpp_streams.settle_on_chain(stream["id"], 1000, bytes([1]) + bytes(31), 0)
+
+
+def test_receipts_carry_strictly_increasing_sequence_and_request_hash(db):
+    stream = _open()
+    first = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    second_body = CHAT.replace(b"hello", b"world")
+    second = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=second_body,
+    )
+    assert first["artifact_hash"] != second["artifact_hash"]
+    paid1 = mpp_streams.settle_receipt(
+        "alice",
+        stream["id"],
+        first["artifact_hash"],
+        session_key=SESSION,
+        signature=sign_artifact_hash(SESSION, first["artifact_hash"]),
+    )
+    assert paid1["sequence_number"] == 1
+    assert paid1["last_settled_seq"] == 1
+    assert paid1["request_hash"] == first["artifact_hash"]
+    assert paid1["settled_micro_usdc"] == first["pending_micro_usdc"]
+    paid2 = mpp_streams.settle_receipt(
+        "alice",
+        stream["id"],
+        second["artifact_hash"],
+        session_key=SESSION,
+        signature=sign_artifact_hash(SESSION, second["artifact_hash"]),
+    )
+    assert paid2["sequence_number"] == 2
+    assert paid2["last_settled_seq"] == 2
+    assert paid2["request_hash"] == second["artifact_hash"]
+    assert paid2["sequence_number"] > paid1["sequence_number"]
+    assert paid2["settled_micro_usdc"] == second["pending_micro_usdc"]
+    assert paid2["pending_micro_usdc"] == 0
+    assert paid2["held_micro_usdc"] == 0
+
+
+def test_saturated_sequence_aborts_before_the_debit(db, monkeypatch):
+    stream = _open()
+    recorded = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    real_get = mpp_streams._get_owned_stream
+    seen = {"n": 0}
+
+    def saturated(conn, user_id, stream_id):
+        row = real_get(conn, user_id, stream_id)
+        if seen["n"] == 0:
+            seen["n"] += 1
+            row = dict(row)
+            row["last_settled_seq"] = 2**64 - 1
+        return row
+
+    monkeypatch.setattr(mpp_streams, "_get_owned_stream", saturated)
+    with pytest.raises(ReplayRejected, match="SettlementReplay"):
+        mpp_streams.settle_receipt(
+            "alice",
+            stream["id"],
+            recorded["artifact_hash"],
+            session_key=SESSION,
+            signature=sign_artifact_hash(SESSION, recorded["artifact_hash"]),
+        )
+    fresh = mpp_streams.list_streams("alice")["streams"][0]
+    assert fresh["settled_micro_usdc"] == 0
+    assert fresh["pending_micro_usdc"] == recorded["pending_micro_usdc"]
+    assert fresh["held_micro_usdc"] == recorded["held_micro_usdc"]
+    assert fresh["last_settled_seq"] == 0
 
 
 def test_hold_reduces_available_escrow_and_second_hold_stops_at_the_cap(db):
@@ -250,15 +336,20 @@ def test_bad_signature_releases_hold_and_a_later_valid_signature_captures(db):
     assert paid["pending_micro_usdc"] == 0
     assert paid["held_micro_usdc"] == 0
     assert paid["last_settled_seq"] == 1
+    assert paid["sequence_number"] == 1
+    assert paid["request_hash"] == recorded["artifact_hash"]
     root = artifact_root([bytes.fromhex(recorded["artifact_hash"])])
+    request_hash = bytes.fromhex(recorded["artifact_hash"])
     payload = mpp_onchain.build_mpp_settle_ix_data(
         paid["settled_micro_usdc"],
         root,
         1,
         signature,
+        request_hash,
     )
-    assert len(payload) == 81
+    assert len(payload) == 113
     assert payload[49:81] == signature
+    assert payload[81:113] == request_hash
 
 
 def test_expired_hold_returns_the_lock_to_available_balance(db):

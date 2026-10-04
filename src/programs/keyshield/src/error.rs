@@ -76,7 +76,7 @@ pub enum KeyShieldError {
     /// The stream account is already tombstoned. A second close, or an
     /// open against that tombstone, does not move lamports or balances.
     AccountClosed = 6110,
-    /// Settlement sequence is not `last_settled_seq + 1`.
+    /// Settlement sequence is `<= last_settled_seq`.
     SettlementReplay = 6111,
     /// Stream account address is not the canonical
     /// `["agent_payment_stream", agent, owner, bump]` PDA.

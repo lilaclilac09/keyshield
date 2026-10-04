@@ -152,23 +152,29 @@ instruction is built.
 - Valid signature → pending and held decrease, settled increases, the
   hold is `captured`, and `settle_on_chain` runs.
 
-The signed payload is 81 bytes: discriminator `26`, `units` (u64), the
-32-byte root (`sha256` of the artifact hash), `settlement_seq` (u64,
-`last_settled_seq + 1`), and the 32-byte MAC. Sequence 0 is refused
-before the transaction is built. A missing or all-zero root or MAC is
-refused before the transaction is built.
+The signed payload is 113 bytes: discriminator `26`, `units` (u64), the
+32-byte root (`sha256` of the request hash), `settlement_seq` (u64),
+the 32-byte MAC, and the 32-byte `request_hash`. The honest settler
+sends `last_settled_seq + 1`. Sequence 0 is refused before the
+transaction is built. A missing or all-zero root, MAC, or request
+hash is refused before the transaction is built. Every successful
+receipt includes `sequence_number` and `request_hash`.
 
 On-chain `process_mpp_settle`, after settler authentication and before
 `TransferChecked`:
 
-- missing root, missing signature, all-zero root, all-zero signature,
-  or a payload shorter than 80 bytes after the discriminator →
+- missing root, missing signature, missing request hash, all-zero
+  root, all-zero signature, all-zero request hash, or a payload
+  shorter than 112 bytes after the discriminator →
   `UnverifiedFulfillment` (6108). `parse_settlement` still accepts a
   48-byte root and sequence so the missing MAC fails in
-  `parse_capture_signature` with the same code.
-- `settlement_seq != last_settled_seq + 1` → `SettlementReplay` (6111)
-- root equal to the last full root, or to one of the three previous
-  fingerprints in `_reserved[40..64]` → `NonceReused` (6101)
+  `parse_capture_signature`. A body that has a MAC and stops before
+  the request hash fails in `parse_request_hash` with the same code.
+- `settlement_seq <= last_settled_seq` → `SettlementReplay` (6111),
+  before `spent_total` is written. A strictly greater sequence,
+  including a gap, is accepted.
+- request hash equal to the last full hash, or to one of the three
+  previous fingerprints in `_reserved[40..64]` → `NonceReused` (6101)
 - `cost_per_unit * units` uses `checked_mul`. `remaining = max - spent`
   uses `checked_sub`. Overflow is `ArithmeticOverflow` (6113).
   `amount > remaining` is `BudgetExceeded` (6100). `spent + amount`
@@ -188,12 +194,14 @@ transaction. A closed stream (`is_active == 0`) returns
 available balance and does not capture, then marks the stream closed.
 
 The chain does not see the HTTP body. It checks that a non-zero
-commitment and a non-zero capture signature were presented, that
-`settlement_seq` is the next monotonic value, and that the root is not
-the last full root or one of the three fingerprints kept beside it.
-`last_settled_seq` lives in `_reserved[32..40]`. A root older than that
-four-deep window can be submitted again; the unique artifact hash stops
-the honest settler from signing that retry.
+commitment, a non-zero capture signature, and a non-zero request
+hash were presented, that `settlement_seq` is strictly greater than
+`last_settled_seq`, and that the request hash is not the last full
+hash or one of the three fingerprints kept beside it.
+`last_settled_seq` lives in `_reserved[32..40]`. The last request hash
+lives in `_reserved[0..32]`. A request hash older than that four-deep
+window can be submitted again; the unique artifact hash stops the
+honest settler from signing that retry.
 
 ### Account binding
 
@@ -243,10 +251,14 @@ returns `x-ks-mpp-meter: idempotent_replay`, releases the new estimate
 hold, and does not increment counters. A longer observation bills only
 the token delta and does not charge a second call. Capture advances
 `last_settled_seq` when the DB is the ledger (no chain settler
-configured) or when the chain accepts the sequence. A capture does not
-advance the sequence while a chain settler is configured and the
-submission did not land, so the next on-chain debit still sends
-`last_settled_seq + 1`.
+configured) or when the chain accepts the sequence. The receipt's
+`sequence_number` is that new value, and `request_hash` is the
+artifact hash. The SQL update stores the new sequence only while
+`last_settled_seq` still equals the value that was read. A capture
+does not advance the sequence while a chain settler is configured and
+the submission did not land, so the next on-chain debit still sends
+`last_settled_seq + 1`. On-chain, any `seq <= last_settled_seq` aborts
+before the debit.
 
 ### Hard cap (`AgentPaymentStream.max_total_micro_usdc`)
 

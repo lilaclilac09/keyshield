@@ -236,7 +236,8 @@ def _db() -> sqlite3.Connection:
     if "max_total_micro_usdc" not in existing_cols:
         conn.execute("ALTER TABLE mpp_streams ADD COLUMN max_total_micro_usdc INTEGER")
     # Monotonic settlement sequence. 0 means nothing has been accepted.
-    # The next mpp_settle instruction must carry last_settled_seq + 1.
+    # A receipt's sequence_number must be strictly greater than this.
+    # The honest settler assigns last_settled_seq + 1.
     if "last_settled_seq" not in existing_cols:
         conn.execute(
             "ALTER TABLE mpp_streams ADD COLUMN last_settled_seq INTEGER NOT NULL DEFAULT 0"
@@ -516,7 +517,7 @@ def _is_artifact_replay(error: str) -> bool:
 
 
 def _is_sequence_replay(error: str) -> bool:
-    """True when the chain rejected `settlement_seq` as not last+1."""
+    """True when the chain rejected `settlement_seq` because `seq <= last_settled_seq`."""
     text = error.lower()
     return (
         "settlementreplay" in text
@@ -556,6 +557,7 @@ def settle_on_chain(
     artifact_root_bytes: bytes,
     settlement_seq: int = 1,
     capture_signature: bytes | None = None,
+    request_hash: bytes | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
@@ -565,6 +567,8 @@ def settle_on_chain(
     `capture_signature` is the 32-byte consumer MAC. A missing or
     all-zero signature raises FulfillmentRejected after the root
     check, so a zero root still reports that error first.
+    `request_hash` is the 32-byte fulfillment hash of this receipt.
+    It is checked after the root, the sequence, and the signature.
 
     Stub-fallback (`mode="stub"`) runs whenever:
       - any required env var (KS_MPP_SETTLER_KEY, KS_PLATFORM_USDC_ATA,
@@ -593,8 +597,15 @@ def settle_on_chain(
         or bytes(capture_signature) == bytes(32)
     ):
         raise FulfillmentRejected("capture signature required")
+    if (
+        not isinstance(request_hash, (bytes, bytearray))
+        or len(request_hash) != 32
+        or bytes(request_hash) == bytes(32)
+    ):
+        raise FulfillmentRejected("request_hash required")
     capture_signature = bytes(capture_signature)
     artifact_root_bytes = bytes(artifact_root_bytes)
+    request_hash = bytes(request_hash)
     root_hex = artifact_root_bytes.hex()
 
     if micro_usdc <= 0:
@@ -650,6 +661,7 @@ def settle_on_chain(
             artifact_root_bytes,
             settlement_seq,
             capture_signature,
+            request_hash,
         )
     except Exception as e:  # noqa: BLE001
         # build_mpp_settle_ix raises if vault_pda is missing — same
@@ -1670,7 +1682,10 @@ def settle_receipt(
 
     The on-chain debit runs only on this path. Stub mode, with no
     chain settler configured, still moves the ledger and advances
-    `last_settled_seq`.
+    `last_settled_seq`. The returned receipt carries `sequence_number`
+    and `request_hash`. `sequence_number` is the stored sequence when
+    this capture advanced it, and the previous sequence when the chain
+    settler is configured but the submission did not land.
     """
     from .capture import coerce_signature
 
@@ -1783,10 +1798,17 @@ def _capture_locked(
         )
 
     _race_window()
-    root = artifact_root([bytes.fromhex(digest)])
+    request_hash = bytes.fromhex(digest)
+    root = artifact_root([request_hash])
     last_seq = int(stream.get("last_settled_seq") or 0)
+    if last_seq < 0 or last_seq >= 0xFFFFFFFFFFFFFFFF:
+        raise ReplayRejected("SettlementReplay")
     next_seq = last_seq + 1
-    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig)
+    if next_seq <= last_seq:
+        raise ReplayRejected("SettlementReplay")
+    outcome = settle_on_chain(
+        int(stream_id), cost, root, next_seq, sig, request_hash
+    )
     if outcome.mode == "failed" or (
         outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
     ):
@@ -1802,15 +1824,28 @@ def _capture_locked(
                    held_micro_usdc = held_micro_usdc - ?,
                    settled_micro_usdc = settled_micro_usdc + ?,
                    last_settled_at = ?,
-                   last_settled_seq = last_settled_seq + 1
+                   last_settled_seq = ?
              WHERE id = ? AND user_id = ?
                AND status = 'open'
                AND pending_micro_usdc >= ?
                AND held_micro_usdc >= ?
+               AND last_settled_seq = ?
                AND (max_total_micro_usdc IS NULL
                     OR settled_micro_usdc + ? <= max_total_micro_usdc)
             """,
-            (cost, cost, cost, now, int(stream_id), user_id, cost, cost, cost),
+            (
+                cost,
+                cost,
+                cost,
+                now,
+                next_seq,
+                int(stream_id),
+                user_id,
+                cost,
+                cost,
+                last_seq,
+                cost,
+            ),
         )
     else:
         cur = conn.execute(
@@ -1833,6 +1868,8 @@ def _capture_locked(
         fresh = _get_owned_stream(conn, user_id, stream_id)
         if fresh["status"] != "open":
             raise StreamClosed("StreamAlreadyClosed")
+        if advance_seq and int(fresh.get("last_settled_seq") or 0) != last_seq:
+            raise ReplayRejected("SettlementReplay")
         raise BudgetExceeded("BudgetExceeded")
 
     marked = conn.execute(
@@ -1856,6 +1893,10 @@ def _capture_locked(
     )
     stream["just_settled_micro_usdc"] = cost
     stream["artifact_hash"] = digest
+    stream["request_hash"] = digest
+    stream["sequence_number"] = (
+        next_seq if advance_seq else int(stream.get("last_settled_seq") or 0)
+    )
     return stream
 
 

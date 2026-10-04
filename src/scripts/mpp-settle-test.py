@@ -91,6 +91,16 @@ def main() -> int:
         )
         return 1
     capture_signature = bytes.fromhex(sig_hex)
+    hash_hex = os.environ.get("KS_MPP_REQUEST_HASH", "").strip()
+    if len(hash_hex) != 64:
+        print(
+            "✗ refusing to settle without KS_MPP_REQUEST_HASH "
+            "(64 hex chars). Every settlement receipt carries the "
+            "request hash next to its sequence number.",
+            file=sys.stderr,
+        )
+        return 1
+    request_hash = bytes.fromhex(hash_hex)
     print(f"\n▶ settle_on_chain({stream_id}, micro_usdc={units})")
     t0 = time.perf_counter()
     outcome = mpp_streams.settle_on_chain(
@@ -98,6 +108,7 @@ def main() -> int:
         units,
         artifact_root,
         capture_signature=capture_signature,
+        request_hash=request_hash,
     )
     debited = outcome.debited_micro_usdc
     dt = time.perf_counter() - t0

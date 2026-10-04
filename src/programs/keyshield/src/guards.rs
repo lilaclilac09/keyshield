@@ -251,30 +251,43 @@ fn fingerprint_seen(reserved: &[u8], root: &[u8; 32]) -> bool {
     false
 }
 
-/// Accept `seq == last_settled_seq + 1` and a root that is neither the
-/// last full root nor one of the three remembered fingerprints.
+/// Abort when `seq` is not strictly greater than `last_settled_seq`.
 ///
-/// On success the reserved region stores the new root, the new sequence,
-/// and the fingerprint at the head of the ring.
-pub fn accept_settlement(
-    reserved: &mut [u8],
-    root: &[u8; 32],
-    seq: u64,
-) -> Result<(), ProgramError> {
-    if reserved.len() < RESERVED_LEN || root == &[0u8; 32] || seq == 0 {
-        return Err(KeyShieldError::UnverifiedFulfillment.into());
+/// `seq <= last_settled_seq` is `SettlementReplay` (6111). A gap above
+/// the stored sequence is still strictly increasing and is allowed.
+/// Sequence 0 is a replay. This read happens before any balance write.
+pub fn replayed_sequence(reserved: &[u8], seq: u64) -> Result<(), ProgramError> {
+    if reserved.len() < RESERVED_LEN {
+        return Err(KeyShieldError::PaymentStreamNotFound.into());
+    }
+    if seq == 0 {
+        return Err(KeyShieldError::SettlementReplay.into());
     }
     let last_seq = u64::from_le_bytes(
         reserved[RESERVED_SEQ..RESERVED_SEQ + 8]
             .try_into()
             .map_err(|_| KeyShieldError::SettlementReplay)?,
     );
-    let expected = last_seq
-        .checked_add(1)
-        .ok_or(KeyShieldError::SettlementReplay)?;
-    if seq != expected {
+    if seq <= last_seq {
         return Err(KeyShieldError::SettlementReplay.into());
     }
+    Ok(())
+}
+
+/// Accept a strictly newer sequence and a request hash that is neither
+/// the last full hash nor one of the three remembered fingerprints.
+///
+/// On success the reserved region stores that request hash, the new
+/// sequence, and the fingerprint at the head of the ring.
+pub fn accept_settlement(
+    reserved: &mut [u8],
+    root: &[u8; 32],
+    seq: u64,
+) -> Result<(), ProgramError> {
+    if reserved.len() < RESERVED_LEN || root == &[0u8; 32] {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    replayed_sequence(reserved, seq)?;
     let mut prev = [0u8; 32];
     prev.copy_from_slice(&reserved[RESERVED_ROOT..RESERVED_ROOT + 32]);
     if prev.iter().any(|byte| *byte != 0) && prev == *root {
@@ -385,6 +398,11 @@ mod tests {
             err,
             ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
         );
+        let err = replayed_sequence(&reserved, 1).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
         let err = accept_settlement(&mut reserved, &root_a, 2).unwrap_err();
         assert_eq!(err, ProgramError::Custom(KeyShieldError::NonceReused as u32));
 
@@ -400,6 +418,46 @@ mod tests {
         // `root_a`'s fingerprint is still inside the 3-slot ring.
         let err = accept_settlement(&mut reserved, &root_a, 5).unwrap_err();
         assert_eq!(err, ProgramError::Custom(KeyShieldError::NonceReused as u32));
+    }
+
+    #[test]
+    fn sequence_at_or_below_last_settled_is_aborted() {
+        let mut reserved = [0u8; 64];
+        let mut first = [0u8; 32];
+        first[0] = 1;
+        let mut second = [0u8; 32];
+        second[0] = 2;
+        let mut third = [0u8; 32];
+        third[0] = 3;
+        replayed_sequence(&reserved, 1).unwrap();
+        accept_settlement(&mut reserved, &first, 1).unwrap();
+        let err = replayed_sequence(&reserved, 1).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
+        let err = accept_settlement(&mut reserved, &second, 0).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
+        // A gap is strictly greater than last_settled_seq, so it is stored.
+        accept_settlement(&mut reserved, &second, 4).unwrap();
+        let err = accept_settlement(&mut reserved, &third, 3).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
+        let err = accept_settlement(&mut reserved, &third, 4).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::SettlementReplay as u32)
+        );
+        accept_settlement(&mut reserved, &third, 5).unwrap();
+        let stored =
+            u64::from_le_bytes(reserved[RESERVED_SEQ..RESERVED_SEQ + 8].try_into().unwrap());
+        assert_eq!(stored, 5);
+        assert_eq!(&reserved[RESERVED_ROOT..RESERVED_ROOT + 32], &third);
     }
 
     #[test]

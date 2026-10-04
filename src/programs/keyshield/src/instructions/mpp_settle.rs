@@ -101,6 +101,26 @@ pub fn parse_capture_signature(data: &[u8]) -> Result<[u8; 32], ProgramError> {
     Ok(signature)
 }
 
+/// Request hash that follows the 80-byte signed settlement body.
+///
+/// This is the 32-byte fulfillment hash of the request being captured,
+/// distinct from `artifact_root` (sha256 of that hash). A payload that
+/// stops after the capture signature, or an all-zero hash, is
+/// `UnverifiedFulfillment`. `parse_settlement` and
+/// `parse_capture_signature` still stop at 48 and 80 bytes, so a short
+/// root or a missing MAC fails in those parsers first.
+pub fn parse_request_hash(data: &[u8]) -> Result<[u8; 32], ProgramError> {
+    if data.len() < 112 {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&data[80..112]);
+    if hash == [0u8; 32] {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    Ok(hash)
+}
+
 /// Process `mpp_settle` (ix #26).
 ///
 /// ### Accounts
@@ -115,19 +135,23 @@ pub fn parse_capture_signature(data: &[u8]) -> Result<[u8; 32], ProgramError> {
 ///
 /// ### Data (after dispatcher strips discriminator)
 /// `units_consumed` (8) u64 — units to settle since last call.
-/// `artifact_root` (32) — sha256 of the batch's fulfillment hashes.
-/// `settlement_seq` (8) u64 — must equal `last_settled_seq + 1`.
+/// `artifact_root` (32) — sha256 of the request hash.
+/// `settlement_seq` (8) u64 — strictly greater than `last_settled_seq`.
 /// `capture_signature` (32) — consumer MAC over the artifact hash.
-/// = 80 bytes. A shorter payload, an all-zero root, or an all-zero
-/// signature returns `UnverifiedFulfillment` (6108) after the settler
-/// is authenticated. A repeated sequence returns `SettlementReplay`
-/// (6111). A remembered root returns `NonceReused` (6101).
+/// `request_hash` (32) — fulfillment hash of this receipt.
+/// = 112 bytes. A shorter payload, an all-zero root, an all-zero
+/// signature, or an all-zero request hash returns
+/// `UnverifiedFulfillment` (6108) after the settler is authenticated.
+/// `seq <= last_settled_seq` returns `SettlementReplay` (6111) before
+/// `spent_total` is written. A remembered request hash returns
+/// `NonceReused` (6101).
 ///
 /// The escrow USDC stays in the stream ATA until this instruction.
 /// Estimated cost is locked in the off-chain ledger (`held_micro_usdc`)
 /// and returns to the available balance when the hold expires or the
 /// capture signature does not verify. This instruction is the capture:
-/// it debits only after the signature bytes are present.
+/// it debits only after the signature and request hash are present and
+/// `settlement_seq` is strictly greater than `last_settled_seq`.
 pub fn process_mpp_settle(
     _program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -189,14 +213,18 @@ pub fn process_mpp_settle(
     // signer still reports NotMppSettler, and before any balance write
     // or token transfer. The preimage (response bytes) was verified
     // off-chain; this rejects a settle that skipped that step.
-    // Sequence and the root ring are checked once the amount is known,
-    // still before the transfer.
+    // `seq <= last_settled_seq` aborts here, before the debit.
     if sbuf.len() < aps_offset::RESERVED + crate::guards::RESERVED_LEN {
         return Err(KeyShieldError::PaymentStreamNotFound.into());
     }
-    let (artifact_root, settlement_seq) = parse_settlement(data)?;
+    let (_artifact_root, settlement_seq) = parse_settlement(data)?;
     // Present and non-zero. The HMAC itself was checked off-chain.
     let _capture_signature = parse_capture_signature(data)?;
+    let request_hash = parse_request_hash(data)?;
+    crate::guards::replayed_sequence(
+        &sbuf[aps_offset::RESERVED..aps_offset::RESERVED + crate::guards::RESERVED_LEN],
+        settlement_seq,
+    )?;
 
     // mint + ATA consistency.
     let stream_mint_bytes: [u8; 32] = sbuf[aps_offset::USDC_MINT..aps_offset::USDC_MINT + 32]
@@ -296,16 +324,20 @@ pub fn process_mpp_settle(
     // the following addition is ArithmeticOverflow (6113).
     let new_total = crate::guards::debit_within_budget(spent_total, amount, max_total)?;
 
+    // Request hash and sequence land before `spent_total`. A replay
+    // (`seq <= last_settled_seq`) already returned above. A remembered
+    // request hash returns NonceReused with the balance unchanged.
+    crate::guards::accept_settlement(
+        &mut sbuf[aps_offset::RESERVED..aps_offset::RESERVED + crate::guards::RESERVED_LEN],
+        &request_hash,
+        settlement_seq,
+    )?;
+
     let now = Clock::get()?.unix_timestamp;
     sbuf[aps_offset::SPENT_TOTAL..aps_offset::SPENT_TOTAL + 8]
         .copy_from_slice(&new_total.to_le_bytes());
     sbuf[aps_offset::LAST_PAYMENT_TS..aps_offset::LAST_PAYMENT_TS + 8]
         .copy_from_slice(&now.to_le_bytes());
-    crate::guards::accept_settlement(
-        &mut sbuf[aps_offset::RESERVED..aps_offset::RESERVED + crate::guards::RESERVED_LEN],
-        &artifact_root,
-        settlement_seq,
-    )?;
 
     let bump = sbuf[aps_offset::BUMP];
     drop(sbuf);
@@ -352,7 +384,8 @@ pub fn process_mpp_settle(
 #[cfg(test)]
 mod tests {
     use super::{
-        artifact_root_replayed, parse_artifact_root, parse_capture_signature, parse_settlement,
+        artifact_root_replayed, parse_artifact_root, parse_capture_signature, parse_request_hash,
+        parse_settlement,
     };
     use crate::error::KeyShieldError;
     use crate::state::{aps_offset, AgentPaymentStream};
@@ -468,5 +501,51 @@ mod tests {
         let signature = parse_capture_signature(&data).unwrap();
         assert_eq!(signature[0], 9);
         assert_ne!(signature, [0u8; 32]);
+        let err = parse_request_hash(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn missing_request_hash_is_unverified() {
+        let mut data = [0u8; 80];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        data[48] = 9;
+        let err = parse_request_hash(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn zero_request_hash_is_unverified() {
+        let mut data = [0u8; 112];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        data[48] = 9;
+        let err = parse_request_hash(&data).unwrap_err();
+        assert_eq!(
+            err,
+            ProgramError::Custom(KeyShieldError::UnverifiedFulfillment as u32)
+        );
+    }
+
+    #[test]
+    fn non_zero_request_hash_parses() {
+        let mut data = [0u8; 112];
+        data[..8].copy_from_slice(&5u64.to_le_bytes());
+        data[8] = 1;
+        data[40..48].copy_from_slice(&1u64.to_le_bytes());
+        data[48] = 9;
+        data[80] = 4;
+        let hash = parse_request_hash(&data).unwrap();
+        assert_eq!(hash[0], 4);
+        assert_ne!(hash, [0u8; 32]);
     }
 }
