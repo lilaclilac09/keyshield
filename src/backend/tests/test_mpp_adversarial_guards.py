@@ -158,6 +158,35 @@ def test_idempotency_key_does_not_double_debit_and_bills_only_the_delta(db):
     assert delta["settled_micro_usdc"] == 0
 
 
+def test_same_artifact_hash_is_a_replay_without_an_idempotency_key(db):
+    stream = _open()
+    first = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    pending = first["pending_micro_usdc"]
+    assert first["idempotent_replay"] is False
+    replay = mpp_streams.record_usage(
+        "alice",
+        stream["id"],
+        1,
+        10,
+        status_code=200,
+        body=CHAT,
+    )
+    assert replay["idempotent_replay"] is True
+    assert replay["artifact_hash"] == first["artifact_hash"]
+    assert replay["pending_micro_usdc"] == pending
+    assert replay["total_calls"] == first["total_calls"]
+    fresh = mpp_streams.list_streams("alice")["streams"][0]
+    assert fresh["pending_micro_usdc"] == pending
+    assert fresh["settled_micro_usdc"] == 0
+
+
 def test_replayed_receipt_does_not_advance_sequence_or_balance(db):
     stream = _open()
     recorded = mpp_streams.record_usage(
