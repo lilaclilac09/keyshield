@@ -156,6 +156,15 @@ instruction is built.
 - Valid signature → pending and held decrease, settled increases, the
   hold is `captured`, and `settle_on_chain` runs.
 
+A live submit also needs the stream owner's Ed25519 over
+`sha256(stream_pubkey || seq_le || debit_le || request_hash)`.
+`POST /mpp/streams/{id}/capture` accepts `ownerPubkey` and
+`ownerSignature`. `settle_on_chain` prepends that precompile as
+instruction 0. A missing or unparsable binding returns `mode=failed`
+and does not send a transaction that the program would reject as
+`InvalidSettlementSignature` (6114). Stub-fallback (no settler env)
+still skips the prefix.
+
 The signed payload is 113 bytes: discriminator `26`, `units` (u64), the
 32-byte root (`sha256` of the request hash), `settlement_seq` (u64),
 the 32-byte MAC, and the 32-byte `request_hash`. The honest settler
