@@ -122,11 +122,17 @@ left at least one unsettled artifact row.
    A failed predicate leaves balances unchanged.
 3. Root = `sha256` of the artifact hashes in order.
    `settle_on_chain` refuses a missing or all-zero root before the
-   instruction is built. Only then does the settler sign ix #26.
+   instruction is built. The signed payload is 49 bytes: discriminator
+   `26`, `units` (u64), the 32-byte root, and `settlement_seq` (u64,
+   `last_settled_seq + 1`). Sequence 0 is refused before the
+   transaction is built.
 4. On-chain `process_mpp_settle`, after settler authentication and
    before `TransferChecked`:
-   - missing or all-zero root → `UnverifiedFulfillment` (6108)
-   - root equal to the last settled root → `NonceReused` (6101)
+   - missing or all-zero root, or a payload shorter than 48 bytes
+     after the discriminator → `UnverifiedFulfillment` (6108)
+   - `settlement_seq != last_settled_seq + 1` → `SettlementReplay` (6111)
+   - root equal to the last full root, or to one of the three previous
+     fingerprints in `_reserved[40..64]` → `NonceReused` (6101)
    - `cost_per_unit * units` and `spent + amount` use `checked_mul`
      and `checked_add`; `spent + amount > max_total` →
      `BudgetExceeded` (6100)
@@ -141,12 +147,65 @@ left at least one unsettled artifact row.
    closed.
 
 The chain does not see the HTTP body. It checks that a non-zero
-commitment was presented and that this commitment is not the one
-stored in `AgentPaymentStream._reserved[0..32]`. The settler is
-trusted to pass the root phase 1 computed. The account remembers one
-root: after a newer root is settled, an older root can be submitted
-again. Phase 1's unique artifact hash is what stops the honest
-settler from signing that retry.
+commitment was presented, that `settlement_seq` is the next monotonic
+value, and that the root is not the last full root or one of the three
+fingerprints kept beside it. `last_settled_seq` lives in
+`_reserved[32..40]`. The settler is trusted to pass the root phase 1
+computed. A root older than that four-deep window can be submitted
+again; phase 1's unique artifact hash is what stops the honest settler
+from signing that retry.
+
+### Account binding
+
+`open_stream`, `pay_x402`, `mpp_settle`, and `withdraw` call
+`guards::assert_canonical_usdc_mint`. The mint account must be owned
+by the SPL Token program, initialized, decimals 6, and equal to
+mainnet `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` or devnet
+`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. A counterfeit mint
+with the same decimals returns `InvalidMint` (6109). The escrow token
+account's own mint and owner fields must be that mint and the stream
+PDA.
+
+PDA seeds stay `["agent_payment_stream", agent, owner, bump]`.
+`assert_stream_pda` checks `create_program_address` with the canonical
+bump. A different seed list, including
+`["stream", user, provider, stream_id]`, does not match accounts this
+program already derives and returns `InvalidPda` (6112).
+
+Withdraw writes `CLOSED_ACCOUNT_DISCRIMINATOR` (`ksc1osed`), zeroes
+every byte after it, then returns the lamports. Open refuses any
+program-owned account: an active discriminator is
+`PaymentStreamActive` (6051), anything else including the tombstone is
+`AccountClosed` (6110). The legacy vault stream close uses
+`close_stream_counter`, so a second close does not decrement the
+counter again.
+
+### Clock leeway
+
+Session expiry and `pay_x402` deadlines use `Clock::get().unix_timestamp`
+plus `CLOCK_LEEWAY_SECS` (30). `unix_expired` / `session_expired` use
+`checked_add`. Overflow fails closed. `mpp_settle` does not reject a
+settlement because the advisory `settlement_interval_secs` has passed;
+cluster slot drift cannot lock already-earned escrow.
+
+### Partial streams and idempotency
+
+`/proxy` and `/vproxy` stream the upstream body when `Accept` contains
+`text/event-stream` or the JSON body sets `stream: true`. Chunks are
+appended until the socket ends. A drop after bytes arrived sets
+`x-ks-stream-complete: 0` and meters `min(usage, chars // 4)` for that
+prefix. A drop before the first byte is HTTP 502 and is not metered.
+A finished SSE body bills the `usage` object on its `data:` lines.
+
+`X-Idempotency-Key` is stored in `mpp_request_keys` in the same
+commit as the usage row. The same key with no additional tokens
+returns `x-ks-mpp-meter: idempotent_replay` and does not increment
+counters. A longer observation bills only the token delta and does
+not charge a second call. `settle_receipt` and `_settle_locked`
+advance `last_settled_seq` when the DB is the ledger (no chain
+settler configured) or when the chain accepts the sequence. A receipt
+does not advance the sequence while a chain settler is configured,
+so the next on-chain debit still sends `last_settled_seq + 1`.
 
 ### Hard cap (`AgentPaymentStream.max_total_micro_usdc`)
 

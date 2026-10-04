@@ -93,19 +93,15 @@ async def proxy_route(upstream: str, path: str, request: Request):
     interceptor = _get_x402_interceptor()
     t0 = time.perf_counter()
 
+    stream_complete = None
     try:
         if _is_helius(upstream):
             content, status, cache_status = await _proxy_helius(
                 api_router, upstream, path, body, api_key, request, interceptor
             )
         else:
-            content, status, cache_status = await api_router.call_rest(
-                upstream,
-                str(request.method),
-                f"/{path}",
-                body,
-                api_key,
-                interceptor=interceptor,
+            content, status, cache_status, stream_complete = await _call_upstream(
+                api_router, upstream, path, body, api_key, request, interceptor
             )
     except PaymentRequired as exc:
         return JSONResponse(
@@ -114,6 +110,9 @@ async def proxy_route(upstream: str, path: str, request: Request):
         )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
+
+    if stream_complete is False and not content:
+        return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -134,7 +133,14 @@ async def proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
-    meter_header = _mpp_meter_header(request, user_id, upstream, status, content)
+    meter_header = _mpp_meter_header(
+        request,
+        user_id,
+        upstream,
+        status,
+        content,
+        truncated=stream_complete is False,
+    )
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
@@ -147,6 +153,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
+    if stream_complete is not None:
+        resp.headers["x-ks-stream-complete"] = "1" if stream_complete else "0"
     if meter_header:
         resp.headers["x-ks-mpp-meter"] = meter_header
     return resp
@@ -204,24 +212,23 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     interceptor = _get_x402_interceptor()
     t0 = time.perf_counter()
 
+    stream_complete = None
     try:
         if _is_helius(upstream):
             content, status, cache_status = await _proxy_helius(
                 api_router, upstream, path, body, api_key, request, interceptor
             )
         else:
-            content, status, cache_status = await api_router.call_rest(
-                upstream,
-                str(request.method),
-                f"/{path}",
-                body,
-                api_key,
-                interceptor=interceptor,
+            content, status, cache_status, stream_complete = await _call_upstream(
+                api_router, upstream, path, body, api_key, request, interceptor
             )
     except PaymentRequired as exc:
         return JSONResponse({"error": "payment_required", "x402": exc.raw}, status_code=402)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=404)
+
+    if stream_complete is False and not content:
+        return JSONResponse({"error": "upstream disconnected"}, status_code=502)
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
     try:
@@ -241,7 +248,14 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     except Exception:
         pass
 
-    meter_header = _mpp_meter_header(request, user_id, upstream, status, content)
+    meter_header = _mpp_meter_header(
+        request,
+        user_id,
+        upstream,
+        status,
+        content,
+        truncated=stream_complete is False,
+    )
 
     try:
         data = json.loads(content) if isinstance(content, (bytes, bytearray)) else content
@@ -254,9 +268,38 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
     resp.headers["x-ks-key-type"] = "vault"
+    if stream_complete is not None:
+        resp.headers["x-ks-stream-complete"] = "1" if stream_complete else "0"
     if meter_header:
         resp.headers["x-ks-mpp-meter"] = meter_header
     return resp
+
+
+async def _call_upstream(api_router, upstream, path, body, api_key, request, interceptor):
+    """Forward one REST call, streaming when the caller asked for SSE.
+
+    The fourth value is `None` for a buffered body, `True` when a
+    stream finished, and `False` when it ended early.
+    """
+    if api_router.wants_upstream_stream(body, request.headers.get("accept")):
+        content, status, cache_status, complete = await api_router.call_rest_streaming(
+            upstream,
+            str(request.method),
+            f"/{path}",
+            body,
+            api_key,
+            interceptor=interceptor,
+        )
+        return content, status, cache_status, complete
+    content, status, cache_status = await api_router.call_rest(
+        upstream,
+        str(request.method),
+        f"/{path}",
+        body,
+        api_key,
+        interceptor=interceptor,
+    )
+    return content, status, cache_status, None
 
 
 def _mpp_meter_header(
@@ -265,6 +308,7 @@ def _mpp_meter_header(
     upstream: str,
     status: int,
     content: bytes | str,
+    truncated: bool = False,
 ) -> str | None:
     """Record MPP usage from the response this proxy just observed.
 
@@ -287,12 +331,14 @@ def _mpp_meter_header(
 
     payload = content if isinstance(content, (bytes, bytearray)) else str(content).encode()
     try:
-        mpp_streams.meter_proxy_response(
+        recorded = mpp_streams.meter_proxy_response(
             user_id=user_id,
             stream_id=stream_id,
             upstream=upstream,
             status_code=int(status),
             body=payload,
+            request_id=request.headers.get("x-idempotency-key"),
+            truncated=truncated,
         )
     except FulfillmentRejected as exc:
         logger.info("mpp meter rejected stream=%s: %s", raw_id, exc)
@@ -304,6 +350,8 @@ def _mpp_meter_header(
     except Exception as exc:  # noqa: BLE001
         logger.warning("mpp meter failed stream=%s: %s", raw_id, exc)
         return "rejected:meter error"
+    if recorded.get("idempotent_replay"):
+        return "idempotent_replay"
     return "recorded"
 
 

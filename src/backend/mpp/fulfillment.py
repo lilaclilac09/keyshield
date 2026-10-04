@@ -192,6 +192,81 @@ def assess_response(
     return None
 
 
+def _is_sse(body: bytes, content_type: str | None) -> bool:
+    ct = (content_type or "").lower()
+    if "text/event-stream" in ct:
+        return True
+    head = body.lstrip()[:16]
+    return head.startswith(b"data:") or head.startswith(b"event:")
+
+
+def _sse_usage_tokens(body: bytes) -> int | None:
+    """Last `usage` object on an SSE `data:` line, if one was received."""
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    found: int | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
+            continue
+        payload = stripped[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            obj = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            tokens = _extract_tokens(obj)
+            if tokens is not None:
+                found = tokens
+    return found
+
+
+def received_token_ceiling(body: bytes) -> int:
+    """Upper bound from bytes actually in hand: one token per four chars."""
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        text = body.decode("utf-8", errors="replace")
+    return max(0, len(text) // 4)
+
+
+def checkpoint_tokens(
+    body: bytes,
+    parsed: dict | list | None,
+    content_type: str | None,
+    *,
+    truncated: bool,
+    proven: int | None,
+) -> int | None:
+    """Tokens to bill for a stream checkpoint.
+
+    A completed SSE body uses the `usage` object on its `data:` lines.
+    A truncated body bills `min(advertised usage, chars // 4)` and never
+    the advertised total of a generation the socket did not deliver.
+    Non-stream JSON returns `proven` unchanged.
+    """
+    sse = _is_sse(body, content_type)
+    if not sse and not truncated:
+        return proven
+    advertised = _sse_usage_tokens(body)
+    if advertised is None and isinstance(parsed, dict):
+        advertised = _extract_tokens(parsed)
+    if advertised is None:
+        advertised = proven
+    ceiling = received_token_ceiling(body)
+    if truncated:
+        if advertised is None:
+            return ceiling
+        return min(int(advertised), ceiling)
+    if advertised is not None:
+        return int(advertised)
+    return ceiling
+
+
 def billable_units(
     parsed: dict | list | None,
     *,
@@ -265,8 +340,11 @@ def verify_fulfillment(
     claimed_calls: int = 0,
     claimed_tokens: int = 0,
     observed: bool = False,
+    truncated: bool = False,
 ) -> VerifiedArtifact:
     raw = coerce_body(body)
+    if truncated and (not raw or not raw.strip()):
+        raise FulfillmentRejected("empty payload")
     parsed = assess_response(status_code, raw, content_type)
     calls, tokens = billable_units(
         parsed,
@@ -274,6 +352,18 @@ def verify_fulfillment(
         claimed_tokens=claimed_tokens,
         observed=observed,
     )
+    proven = _extract_tokens(parsed) if isinstance(parsed, dict) else None
+    checkpoint = checkpoint_tokens(
+        raw,
+        parsed,
+        content_type,
+        truncated=truncated,
+        proven=proven if proven is not None else tokens,
+    )
+    if checkpoint is not None and (_is_sse(raw, content_type) or truncated):
+        tokens = checkpoint
+        if observed and calls == 0 and tokens > 0:
+            calls = 1
     preimage = canonical_preimage(
         stream_id=stream_id,
         upstream=upstream,

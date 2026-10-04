@@ -241,13 +241,17 @@ def test_verified_usage_settles_and_builds_a_non_zero_root(db):
     assert row[0] == 1
     root = artifact_root([bytes.fromhex(row[1])])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root)
-    assert len(payload) == 41
+    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1)
+    assert len(payload) == 49
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020
-    assert payload[9:] == root
+    assert payload[9:41] == root
+    assert int.from_bytes(payload[41:49], "little") == 1
+    assert recorded["last_settled_seq"] == 1
     with pytest.raises(ValueError, match="non-zero"):
         mpp_onchain.build_mpp_settle_ix_data(1020, bytes(32))
+    with pytest.raises(ValueError, match="settlement_seq"):
+        mpp_onchain.build_mpp_settle_ix_data(1020, root, 0)
 
 
 def test_settle_on_chain_refuses_a_zero_root(db):
