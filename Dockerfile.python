@@ -18,9 +18,12 @@ COPY --from=builder /install /usr/local
 COPY src/backend/ ./src/backend/
 COPY conftest.py ./
 
-# Health check
+# Railway injects PORT (often 8080). The image CMD is shell-form so
+# ${PORT:-8000} expands here. Do not override startCommand in railway.json
+# — Railway applies that override in exec form and uvicorn would get the
+# literal string "${PORT:-8000}".
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import httpx; r = httpx.get('http://localhost:8000/health'); exit(0 if r.status_code == 200 else 1)" || true
+  CMD python -c "import os,httpx; p=os.environ.get('PORT','8000'); r=httpx.get(f'http://127.0.0.1:{p}/health'); raise SystemExit(0 if r.status_code==200 else 1)"
 
 EXPOSE 8000
 

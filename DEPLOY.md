@@ -23,6 +23,12 @@ railway init                                    # name the project: keyshield-ap
 railway up                                      # uses railway.json + Dockerfile.python
 ```
 
+Do **not** set a Railway `startCommand`. `railway.json` leaves it unset so
+`Dockerfile.python` `CMD` can expand `$PORT`. An exec-form override passes
+the literal `${PORT:-8000}` to uvicorn and the healthcheck fails. A paid
+Railway plan is still required if the trial has expired — this repo cannot
+unlock billing.
+
 Set production env vars in Railway dashboard (Settings → Variables):
 
 ```
