@@ -49,6 +49,8 @@ async def keychain_home(request: Request):
     sess, err = _require_auth(request)
     if err:
         return err
+    import os
+
     from .. import demo as demo_mod
     from ..billing import usage as usage_mod
     from ..proxy import keychain as kc
@@ -66,8 +68,8 @@ async def keychain_home(request: Request):
             except Exception:
                 address = ""
 
-    helius_key, _src = demo_mod.resolve_upstream_key(user_id, "helius")
-    wallet = await kc.fetch_wallet_balances(address, helius_key)
+    helius_key = os.getenv("KS_HELIUS_API_KEY", "").strip() or demo_mod.lookup_vault_key(user_id, "helius")
+    wallet = await kc.fetch_wallet_balances(address, helius_key or None)
     apis = kc.list_stored_upstreams(user_id)
     catalog = kc.rpc_cache_catalog()
 

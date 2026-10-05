@@ -150,3 +150,32 @@ def test_store_then_home_lists_prefix_only(tmp_path, monkeypatch):
 def test_home_unauthorized():
     client = TestClient(app)
     assert client.get("/keychain/home").status_code == 401
+
+
+def test_home_does_not_use_openrouter_as_helius_key(tmp_path, monkeypatch):
+    """OpenRouter fallback must not be sent to Helius getBalance."""
+    client, token = _token(tmp_path, monkeypatch)
+    from src.backend import demo as demo_mod
+
+    demo_mod.store_upstream_key("alice", "openrouter", "sk-or-v1-" + ("x" * 24))
+    seen: list[str] = []
+
+    async def _capture(address: str, helius_key: str | None):
+        seen.append(helius_key or "")
+        return {
+            "address": address or None,
+            "sol": 1.0,
+            "sol_lamports": 1_000_000_000,
+            "usdc": 2.0,
+            "usdc_micro": 2_000_000,
+            "cache": "MISS",
+            "rpc": "public",
+            "lowest_ttl_sec": 2,
+            "error": None,
+        }
+
+    monkeypatch.setattr(kc, "fetch_wallet_balances", _capture)
+    res = client.get("/keychain/home", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200
+    assert seen == [""]
+    assert res.json()["wallet"]["sol"] == 1.0

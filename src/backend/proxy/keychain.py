@@ -218,14 +218,20 @@ async def fetch_wallet_balances(address: str, helius_key: str | None) -> dict[st
     mint = usdc_mint()
     token_params: list[Any] = [address, {"mint": mint}, {"encoding": "jsonParsed"}]
     try:
+        bal = tok = None
+        cache = "MISS"
+        rpc = "public"
         if helius_key:
-            bal, c1 = await api_router.call_helius("getBalance", [address], helius_key)
-            tok, c2 = await api_router.call_helius(
-                "getTokenAccountsByOwner", token_params, helius_key
-            )
-            cache = "HIT" if c1 == "HIT" and c2 == "HIT" else c1
-            rpc = "helius-cache"
-        else:
+            try:
+                bal, c1 = await api_router.call_helius("getBalance", [address], helius_key)
+                tok, c2 = await api_router.call_helius(
+                    "getTokenAccountsByOwner", token_params, helius_key
+                )
+                cache = "HIT" if c1 == "HIT" and c2 == "HIT" else c1
+                rpc = "helius-cache"
+            except Exception:
+                bal = tok = None
+        if bal is None or tok is None:
             url = public_rpc_url()
             bal = await _jsonrpc(url, "getBalance", [address])
             tok = await _jsonrpc(url, "getTokenAccountsByOwner", token_params)

@@ -91,21 +91,36 @@ export function extractDetectedKey(raw: string): string {
 export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
   const up = upstream || 'openrouter';
   const path = up === 'helius' ? '' : up === 'openai' ? 'v1/models' : up === 'openrouter' ? 'api/v1/chat/completions' : 'v1/models';
+  const slotBody = '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}';
   const curl = up === 'helius'
-    ? `curl -sS ${apiBase}/vproxy/helius/ \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}'`
-    : `curl -sS ${apiBase}/vproxy/${up}/${path} \\\n  -H "Authorization: Bearer ${token}"`;
-  const python = `from keyshield_sdk import KeyShield
-ks = KeyShield(token="${token}")
-# key stays in the vault — SDK only holds the session
-r = ks.proxy("${up}", "${path or ''}", ${up === 'helius' ? 'json={"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}' : 'method="GET"'})
-print(r.status_code, r.headers.get("x-ks-cache"))`;
-  const js = `const r = await fetch("${apiBase}/vproxy/${up}/${path}", {
-  method: "${up === 'helius' ? 'POST' : 'GET'}",
-  headers: { Authorization: "Bearer ${token}", "Content-Type": "application/json" },
-  ${up === 'helius' ? 'body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSlot", params: [] }),' : ''}
-});
-console.log(r.headers.get("x-ks-cache"), await r.json());`;
-  return { curl, python, js };
+    ? [
+        `curl -sS ${apiBase}/vproxy/helius/ \\`,
+        `  -H "Authorization: Bearer ${token}" \\`,
+        '  -H "Content-Type: application/json" \\',
+        `  -d '${slotBody}'`,
+      ].join('\n')
+    : [
+        `curl -sS ${apiBase}/vproxy/${up}/${path} \\`,
+        `  -H "Authorization: Bearer ${token}"`,
+      ].join('\n');
+  const pythonArg = up === 'helius' ? `json=${slotBody}` : 'method="GET"';
+  const python = [
+    'from keyshield_sdk import KeyShield',
+    `ks = KeyShield(token="${token}")`,
+    '# key stays in the vault — SDK only holds the session',
+    `r = ks.proxy("${up}", "${path}", ${pythonArg})`,
+    'print(r.status_code, r.headers.get("x-ks-cache"))',
+  ].join('\n');
+  const jsLines = [
+    `const r = await fetch("${apiBase}/vproxy/${up}/${path}", {`,
+    `  method: "${up === 'helius' ? 'POST' : 'GET'}",`,
+    `  headers: { Authorization: "Bearer ${token}", "Content-Type": "application/json" },`,
+  ];
+  if (up === 'helius') {
+    jsLines.push(`  body: JSON.stringify(${slotBody}),`);
+  }
+  jsLines.push('});', 'console.log(r.headers.get("x-ks-cache"), await r.json());');
+  return { curl, python, js: jsLines.join('\n') };
 }
 
 export async function detectKeyOnServer(value: string): Promise<DetectedKey> {
