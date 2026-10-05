@@ -29,7 +29,7 @@ Operator guides, get-started flows, and architecture notes.
 | [STRESS_TEST_PLAN.md](STRESS_TEST_PLAN.md) / [STRESS_TEST_RESULTS.md](STRESS_TEST_RESULTS.md) | Bounded local stress |
 | [EXTENSION.md](EXTENSION.md) | Browser extension build + install |
 | [OPERATOR.md](OPERATOR.md) | Operator runbook |
-| [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | x402 + MPP payment flow walkthrough |
+| [PAYMENT-FLOWS.md](PAYMENT-FLOWS.md) | Solana USDC MPP core + x402 / prepaid paths (Tempo vouchers are archived, not live) |
 | [technical/cryptography.md](technical/cryptography.md) | Crypto map: Path A PRF, extension HKDF/AES-GCM, proxy hot path |
 | [technical/SYNC_VAULT_ARCHITECTURE.md](technical/SYNC_VAULT_ARCHITECTURE.md) | Path A sync vault (wire format, JWT, CAS) |
 

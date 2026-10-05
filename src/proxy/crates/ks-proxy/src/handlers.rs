@@ -155,6 +155,8 @@ async fn proxy_inner(
     // An open MPP stream is already the payment channel: skip the balance
     // HTTP call and the 402 so the client does not pay-and-retry. Usage is
     // debited after the response by the record hook below.
+    // Tempo TIP-1034 session vouchers are not a live skip. Source is
+    // archived at src/_archive/tempo-wallet-vouchers/ and is not compiled.
     let paid_by_stream =
         key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
     if key_type == KeyType::Platform && !paid_by_stream {

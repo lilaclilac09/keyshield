@@ -1,0 +1,1030 @@
+diff --git a/src/proxy/crates/ks-proxy/Cargo.toml b/src/proxy/crates/ks-proxy/Cargo.toml
+index 2592b5311..9a913f793 100644
+--- a/src/proxy/crates/ks-proxy/Cargo.toml
++++ b/src/proxy/crates/ks-proxy/Cargo.toml
+@@ -16,15 +16,17 @@ path = "src/lib.rs"
+ axum = { workspace = true }
+ axum-server = { version = "0.7", features = ["tls-rustls"] }
+ bytes = { workspace = true }
++base64 = "0.22"
+ dashmap = { workspace = true }
+ futures = { workspace = true }
+ http = { workspace = true }
++k256 = { version = "0.13", features = ["ecdsa"] }
+ ks-cache = { path = "../ks-cache" }
++sha3 = "0.10"
+ ks-helius = { path = "../ks-helius" }
+ ks-session = { path = "../ks-session" }
+ ks-upstream = { path = "../ks-upstream" }
+ ks-vault = { path = "../ks-vault" }
+-rusqlite = { workspace = true }
+ instant-acme = { version = "0.8", features = ["rcgen"] }
+ metrics = { workspace = true }
+ metrics-exporter-prometheus = { workspace = true }
+@@ -36,6 +38,7 @@ reqwest = { workspace = true }
+ rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+ rustls-pemfile = "2"
+ serde = { workspace = true }
++rusqlite = { workspace = true }
+ serde_json = { workspace = true }
+ thiserror = { workspace = true }
+ tokio = { workspace = true }
+@@ -44,7 +47,10 @@ tracing = { workspace = true }
+ tracing-subscriber = { workspace = true }
+ 
+ [dev-dependencies]
++aes-gcm = { workspace = true }
+ base64 = "0.22"
++rusqlite = { workspace = true }
++sha2 = { workspace = true }
+ http-body-util = "0.1"
+ # Used by tests/acme_pebble.rs only — pebble's mgmt endpoint serves a
+ # self-signed cert, so we need a client that accepts it. Workspace
+@@ -53,8 +59,6 @@ http-body-util = "0.1"
+ reqwest = { workspace = true }
+ serde_json = { workspace = true }
+ tokio = { workspace = true }
+-aes-gcm = { workspace = true }
+-sha2 = { workspace = true }
+ tempfile = "3"
+ tower = { version = "0.5", features = ["util"] }
+ wiremock = { workspace = true }
+diff --git a/src/proxy/crates/ks-proxy/src/handlers.rs b/src/proxy/crates/ks-proxy/src/handlers.rs
+index 981d603de..ac0c7d179 100644
+--- a/src/proxy/crates/ks-proxy/src/handlers.rs
++++ b/src/proxy/crates/ks-proxy/src/handlers.rs
+@@ -8,7 +8,7 @@ use std::str::FromStr;
+ use std::time::Instant;
+ 
+ use axum::{
+-    body::{to_bytes as body_to_bytes, Body},
++    body::{Body, to_bytes as body_to_bytes},
+     extract::{Path, Request, State},
+     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
+     response::{IntoResponse, Response},
+@@ -155,9 +155,11 @@ async fn proxy_inner(
+     // An open MPP stream is already the payment channel: skip the balance
+     // HTTP call and the 402 so the client does not pay-and-retry. Usage is
+     // debited after the response by the record hook below.
+-    let paid_by_stream =
+-        key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
+-    if key_type == KeyType::Platform && !paid_by_stream {
++    let paid_by_stream = key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
++    // A Tempo wallet session voucher is the same kind of prepaid channel:
++    // the client already paid off-chain, so this request is not a 402.
++    let paid_by_tempo = key_type == KeyType::Platform && !paid_by_stream && tempo_voucher_pays(&state, &headers);
++    if key_type == KeyType::Platform && !paid_by_stream && !paid_by_tempo {
+         let balance = state.bridge.balance(&session.user_id).await.unwrap_or_else(|err| {
+             // Per spec 07: bridge failure → treat as 0 → 402. Logged warn.
+             tracing::warn!(error = %err, user = %session.user_id, "balance bridge failed; treating as 0");
+@@ -168,6 +170,14 @@ async fn proxy_inner(
+             let mut resp = (StatusCode::PAYMENT_REQUIRED, Json(body)).into_response();
+             resp.headers_mut()
+                 .insert("X-Payment-Required", HeaderValue::from_static("x402"));
++            if let Some(lane) = crate::tempo::config_from_env() {
++                if let Ok(value) = HeaderValue::from_str(&crate::tempo::www_authenticate(&lane)) {
++                    resp.headers_mut().insert(
++                        HeaderName::from_static("www-authenticate"),
++                        value,
++                    );
++                }
++            }
+             return resp;
+         }
+     }
+@@ -204,12 +214,10 @@ async fn proxy_inner(
+         }
+     };
+ 
+-    // 8. Headers: copy upstream headers minus hop-by-hop, then add
+-    //    x-ks-cache + x-ks-key-type. `forward()` buffers the body, so a
+-    //    raw `transfer-encoding: chunked` / `connection` copy makes hyper
+-    //    abort the HTTP/1 write (curl 52 empty reply) on SSE upstreams.
+-    let mut out_headers = retain_end_to_end_headers(&resp.headers);
+-    let cache_status = cache_status_from(&out_headers).unwrap_or(CacheStatus::Miss);
++    // 8. Headers: copy upstream headers, then add x-ks-cache + x-ks-key-type.
++    let mut out_headers = resp.headers.clone();
++    let cache_status =
++        cache_status_from(&out_headers).unwrap_or(CacheStatus::Miss);
+     out_headers.insert(
+         HeaderName::from_static("x-ks-cache"),
+         HeaderValue::from_static(cache_status.as_str()),
+@@ -218,10 +226,10 @@ async fn proxy_inner(
+         HeaderName::from_static("x-ks-key-type"),
+         HeaderValue::from_static(key_type.as_str()),
+     );
+-    if paid_by_stream {
++    if let Some(lane) = pay_lane(paid_by_stream, paid_by_tempo) {
+         out_headers.insert(
+             HeaderName::from_static("x-ks-pay"),
+-            HeaderValue::from_static("mpp"),
++            HeaderValue::from_static(lane),
+         );
+     }
+ 
+@@ -249,9 +257,7 @@ async fn proxy_inner(
+         if let Some(sid_str) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) {
+             if let Ok(stream_id) = sid_str.parse::<u64>() {
+                 let tokens = tok_in.saturating_add(tok_out) as u32;
+-                state
+-                    .bridge
+-                    .record_mpp_call(stream_id, token.to_string(), tokens);
++                state.bridge.record_mpp_call(stream_id, token.to_string(), tokens);
+             }
+         }
+     }
+@@ -289,7 +295,11 @@ struct BatchRequest {
+ /// `POST /manage/batch` — fan out up to 20 items concurrently. Each item's
+ /// shape matches the single-call contract; 21+ items → 400. Per-item bad
+ /// upstream / oversize → `{"error": ...}` so partial success is observable.
+-pub async fn batch(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
++pub async fn batch(
++    State(state): State<AppState>,
++    headers: HeaderMap,
++    body: Bytes,
++) -> Response {
+     let token = match bearer_token(&headers) {
+         Some(t) => t,
+         None => {
+@@ -402,11 +412,7 @@ async fn run_batch_item(
+         Err(_) => return json!({"error": format!("invalid method: {}", item.method)}),
+     };
+ 
+-    let path_for_call = if item.path.is_empty() {
+-        "/".to_string()
+-    } else {
+-        item.path.clone()
+-    };
++    let path_for_call = if item.path.is_empty() { "/".to_string() } else { item.path.clone() };
+ 
+     let body_bytes = Bytes::from(raw);
+     let upstream_resp = state
+@@ -458,22 +464,6 @@ const HOP_BY_HOP: &[&str] = &[
+     "content-length",
+ ];
+ 
+-/// Drop hop-by-hop headers before attaching a collected body to an axum
+-/// response. Shared by `/proxy/*` and Python fallthrough.
+-pub fn retain_end_to_end_headers(src: &HeaderMap) -> HeaderMap {
+-    let mut out = HeaderMap::new();
+-    for (name, value) in src.iter() {
+-        if HOP_BY_HOP
+-            .iter()
+-            .any(|h| h.eq_ignore_ascii_case(name.as_str()))
+-        {
+-            continue;
+-        }
+-        out.append(name.clone(), value.clone());
+-    }
+-    out
+-}
+-
+ /// Headers we strip from inbound client requests before reverse-proxying to
+ /// Python. `x-internal-secret` is the firewall token between Rust and Python
+ /// — clients must NOT be able to smuggle their own value; ks-proxy re-injects
+@@ -523,10 +513,7 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
+         if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
+             continue;
+         }
+-        if STRIP_FROM_INBOUND
+-            .iter()
+-            .any(|h| h.eq_ignore_ascii_case(lname))
+-        {
++        if STRIP_FROM_INBOUND.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
+             continue;
+         }
+         // reqwest accepts http::HeaderName/HeaderValue directly.
+@@ -549,7 +536,20 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
+     };
+ 
+     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+-    let out_headers = retain_end_to_end_headers(resp.headers());
++    let mut out_headers = HeaderMap::new();
++    for (name, value) in resp.headers().iter() {
++        let lname = name.as_str();
++        if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
++            continue;
++        }
++        // Construct fresh axum-side header values.
++        if let (Ok(hn), Ok(hv)) = (
++            HeaderName::from_bytes(name.as_str().as_bytes()),
++            HeaderValue::from_bytes(value.as_bytes()),
++        ) {
++            out_headers.append(hn, hv);
++        }
++    }
+     let body = match resp.bytes().await {
+         Ok(b) => b,
+         Err(e) => {
+@@ -784,6 +784,28 @@ fn cache_status_from(headers: &HeaderMap) -> Option<CacheStatus> {
+ 
+ /// `X-Mpp-Stream-Id` names an open stream owned by this user.
+ /// Header is absent, unparseable, or the stream is not open → false.
++fn pay_lane(paid_by_stream: bool, paid_by_tempo: bool) -> Option<&'static str> {
++    if paid_by_stream {
++        Some("mpp")
++    } else if paid_by_tempo {
++        Some("tempo")
++    } else {
++        None
++    }
++}
++
++/// `Payment-Authorization: Payment <credential>` from a Tempo wallet.
++/// No payee configured, or a voucher that does not verify, is false.
++fn tempo_voucher_pays(state: &AppState, headers: &HeaderMap) -> bool {
++    let Some(raw) = headers.get("payment-authorization").and_then(|v| v.to_str().ok()) else {
++        return false;
++    };
++    let Some(lane) = crate::tempo::config_from_env() else {
++        return false;
++    };
++    crate::tempo::session_voucher_pays(raw, &lane, &state.tempo_vouchers)
++}
++
+ fn mpp_stream_open(state: &AppState, user_id: &str, headers: &HeaderMap) -> bool {
+     let Some(raw) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) else {
+         return false;
+diff --git a/src/proxy/crates/ks-proxy/src/lib.rs b/src/proxy/crates/ks-proxy/src/lib.rs
+index dd217c338..12ab5b35e 100644
+--- a/src/proxy/crates/ks-proxy/src/lib.rs
++++ b/src/proxy/crates/ks-proxy/src/lib.rs
+@@ -17,6 +17,7 @@ pub mod bridge;
+ pub mod handlers;
+ pub mod metrics;
+ pub mod mpp;
++pub mod tempo;
+ pub mod stealth;
+ pub mod tls;
+ pub mod usage;
+@@ -44,6 +45,9 @@ pub struct AppState {
+     pub mpp_db_path: std::path::PathBuf,
+     /// Confirmed-open `(user_id, stream_id)` pairs. See `mpp::stream_is_open`.
+     pub open_streams: Arc<TtlCache<u8>>,
++    /// Highest Tempo session voucher accepted per channel. A later voucher
++    /// with a smaller cumulative amount does not skip the 402 gate.
++    pub tempo_vouchers: Arc<tempo::VoucherBook>,
+ }
+ 
+ /// Build the axum `Router` for the hot path. Used by both `main.rs` and
+@@ -54,10 +58,7 @@ pub struct AppState {
+ /// dispatch by JSON-RPC body). Without that branch, `POST /proxy/helius/`
+ /// falls through to Python and the byte-diff oracle silently passes
+ /// (Rust-as-mirror) — see oracle-diff harness.
+-pub fn router(
+-    state: AppState,
+-    prometheus: metrics_exporter_prometheus::PrometheusHandle,
+-) -> axum::Router {
++pub fn router(state: AppState, prometheus: metrics_exporter_prometheus::PrometheusHandle) -> axum::Router {
+     use axum::routing::{any, get, post};
+     // CORS for browser clients (frontend on localhost:5173 → proxy on :8000).
+     // Origin Any is acceptable here because the proxy enforces auth via
+@@ -68,10 +69,7 @@ pub fn router(
+         .allow_headers(Any);
+     axum::Router::new()
+         .route("/health", get(handlers::health))
+-        .route(
+-            "/metrics",
+-            get(metrics::metrics_handler).with_state(prometheus),
+-        )
++        .route("/metrics", get(metrics::metrics_handler).with_state(prometheus))
+         .route("/proxy/:upstream", any(handlers::proxy_no_path))
+         .route("/proxy/:upstream/", any(handlers::proxy_no_path))
+         .route("/proxy/:upstream/*path", any(handlers::proxy))
+diff --git a/src/proxy/crates/ks-proxy/src/main.rs b/src/proxy/crates/ks-proxy/src/main.rs
+index 4e9544e03..048d3b5f1 100644
+--- a/src/proxy/crates/ks-proxy/src/main.rs
++++ b/src/proxy/crates/ks-proxy/src/main.rs
+@@ -12,15 +12,9 @@ use ks_upstream::{UpstreamClients, UpstreamId};
+ use ks_vault::VaultPath;
+ 
+ const UPSTREAM_IDS_ALL: [UpstreamId; 10] = [
+-    UpstreamId::Helius,
+-    UpstreamId::Openai,
+-    UpstreamId::Anthropic,
+-    UpstreamId::Mistral,
+-    UpstreamId::Cohere,
+-    UpstreamId::Groq,
+-    UpstreamId::ZeroX,
+-    UpstreamId::Titan,
+-    UpstreamId::Pyth,
++    UpstreamId::Helius, UpstreamId::Openai, UpstreamId::Anthropic,
++    UpstreamId::Mistral, UpstreamId::Cohere, UpstreamId::Groq,
++    UpstreamId::ZeroX, UpstreamId::Titan, UpstreamId::Pyth,
+     UpstreamId::Alchemy,
+ ];
+ 
+@@ -37,8 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+         .into();
+     let server_secret = std::env::var("SERVER_SECRET")
+         .unwrap_or_else(|_| "CHANGE-ME-IN-PROD-32-BYTES-MIN!!".into());
+-    let python_url =
+-        std::env::var("PYTHON_BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8001".into());
++    let python_url = std::env::var("PYTHON_BACKEND_URL")
++        .unwrap_or_else(|_| "http://127.0.0.1:8001".into());
+     let internal_secret = std::env::var("KS_INTERNAL_SECRET").unwrap_or_default();
+ 
+     let sessions = SessionStore::open(&session_db, &server_secret)?;
+@@ -55,9 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+         .filter(|s| !s.is_empty())
+         .map(|base| {
+             let mut overrides = HashMap::new();
+-            for id in UPSTREAM_IDS_ALL {
+-                overrides.insert(id, base.clone());
+-            }
++            for id in UPSTREAM_IDS_ALL { overrides.insert(id, base.clone()); }
+             UpstreamClients::with_bases_and_cache(overrides, cache.clone())
+         })
+         .unwrap_or_else(UpstreamClients::new);
+@@ -66,9 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+     // order": KS_STEALTH explicit always wins; otherwise stealth defaults
+     // ON for any TLS mode and OFF for plain HTTP.
+     let tls_mode = tls::read_tls_mode();
+-    let stealth_on = stealth::read_stealth_env_with_default(tls_mode.stealth_default());
++    let stealth_on =
++        stealth::read_stealth_env_with_default(tls_mode.stealth_default());
+ 
+-    tracing::info!(?tls_mode, stealth_on, "ks-proxy startup config",);
++    tracing::info!(
++        ?tls_mode,
++        stealth_on,
++        "ks-proxy startup config",
++    );
+     if stealth_on {
+         tracing::info!("stealth mode enabled — unauthed requests will see nginx");
+     }
+@@ -79,10 +76,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+     let mpp_db_path = std::env::var("KS_MPP_DB")
+         .map(std::path::PathBuf::from)
+         .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/mpp.db"));
+-    let helius = std::sync::Arc::new(ks_helius::HeliusClient::with_api_key(
+-        "placeholder",
+-        ks_helius::HeliusConfig::default(),
+-    ));
++    let helius = std::sync::Arc::new(
++        ks_helius::HeliusClient::with_api_key("placeholder", ks_helius::HeliusConfig::default()),
++    );
+ 
+     let state = AppState {
+         vault: VaultPath::new(vault_root),
+@@ -96,6 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+         helius,
+         mpp_db_path,
+         open_streams: Arc::new(TtlCache::new()),
++        tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(
++            std::env::var("KS_TEMPO_DB")
++                .map(std::path::PathBuf::from)
++                .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/tempo_vouchers.db")),
++        )),
+     };
+ 
+     // Install the global Prometheus recorder once and pass the render
+@@ -164,8 +165,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+             tls::install_crypto_provider();
+             let challenges = acme::ChallengeStore::new();
+             let challenge_app = acme::challenge_router(challenges.clone());
+-            let http01_bind =
+-                std::env::var("KS_ACME_HTTP01_BIND").unwrap_or_else(|_| "0.0.0.0:80".into());
++            let http01_bind = std::env::var("KS_ACME_HTTP01_BIND")
++                .unwrap_or_else(|_| "0.0.0.0:80".into());
+             let http01_addr: std::net::SocketAddr = http01_bind.parse()?;
+             tracing::info!("ACME HTTP-01 challenge listener on http://{http01_bind}");
+             tokio::spawn(async move {
+@@ -249,7 +250,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+ 
+             let tls_bind = tls::read_tls_bind();
+             let addr: std::net::SocketAddr = tls_bind.parse()?;
+-            tracing::info!("ks-proxy listening on https://{tls_bind} (ACME / Let's Encrypt)",);
++            tracing::info!(
++                "ks-proxy listening on https://{tls_bind} (ACME / Let's Encrypt)",
++            );
+             axum_server::bind_rustls(addr, served_config)
+                 .serve(app.into_make_service())
+                 .await?;
+diff --git a/src/proxy/crates/ks-proxy/src/mpp.rs b/src/proxy/crates/ks-proxy/src/mpp.rs
+index 80a6373fc..1a75cebd6 100644
+--- a/src/proxy/crates/ks-proxy/src/mpp.rs
++++ b/src/proxy/crates/ks-proxy/src/mpp.rs
+@@ -35,9 +35,10 @@ pub fn stream_is_open(cache: &TtlCache<u8>, db_path: &Path, user_id: &str, strea
+ }
+ 
+ fn read_open(db_path: &Path, user_id: &str, stream_id: u64) -> bool {
+-    let Ok(conn) =
+-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+-    else {
++    let Ok(conn) = rusqlite::Connection::open_with_flags(
++        db_path,
++        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
++    ) else {
+         return false;
+     };
+     conn.query_row(
+@@ -95,12 +96,7 @@ mod tests {
+         assert!(!stream_is_open(&cache, &path, "user-b", 8));
+         assert!(!stream_is_open(&cache, &path, "user-b", 9));
+         assert!(!stream_is_open(&cache, &path, "user-b", 404));
+-        assert!(!stream_is_open(
+-            &cache,
+-            Path::new("/no/such/mpp.db"),
+-            "user-b",
+-            7
+-        ));
++        assert!(!stream_is_open(&cache, Path::new("/no/such/mpp.db"), "user-b", 7));
+         assert_eq!(cache.len(), 0);
+     }
+ }
+diff --git a/src/proxy/crates/ks-proxy/tests/proxy.rs b/src/proxy/crates/ks-proxy/tests/proxy.rs
+index 5a21f1cae..08e1618d5 100644
+--- a/src/proxy/crates/ks-proxy/tests/proxy.rs
++++ b/src/proxy/crates/ks-proxy/tests/proxy.rs
+@@ -187,9 +187,11 @@ impl Harness {
+         Mock::given(method("GET"))
+             .and(path_regex(r"/_internal/balance/.*"))
+             .and(header("X-Internal-Secret", "test-secret"))
+-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+-                "balance_usd": balance_usd,
+-            })))
++            .respond_with(
++                ResponseTemplate::new(200).set_body_json(serde_json::json!({
++                    "balance_usd": balance_usd,
++                })),
++            )
+             .mount(&python_mock)
+             .await;
+ 
+@@ -249,8 +251,11 @@ impl Harness {
+             stealth: false,
+             vault_db_path,
+             helius,
+-            mpp_db_path: vault_db_dir.path().join("mpp.db"),
++            mpp_db_path: vault_db_dir.path().join("mpp-missing.db"),
+             open_streams: Arc::new(TtlCache::new()),
++            tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(
++                vault_db_dir.path().join("tempo_vouchers.db"),
++            )),
+         };
+         // Keep tempdir alive via leak — test process exits soon enough.
+         std::mem::forget(vault_db_dir);
+@@ -271,9 +276,16 @@ fn bearer(token: &str) -> String {
+     format!("Bearer {token}")
+ }
+ 
+-async fn body_to_string(
+-    resp: axum::response::Response,
+-) -> (StatusCode, axum::http::HeaderMap, String) {
++/// Platform-key tests share process env. Hold this until the test has
++/// finished reading `OPENAI_API_KEY`.
++fn platform_key_env() -> std::sync::MutexGuard<'static, ()> {
++    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
++    let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
++    env::set_var("OPENAI_API_KEY", "platform-test-key");
++    guard
++}
++
++async fn body_to_string(resp: axum::response::Response) -> (StatusCode, axum::http::HeaderMap, String) {
+     let status = resp.status();
+     let headers = resp.headers().clone();
+     let bytes = resp
+@@ -313,14 +325,6 @@ async fn self_custodian_happy_path() {
+         "self_custodian"
+     );
+     assert!(headers.get("x-ks-cache").is_some());
+-    assert!(
+-        headers.get("transfer-encoding").is_none(),
+-        "hop-by-hop transfer-encoding must not be forwarded"
+-    );
+-    assert!(
+-        headers.get("connection").is_none(),
+-        "hop-by-hop connection must not be forwarded"
+-    );
+ 
+     // Upstream received the request with the user's stored sk-self-custodian-key.
+     let reqs = h.upstream_mock.received_requests().await.unwrap();
+@@ -349,7 +353,7 @@ async fn platform_key_with_balance_succeeds() {
+     let h = Harness::build(UpstreamId::Openai, 5.0).await;
+ 
+     // bob has no vault entry → platform fallback.
+-    env::set_var("OPENAI_API_KEY", "platform-test-key");
++    let _platform_key = platform_key_env();
+ 
+     let app = router(h.state.clone(), test_prometheus());
+     let req = Request::builder()
+@@ -397,7 +401,7 @@ async fn platform_key_with_balance_succeeds() {
+ #[tokio::test]
+ async fn platform_key_zero_balance_returns_402() {
+     let h = Harness::build(UpstreamId::Openai, 0.0).await;
+-    env::set_var("OPENAI_API_KEY", "platform-test-key");
++    let _platform_key = platform_key_env();
+ 
+     let app = router(h.state.clone(), test_prometheus());
+     let req = Request::builder()
+@@ -435,162 +439,6 @@ async fn platform_key_zero_balance_returns_402() {
+     assert_eq!(upstream_reqs.len(), 0);
+ }
+ 
+-/// Zero balance plus an open MPP stream must not 402. The stream is the
+-/// payment, so the proxy forwards on the first request.
+-///
+-/// Builds its own session row so it does not depend on the v2-mvp seeder.
+-#[tokio::test]
+-async fn open_mpp_stream_skips_402_round_trip() {
+-    use aes_gcm::aead::{Aead, KeyInit};
+-    use aes_gcm::{Aes256Gcm, Key, Nonce};
+-    use sha2::{Digest, Sha256};
+-
+-    let dir = unique_tmp_dir("mpp-pay");
+-    let server_secret = "ks-proxy-test-secret-AAAA";
+-    let token = "tok-bob-mpp";
+-    let session_db = dir.join("sessions.db");
+-    let mpp_db = dir.join("mpp.db");
+-    let vault_root = dir.join("vault");
+-    fs::create_dir_all(&vault_root).unwrap();
+-
+-    let mut key_bytes = Sha256::new();
+-    key_bytes.update(server_secret.as_bytes());
+-    let key_bytes: [u8; 32] = key_bytes.finalize().into();
+-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+-    let nonce = Nonce::from_slice(&[7u8; 12]);
+-    let mut enc_pass = nonce.to_vec();
+-    enc_pass.extend(cipher.encrypt(nonce, b"pw".as_ref()).unwrap());
+-
+-    let conn = rusqlite::Connection::open(&session_db).unwrap();
+-    conn.execute_batch(
+-        "CREATE TABLE sessions (
+-            token TEXT PRIMARY KEY,
+-            user_id TEXT NOT NULL,
+-            enc_pass BLOB NOT NULL,
+-            expires_at INTEGER NOT NULL
+-        );",
+-    )
+-    .unwrap();
+-    conn.execute(
+-        "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?1, 'bob', ?2, strftime('%s','now') + 3600)",
+-        rusqlite::params![token, enc_pass],
+-    )
+-    .unwrap();
+-    drop(conn);
+-
+-    let conn = rusqlite::Connection::open(&mpp_db).unwrap();
+-    conn.execute_batch(
+-        "CREATE TABLE mpp_streams (
+-            id INTEGER PRIMARY KEY,
+-            user_id TEXT NOT NULL,
+-            status TEXT NOT NULL
+-        );
+-        INSERT INTO mpp_streams (id, user_id, status) VALUES (7, 'bob', 'open');
+-        INSERT INTO mpp_streams (id, user_id, status) VALUES (8, 'bob', 'closed');",
+-    )
+-    .unwrap();
+-    drop(conn);
+-
+-    let upstream_mock = MockServer::start().await;
+-    let python_mock = MockServer::start().await;
+-    Mock::given(any())
+-        .respond_with(
+-            ResponseTemplate::new(200)
+-                .insert_header("content-type", "application/json")
+-                .set_body_string(r#"{"id":"x","usage":{"prompt_tokens":3,"completion_tokens":4}}"#),
+-        )
+-        .mount(&upstream_mock)
+-        .await;
+-    Mock::given(method("GET"))
+-        .and(path_regex(r"/_internal/balance/.*"))
+-        .respond_with(
+-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"balance_usd": 0.0})),
+-        )
+-        .mount(&python_mock)
+-        .await;
+-    Mock::given(any())
+-        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+-        .mount(&python_mock)
+-        .await;
+-
+-    let mut overrides = HashMap::new();
+-    overrides.insert(UpstreamId::Openai, upstream_mock.uri());
+-    let bridge = Arc::new(PythonBridge::new(
+-        python_mock.uri(),
+-        "test-secret".to_string(),
+-    ));
+-    let (log_buffer, _log_task) = LogBuffer::spawn(bridge.clone());
+-    let state = AppState {
+-        vault: VaultPath::new(&vault_root),
+-        sessions: Arc::new(SessionStore::open(&session_db, server_secret).unwrap()),
+-        upstreams: Arc::new(UpstreamClients::with_bases(overrides)),
+-        cache: Arc::new(TtlCache::new()),
+-        bridge,
+-        log_buffer,
+-        stealth: false,
+-        vault_db_path: dir.join("vault_shim.db"),
+-        helius: Arc::new(ks_helius::HeliusClient::with_api_key(
+-            "placeholder",
+-            ks_helius::HeliusConfig::default(),
+-        )),
+-        mpp_db_path: mpp_db,
+-        open_streams: Arc::new(TtlCache::new()),
+-    };
+-
+-    env::set_var("OPENAI_API_KEY", "platform-test-key");
+-    let app = router(state, test_prometheus());
+-    let open = Request::builder()
+-        .method("POST")
+-        .uri("/proxy/openai/v1/chat/completions")
+-        .header("authorization", bearer(token))
+-        .header("content-type", "application/json")
+-        .header("x-mpp-stream-id", "7")
+-        .body(Body::from(r#"{"hi":1}"#.to_string()))
+-        .unwrap();
+-
+-    let resp = app.clone().oneshot(open).await.unwrap();
+-    let (status, headers, body) = body_to_string(resp).await;
+-    assert_eq!(status, StatusCode::OK, "body: {body}");
+-    assert_eq!(
+-        headers.get("x-ks-pay").and_then(|v| v.to_str().ok()),
+-        Some("mpp")
+-    );
+-
+-    let upstream_reqs = upstream_mock.received_requests().await.unwrap();
+-    assert_eq!(
+-        upstream_reqs.len(),
+-        1,
+-        "open stream forwards on the first call"
+-    );
+-
+-    let py_reqs = python_mock.received_requests().await.unwrap();
+-    assert!(
+-        !py_reqs
+-            .iter()
+-            .any(|r| r.url.path().contains("/_internal/balance/")),
+-        "open stream must not wait on the balance bridge"
+-    );
+-
+-    let closed = Request::builder()
+-        .method("POST")
+-        .uri("/proxy/openai/v1/chat/completions")
+-        .header("authorization", bearer(token))
+-        .header("content-type", "application/json")
+-        .header("x-mpp-stream-id", "8")
+-        .body(Body::from(r#"{"hi":1}"#.to_string()))
+-        .unwrap();
+-    let resp = app.oneshot(closed).await.unwrap();
+-    let (status, headers, body) = body_to_string(resp).await;
+-    env::remove_var("OPENAI_API_KEY");
+-    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "body: {body}");
+-    assert_eq!(
+-        headers
+-            .get("x-payment-required")
+-            .and_then(|v| v.to_str().ok()),
+-        Some("x402")
+-    );
+-}
+-
+ #[tokio::test]
+ async fn unknown_token_returns_401() {
+     let h = Harness::build(UpstreamId::Openai, 0.0).await;
+@@ -730,11 +578,7 @@ async fn batch_with_one_unknown_upstream_returns_per_item_error() {
+ 
+     let resp = app.oneshot(req).await.unwrap();
+     let (status, _headers, body) = body_to_string(resp).await;
+-    assert_eq!(
+-        status,
+-        StatusCode::OK,
+-        "batch should succeed even if one item is bad: {body}"
+-    );
++    assert_eq!(status, StatusCode::OK, "batch should succeed even if one item is bad: {body}");
+ 
+     let parsed: Value = serde_json::from_str(&body).unwrap();
+     let results = parsed["results"].as_array().unwrap();
+@@ -824,34 +668,279 @@ async fn payload_too_large_returns_413() {
+     assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+ }
+ 
+-#[test]
+-fn retain_end_to_end_headers_drops_hop_by_hop() {
+-    use axum::http::{header, HeaderMap, HeaderValue};
+-    use ks_proxy::handlers::retain_end_to_end_headers;
++/// Zero balance plus an open MPP stream must not 402. The stream is the
++/// payment, so the proxy forwards on the first request.
++///
++/// Builds its own session row so it does not depend on the v2-mvp seeder.
++#[tokio::test]
++async fn open_mpp_stream_skips_402_round_trip() {
++    use aes_gcm::aead::{Aead, KeyInit};
++    use aes_gcm::{Aes256Gcm, Key, Nonce};
++    use sha2::{Digest, Sha256};
+ 
+-    let mut src = HeaderMap::new();
+-    src.insert(
+-        header::CONTENT_TYPE,
+-        HeaderValue::from_static("text/event-stream"),
++    let dir = unique_tmp_dir("mpp-pay");
++    let server_secret = "ks-proxy-test-secret-AAAA";
++    let token = "tok-bob-mpp";
++    let session_db = dir.join("sessions.db");
++    let mpp_db = dir.join("mpp.db");
++    let vault_root = dir.join("vault");
++    fs::create_dir_all(&vault_root).unwrap();
++
++    let mut key_bytes = Sha256::new();
++    key_bytes.update(server_secret.as_bytes());
++    let key_bytes: [u8; 32] = key_bytes.finalize().into();
++    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
++    let nonce = Nonce::from_slice(&[7u8; 12]);
++    let mut enc_pass = nonce.to_vec();
++    enc_pass.extend(cipher.encrypt(nonce, b"pw".as_ref()).unwrap());
++
++    let conn = rusqlite::Connection::open(&session_db).unwrap();
++    conn.execute_batch(
++        "CREATE TABLE sessions (
++            token TEXT PRIMARY KEY,
++            user_id TEXT NOT NULL,
++            enc_pass BLOB NOT NULL,
++            expires_at INTEGER NOT NULL
++        );",
++    )
++    .unwrap();
++    conn.execute(
++        "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?1, 'bob', ?2, strftime('%s','now') + 3600)",
++        rusqlite::params![token, enc_pass],
++    )
++    .unwrap();
++    drop(conn);
++
++    let conn = rusqlite::Connection::open(&mpp_db).unwrap();
++    conn.execute_batch(
++        "CREATE TABLE mpp_streams (
++            id INTEGER PRIMARY KEY,
++            user_id TEXT NOT NULL,
++            status TEXT NOT NULL
++        );
++        INSERT INTO mpp_streams (id, user_id, status) VALUES (7, 'bob', 'open');
++        INSERT INTO mpp_streams (id, user_id, status) VALUES (8, 'bob', 'closed');",
++    )
++    .unwrap();
++    drop(conn);
++
++    let upstream_mock = MockServer::start().await;
++    let python_mock = MockServer::start().await;
++    Mock::given(any())
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "application/json")
++                .set_body_string(r#"{"id":"x","usage":{"prompt_tokens":3,"completion_tokens":4}}"#),
++        )
++        .mount(&upstream_mock)
++        .await;
++    Mock::given(method("GET"))
++        .and(path_regex(r"/_internal/balance/.*"))
++        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"balance_usd": 0.0})))
++        .mount(&python_mock)
++        .await;
++    Mock::given(any())
++        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
++        .mount(&python_mock)
++        .await;
++
++    let mut overrides = HashMap::new();
++    overrides.insert(UpstreamId::Openai, upstream_mock.uri());
++    let bridge = Arc::new(PythonBridge::new(python_mock.uri(), "test-secret".to_string()));
++    let (log_buffer, _log_task) = LogBuffer::spawn(bridge.clone());
++    let state = AppState {
++        vault: VaultPath::new(&vault_root),
++        sessions: Arc::new(SessionStore::open(&session_db, server_secret).unwrap()),
++        upstreams: Arc::new(UpstreamClients::with_bases(overrides)),
++        cache: Arc::new(TtlCache::new()),
++        bridge,
++        log_buffer,
++        stealth: false,
++        vault_db_path: dir.join("vault_shim.db"),
++        helius: Arc::new(ks_helius::HeliusClient::with_api_key(
++            "placeholder",
++            ks_helius::HeliusConfig::default(),
++        )),
++        mpp_db_path: mpp_db,
++        open_streams: Arc::new(TtlCache::new()),
++        tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(dir.join("tempo_vouchers.db"))),
++    };
++
++    let _platform_key = platform_key_env();
++    let app = router(state, test_prometheus());
++    let open = Request::builder()
++        .method("POST")
++        .uri("/proxy/openai/v1/chat/completions")
++        .header("authorization", bearer(token))
++        .header("content-type", "application/json")
++        .header("x-mpp-stream-id", "7")
++        .body(Body::from(r#"{"hi":1}"#.to_string()))
++        .unwrap();
++
++    let resp = app.clone().oneshot(open).await.unwrap();
++    let (status, headers, body) = body_to_string(resp).await;
++    assert_eq!(status, StatusCode::OK, "body: {body}");
++    assert_eq!(
++        headers.get("x-ks-pay").and_then(|v| v.to_str().ok()),
++        Some("mpp")
+     );
+-    src.insert(
+-        header::TRANSFER_ENCODING,
+-        HeaderValue::from_static("chunked"),
++
++    let upstream_reqs = upstream_mock.received_requests().await.unwrap();
++    assert_eq!(upstream_reqs.len(), 1, "open stream forwards on the first call");
++
++    let py_reqs = python_mock.received_requests().await.unwrap();
++    assert!(
++        !py_reqs.iter().any(|r| r.url.path().contains("/_internal/balance/")),
++        "open stream must not wait on the balance bridge"
+     );
+-    src.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+-    src.insert("x-ks-mock-mode", HeaderValue::from_static("fast"));
+-    src.insert(header::CONTENT_LENGTH, HeaderValue::from_static("12"));
+ 
+-    let out = retain_end_to_end_headers(&src);
++    let closed = Request::builder()
++        .method("POST")
++        .uri("/proxy/openai/v1/chat/completions")
++        .header("authorization", bearer(token))
++        .header("content-type", "application/json")
++        .header("x-mpp-stream-id", "8")
++        .body(Body::from(r#"{"hi":1}"#.to_string()))
++        .unwrap();
++    let resp = app.oneshot(closed).await.unwrap();
++    let (status, headers, body) = body_to_string(resp).await;
++    env::remove_var("OPENAI_API_KEY");
++    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "body: {body}");
+     assert_eq!(
+-        out.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()),
+-        Some("text/event-stream")
++        headers.get("x-payment-required").and_then(|v| v.to_str().ok()),
++        Some("x402")
+     );
++}
++
++/// A Tempo wallet session voucher is the payment, so the first request
++/// forwards. A call without one still 402s and advertises the v2 challenge.
++#[tokio::test]
++async fn tempo_session_voucher_skips_402_round_trip() {
++    use aes_gcm::aead::{Aead, KeyInit};
++    use aes_gcm::{Aes256Gcm, Key, Nonce};
++    use sha2::{Digest, Sha256};
++
++    let dir = unique_tmp_dir("tempo-pay");
++    let server_secret = "ks-proxy-test-secret-AAAA";
++    let token = "tok-bob-tempo";
++    let session_db = dir.join("sessions.db");
++    let vault_root = dir.join("vault");
++    fs::create_dir_all(&vault_root).unwrap();
++
++    let mut key_bytes = Sha256::new();
++    key_bytes.update(server_secret.as_bytes());
++    let key_bytes: [u8; 32] = key_bytes.finalize().into();
++    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
++    let nonce = Nonce::from_slice(&[7u8; 12]);
++    let mut enc_pass = nonce.to_vec();
++    enc_pass.extend(cipher.encrypt(nonce, b"pw".as_ref()).unwrap());
++
++    let conn = rusqlite::Connection::open(&session_db).unwrap();
++    conn.execute_batch(
++        "CREATE TABLE sessions (
++            token TEXT PRIMARY KEY,
++            user_id TEXT NOT NULL,
++            enc_pass BLOB NOT NULL,
++            expires_at INTEGER NOT NULL
++        );",
++    )
++    .unwrap();
++    conn.execute(
++        "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?1, 'bob', ?2, strftime('%s','now') + 3600)",
++        rusqlite::params![token, enc_pass],
++    )
++    .unwrap();
++    drop(conn);
++
++    let upstream_mock = MockServer::start().await;
++    let python_mock = MockServer::start().await;
++    Mock::given(any())
++        .respond_with(
++            ResponseTemplate::new(200)
++                .insert_header("content-type", "application/json")
++                .set_body_string(r#"{"id":"x","usage":{"prompt_tokens":1,"completion_tokens":1}}"#),
++        )
++        .mount(&upstream_mock)
++        .await;
++    Mock::given(method("GET"))
++        .and(path_regex(r"/_internal/balance/.*"))
++        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"balance_usd": 0.0})))
++        .mount(&python_mock)
++        .await;
++
++    let mut overrides = HashMap::new();
++    overrides.insert(UpstreamId::Openai, upstream_mock.uri());
++    let bridge = Arc::new(PythonBridge::new(python_mock.uri(), "test-secret".to_string()));
++    let (log_buffer, _log_task) = LogBuffer::spawn(bridge.clone());
++    let state = AppState {
++        vault: VaultPath::new(&vault_root),
++        sessions: Arc::new(SessionStore::open(&session_db, server_secret).unwrap()),
++        upstreams: Arc::new(UpstreamClients::with_bases(overrides)),
++        cache: Arc::new(TtlCache::new()),
++        bridge,
++        log_buffer,
++        stealth: false,
++        vault_db_path: dir.join("vault_shim.db"),
++        helius: Arc::new(ks_helius::HeliusClient::with_api_key(
++            "placeholder",
++            ks_helius::HeliusConfig::default(),
++        )),
++        mpp_db_path: dir.join("mpp-missing.db"),
++        open_streams: Arc::new(TtlCache::new()),
++        tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(dir.join("tempo_vouchers.db"))),
++    };
++
++    let (voucher, lane) = ks_proxy::tempo::dev_session_voucher(250_000);
++    let _platform_key = platform_key_env();
++    env::set_var("KS_TEMPO_PAYEE", &lane.payee);
++    env::set_var("KS_TEMPO_ESCROW", &lane.escrow);
++    env::set_var("KS_TEMPO_CURRENCY", &lane.currency);
++    env::set_var("KS_TEMPO_CHAIN_ID", lane.chain_id.to_string());
++
++    let app = router(state, test_prometheus());
++    let paid = Request::builder()
++        .method("POST")
++        .uri("/proxy/openai/v1/chat/completions")
++        .header("authorization", bearer(token))
++        .header("content-type", "application/json")
++        .header("payment-authorization", voucher)
++        .body(Body::from(r#"{"hi":1}"#.to_string()))
++        .unwrap();
++    let resp = app.clone().oneshot(paid).await.unwrap();
++    let (status, headers, body) = body_to_string(resp).await;
++    assert_eq!(status, StatusCode::OK, "body: {body}");
+     assert_eq!(
+-        out.get("x-ks-mock-mode").and_then(|v| v.to_str().ok()),
+-        Some("fast")
++        headers.get("x-ks-pay").and_then(|v| v.to_str().ok()),
++        Some("tempo")
+     );
+-    assert!(out.get(header::TRANSFER_ENCODING).is_none());
+-    assert!(out.get(header::CONNECTION).is_none());
+-    assert!(out.get(header::CONTENT_LENGTH).is_none());
++    let upstream_reqs = upstream_mock.received_requests().await.unwrap();
++    assert_eq!(upstream_reqs.len(), 1, "tempo voucher forwards on the first call");
++    let py_reqs = python_mock.received_requests().await.unwrap();
++    assert!(
++        !py_reqs.iter().any(|r| r.url.path().contains("/_internal/balance/")),
++        "tempo voucher must not wait on the balance bridge"
++    );
++
++    let unpaid = Request::builder()
++        .method("POST")
++        .uri("/proxy/openai/v1/chat/completions")
++        .header("authorization", bearer(token))
++        .header("content-type", "application/json")
++        .body(Body::from(r#"{"hi":1}"#.to_string()))
++        .unwrap();
++    let resp = app.oneshot(unpaid).await.unwrap();
++    let (status, headers, body) = body_to_string(resp).await;
++    env::remove_var("OPENAI_API_KEY");
++    env::remove_var("KS_TEMPO_PAYEE");
++    env::remove_var("KS_TEMPO_ESCROW");
++    env::remove_var("KS_TEMPO_CURRENCY");
++    env::remove_var("KS_TEMPO_CHAIN_ID");
++    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "body: {body}");
++    let challenge = headers
++        .get("www-authenticate")
++        .and_then(|v| v.to_str().ok())
++        .unwrap_or("");
++    assert!(challenge.contains("method=\"tempo\""));
++    assert!(challenge.contains("header=\"Payment-Authorization\""));
++    assert!(challenge.contains("intent=\"session\""));
+ }
+diff --git a/src/proxy/crates/ks-proxy/tests/stealth.rs b/src/proxy/crates/ks-proxy/tests/stealth.rs
+index de3f35836..b7a8e661c 100644
+--- a/src/proxy/crates/ks-proxy/tests/stealth.rs
++++ b/src/proxy/crates/ks-proxy/tests/stealth.rs
+@@ -197,9 +197,11 @@ impl Harness {
+         Mock::given(method("GET"))
+             .and(path_regex(r"/_internal/balance/.*"))
+             .and(header("X-Internal-Secret", "test-secret"))
+-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+-                "balance_usd": 5.0_f64,
+-            })))
++            .respond_with(
++                ResponseTemplate::new(200).set_body_json(serde_json::json!({
++                    "balance_usd": 5.0_f64,
++                })),
++            )
+             .mount(&python_mock)
+             .await;
+ 
+@@ -256,8 +258,11 @@ impl Harness {
+             stealth: stealth_on,
+             vault_db_path,
+             helius,
+-            mpp_db_path: vault_db_dir.path().join("mpp.db"),
++            mpp_db_path: vault_db_dir.path().join("mpp-missing.db"),
+             open_streams: Arc::new(TtlCache::new()),
++            tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(
++                vault_db_dir.path().join("tempo_vouchers.db"),
++            )),
+         };
+         std::mem::forget(vault_db_dir);
+ 

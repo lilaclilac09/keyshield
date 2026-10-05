@@ -7,12 +7,36 @@ The decision tree from the user's perspective:
 
 ```
 Does my agent already have a vault key for this upstream?
-├─ Yes → call /proxy/<upstream>/... — zero cost to me, my own key is used
+    ├─ Yes → call /proxy/<upstream>/... — zero cost to me, my own key is used
 └─ No  → KeyShield uses its platform key and bills me. How?
          ├─ I prepaid (most common)        → balance debited per call
          ├─ I want to stream a long task   → MPP (open a metered channel)
          └─ I want zero setup, pay-as-I-go → x402 (per-call micropayment)
 ```
+
+## Core settlement vs extensions
+
+**Core** is Solana USDC MPP (Micro-Payment Protocol) Streaming / Escrow.
+On-chain order:
+
+`CreateUniversalVault` → Session Grant (`GrantAgentAccess`) →
+`OpenPaymentStream` / `OpenStream` (ix 24) → meter → `MppSettle` (ix 26).
+
+An open MPP stream (`X-Mpp-Stream-Id`) is the live 402 skip on
+`ks-proxy`. Prepaid Solana top-up and x402 are the other two paying
+paths. The proxy also forwards across environments (vault key, platform
+key, `/vproxy`) — that is proxying, not a second settlement chain.
+
+**Not a product surface:** Tempo wallet session vouchers (TIP-1034 v2,
+chain `4217`, pathUSD). PR #45 added them to the proxy; PR #64 kept only
+the MPP skip. The source is saved at
+[`src/_archive/tempo-wallet-vouchers/`](../src/_archive/tempo-wallet-vouchers/)
+and is **not** compiled into `ks-proxy`.
+
+If a form asks about Tempo or “which chain”: Solana is the core
+settlement layer (Universal Vault + Session Grant + OpenStream/MppSettle).
+Cross-environment proxy and payment-flow extensions exist in source;
+they are not the live settlement chain.
 
 ## Path A — Prepaid balance + on-chain Solana topup
 
@@ -442,5 +466,6 @@ A person buying their AI coworker $50 of credit → Prepaid + Solana.
 |---|---|---|---|
 | Prepaid SOL | `ActivitySection.tsx` topup card | `server.py:billing_topup_solana`, `billing_solana.py` | Solana SystemProgram transfer + Memo |
 | Prepaid USDC | same | `server.py:billing_topup_solana_usdc` | SPL token transfer + Memo |
-| MPP streaming | Activity / stream open tx | `routes/mpp.py`, `mpp/mpp_streams.py`, `mpp/fulfillment.py`, `mpp/capture.py`; proxy holds on `X-Mpp-Stream-Id` | `programs/keyshield` `mpp_settle` requires artifact root and capture signature |
+| MPP streaming | Activity / stream open tx | `routes/mpp.py`, `mpp/mpp_streams.py`, `mpp/fulfillment.py`, `mpp/capture.py`; proxy holds on `X-Mpp-Stream-Id` | Solana `CreateUniversalVault` → `GrantAgentAccess` → `OpenStream` (24) → `MppSettle` (26) |
 | x402 | agent SDK (not browser) | `proxy/x402_verify.py` (`verify_on_chain` + unique `payment_proof`) | Base USDC transfer |
+| Tempo session (archived) | none | [`src/_archive/tempo-wallet-vouchers/`](../src/_archive/tempo-wallet-vouchers/) — **not in `ks-proxy`** | not live |
