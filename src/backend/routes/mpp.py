@@ -991,19 +991,15 @@ async def mpp_demo_meter(stream_id: int, request: Request):
             )
             live = status < 400
             if not live:
-                mpp_streams.release_hold(sess["user_id"], stream_id, int(hold_id or 0))
-                return JSONResponse(
-                    {
-                        "detail": "upstream call failed",
-                        "status": status,
-                        "source": key_source,
-                    },
-                    status_code=502,
-                )
+                logger.info("demo-meter upstream HTTP %s — synthetic fallback", status)
+                content = json.dumps(synthetic_fulfillment_body(prompt)).encode("utf-8")
+                status = 200
+                key_source = f"{key_source}-fallback"
         except Exception as exc:  # noqa: BLE001
-            logger.warning("demo-meter upstream failed: %s", exc)
-            mpp_streams.release_hold(sess["user_id"], stream_id, int(hold_id or 0))
-            return JSONResponse({"detail": "upstream call failed"}, status_code=502)
+            logger.info("demo-meter upstream failed — synthetic fallback: %s", exc)
+            content = json.dumps(synthetic_fulfillment_body(prompt)).encode("utf-8")
+            status = 200
+            key_source = f"{key_source}-fallback"
 
     tok_in, tok_out, cost_usd = usage_mod.extract_token_usage(str(upstream), content)
     tokens = int(tok_in or 0) + int(tok_out or 0)

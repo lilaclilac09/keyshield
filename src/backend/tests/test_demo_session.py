@@ -131,6 +131,47 @@ def test_demo_meter_records_synthetic_artifact(tmp_path, monkeypatch):
     assert usage["usage"]
 
 
+def test_demo_meter_falls_back_when_upstream_rejects_key(tmp_path, monkeypatch):
+    _iso_dbs(tmp_path, monkeypatch)
+    monkeypatch.setenv("KS_DEMO_MODE", "1")
+    _seal_owner(tmp_path, monkeypatch)
+    client = TestClient(app)
+    login = client.post("/auth/demo-session").json()
+    headers = {"Authorization": f"Bearer {login['token']}"}
+    client.post(
+        "/demo/upstream-key",
+        headers=headers,
+        json={"upstream": "openrouter", "apiKey": "sk-or-bad"},
+    )
+    opened = client.post(
+        "/mpp/streams",
+        headers=headers,
+        json={
+            "agentPubkey": login["agent"]["pubkey_b58"],
+            "agentName": "demo-agent",
+            "upstream": "openrouter",
+            "maxTotalMicroUsdc": 10_000,
+            "ratePerTokenMicroUsdc": 1,
+            "ratePerCallMicroUsdc": 1,
+        },
+    )
+    stream_id = opened.json()["stream"]["id"]
+
+    async def boom(*_a, **_k):
+        return b'{"error":"invalid"}', 401, "MISS"
+
+    monkeypatch.setattr(
+        "src.backend.proxy.api_router.call_rest",
+        boom,
+    )
+    metered = client.post(f"/mpp/streams/{stream_id}/demo-meter", headers=headers, json={})
+    assert metered.status_code == 200
+    body = metered.json()
+    assert body["live"] is False
+    assert "fallback" in str(body.get("source"))
+    assert body["artifact_hash"]
+
+
 def test_demo_upstream_key_never_echoes_secret(tmp_path, monkeypatch):
     _iso_dbs(tmp_path, monkeypatch)
     monkeypatch.setenv("KS_DEMO_MODE", "1")
