@@ -7,10 +7,12 @@ import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/Paym
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { apiFetch, getToken, proxyFetch } from '../../lib/auth';
-import { autosignOpenStream, autosignWithdrawStream, captureMppStream } from '../../lib/api';
+import { apiFetch, getToken, proxyFetch, vproxyFetch } from '../../lib/auth';
+import { getDecryptedKey } from '../../lib/vault-session';
+import { autosignOpenStream, autosignWithdrawStream, captureMppStream, demoMeterStream, storeUpstreamKey } from '../../lib/api';
 import { signCaptureMac } from '../../lib/mpp-capture';
 import { openStreamWithWallet } from '../../lib/mpp-wallet-open';
+import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_DEMO_UPSTREAM, openrouterChatBody } from '../../lib/openrouter-interface';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -65,7 +67,10 @@ export const ActivitySection: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [autosignPubkey, setAutosignPubkey] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState('');
-  const [openUpstream, setOpenUpstream] = useState('openai');
+  const [openUpstream, setOpenUpstream] = useState(OPENROUTER_DEMO_UPSTREAM);
+  const [pasteKey, setPasteKey] = useState('');
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
   const [openCap, setOpenCap] = useState('0.01');
   const [openBusy, setOpenBusy] = useState(false);
   const [openMsg, setOpenMsg] = useState('');
@@ -96,8 +101,17 @@ export const ActivitySection: React.FC = () => {
       if (mRes.ok) { const d = await mRes.json(); setMppStreams(d.streams ?? []); setMppSummary(d.summary ?? null); }
       if (mEvRes.ok) { const d = await mEvRes.json(); setMppEvents(d.events ?? []); }
       if (aRes.ok) { const d = await aRes.json(); setAutosignPubkey(d.loaded ? d.pubkey : null); }
-      if (agRes.ok) { const d = await agRes.json(); setAgents(d.agents ?? []); }
-      if (hpRes.ok) { const d = await hpRes.json(); if (d.active_program_id) setProgramId(d.active_program_id); }
+      if (agRes.ok) {
+        const d = await agRes.json();
+        const list = (d.agents ?? []) as AgentOpt[];
+        setAgents(list);
+        setOpenAgent(prev => prev || list[0]?.pubkey_b58 || '');
+      }
+      if (hpRes.ok) {
+        const d = await hpRes.json();
+        if (d.active_program_id) setProgramId(d.active_program_id);
+        if (d.demo?.enabled) setDemoMode(true);
+      }
     } catch {}
     finally { setLoading(false); }
   }, []);
@@ -175,21 +189,55 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
+  const handleSaveKey = async () => {
+    const key = pasteKey.trim();
+    if (!key) return;
+    setPasteBusy(true); setOpenMsg(''); setOpenOk(false);
+    try {
+      await storeUpstreamKey(openUpstream.trim() || OPENROUTER_DEMO_UPSTREAM, key);
+      setPasteKey('');
+      setOpenOk(true);
+      setOpenMsg(`Stored ${openUpstream || OPENROUTER_DEMO_UPSTREAM} key in the proxy vault — Meter uses it without unlocking Device Vault.`);
+    } catch (e) {
+      setOpenMsg(e instanceof Error ? e.message : 'Store failed');
+    } finally {
+      setPasteBusy(false);
+    }
+  };
+
   const handleMeter = async (stream: MppStream) => {
     setMeterBusy(stream.id);
+    const path = stream.upstream === 'openrouter' || stream.upstream === OPENROUTER_DEMO_UPSTREAM
+      ? OPENROUTER_CHAT_PATH
+      : 'v1/chat/completions';
+    const body = JSON.stringify(openrouterChatBody('KeyShield demo ping', OPENROUTER_DEMO_MODEL));
+    const headers = { 'X-Mpp-Stream-Id': String(stream.id) };
     try {
-      const res = await proxyFetch(stream.upstream, 'v1/chat/completions', {
-        method: 'POST',
-        headers: { 'X-Mpp-Stream-Id': String(stream.id) },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          max_tokens: 8,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
-      });
+      let res: Response | null = null;
+      let via = '';
+      if (getDecryptedKey(stream.upstream) || getDecryptedKey(OPENROUTER_DEMO_UPSTREAM)) {
+        const up = getDecryptedKey(stream.upstream) ? stream.upstream : OPENROUTER_DEMO_UPSTREAM;
+        res = await proxyFetch(up, path, { method: 'POST', headers, body });
+        via = 'device-vault';
+      } else {
+        try {
+          res = await vproxyFetch(stream.upstream, path, { method: 'POST', headers, body });
+          via = 'vproxy';
+          if (res.status === 422) res = null;
+        } catch {
+          res = null;
+        }
+      }
+      if (!res) {
+        const d = await demoMeterStream(stream.id, 'KeyShield demo ping');
+        setOpenOk(true);
+        setOpenMsg(`Demo meter stream ${stream.id}: ${String(d.meter ?? d.artifact_hash ?? 'ok')}`);
+        await refresh();
+        return;
+      }
       const meter = res.headers.get('x-ks-mpp-meter');
       setOpenOk(res.ok);
-      setOpenMsg(meter ? `Proxy ${stream.upstream}: ${meter}` : `Proxy HTTP ${res.status}`);
+      setOpenMsg(meter ? `${via} ${stream.upstream}: ${meter}` : `${via} HTTP ${res.status}`);
       await refresh();
     } catch (e) {
       setOpenOk(false);
@@ -326,7 +374,7 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
-          <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet.">
+          <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet. Meter: Device Vault → server vault → demo-meter.">
             <p className="text-[11px] text-[#8a96c2] mb-3">
               {autosignPubkey ? `Auto-sign ${autosignPubkey.slice(0, 4)}…${autosignPubkey.slice(-4)}` : 'Auto-sign off'}
               {' · '}
@@ -348,7 +396,7 @@ export const ActivitySection: React.FC = () => {
               </div>
               <div>
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Upstream</label>
-                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder="openai" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder={OPENROUTER_DEMO_UPSTREAM} className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
               </div>
               <div>
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Cap (USDC)</label>
@@ -359,8 +407,17 @@ export const ActivitySection: React.FC = () => {
               <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
               <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
             </div>
+            <div className="mt-4">
+              <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Paste OpenRouter API key</label>
+              <div className="flex gap-2">
+                <input type="password" value={pasteKey} onChange={e => setPasteKey(e.target.value)} placeholder="sk-or-v1-… auto-fills /manage/store + vproxy" className="flex-1 bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+                <Button variant="secondary" size="md" onClick={handleSaveKey} disabled={pasteBusy || !pasteKey.trim()} loading={pasteBusy}>Save to proxy</Button>
+              </div>
+              <p className="text-[10px] text-[#5e6a91] mt-1.5">Free model {OPENROUTER_DEMO_MODEL}. Anyone with this demo session can meter; the proxy is still authenticated. Key is never echoed back.</p>
+            </div>
             {openStep && <p className="text-[11px] text-[#8a96c2] mt-2">Step: {openStep}</p>}
             {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
+            {demoMode && <p className="text-[10px] text-[#5e6a91] mt-2">Demo mode on — Meter falls back to synthetic hold if no key is pasted.</p>}
           </Card>
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :

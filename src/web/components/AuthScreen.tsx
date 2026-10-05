@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Shield, Fingerprint, Loader2, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
-import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, getPasskeyTrust, clearPasskeyTrust } from '../lib/auth';
+import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, getPasskeyTrust, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 
 interface Props { onAuthenticated: () => void; }
 
@@ -13,6 +13,37 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [useWallet, setUseWallet] = useState(!trust && !hasPasskeyDevice);
   const [pkLoading, setPkLoading] = useState(false);
   const [pkError, setPkError] = useState('');
+  const [demoOn, setDemoOn] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState('');
+  const [demoModel, setDemoModel] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/health/mpp`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.demo?.enabled) {
+          setDemoOn(true);
+          if (d.demo.model) setDemoModel(d.demo.model);
+        }
+      })
+      .catch(() => { /* API down — wallet/passkey still available */ });
+  }, []);
+
+  const handleDemo = async () => {
+    setDemoLoading(true); setDemoError('');
+    try {
+      const out = await startDemoSession();
+      setToken(out.token);
+      setWalletAddress(out.userId);
+      notifyAuthChanged();
+      onAuthenticated();
+    } catch (e) {
+      setDemoError(e instanceof Error ? e.message : 'Demo login failed');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
   const effectiveTrust = trust ?? (hasPasskeyDevice ? { userId: localStorage.getItem('ks_passkey_user')!, passphrase: '' } : null);
   const shortAddr = effectiveTrust ? `${effectiveTrust.userId.slice(0, 4)}\u2026${effectiveTrust.userId.slice(-4)}` : '';
 
@@ -46,6 +77,16 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           ) : (
             <>
               <WalletConnector onConnect={onAuthenticated} />
+              {demoOn && (
+                <div className="mt-4 space-y-2">
+                  <button type="button" onClick={handleDemo} disabled={demoLoading} className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
+                    {demoLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                    <span className="text-[13px] font-semibold uppercase tracking-wider">{demoLoading ? 'Starting demo\u2026' : 'Start demo'}</span>
+                  </button>
+                  <p className="text-[11px] text-[#5e6a91]">Owner keystore signs in. {demoModel ? `Meter uses ${demoModel}.` : 'Open Activity → MPP to open / meter / capture.'}</p>
+                  {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}
+                </div>
+              )}
               {hasPasskeyDevice && <button type="button" onClick={() => setUseWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
             </>
           )}

@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 import { RevealField } from '../ui/RevealField';
 import { CodeBlock } from '../ui/CodeBlock';
 import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../../lib/auth';
+import { OPENROUTER_DEMO_MODEL, OPENROUTER_CHAT_PATH, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
 
 export const DeveloperSection: React.FC = () => {
   const token = getToken() ?? '';
@@ -39,6 +40,14 @@ export const DeveloperSection: React.FC = () => {
         </div>
       </Card>
 
+      <Card title="OpenRouter interface" description={`Inserted chat path + free model ${OPENROUTER_DEMO_MODEL}. Paste a key in Activity → Save to proxy, then this curl hits /vproxy.`}>
+        <div className="space-y-3">
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Auto-fill store</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openrouter","apiKey":"sk-or-v1-paste-here"}'`} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy {OPENROUTER_CHAT_PATH}</p><CodeBlock code={openrouterCurlSnippet(t)} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Python interface</p><CodeBlock code={openrouterPythonSnippet(t)} /></div>
+        </div>
+      </Card>
+
       <Card title="Python SDK" headerRight={<a href={`${API_BASE}/static/keyshield_sdk.py`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download \u2192</a>}>
         <CodeBlock code={`from keyshield_sdk import KeyShield\nks = KeyShield(token="${t}")\n\n# Store a key\nks.store("anthropic", "sk-ant-your-key")\n\n# Call Anthropic through the zero-trust proxy\nimport anthropic\nclient = anthropic.Anthropic(\n    base_url=ks.proxy_url("anthropic"),\n    api_key="placeholder",\n)\nmsg = client.messages.create(\n    model="claude-opus-4-5",\n    max_tokens=256,\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(msg.content[0].text)`} />
       </Card>
@@ -46,6 +55,7 @@ export const DeveloperSection: React.FC = () => {
       <Card title="Endpoint Reference">
         <div className="space-y-1.5">
           {[
+            { m: 'POST', p: '/auth/demo-session', d: 'KS_DEMO_MODE owner-signed demo login' },
             { m: 'POST', p: '/auth/login', d: 'userId + password \u2192 token' },
             { m: 'GET', p: '/auth/wallet-challenge', d: 'Get one-time signing challenge' },
             { m: 'POST', p: '/auth/wallet-login', d: 'Submit signature + passphrase \u2192 token' },

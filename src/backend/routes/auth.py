@@ -99,6 +99,98 @@ async def wallet_login(request: Request):
     return JSONResponse({"token": token, "userId": wallet_addr})
 
 
+@router.get("/auth/demo-status")
+async def auth_demo_status():
+    from .. import demo as demo_mod
+
+    return JSONResponse(demo_mod.demo_status())
+
+
+@router.post("/auth/demo-session")
+async def auth_demo_session():
+    """KS_DEMO_MODE only. Owner keystore signs a wallet-login challenge."""
+    import base64
+
+    from .. import demo as demo_mod
+    from ..mpp import owner_keystore
+
+    if not demo_mod.demo_enabled():
+        return JSONResponse(
+            {"error": "demo mode disabled; set KS_DEMO_MODE=1"},
+            status_code=403,
+        )
+    try:
+        nonce = secrets.token_hex(32)
+        sess_mod._record_nonce(nonce)
+        wallet_addr, signature = demo_mod.sign_wallet_challenge(nonce)
+    except owner_keystore.OwnerKeystoreError:
+        return JSONResponse({"error": "owner keystore unavailable"}, status_code=503)
+    except Exception:
+        return JSONResponse({"error": "owner keystore unavailable"}, status_code=503)
+
+    try:
+        from nacl.signing import VerifyKey
+        import base58 as _b58
+
+        vk = VerifyKey(_b58.b58decode(wallet_addr))
+        vk.verify(nonce.encode(), signature)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"signature verification failed: {exc}"},
+            status_code=401,
+        )
+
+    token = sess_mod.create_token(wallet_addr, "")
+    sess_mod._consume_nonce(nonce)
+    agent = demo_mod.seed_demo_agent(wallet_addr)
+    status = demo_mod.demo_status()
+    return JSONResponse(
+        {
+            "token": token,
+            "userId": wallet_addr,
+            "demo": True,
+            "agent": agent,
+            "upstream": status["upstream"],
+            "model": status["model"],
+            "openrouter_key_configured": status["openrouter_key_configured"],
+            "signature": base64.b64encode(signature).decode("ascii"),
+        }
+    )
+
+
+@router.post("/demo/upstream-key")
+async def demo_upstream_key(request: Request):
+    """Paste an OpenRouter (or other) key into the server vault. Demo only.
+
+    The key is stored under the session user. The response never echoes it.
+    This is not a public proxy — callers still need a demo session.
+    """
+    from .. import demo as demo_mod
+
+    if not demo_mod.demo_enabled():
+        return JSONResponse({"error": "demo mode disabled"}, status_code=403)
+    sess = await _session(_bearer(request) or "")
+    if not sess:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    body = await request.json()
+    api_key = (
+        body.get("apiKey") or body.get("api_key") or body.get("value") or ""
+    ).strip()
+    upstream = (body.get("upstream") or demo_mod.DEMO_UPSTREAM).strip() or demo_mod.DEMO_UPSTREAM
+    if not api_key:
+        return JSONResponse({"error": "apiKey required"}, status_code=400)
+    user_id = sess.get("user_id") or sess.get("userId")
+    item_id = demo_mod.store_upstream_key(str(user_id), upstream, api_key)
+    return JSONResponse(
+        {
+            "ok": True,
+            "id": item_id,
+            "upstream": upstream,
+            "stored": True,
+        }
+    )
+
+
 @router.post("/auth/agent-challenge")
 async def agent_challenge():
     nonce = secrets.token_hex(32)

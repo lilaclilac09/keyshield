@@ -7,6 +7,7 @@ interface Props { isOpen: boolean; onClose: () => void; onSave: (item: Partial<V
 
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI', tag: 'ai', domain: 'openai.com', placeholder: 'sk-proj-\u2026' },
+  { id: 'openrouter', name: 'OpenRouter', tag: 'ai', domain: 'openrouter.ai', placeholder: 'sk-or-v1-\u2026' },
   { id: 'anthropic', name: 'Anthropic Claude', tag: 'ai', domain: 'anthropic.com', placeholder: 'sk-ant-api03-\u2026' },
   { id: 'helius', name: 'Helius RPC', tag: 'rpc', domain: 'helius.dev', placeholder: 'xxxxxxxx-xxxx-\u2026' },
   { id: 'mistral', name: 'Mistral AI', tag: 'ai', domain: 'mistral.ai', placeholder: 'xxxxxxxxxxxxxxxx' },

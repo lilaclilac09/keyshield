@@ -864,3 +864,211 @@ async def mpp_submit_withdraw_tx(stream_id: int, request: Request):
         return _autosign_error(exc)
     return JSONResponse(result)
 
+
+@router.get("/mpp/streams/{stream_id}/usage")
+async def mpp_stream_usage(stream_id: int, request: Request):
+    """Per-stream artifacts for packages/shared getMppUsage."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import mpp_streams
+
+    try:
+        stream = _fetch_owned_stream(sess["user_id"], stream_id)
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    conn = mpp_streams._db()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, stream_id, calls, tokens, micro_usdc, ts, settled, artifact_hash
+              FROM mpp_artifacts
+             WHERE stream_id = ?
+             ORDER BY id DESC
+            """,
+            (int(stream_id),),
+        ).fetchall()
+    finally:
+        conn.close()
+    entries = [
+        {
+            "id": str(row[0]),
+            "stream_id": str(row[1]),
+            "agent_id": stream.get("agent_pubkey") or "",
+            "amount_usd": int(row[4] or 0) / 1_000_000,
+            "tokens_in": 0,
+            "tokens_out": int(row[3] or 0),
+            "model": stream.get("upstream") or "",
+            "timestamp": str(row[5] or 0),
+            "calls": int(row[2] or 0),
+            "settled": bool(row[6]),
+            "artifact_hash": row[7],
+        }
+        for row in rows
+    ]
+    return JSONResponse({"usage": entries, "stream": stream})
+
+
+@router.post("/mpp/streams/{stream_id}/demo-meter")
+async def mpp_demo_meter(stream_id: int, request: Request):
+    """Hold → optional OpenRouter call → record_usage. KS_DEMO_MODE only."""
+    import json
+    import time
+
+    from .. import demo as demo_mod
+    from ..billing import usage as usage_mod
+    from ..mpp import mpp_streams
+    from ..mpp.fulfillment import FulfillmentRejected
+    from ..proxy import api_router
+    from ..proxy.openrouter_interface import (
+        DEMO_CHAT_PATH,
+        DEMO_MODEL,
+        DEMO_UPSTREAM,
+        chat_body_bytes,
+        synthetic_fulfillment_body,
+    )
+
+    if not demo_mod.demo_enabled():
+        return JSONResponse({"detail": "demo mode disabled"}, status_code=403)
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    try:
+        stream = _fetch_owned_stream(sess["user_id"], stream_id)
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+
+    upstream = stream.get("upstream") or DEMO_UPSTREAM
+    prompt = str(payload.get("prompt") or "KeyShield demo ping")
+    estimate = payload.get("estimateMicroUsdc", payload.get("estimate"))
+    t0 = time.perf_counter()
+    try:
+        held = mpp_streams.hold_estimate(
+            sess["user_id"],
+            stream_id,
+            str(upstream),
+            None if estimate is None else int(estimate),
+        )
+    except mpp_streams.StreamClosed:
+        return JSONResponse(
+            {"detail": "StreamAlreadyClosed", "code": "stream_closed"},
+            status_code=409,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
+    except FulfillmentRejected as exc:
+        return JSONResponse(
+            {"detail": str(exc), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
+    hold_id = held.get("hold_id")
+
+    api_key, key_source = demo_mod.resolve_upstream_key(sess["user_id"], str(upstream))
+    call_upstream = str(upstream if api_key and upstream in api_router.PROVIDERS else DEMO_UPSTREAM)
+    if api_key and call_upstream not in api_router.PROVIDERS:
+        call_upstream = DEMO_UPSTREAM
+    live = False
+    status = 200
+    content = json.dumps(synthetic_fulfillment_body(prompt)).encode("utf-8")
+    if api_key and call_upstream in api_router.PROVIDERS:
+        try:
+            content, status, _cache = await api_router.call_rest(
+                call_upstream,
+                "POST",
+                DEMO_CHAT_PATH,
+                chat_body_bytes(prompt, model=str(payload.get("model") or DEMO_MODEL)),
+                api_key,
+            )
+            live = status < 400
+            if not live:
+                mpp_streams.release_hold(sess["user_id"], stream_id, int(hold_id or 0))
+                return JSONResponse(
+                    {
+                        "detail": "upstream call failed",
+                        "status": status,
+                        "source": key_source,
+                    },
+                    status_code=502,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("demo-meter upstream failed: %s", exc)
+            mpp_streams.release_hold(sess["user_id"], stream_id, int(hold_id or 0))
+            return JSONResponse({"detail": "upstream call failed"}, status_code=502)
+
+    tok_in, tok_out, cost_usd = usage_mod.extract_token_usage(str(upstream), content)
+    tokens = int(tok_in or 0) + int(tok_out or 0)
+    if tokens <= 0:
+        tokens = 8
+        tok_out = max(tok_out, 8)
+    try:
+        recorded = mpp_streams.record_usage(
+            sess["user_id"],
+            stream_id,
+            calls=1,
+            tokens=tokens,
+            status_code=status,
+            body=content,
+            content_type="application/json",
+            hold_id=int(hold_id) if hold_id else None,
+        )
+    except FulfillmentRejected as exc:
+        if hold_id:
+            try:
+                mpp_streams.release_hold(sess["user_id"], stream_id, int(hold_id))
+            except Exception:
+                pass
+        return JSONResponse(
+            {"detail": str(exc), "code": "unverified_fulfillment"},
+            status_code=400,
+        )
+    except mpp_streams.BudgetExceeded:
+        return JSONResponse(
+            {"detail": "BudgetExceeded", "code": "budget_exceeded"},
+            status_code=409,
+        )
+
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+    try:
+        usage_mod.log_call(
+            user_id=sess["user_id"],
+            upstream=str(upstream),
+            key_type="demo",
+            method="POST",
+            path=DEMO_CHAT_PATH,
+            tokens_in=tok_in,
+            tokens_out=tok_out,
+            cost_usd=cost_usd,
+            latency_ms=latency_ms,
+            status_code=status,
+        )
+    except Exception:
+        pass
+
+    artifact = recorded.get("artifact_hash") or recorded.get("pending_artifact_hash")
+    meter = (
+        f"calls=1 tokens={tokens} hold={hold_id} "
+        f"live={int(live)} source={key_source}"
+    )
+    return JSONResponse(
+        {
+            "stream": recorded,
+            "hold_id": hold_id,
+            "artifact_hash": artifact,
+            "tokens": tokens,
+            "live": live,
+            "source": key_source,
+            "model": DEMO_MODEL,
+            "meter": meter,
+        }
+    )
+

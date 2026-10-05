@@ -274,6 +274,45 @@ export async function autosignOpenStream(body: {
   return r.json();
 }
 
+export async function storeUpstreamKey(
+  upstream: string,
+  apiKey: string,
+): Promise<{ id: string }> {
+  const r = await apiFetch('/manage/store', {
+    method: 'POST',
+    body: JSON.stringify({ upstream, apiKey, name: `${upstream} key` }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'store failed' }));
+    throw new Error((err as { detail?: string; error?: string }).detail
+      ?? (err as { error?: string }).error
+      ?? 'store failed');
+  }
+  return r.json();
+}
+
+export async function demoMeterStream(
+  streamId: number,
+  prompt = 'KeyShield demo ping',
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/demo-meter`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'demo-meter failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'demo-meter failed');
+  }
+  return r.json();
+}
+
+export async function getMppStreamUsage(streamId: number): Promise<unknown[]> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/usage`);
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.usage ?? data ?? [];
+}
+
 export async function autosignWithdrawStream(
   streamId: number,
   withdrawAmountMicroUsdc?: number,
