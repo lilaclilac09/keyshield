@@ -1,6 +1,7 @@
 /**
  * Phantom SOL top-up — quote → SystemProgram.transfer (+ memo) → /billing/topup-solana.
- * Uses an explicit Devnet connection; the wallet-adapter provider is Mainnet.
+ * Uses an explicit connection from the quote cluster (Devnet by default).
+ * The wallet-adapter provider is also Devnet so Solflare will sign.
  */
 import {
   Connection,

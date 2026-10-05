@@ -86,7 +86,7 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
         </button>
       </div>
       {connecting && <button type="button" onClick={retry} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-white transition-colors">Cancel</button>}
-      <p className="text-center text-[11px] text-[#3e4a72]">Phantom \xb7 Solflare \xb7 Backpack \xb7 OKX</p>
+      <p className="text-center text-[11px] text-[#3e4a72]">Phantom · Solflare · Devnet</p>
     </div>
   );
 };
