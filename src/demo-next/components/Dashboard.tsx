@@ -8,6 +8,7 @@ import { useKeyShield } from '@/lib/useKeyShield';
 import { planVerifyExecute } from '@/lib/onchain';
 import { pingDevnetSlot } from '@/lib/rpc-ping';
 import { shortHex } from '@/lib/bytes';
+import { STATE_LABEL, VAULT_STATES, canRetryUi, formatLatencyMs } from '@/lib/vaultState';
 import {
   demoTopup,
   ensureDemoSession,
@@ -167,15 +168,12 @@ function DashboardInner() {
   const sol = home?.wallet.sol ?? null;
   const usdc = home?.wallet.usdc ?? null;
   const escrow = home?.ledger.balance_usd ?? 0;
-  const pingText = rpcMs === null ? '…' : `${rpcMs}ms`;
+  const pingText = formatLatencyMs(rpcMs);
   const banner = error || ks.snapshot.error;
   const prf = ks.snapshot.prf;
   const proof = ks.snapshot.proof;
   const planned = proof ? planVerifyExecute(proof, proof.publicInputs.spendCap) : null;
-  const passkeyGreen =
-    ks.snapshot.state === 'SETTLED' ||
-    Object.keys(ks.snapshot.pasted).length > 0 ||
-    ks.snapshot.grants.length > 0;
+  const lastTx = ks.snapshot.lastTx;
 
   return (
     <div className="h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
@@ -186,27 +184,19 @@ function DashboardInner() {
             KeyShield // Zero-Knowledge Agent Vault
           </h1>
           <div className="font-mono text-[11px] text-zinc-500 mt-1">
-            state={ks.snapshot.state}
+            state={ks.snapshot.state} · {STATE_LABEL[ks.snapshot.state]}
             {prf ? ` · prf=${prf.source}/${prf.verifyLayer}` : ''}
             {slot != null ? ` · slot=${slot}` : ''}
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="font-mono text-sm text-zinc-300 flex items-center gap-2">
-            <span className={`inline-block h-2.5 w-2.5 rounded-full ${rpcOk ? 'bg-emerald-400' : 'bg-red-500'}`} />
-            <span>
-              {pingText} <span className="text-zinc-500">(Devnet RPC)</span>
-            </span>
-          </div>
-          <WalletButton />
-        </div>
+        <WalletButton />
       </header>
 
       {banner && (
         <div className="shrink-0 px-6 py-2 text-sm text-red-300 border-b border-red-900/60 bg-red-950/40">
           {ks.snapshot.failKind ? `[${ks.snapshot.failKind}] ` : ''}
           {banner}
-          {!ks.snapshot.pendingLocked && ks.snapshot.state === 'FAILED' && (
+          {canRetryUi(ks.snapshot.state, ks.snapshot.pendingLocked) && (
             <button type="button" className="ml-3 underline" onClick={() => ks.resetPendingUi()}>
               Retry
             </button>
@@ -217,7 +207,7 @@ function DashboardInner() {
       <main className="flex-1 min-h-0 overflow-auto p-5 grid grid-cols-12 gap-4 content-start">
         <section className="col-span-12 lg:col-span-5 border border-zinc-800 bg-zinc-950 p-5 flex flex-col">
           <div className="text-[11px] tracking-[0.22em] text-zinc-500 uppercase mb-3">Wallet & Escrow</div>
-          <div className="grid grid-cols-2 gap-6 flex-1">
+          <div className="grid grid-cols-3 gap-4 flex-1">
             <div>
               <div className="text-zinc-500 text-sm">SOL</div>
               <div className="text-5xl font-semibold tabular-nums leading-none mt-1">{fmt(sol, 3)}</div>
@@ -228,7 +218,33 @@ function DashboardInner() {
               <div className="text-5xl font-semibold tabular-nums leading-none mt-1">{fmt(escrow, 2)}</div>
               <div className="text-zinc-600 text-xs mt-2">on-chain USDC {fmt(usdc, 2)}</div>
             </div>
+            <div>
+              <div className="text-zinc-500 text-sm flex items-center gap-2">
+                <span className={`inline-block h-2.5 w-2.5 rounded-full ${rpcOk ? 'bg-emerald-400' : 'bg-red-500'}`} />
+                Devnet RPC
+              </div>
+              <div className="text-5xl font-semibold tabular-nums leading-none mt-1">{pingText}</div>
+              <div className="text-zinc-600 text-xs mt-2">getLatestBlockhash · 3s</div>
+            </div>
           </div>
+          <ol className="mt-4 flex flex-wrap gap-1.5 font-mono text-[10px] uppercase tracking-wide">
+            {VAULT_STATES.map((s) => (
+              <li
+                key={s}
+                className={`border px-1.5 py-0.5 ${
+                  ks.snapshot.state === s
+                    ? s === 'FAILED'
+                      ? 'border-red-600 text-red-300'
+                      : s === 'SETTLED'
+                        ? 'border-emerald-600 text-emerald-300'
+                        : 'border-amber-600 text-amber-200'
+                    : 'border-zinc-800 text-zinc-600'
+                }`}
+              >
+                {s}
+              </li>
+            ))}
+          </ol>
           <button
             type="button"
             onClick={() => void onTopup()}
@@ -266,7 +282,7 @@ function DashboardInner() {
                         return (
                           <div className="flex flex-col items-end gap-1">
                             {ks.snapshot.pasted[row.id] && (
-                              <span className="text-emerald-400 text-sm font-medium">Decrypted & Pasted</span>
+                              <span className="text-emerald-400 text-sm font-medium">[Decrypted & Pasted]</span>
                             )}
                             {grant && (
                               <span className="text-emerald-300/80 text-xs font-mono">
@@ -279,16 +295,17 @@ function DashboardInner() {
                                   type="button"
                                   onClick={() => void onPasskeyDecrypt(row)}
                                   disabled={busy === `prf:${row.id}` || ks.snapshot.pendingLocked}
-                                  className={`h-9 px-3 border text-xs uppercase tracking-wide disabled:opacity-50 ${
-                                    passkeyGreen
-                                      ? 'border-emerald-700 text-emerald-300'
-                                      : 'border-zinc-700 hover:bg-zinc-900'
-                                  }`}
+                                  className="h-9 px-3 border border-zinc-700 text-xs uppercase tracking-wide hover:bg-zinc-900 disabled:opacity-50"
                                 >
                                   {ks.snapshot.state === 'AWAITING_PASSKEY' && busy === `prf:${row.id}`
                                     ? 'Touch ID…'
                                     : 'One-Click Passkey'}
                                 </button>
+                              )}
+                              {ks.snapshot.pasted[row.id] && (
+                                <span className="inline-flex h-9 items-center px-3 border border-emerald-600 bg-emerald-950/40 text-emerald-300 text-xs uppercase tracking-wide">
+                                  One-Click Passkey
+                                </span>
                               )}
                               {!grant && (
                                 <button
@@ -349,15 +366,13 @@ function DashboardInner() {
                     </span>
                   )}
                 </div>
-                {m.danger && (
-                  <button
-                    type="button"
-                    onClick={() => onSimulate(m.id)}
-                    className="text-xs uppercase tracking-wide text-zinc-400 hover:text-zinc-100"
-                  >
-                    Request
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => onSimulate(m.id)}
+                  className="text-xs uppercase tracking-wide text-zinc-400 hover:text-zinc-100"
+                >
+                  Request
+                </button>
               </li>
             ))}
           </ul>
@@ -402,6 +417,11 @@ function DashboardInner() {
                 planned ixs: {planned.ixs.map((i) => i.name).join(' → ')} · verifier={planned.verifier}
               </div>
             )}
+            <div>
+              tx={lastTx.layer}
+              {lastTx.signature ? ` · sig=${lastTx.signature.slice(0, 12)}…` : ' · no-sig'}
+              {lastTx.explorer ? ` · ${lastTx.explorer}` : ''} · {lastTx.note}
+            </div>
             <div>
               settlement={ks.snapshot.settlement} · hold={ks.snapshot.holdId || '—'}
               {ks.snapshot.hold
@@ -453,11 +473,25 @@ function DashboardInner() {
             </p>
             <p className="text-zinc-500 text-xs font-mono mt-2">state={ks.snapshot.state}</p>
             {ks.snapshot.state === 'SETTLED' && (
-              <p className="text-emerald-400 mt-4">
-                Authorized · {prf?.source} PRF · proof {proof?.kind} · settlement {ks.snapshot.settlement}
+              <div className="text-emerald-400 mt-4 space-y-1">
+                <p>
+                  Authorized · {prf?.source} PRF · proof {proof?.kind} · settlement {ks.snapshot.settlement}
+                </p>
+                <p className="font-mono text-xs text-emerald-200/80">{lastTx.note}</p>
+                {lastTx.explorer ? (
+                  <a className="underline text-sm" href={lastTx.explorer} target="_blank" rel="noreferrer">
+                    Explorer {lastTx.signature?.slice(0, 8)}…
+                  </a>
+                ) : (
+                  <p className="text-xs text-zinc-400">no Devnet signature — {lastTx.layer}</p>
+                )}
+              </div>
+            )}
+            {ks.snapshot.state === 'FAILED' && (
+              <p className="text-red-400 mt-4 font-mono text-sm">
+                {ks.snapshot.failKind}: {ks.snapshot.error}
               </p>
             )}
-            {ks.snapshot.state === 'FAILED' && <p className="text-red-400 mt-4">{ks.snapshot.error}</p>}
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
@@ -465,7 +499,15 @@ function DashboardInner() {
                 disabled={ks.snapshot.pendingLocked || ks.snapshot.state === 'AWAITING_PASSKEY' || ks.snapshot.state === 'GENERATING_PROOF'}
                 className="flex-1 h-12 border border-amber-600 bg-amber-950/40 text-amber-100 uppercase tracking-wide text-sm hover:bg-amber-900/40 disabled:opacity-50"
               >
-                {ks.snapshot.state === 'AWAITING_PASSKEY' ? 'Waiting…' : 'Verify with Passkey'}
+                {ks.snapshot.state === 'AWAITING_PASSKEY'
+                  ? 'Waiting…'
+                  : ks.snapshot.state === 'GENERATING_PROOF'
+                    ? 'Proving…'
+                    : ks.snapshot.state === 'HOLDING'
+                      ? 'Holding…'
+                      : ks.snapshot.state === 'SUBMITTING_DEVNET'
+                        ? 'Submitting…'
+                        : 'Verify with Passkey'}
               </button>
               <button
                 type="button"

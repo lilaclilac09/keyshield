@@ -26,15 +26,10 @@ import {
   verifyUpstream,
   type PublicHold,
 } from './fulfillment';
+import { signalPasskeySuccess } from './feedback';
+import { chainFeedback, type ChainFeedback, type VaultState } from './vaultState';
 
-export type VaultState =
-  | 'IDLE'
-  | 'AWAITING_PASSKEY'
-  | 'GENERATING_PROOF'
-  | 'HOLDING'
-  | 'SUBMITTING_DEVNET'
-  | 'SETTLED'
-  | 'FAILED';
+export type { VaultState } from './vaultState';
 
 export type FailKind = 'local-cancel' | 'local-error' | 'chain-failed' | 'pending' | null;
 
@@ -50,6 +45,7 @@ export interface KeyShieldSnapshot {
   hold: PublicHold | null;
   settlement: 'none' | 'local-hold' | 'mpp-demo-meter' | 'aborted' | 'clawback';
   pendingLocked: boolean;
+  lastTx: ChainFeedback;
 }
 
 const PROXY_GRANT = (upstream: string) => `https://api.ks.local/vproxy/${upstream}/`;
@@ -64,6 +60,7 @@ export function useKeyShield() {
   const [holdId, setHoldId] = useState<string | null>(null);
   const [settlement, setSettlement] = useState<KeyShieldSnapshot['settlement']>('none');
   const [pendingLocked, setPendingLocked] = useState(false);
+  const [lastTx, setLastTx] = useState<ChainFeedback>(chainFeedback({ note: 'idle', layer: 'none' }));
   const sessionKeyRef = useRef<CryptoKey | null>(null);
   const pendingSigRef = useRef<string | null>(null);
   const treeRef = useRef<CredentialMerkleTree>(new CredentialMerkleTree());
@@ -111,8 +108,10 @@ export function useKeyShield() {
             /* clipboard may be blocked */
           }
           setPasted((p) => ({ ...p, [row.id]: true }));
+          signalPasskeySuccess();
         } else {
           putGrantBytes(row.id, unlocked, { ttlMs: GRANT_TTL_MS, upstream: row.upstream });
+          signalPasskeySuccess();
         }
         zeroize(unlocked);
         consumeWitness(derived.witness);
@@ -197,6 +196,7 @@ export function useKeyShield() {
             fail('local-error', 'DisputeWindowActive — no clawback');
             return;
           }
+          setLastTx(chainFeedback({ note: 'force_clawback refund — local, not ix #28', layer: 'local-hold' }));
           setSettlement('clawback');
           setState('SETTLED');
           return;
@@ -206,6 +206,7 @@ export function useKeyShield() {
         if (!verified.ok) {
           abortHold(hid, verified.reason || 'unverified fulfillment');
           setSettlement('aborted');
+          setLastTx(chainFeedback({ note: `${verified.reason} — no debit`, layer: 'none' }));
           fail('local-error', `${verified.reason || 'unverified fulfillment'} — no debit`);
           return;
         }
@@ -220,14 +221,22 @@ export function useKeyShield() {
           if (!meter.ok) {
             abortHold(hid, meter.detail);
             setSettlement('aborted');
+            setLastTx(chainFeedback({ note: `${meter.detail} — no debit`, layer: 'none' }));
             fail('chain-failed', `${meter.detail} — no debit`);
             return;
           }
           captureHold(hid);
           setSettlement('mpp-demo-meter');
+          setLastTx(chainFeedback({ note: meter.detail, layer: 'mpp-demo-meter' }));
         } else {
           captureHold(hid);
           setSettlement('local-hold');
+          setLastTx(
+            chainFeedback({
+              note: 'local hold captured — no Devnet signature (live 41P2wHK rejects ix 40)',
+              layer: 'local-hold',
+            }),
+          );
         }
         setState('SETTLED');
       } catch (e) {
@@ -265,6 +274,7 @@ export function useKeyShield() {
         fail('local-error', 'clawback failed — hold not in-flight');
         return;
       }
+      setLastTx(chainFeedback({ note: 'force_clawback refund — local, not ix #28', layer: 'local-hold' }));
       setSettlement('clawback');
       setState('SETTLED');
     },
@@ -283,6 +293,7 @@ export function useKeyShield() {
     hold: holdId ? getHold(holdId) ?? null : null,
     settlement,
     pendingLocked,
+    lastTx,
   };
 
   return {
