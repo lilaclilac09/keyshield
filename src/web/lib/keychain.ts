@@ -56,6 +56,7 @@ export interface KeychainHome {
     demo: boolean;
   };
   rpc_cache: { lowest_ttl_sec: number | null; writes_bypass: string[] };
+  latency?: { wallet_ms: number; online: boolean };
 }
 
 const DETECTORS: { upstream: string; re: RegExp }[] = [

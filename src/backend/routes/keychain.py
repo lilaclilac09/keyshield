@@ -68,8 +68,10 @@ async def keychain_home(request: Request):
             except Exception:
                 address = ""
 
+    t0 = time.perf_counter()
     helius_key = os.getenv("KS_HELIUS_API_KEY", "").strip() or demo_mod.lookup_vault_key(user_id, "helius")
     wallet = await kc.fetch_wallet_balances(address, helius_key or None)
+    wallet_ms = round((time.perf_counter() - t0) * 1000.0, 2)
     apis = kc.list_stored_upstreams(user_id)
     catalog = kc.rpc_cache_catalog()
 
@@ -113,6 +115,10 @@ async def keychain_home(request: Request):
         "rpc_cache": {
             "lowest_ttl_sec": catalog.get("lowest_ttl_sec"),
             "writes_bypass": catalog.get("writes_bypass"),
+        },
+        "latency": {
+            "wallet_ms": wallet_ms,
+            "online": wallet.get("error") is None,
         },
     }
     return JSONResponse(body)

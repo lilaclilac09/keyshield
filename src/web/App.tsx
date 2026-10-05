@@ -68,6 +68,7 @@ const MainContent: React.FC = () => {
   const [home, setHome] = useState<KeychainHome | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeLoading, setHomeLoading] = useState(false);
+  const [homeMs, setHomeMs] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -97,9 +98,10 @@ const MainContent: React.FC = () => {
     if (!isAuthenticated) return;
     const addr = publicKey?.toBase58() ?? getWalletAddress() ?? '';
     setHomeLoading(true);
+    const t0 = performance.now();
     void fetchKeychainHome(addr)
-      .then((snap) => { setHome(snap); setHomeError(null); })
-      .catch((err) => setHomeError(err instanceof Error ? err.message : 'home failed'))
+      .then((snap) => { setHome(snap); setHomeError(null); setHomeMs(performance.now() - t0); })
+      .catch((err) => { setHomeError(err instanceof Error ? err.message : 'home failed'); setHomeMs(performance.now() - t0); })
       .finally(() => setHomeLoading(false));
   }, [isAuthenticated, publicKey]);
 
@@ -143,6 +145,7 @@ const MainContent: React.FC = () => {
                   home={home}
                   loading={homeLoading}
                   error={homeError}
+                  homeMs={homeMs}
                   walletConnected={!!fullAddr}
                   onRefresh={() => { refreshHome(); refresh(); }}
                   onUnlock={unlock}

@@ -29,7 +29,7 @@ export const HealthBadge: React.FC = () => {
   return (
     <div className="flex items-center gap-2 h-10 px-3 rounded-lg border border-[#243365] text-[10px] text-[#8a96c2] uppercase tracking-wider" title={state === 'ok' ? `Backend healthy \xb7 ${latency}ms` : 'Backend status unknown'}>
       <span className={`w-1.5 h-1.5 rounded-full ${color} ${state === 'ok' ? 'animate-pulse' : ''}`} />
-      <span className="hidden sm:inline">{state === 'down' ? 'Offline' : state === 'slow' ? 'Slow' : 'API'}</span>
+      <span className="hidden sm:inline">{state === 'unknown' ? 'Checking…' : state === 'down' ? `Offline · ${latency}ms` : state === 'slow' ? `Slow · ${latency}ms` : `Online · ${latency}ms`}</span>
     </div>
   );
 };

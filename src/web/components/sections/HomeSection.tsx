@@ -15,6 +15,7 @@ interface Props {
   home: KeychainHome | null;
   loading?: boolean;
   error?: string | null;
+  homeMs?: number | null;
   walletConnected: boolean;
   passkeyUnlocked?: boolean;
   onRefresh: () => void;
@@ -39,7 +40,7 @@ const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, labe
 );
 
 export const HomeSection: React.FC<Props> = ({
-  home, loading, error, walletConnected, onRefresh, onUnlock, unlocking, onGo,
+  home, loading, error, homeMs, walletConnected, onRefresh, onUnlock, unlocking, onGo,
 }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState<'save' | 'call' | string | null>(null);
@@ -145,11 +146,11 @@ export const HomeSection: React.FC<Props> = ({
       <div>
         <h3 className="text-[20px] font-semibold text-white mb-3">Connection</h3>
         <div className="flex flex-wrap gap-3">
-          <Pill ok={!!conn?.api && !error} label="API" sub={loading ? 'Loading…' : error || 'Session live'} />
+          <Pill ok={!!conn?.api && !error} label="API" sub={loading ? 'Connecting…' : error ? `Offline · ${error}` : `Online${homeMs != null ? ` · ${Math.round(homeMs)}ms` : ''}`} />
           <Pill ok={walletConnected && !!wallet?.address} label="Wallet" sub={wallet?.address ? `${wallet.address.slice(0, 4)}…${wallet.address.slice(-4)}` : 'Not connected'} />
-          <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'Unlock to decrypt locally'} />
+          <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'You keep the secret — unlock to verify'} />
           <Pill ok={!!conn?.autosign} label="Autosign" sub={conn?.autosign ? 'Owner keystore ready' : 'Off'} />
-          <Pill ok={conn?.rpc === 'helius-cache' || conn?.rpc === 'public'} label="RPC" sub={`${conn?.lowest_ttl_sec ?? 2}s lowest TTL · writes never cache`} />
+          <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
         </div>
         {onUnlock && !vaultOpen && (
           <button
@@ -169,7 +170,7 @@ export const HomeSection: React.FC<Props> = ({
           <h3 className="text-[20px] font-semibold text-white">Paste → detect → one-click call</h3>
         </div>
         <p className="text-[15px] text-[#8a96c2]">
-          Paste a key, or save one from the page via the extension. Frameworks use <code className="text-white">/vproxy/…</code> — the raw key never leaves the vault.
+          Paste a key, or save one from the page via the extension. Agent passwords and private keys stay on your device — passkey / PRF verifies without the server seeing plaintext. Frameworks use <code className="text-white">/vproxy/…</code>.
         </p>
         <textarea
           value={paste}

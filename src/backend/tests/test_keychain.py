@@ -145,6 +145,7 @@ def test_store_then_home_lists_prefix_only(tmp_path, monkeypatch):
     assert snap["rpc_cache"]["lowest_ttl_sec"] == 2
     assert "ledger" in snap
     assert "wallet" in snap
+    assert "wallet_ms" in snap.get("latency", {})
 
 
 def test_home_unauthorized():
