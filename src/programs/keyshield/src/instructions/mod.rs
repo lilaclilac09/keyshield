@@ -56,7 +56,7 @@ pub enum Instruction {
     PayForService = 32,
     ClosePaymentStream = 33,
 
-    // Passkey-commitment escrow (40-43). Proof check is scaffold, not Groth16.
+    // Passkey-commitment escrow (40-43). Scaffold tagged; Groth16 fail-closed.
     InitZkVault = 40,
     UpdateZkPolicy = 41,
     ExecuteZkAction = 42,

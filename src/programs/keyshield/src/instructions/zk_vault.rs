@@ -1,9 +1,9 @@
 //! Passkey-commitment escrow — ix #40–#43.
 //!
 //! Seeds: `[b"keyshield", owner]` and `[b"nullifier", nullifier]`.
-//! Proof bytes are a **scaffold assertion** (`proof` non-empty). This is
-//! not alt_bn128 / Groth16 pairing. Do not advertise it as on-chain
-//! Passkey verification.
+//! Proof bytes are tagged: `0x00` scaffold-sha256 (binds public inputs)
+//! or `0x01` Groth16. Groth16 has **no VK installed** and fails closed.
+//! Not on-chain Passkey verification.
 
 use pinocchio::{
     account_info::AccountInfo,
@@ -19,13 +19,14 @@ use pinocchio_token::instructions::TransferChecked;
 
 use crate::error::KeyShieldError;
 use crate::guards;
+use crate::zk_verify::{verify_authorization_proof, ProofKind, ZkPublicInputs};
 
 pub const ZK_VAULT_SEED: &[u8] = b"keyshield";
 pub const ZK_NULLIFIER_SEED: &[u8] = b"nullifier";
 pub const ZK_VAULT_DISCRIMINATOR: [u8; 8] = *b"zkvault\0";
 pub const ZK_NULLIFIER_DISCRIMINATOR: [u8; 8] = *b"zknull\0\0";
 
-pub const ZK_VAULT_SIZE: usize = 8 + 32 + 8 + 32 + 8 + 1 + 1;
+pub const ZK_VAULT_SIZE: usize = 8 + 32 + 8 + 32 + 8 + 1 + 1 + 32 + 8;
 pub const ZK_NULLIFIER_SIZE: usize = 8 + 1;
 
 mod off {
@@ -36,9 +37,11 @@ mod off {
     pub const NONCE: usize = 80;
     pub const BUMP: usize = 88;
     pub const REVOKED: usize = 89;
+    pub const LAST_ACTION: usize = 90;
+    pub const LAST_AMOUNT: usize = 122;
 }
 
-/// Host-oracle + on-chain execute gates. Groth16 pairing is not here.
+/// Host-oracle + on-chain execute gates. Groth16 pairing is fail-closed.
 pub fn assert_zk_execute(
     amount: u64,
     spend_cap: u64,
@@ -47,15 +50,13 @@ pub fn assert_zk_execute(
     valid_until_slot: u64,
     proof: &[u8],
     nullifier_used: bool,
-) -> Result<(), ProgramError> {
+    pubs: &ZkPublicInputs,
+) -> Result<ProofKind, ProgramError> {
     if revoked {
         return Err(KeyShieldError::ZkVaultRevoked.into());
     }
     if nullifier_used {
         return Err(KeyShieldError::NullifierUsed.into());
-    }
-    if proof.is_empty() {
-        return Err(KeyShieldError::InvalidZKProof.into());
     }
     if now_slot > valid_until_slot {
         return Err(KeyShieldError::ProofExpired.into());
@@ -63,7 +64,10 @@ pub fn assert_zk_execute(
     if amount > spend_cap {
         return Err(KeyShieldError::CapExceeded.into());
     }
-    Ok(())
+    if amount != pubs.amount || valid_until_slot != pubs.valid_until {
+        return Err(KeyShieldError::InvalidKeyData.into());
+    }
+    verify_authorization_proof(proof, pubs)
 }
 
 pub fn assert_zk_owner(signer_is_owner: bool) -> Result<(), ProgramError> {
@@ -226,6 +230,8 @@ pub fn process_init_zk_vault(
     write_u64(&mut buf, off::NONCE, 0)?;
     buf[off::BUMP] = bump;
     buf[off::REVOKED] = 0;
+    buf[off::LAST_ACTION..off::LAST_ACTION + 32].fill(0);
+    write_u64(&mut buf, off::LAST_AMOUNT, 0)?;
     Ok(())
 }
 
@@ -281,7 +287,8 @@ pub fn process_update_zk_policy(
 /// Accounts — USDC path (7):
 ///   payer signer, vault, nullifier, vault_ata, dest_ata, mint, token
 ///
-/// Proof check is a non-empty-bytes scaffold. Not alt_bn128 / Groth16.
+/// Proof: `0x00 || scaffold_digest` or `0x01 || groth16(A,B,C)`.
+/// Groth16 fails closed until a VK is installed.
 pub fn process_execute_zk_action(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -318,6 +325,8 @@ pub fn process_execute_zk_action(
 
     let mut nullifier = [0u8; 32];
     nullifier.copy_from_slice(&data[0..32]);
+    let mut action_hash = [0u8; 32];
+    action_hash.copy_from_slice(&data[32..64]);
     let amount = u64::from_le_bytes(
         data[64..72]
             .try_into()
@@ -333,7 +342,7 @@ pub fn process_execute_zk_action(
 
     let now_slot = Clock::get()?.slot;
 
-    let (spend_cap, bump, owner_bytes, revoked) = {
+    let (spend_cap, bump, owner_bytes, revoked, merkle_root) = {
         let buf = vault.try_borrow_data()?;
         if buf.len() < ZK_VAULT_SIZE
             || &buf[off::DISC..off::DISC + 8] != ZK_VAULT_DISCRIMINATOR.as_ref()
@@ -344,7 +353,9 @@ pub fn process_execute_zk_action(
         let bump = buf[off::BUMP];
         let mut owner = [0u8; 32];
         owner.copy_from_slice(&buf[off::OWNER..off::OWNER + 32]);
-        (cap, bump, owner, buf[off::REVOKED] != 0)
+        let mut root = [0u8; 32];
+        root.copy_from_slice(&buf[off::ROOT..off::ROOT + 32]);
+        (cap, bump, owner, buf[off::REVOKED] != 0, root)
     };
 
     let vault_bump_seed = [bump];
@@ -366,7 +377,14 @@ pub fn process_execute_zk_action(
             nbuf.len() >= 9 && &nbuf[0..8] == ZK_NULLIFIER_DISCRIMINATOR.as_ref() && nbuf[8] != 0
         };
 
-    assert_zk_execute(
+    let pubs = ZkPublicInputs {
+        nullifier,
+        action_hash,
+        amount,
+        valid_until,
+        merkle_root,
+    };
+    let _kind = assert_zk_execute(
         amount,
         spend_cap,
         revoked,
@@ -374,6 +392,7 @@ pub fn process_execute_zk_action(
         valid_until,
         proof,
         nullifier_used,
+        &pubs,
     )?;
 
     if usdc_path {
@@ -466,6 +485,8 @@ pub fn process_execute_zk_action(
                 .checked_add(1)
                 .ok_or(KeyShieldError::ArithmeticOverflow)?,
         )?;
+        buf[off::LAST_ACTION..off::LAST_ACTION + 32].copy_from_slice(&action_hash);
+        write_u64(&mut buf, off::LAST_AMOUNT, amount)?;
     }
 
     if amount > 0 {
@@ -532,12 +553,23 @@ mod tests {
         assert_zk_execute, assert_zk_init_fresh, assert_zk_owner, assert_zk_sol_available,
     };
     use crate::error::KeyShieldError;
+    use crate::zk_verify::{encode_scaffold_proof, ProofKind, ZkPublicInputs};
     use pinocchio::program_error::ProgramError;
 
     fn code(err: ProgramError) -> u32 {
         match err {
             ProgramError::Custom(c) => c,
             _ => 0,
+        }
+    }
+
+    fn pubs(amount: u64, until: u64) -> ZkPublicInputs {
+        ZkPublicInputs {
+            nullifier: [1u8; 32],
+            action_hash: [2u8; 32],
+            amount,
+            valid_until: until,
+            merkle_root: [3u8; 32],
         }
     }
 
@@ -556,31 +588,38 @@ mod tests {
 
     #[test]
     fn replay_nullifier_is_rejected() {
-        let err = assert_zk_execute(1, 10, false, 1, 10, &[1], true).unwrap_err();
+        let p = pubs(1, 10);
+        let err = assert_zk_execute(1, 10, false, 1, 10, &[1], true, &p).unwrap_err();
         assert_eq!(code(err), KeyShieldError::NullifierUsed as u32);
     }
 
     #[test]
     fn cap_exceeded_does_not_debit() {
-        let err = assert_zk_execute(11, 10, false, 1, 10, &[1], false).unwrap_err();
+        let p = pubs(11, 10);
+        let err = assert_zk_execute(11, 10, false, 1, 10, &[1], false, &p).unwrap_err();
         assert_eq!(code(err), KeyShieldError::CapExceeded as u32);
     }
 
     #[test]
     fn empty_proof_is_invalid() {
-        let err = assert_zk_execute(1, 10, false, 1, 10, &[], false).unwrap_err();
+        let p = pubs(1, 10);
+        let err = assert_zk_execute(1, 10, false, 1, 10, &[], false, &p).unwrap_err();
         assert_eq!(code(err), KeyShieldError::InvalidZKProof as u32);
     }
 
     #[test]
     fn expired_slot_is_rejected() {
-        let err = assert_zk_execute(1, 10, false, 11, 10, &[1], false).unwrap_err();
+        let p = pubs(1, 10);
+        let err = assert_zk_execute(1, 10, false, 11, 10, &[1], false, &p).unwrap_err();
         assert_eq!(code(err), KeyShieldError::ProofExpired as u32);
     }
 
     #[test]
     fn happy_path_passes() {
-        assert_zk_execute(5, 10, false, 5, 10, &[1, 2, 3], false).unwrap();
+        let p = pubs(5, 10);
+        let proof = encode_scaffold_proof(&p);
+        let kind = assert_zk_execute(5, 10, false, 5, 10, &proof, false, &p).unwrap();
+        assert_eq!(kind, ProofKind::ScaffoldSha256);
     }
 
     #[test]

@@ -11,6 +11,8 @@ import {
   buildVerifyAndExecuteIx,
   deriveZkNullifierPda,
   deriveZkVaultPda,
+  encodeScaffoldProof,
+  PROOF_KIND_SCAFFOLD,
   u64le,
 } from "../scripts/zk_vault_ix.ts";
 
@@ -65,7 +67,16 @@ describe("zk vault ix builders", () => {
     const nullifier = as32("11".repeat(32));
     const [nPda, nBump] = deriveZkNullifierPda(PROGRAM_ID, nullifier);
     const action = Buffer.alloc(32, 2);
-    const proof = Buffer.from([1, 2, 3, 4]);
+    const root = Buffer.alloc(32, 3);
+    const proof = encodeScaffoldProof({
+      nullifier,
+      actionHash: action,
+      amount: 5_000_000,
+      validUntilSlot: 99,
+      merkleRoot: root,
+    });
+    expect(proof[0]).toBe(PROOF_KIND_SCAFFOLD);
+    expect(proof).toHaveLength(33);
     const ix = buildVerifyAndExecuteIx({
       programId: PROGRAM_ID,
       payer,

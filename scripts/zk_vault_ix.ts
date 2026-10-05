@@ -3,8 +3,10 @@
  * `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`.
  *
  * Seeds: `[b"keyshield", owner]` and `[b"nullifier", hash]`.
- * On-chain proof check is a non-empty-bytes scaffold, not Groth16 / alt_bn128.
+ * On-chain proof: `0x00` scaffold digest binds public inputs.
+ * `0x01` Groth16 is rejected until a VK is installed (not live).
  */
+import { createHash } from "node:crypto";
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 
 export const PROGRAM_ID_DEFAULT = "41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j";
@@ -15,6 +17,28 @@ export const IX_REGISTER_ROOT = 41;
 export const IX_VERIFY_AND_EXECUTE = 42;
 export const IX_REVOKE_ZK_GRANT = 43;
 export const ONCHAIN_VERIFIER = "scaffold-sha256" as const;
+export const PROOF_KIND_SCAFFOLD = 0x00;
+export const PROOF_KIND_GROTH16 = 0x01;
+export const GROTH16_VK_INSTALLED = false;
+export const SCAFFOLD_DOMAIN = Buffer.from("ks-scaffold-v1");
+
+export function encodeScaffoldProof(args: {
+  nullifier: Buffer | Uint8Array | number[] | string;
+  actionHash: Buffer | Uint8Array | number[] | string;
+  amount: number | bigint;
+  validUntilSlot: number | bigint;
+  merkleRoot: Buffer | Uint8Array | number[] | string;
+}): Buffer {
+  const pre = Buffer.concat([
+    SCAFFOLD_DOMAIN,
+    as32(args.nullifier),
+    as32(args.actionHash),
+    u64le(args.amount),
+    u64le(args.validUntilSlot),
+    as32(args.merkleRoot),
+  ]);
+  return Buffer.concat([Buffer.from([PROOF_KIND_SCAFFOLD]), createHash("sha256").update(pre).digest()]);
+}
 
 export function u64le(n: number | bigint): Buffer {
   const b = Buffer.alloc(8);

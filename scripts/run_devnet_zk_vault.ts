@@ -35,6 +35,7 @@ import {
   buildVerifyAndExecuteIx,
   deriveZkNullifierPda,
   deriveZkVaultPda,
+  encodeScaffoldProof,
 } from "./zk_vault_ix.ts";
 import {
   PROGRAM_ID_DEFAULT as LIVE_PROGRAM,
@@ -199,7 +200,13 @@ async function main(): Promise<void> {
       amount: EXECUTE_LAMPORTS,
       validUntilSlot: slot + 10_000,
       nullifierBump,
-      proof: Buffer.from([1, 2, 3, 4]),
+      proof: encodeScaffoldProof({
+        nullifier,
+        actionHash,
+        amount: EXECUTE_LAMPORTS,
+        validUntilSlot: slot + 10_000,
+        merkleRoot: root,
+      }),
     });
     const execSim = await simulate(conn, user, [execIx]);
     console.log("Simulate verify_and_execute (ix 42):", execSim.ok ? "OK" : execSim.err);

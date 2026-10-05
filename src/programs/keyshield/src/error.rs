@@ -104,6 +104,12 @@ pub enum KeyShieldError {
     ZkVaultRevoked = 6121,
     /// Zk escrow account missing or wrong discriminator.
     ZkVaultNotFound = 6122,
+    /// Groth16 tag used but no verification key is installed.
+    Groth16VkMissing = 6123,
+    /// `sol_alt_bn128_group_op` pairing product was not 1.
+    PairingCheckFailed = 6124,
+    /// Scaffold proof digest does not bind the public inputs.
+    ScaffoldTranscriptMismatch = 6125,
 }
 
 impl From<KeyShieldError> for ProgramError {

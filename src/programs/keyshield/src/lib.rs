@@ -42,6 +42,7 @@ pub mod guards;
 pub mod instructions;
 pub mod pda;
 pub mod state;
+pub mod zk_verify;
 
 use instructions::{
     access_key::process_access_key,

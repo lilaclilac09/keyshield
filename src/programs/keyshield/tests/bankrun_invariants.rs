@@ -144,6 +144,9 @@ fn zk_vault_policy_and_replay_matrix() {
     use keyshield::instructions::zk_vault::{
         assert_zk_execute, assert_zk_init_fresh, assert_zk_owner, assert_zk_sol_available,
     };
+    use keyshield::zk_verify::{
+        assert_groth16_ready, encode_scaffold_proof, ZkPublicInputs, GROTH16_VK_INSTALLED,
+    };
 
     assert_zk_init_fresh(false).unwrap();
     assert_eq!(
@@ -154,18 +157,38 @@ fn zk_vault_policy_and_replay_matrix() {
         code(assert_zk_owner(false).unwrap_err()),
         KeyShieldError::NotOwner as u32
     );
+    let replay = ZkPublicInputs {
+        nullifier: [1u8; 32],
+        action_hash: [2u8; 32],
+        amount: 1,
+        valid_until: 10,
+        merkle_root: [3u8; 32],
+    };
     assert_eq!(
-        code(assert_zk_execute(1, 10, false, 1, 10, &[1], true).unwrap_err()),
+        code(assert_zk_execute(1, 10, false, 1, 10, &[1], true, &replay).unwrap_err()),
         KeyShieldError::NullifierUsed as u32
     );
+    let over = ZkPublicInputs {
+        amount: 11,
+        ..replay
+    };
     assert_eq!(
-        code(assert_zk_execute(11, 10, false, 1, 10, &[1], false).unwrap_err()),
+        code(assert_zk_execute(11, 10, false, 1, 10, &[1], false, &over).unwrap_err()),
         KeyShieldError::CapExceeded as u32
     );
-    assert_zk_execute(5, 10, false, 5, 10, &[1, 2], false).unwrap();
+    let ok = ZkPublicInputs {
+        amount: 5,
+        ..replay
+    };
+    assert_zk_execute(5, 10, false, 5, 10, &encode_scaffold_proof(&ok), false, &ok).unwrap();
     assert_zk_sol_available(5, 20, 10).unwrap();
     assert_eq!(
         code(assert_zk_sol_available(11, 20, 10).unwrap_err()),
         KeyShieldError::InsufficientBalance as u32
+    );
+    assert!(!GROTH16_VK_INSTALLED);
+    assert_eq!(
+        code(assert_groth16_ready(false, true).unwrap_err()),
+        KeyShieldError::Groth16VkMissing as u32
     );
 }

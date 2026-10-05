@@ -1,15 +1,19 @@
 /**
  * Pinocchio zk-vault surface on 41P2wHK… — ixs 40 / 41 / 42.
  *
- * Proof verification on-chain is `scaffold-sha256` (non-empty bytes).
- * This is not alt_bn128 pairing and not Groth16. Passkey verify stays
- * client-layer (WebAuthn PRF).
+ * On-chain proof is tagged:
+ *   0x00 scaffold-sha256 — binds public inputs (not pairing)
+ *   0x01 Groth16 — rejected until a VK is installed
+ * Passkey verify stays client-layer (WebAuthn PRF).
  */
 import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js';
-import { fromHex } from './bytes';
+import { concatBytes, fromHex, sha256, te } from './bytes';
 import type { AuthorizationProof } from './zk';
 
 export const ONCHAIN_VERIFIER = 'scaffold-sha256' as const;
+export const PROOF_KIND_SCAFFOLD = 0x00;
+export const PROOF_KIND_GROTH16 = 0x01;
+export const GROTH16_VK_INSTALLED = false;
 export const PROGRAM_ID_DEFAULT = '41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j';
 export const ZK_VAULT_SEED = new TextEncoder().encode('keyshield');
 export const ZK_NULLIFIER_SEED = new TextEncoder().encode('nullifier');
@@ -46,6 +50,26 @@ function b32(hex: string): Uint8Array {
   const u = fromHex(hex);
   if (u.length !== 32) throw new Error(`expected 32-byte hex, got ${u.length}`);
   return u;
+}
+
+export async function encodeScaffoldOnchainProof(args: {
+  nullifierHex: string;
+  actionHashHex: string;
+  amount: bigint | number | string;
+  validUntilSlot: bigint | number | string;
+  merkleRootHex: string;
+}): Promise<Uint8Array> {
+  const digest = await sha256(
+    concatBytes(
+      te('ks-scaffold-v1'),
+      b32(args.nullifierHex),
+      b32(args.actionHashHex),
+      u64le(args.amount),
+      u64le(args.validUntilSlot),
+      b32(args.merkleRootHex),
+    ),
+  );
+  return concatBytes(new Uint8Array([PROOF_KIND_SCAFFOLD]), digest);
 }
 
 export function programId(): PublicKey {
@@ -149,7 +173,7 @@ export function planVerifyExecute(proof: AuthorizationProof, amount: string): Pl
   return {
     verifier: ONCHAIN_VERIFIER,
     programNote:
-      'Pinocchio ixs 40–43 (init/register_root/execute/revoke). SOL path is 5 accounts. Proof check is scaffold-sha256 (non-empty bytes), not Groth16 pairing. Passkey verify stays client-layer. Live 41P2wHK… must be upgraded before these ixs land.',
+      'Pinocchio ixs 40–43. Scaffold 0x00 binds public inputs. Groth16 0x01 calls alt_bn128 only after a VK is installed — currently fail-closed, not live pairing. Passkey stays client-layer. Live 41P2wHK… must be upgraded before 40–43 land.',
     ixs: [
       {
         name: 'initialize_vault',
