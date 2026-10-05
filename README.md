@@ -36,6 +36,18 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
+### Business scope
+
+Three layers. Two meters. Seats are not calls.
+
+| Layer | What it is | What you get |
+|---|---|---|
+| **Free** | Passkey auto-collection + save in the vault | Face ID / Touch ID enrolls the device. Secrets encrypt on-device (WebAuthn-PRF → AES-GCM). Server stores ciphertext only. Agent calls are **pay-as-you-go**. |
+| **Plugin** (paid 1) | Auto plugins + biometric ZK verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device; the server never sees the raw key. $20/mo included, then PAYG. |
+| **Accelerate** (paid 2) | Acceleration + extreme-low-latency *target* | RPC cache, batch, parallel quote+analyze, Groq-class urgent path. $100/mo included, then PAYG. Fleet seats. Latency numbers are not published until measured. |
+
+**Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Not live on production until this branch deploys.
+
 **Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
