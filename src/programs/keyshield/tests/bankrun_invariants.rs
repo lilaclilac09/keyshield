@@ -211,7 +211,7 @@ fn deterministic_zk_account_ix_matrix() {
     let action = [0xCCu8; 32];
     let nullifier = [0xDDu8; 32];
 
-    // 正常初始化 — PDA layout, nonce=0; 二次初始化打回
+    // Fresh init — PDA layout, nonce=0; a second init is rejected.
     let mut vault = encode_fresh_vault(&owner, 100, &root_a, 255).unwrap();
     assert_eq!(vault_nonce(&vault).unwrap(), 0);
     assert_eq!(vault_spend_cap(&vault).unwrap(), 100);
@@ -221,7 +221,7 @@ fn deterministic_zk_account_ix_matrix() {
         KeyShieldError::ZkVaultAlreadyExists as u32
     );
 
-    // 越权篡改 — 非 Owner 改 Policy
+    // Unauthorized policy write — non-owner cannot change Policy.
     let before_cap = vault_spend_cap(&vault).unwrap();
     let err = apply_update_policy(&mut vault, &stranger, true, 1, &root_b).unwrap_err();
     assert_eq!(code(err), KeyShieldError::NotOwner as u32);
@@ -232,7 +232,7 @@ fn deterministic_zk_account_ix_matrix() {
     assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
     assert_eq!(vault_root(&vault).unwrap(), root_b);
 
-    // 防重放 — 同一 Nullifier
+    // Replay defense — the same nullifier cannot execute twice.
     let pubs = ZkPublicInputs {
         nullifier,
         action_hash: action,
@@ -247,7 +247,7 @@ fn deterministic_zk_account_ix_matrix() {
     );
     assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
 
-    // 超额拦截 — 额度不扣减
+    // Cap exceeded — spend cap is not decremented on reject.
     let over = ZkPublicInputs { amount: 81, ..pubs };
     assert_eq!(
         code(assert_zk_execute(81, 80, false, 1, 99, &proof, false, &over).unwrap_err()),
@@ -256,7 +256,7 @@ fn deterministic_zk_account_ix_matrix() {
     assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
     assert_eq!(vault_nonce(&vault).unwrap(), 0);
 
-    // 假币防御 — CounterfeitMint → InvalidMint 6109
+    // Counterfeit mint — InvalidMint 6109.
     let mut fake = [3u8; 32];
     fake[0] = 0xAA;
     assert_eq!(
@@ -266,7 +266,7 @@ fn deterministic_zk_account_ix_matrix() {
         KeyShieldError::InvalidMint as u32
     );
 
-    // 交付物不匹配 — 空 payload / 错哈希，不触发结算
+    // Artifact mismatch — empty payload or wrong hash does not settle.
     let empty = [0u8; 32];
     let wrong = [0xEEu8; 32];
     assert_eq!(
@@ -296,7 +296,7 @@ fn deterministic_zk_account_ix_matrix() {
         KeyShieldError::ZkVaultRevoked as u32
     );
 
-    // 超时回退 — 过 window 后退回 owner
+    // Timeout clawback — after the dispute window, remaining escrow returns to owner.
     let last_active = 1_000u64;
     let timeout = DEFAULT_DISPUTE_TIMEOUT_SLOTS;
     assert_eq!(

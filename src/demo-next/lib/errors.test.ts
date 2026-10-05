@@ -33,7 +33,7 @@ function main() {
   const line = formatBreakpoint(bp);
   assert.equal(line.includes('passkey:ok'), true);
   assert.equal(line.includes('verify:FAIL'), true);
-  assert.equal(line.includes('全流程') || line.toLowerCase().includes('success'), false);
+  assert.equal(line.toLowerCase().includes('success'), false);
 
   assert.notEqual(ROLLBACK_LABEL['local-cancel'], ROLLBACK_LABEL['chain-rollback']);
   assert.notEqual(ROLLBACK_LABEL['grant-revoke'], ROLLBACK_LABEL['chain-rollback']);
