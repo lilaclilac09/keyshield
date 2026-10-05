@@ -9,6 +9,7 @@
 #   bash scripts/record_demo.sh
 #   bash scripts/record_demo.sh --fast
 #   bash scripts/record_demo.sh --split
+#   bash scripts/record_demo.sh --split --pace 28000
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,13 +17,25 @@ cd "$ROOT"
 
 PACE_MS=2500
 SPLIT=0
-for arg in "$@"; do
-  case "$arg" in
-    --fast) PACE_MS=200 ;;
-    --split) SPLIT=1 ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fast) PACE_MS=200; shift ;;
+    --split) SPLIT=1; shift ;;
+    --pace)
+      PACE_MS="${2:?--pace requires milliseconds}"
+      shift 2
+      ;;
+    --pace=*)
+      PACE_MS="${1#--pace=}"
+      shift
+      ;;
     -h|--help)
       sed -n '2,16p' "$0"
       exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 1
       ;;
   esac
 done
