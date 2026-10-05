@@ -8,6 +8,8 @@ Operator guides, get-started flows, and architecture notes.
 
 **[`API.md`](API.md)** — single reference for every endpoint + auth flow + curl/Python/JS examples + extension install. If you're calling the API or writing code against KeyShield, this is the only doc you need to open first.
 
+**[repository-index/](repository-index/README.md)** — numbered folders that **link** every tracked file (`KS-00-001` …). Originals stay in place.
+
 ---
 
 ## Structure
@@ -15,6 +17,7 @@ Operator guides, get-started flows, and architecture notes.
 | Path | Contents |
 |------|----------|
 | **[API.md](API.md)** | **Single API reference (auth → token → vault → proxy)** |
+| **[repository-index/](repository-index/README.md)** | **Numbered file index (00–12, 90). Originals stay put.** |
 | [get-started/](get-started/) | CLI install, local dev, self-host, top-up with SOL, frontend integration |
 | [architecture/](architecture/) | System design + architecture overview |
 | [DEVNET.md](DEVNET.md) | Devnet deployment guide |

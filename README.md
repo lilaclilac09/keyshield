@@ -36,7 +36,9 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
-**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register)
+**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+
+Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
 ## How to use this
 
@@ -290,10 +292,36 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 
 → Full setup: [DEVELOPMENT.md](DEVELOPMENT.md)
 
+## Repository index
+
+This is the indexed part of the repo. Numbered folders only **link**.
+Originals stay in place. IDs are `KS-<category>-<nnn>` (`KS-00-001` …).
+Hub: [`docs/repository-index/README.md`](docs/repository-index/README.md).
+
+| ID | Folder | What it groups | Files |
+|---|---|---|---:|
+| 00 | [overview](docs/repository-index/00-overview/README.md) | Overview and architecture | 7 |
+| 01 | [product](docs/repository-index/01-product/README.md) | Product specs and documentation | 26 |
+| 02 | [frontend](docs/repository-index/02-frontend/README.md) | Frontend, pages, and components | 101 |
+| 03 | [backend-proxy](docs/repository-index/03-backend-proxy/README.md) | Backend, APIs, and proxy | 110 |
+| 04 | [sdk](docs/repository-index/04-sdk/README.md) | SDKs and integration examples | 156 |
+| 05 | [wallet-auth](docs/repository-index/05-wallet-auth/README.md) | Wallet, authentication, and sessions | 15 |
+| 06 | [vault-permissions](docs/repository-index/06-vault-permissions/README.md) | Vault, credentials, and permissions | 32 |
+| 07 | [onchain-settlement](docs/repository-index/07-onchain-settlement/README.md) | On-chain programs and settlement | 37 |
+| 08 | [data-schema](docs/repository-index/08-data-schema/README.md) | Data, schemas, and migrations (empty — no tracked SQL) | 0 |
+| 09 | [tests-security](docs/repository-index/09-tests-security/README.md) | Tests, security, and verification | 77 |
+| 10 | [deployment-operations](docs/repository-index/10-deployment-operations/README.md) | Deployment, operations, and scripts | 63 |
+| 11 | [demo-assets](docs/repository-index/11-demo-assets/README.md) | Demos, recordings, and visual assets | 51 |
+| 12 | [reviewer-evidence](docs/repository-index/12-reviewer-evidence/README.md) | Reviewer materials and evidence | 6 |
+| 90 | [review-needed](docs/repository-index/90-review-needed/README.md) | Unclear / historical — review, do not delete | 46 |
+
+Maps: [directory](docs/repository-index/DIRECTORY_MAP.md) · [dependencies](docs/repository-index/DEPENDENCY_MAP.md) · [file IDs](docs/repository-index/FILE_INDEX.md). Proposed file moves are **not approved** ([MOVE_PLAN.md](docs/repository-index/MOVE_PLAN.md)).
+
 ## Repo map
 
 | Path | Role |
 |---|---|
+| `docs/repository-index/` | Numbered category indexes — originals stay in place |
 | `src/web/` | Vault UI — store keys, inspect sessions, manage delegation |
 | `src/backend/` | Control plane API — auth, session minting, policy |
 | `src/proxy/` | Hot-path Rust proxy — upstream fan-out |
@@ -389,6 +417,7 @@ Full write-up: [keyshield.md](keyshield.md).
 
 | Doc | Purpose |
 |---|---|
+| [docs/repository-index/README.md](docs/repository-index/README.md) | Numbered file index (originals stay in place) |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Local dev setup |
 | [DEPLOY.md](DEPLOY.md) | Production deployment |
 | [AGENTS.md](AGENTS.md) | Agent integration design |
