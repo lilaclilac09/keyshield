@@ -2,8 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { WalletProviders } from './WalletProviders';
+import { WalletButton } from './WalletButton';
 import {
   decryptManaged,
   demoTopup,
@@ -87,7 +87,13 @@ function DashboardInner() {
     const data = await fetchHome(address || undefined);
     setHome(data);
     const rpc = data.wallet.rpc || 'devnet';
-    setRpcLabel(rpc.includes('helius') ? 'Helius RPC' : rpc.includes('devnet') ? 'Devnet RPC' : 'Solana RPC');
+    setRpcLabel(
+      data.connection.demo || rpc.includes('devnet')
+        ? 'Devnet RPC'
+        : rpc.includes('helius')
+          ? 'Helius RPC'
+          : 'Solana RPC',
+    );
     return data;
   }, [address]);
 
@@ -232,7 +238,7 @@ function DashboardInner() {
               {pingText} <span className="text-zinc-500">({rpcLabel})</span>
             </span>
           </div>
-          <WalletMultiButton />
+          <WalletButton />
         </div>
       </header>
 
@@ -240,7 +246,7 @@ function DashboardInner() {
         <div className="shrink-0 px-6 py-2 text-sm text-red-300 border-b border-red-900/60 bg-red-950/40">{error}</div>
       )}
 
-      <main className="flex-1 min-h-0 overflow-hidden p-5 grid grid-cols-12 grid-rows-[auto_1fr] gap-4">
+      <main className="flex-1 min-h-0 overflow-auto p-5 grid grid-cols-12 gap-4 content-start">
         <section className="col-span-12 lg:col-span-5 border border-zinc-800 bg-zinc-950 p-5 flex flex-col">
           <div className="text-[11px] tracking-[0.22em] text-zinc-500 uppercase mb-3">Wallet & Escrow</div>
           <div className="grid grid-cols-2 gap-6 flex-1">
@@ -251,10 +257,8 @@ function DashboardInner() {
             </div>
             <div>
               <div className="text-zinc-500 text-sm">Escrow USDC</div>
-              <div className="text-5xl font-semibold tabular-nums leading-none mt-1">
-                {fmt(usdc ?? escrow, 2)}
-              </div>
-              <div className="text-zinc-600 text-xs mt-2">ledger ${fmt(escrow, 2)} · on-chain {fmt(usdc, 2)}</div>
+              <div className="text-5xl font-semibold tabular-nums leading-none mt-1">{fmt(escrow, 2)}</div>
+              <div className="text-zinc-600 text-xs mt-2">on-chain USDC {fmt(usdc, 2)}</div>
             </div>
           </div>
           <button
