@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveFromPrf, deriveSessionKey, deriveWitness, deriveVaultId, demoSoftPrf } from './prf';
+import { deriveDecryptKey, deriveFromPrf, deriveSessionKey, deriveWitness, deriveVaultId, demoSoftPrf } from './prf';
 import { CredentialMerkleTree, consumeWitness, generateAuthorizationProof } from './zk';
 import { actionHashOf, deriveNullifier } from './zk';
 import { toHex } from './bytes';
@@ -27,6 +27,16 @@ async function main() {
   const key = await deriveSessionKey(prfA);
   assert.equal(key.type, 'secret');
   assert.equal(key.extractable, false);
+  assert.deepEqual(key.usages.slice().sort(), ['decrypt', 'encrypt']);
+
+  const dec = await deriveDecryptKey(prfA);
+  assert.equal(dec.extractable, false);
+  assert.deepEqual([...dec.usages], ['decrypt']);
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const wrapped = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode('sk-or-roundtrip'));
+  const opened = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, dec, wrapped);
+  assert.equal(new TextDecoder().decode(opened), 'sk-or-roundtrip', 'decrypt-only HKDF key opens session wrap');
 
   const h1 = await actionHashOf('{"method":"export.session-key"}');
   const h2 = await actionHashOf('{"method":"other"}');

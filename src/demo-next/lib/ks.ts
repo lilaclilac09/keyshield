@@ -1,3 +1,5 @@
+import { attachGrantHeader } from './grant';
+
 const TOKEN_KEY = 'ks_demo_token';
 
 export function getToken(): string | null {
@@ -14,6 +16,7 @@ export async function ksFetch(path: string, init: RequestInit = {}): Promise<Res
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (!headers.has('Content-Type') && init.body) headers.set('Content-Type', 'application/json');
+  attachGrantHeader(path, headers);
   return fetch(`/ks${path}`, { ...init, headers });
 }
 

@@ -2,8 +2,9 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { decryptManaged } from './ks';
-import { encryptToStore, decryptFromStore } from './cipher';
-import { grantMeta, putGrant, revokeAllGrants, revokeGrant } from './grant';
+import { encryptToStoreBytes, decryptFromStoreBytes } from './cipher';
+import { GRANT_TTL_MS, grantMeta, listGrantMeta, putGrantBytes, revokeAllGrants, revokeGrant } from './grant';
+import { zeroize } from './bytes';
 import { PasskeyCancelledError, runClientPrf, type PublicPrfView } from './prf';
 import {
   CircuitError,
@@ -33,6 +34,7 @@ export interface KeyShieldSnapshot {
   prf: PublicPrfView | null;
   proof: AuthorizationProof | null;
   pasted: Record<string, boolean>;
+  grants: Array<{ id: string; ttlMs: number; upstream: string }>;
   holdId: string | null;
   settlement: 'none' | 'local-hold' | 'mpp-demo-meter';
   pendingLocked: boolean;
@@ -83,20 +85,24 @@ export function useKeyShield() {
           const remote = await decryptManaged(row.id);
           if (remote) plain = remote;
         }
-        await encryptToStore(derived.sessionKey, row.id, plain);
-        const unlocked = await decryptFromStore(derived.sessionKey, row.id);
+        const wrap = new TextEncoder().encode(plain);
+        await encryptToStoreBytes(derived.sessionKey, row.id, wrap);
+        zeroize(wrap);
+        const unlocked = await decryptFromStoreBytes(derived.sessionKey, row.id);
         if (!unlocked) throw new Error('local decrypt failed');
 
         if (mode === 'human') {
+          const text = new TextDecoder().decode(unlocked);
           try {
-            await navigator.clipboard.writeText(unlocked);
+            await navigator.clipboard.writeText(text);
           } catch {
             /* clipboard may be blocked */
           }
           setPasted((p) => ({ ...p, [row.id]: true }));
         } else {
-          putGrant(row.id, unlocked, 300_000);
+          putGrantBytes(row.id, unlocked, { ttlMs: GRANT_TTL_MS, upstream: row.upstream });
         }
+        zeroize(unlocked);
         consumeWitness(derived.witness);
         setState('IDLE');
       } catch (e) {
@@ -157,6 +163,7 @@ export function useKeyShield() {
           validUntilSlot: opts.slot + 150n,
           tree: treeRef.current,
         });
+        putGrantBytes(`session:${opts.agentId}`, cred, { ttlMs: GRANT_TTL_MS, upstream: 'session' });
         consumeWitness(derived.witness);
         cred.fill(0);
         setProof(nextProof);
@@ -225,6 +232,7 @@ export function useKeyShield() {
     prf,
     proof,
     pasted,
+    grants: listGrantMeta(),
     holdId,
     settlement,
     pendingLocked,

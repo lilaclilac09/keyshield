@@ -56,14 +56,37 @@ export interface DerivedMaterial {
   witness: Uint8Array;
 }
 
+async function hkdfMaster(prfOutput: BufferSource): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveKey', 'deriveBits']);
+}
+
 async function hkdfBits(prfOutput: BufferSource, info: Uint8Array, bits: number): Promise<ArrayBuffer> {
-  const ikm = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveBits']);
+  const ikm = await hkdfMaster(prfOutput);
   return crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info }, ikm, bits);
 }
 
+/** Spec ④: HKDF-SHA256 → AES-GCM decrypt-only session key. */
+export async function deriveDecryptKey(prfOutput: BufferSource): Promise<CryptoKey> {
+  const masterKey = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: INFO_DECRYPT },
+    masterKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  );
+}
+
+/** Same HKDF as `deriveDecryptKey`, plus encrypt so the vault can wrap ciphertext. */
 export async function deriveSessionKey(prfOutput: BufferSource): Promise<CryptoKey> {
-  const bits = await hkdfBits(prfOutput, INFO_DECRYPT, 256);
-  return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  const masterKey = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: INFO_DECRYPT },
+    masterKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
 }
 
 export async function deriveWitness(prfOutput: BufferSource): Promise<Uint8Array> {

@@ -137,6 +137,12 @@ function DashboardInner() {
     setBusy(null);
   };
 
+  const onAgentGrant = async (row: CredRow) => {
+    setBusy(`grant:${row.id}`);
+    await ks.decryptCredential(row, 'agent');
+    setBusy(null);
+  };
+
   const onSimulate = (method = 'export.session-key') => {
     ks.resetPendingUi();
     setModal({ method });
@@ -162,7 +168,10 @@ function DashboardInner() {
   const prf = ks.snapshot.prf;
   const proof = ks.snapshot.proof;
   const planned = proof ? planVerifyExecute(proof, proof.publicInputs.spendCap) : null;
-  const passkeyGreen = ks.snapshot.state === 'SETTLED' || Object.keys(ks.snapshot.pasted).length > 0;
+  const passkeyGreen =
+    ks.snapshot.state === 'SETTLED' ||
+    Object.keys(ks.snapshot.pasted).length > 0 ||
+    ks.snapshot.grants.length > 0;
 
   return (
     <div className="h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
@@ -248,24 +257,51 @@ function DashboardInner() {
                     </td>
                     <td className="py-3 font-mono text-zinc-300">{row.prefix}</td>
                     <td className="py-3 text-right">
-                      {ks.snapshot.pasted[row.id] ? (
-                        <span className="text-emerald-400 text-sm font-medium">Decrypted & Pasted</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void onPasskeyDecrypt(row)}
-                          disabled={busy === `prf:${row.id}` || ks.snapshot.pendingLocked}
-                          className={`h-9 px-3 border text-xs uppercase tracking-wide disabled:opacity-50 ${
-                            passkeyGreen
-                              ? 'border-emerald-700 text-emerald-300'
-                              : 'border-zinc-700 hover:bg-zinc-900'
-                          }`}
-                        >
-                          {ks.snapshot.state === 'AWAITING_PASSKEY' && busy === `prf:${row.id}`
-                            ? 'Touch ID…'
-                            : 'One-Click Passkey'}
-                        </button>
-                      )}
+                      {(() => {
+                        const grant = ks.snapshot.grants.find((g) => g.id === row.id || g.upstream === row.upstream);
+                        return (
+                          <div className="flex flex-col items-end gap-1">
+                            {ks.snapshot.pasted[row.id] && (
+                              <span className="text-emerald-400 text-sm font-medium">Decrypted & Pasted</span>
+                            )}
+                            {grant && (
+                              <span className="text-emerald-300/80 text-xs font-mono">
+                                grant {Math.ceil(grant.ttlMs / 1000)}s
+                              </span>
+                            )}
+                            <div className="inline-flex gap-2">
+                              {!ks.snapshot.pasted[row.id] && (
+                                <button
+                                  type="button"
+                                  onClick={() => void onPasskeyDecrypt(row)}
+                                  disabled={busy === `prf:${row.id}` || ks.snapshot.pendingLocked}
+                                  className={`h-9 px-3 border text-xs uppercase tracking-wide disabled:opacity-50 ${
+                                    passkeyGreen
+                                      ? 'border-emerald-700 text-emerald-300'
+                                      : 'border-zinc-700 hover:bg-zinc-900'
+                                  }`}
+                                >
+                                  {ks.snapshot.state === 'AWAITING_PASSKEY' && busy === `prf:${row.id}`
+                                    ? 'Touch ID…'
+                                    : 'One-Click Passkey'}
+                                </button>
+                              )}
+                              {!grant && (
+                                <button
+                                  type="button"
+                                  onClick={() => void onAgentGrant(row)}
+                                  disabled={busy === `grant:${row.id}` || ks.snapshot.pendingLocked}
+                                  className="h-9 px-3 border border-zinc-700 text-xs uppercase tracking-wide hover:bg-zinc-900 disabled:opacity-50"
+                                >
+                                  {ks.snapshot.state === 'AWAITING_PASSKEY' && busy === `grant:${row.id}`
+                                    ? 'Touch ID…'
+                                    : 'Inject 300s'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -364,6 +400,9 @@ function DashboardInner() {
             )}
             <div>
               settlement={ks.snapshot.settlement} · hold={ks.snapshot.holdId || '—'}
+              {ks.snapshot.grants.length
+                ? ` · grant ${ks.snapshot.grants.map((g) => `${g.upstream}:${Math.ceil(g.ttlMs / 1000)}s`).join(',')}`
+                : ' · grant none'}
             </div>
             {streams.slice(0, 6).map((s) => (
               <div key={s.id} className="flex flex-wrap gap-x-4">
