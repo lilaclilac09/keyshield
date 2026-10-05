@@ -68,11 +68,25 @@ type Report = {
   probe?: {
     ix40SimOk: boolean;
     ix40Error: string | null;
+    ix40Meaning: "ok" | "already-exists" | "unsupported";
     verdict: "upgraded-40-43" | "not-upgraded-40-43";
   };
   txs: Array<{ name: string; signature: string; explorer: string; kind: "zk-vault" | "fallback-labeled" }>;
   fallback?: { reason: string; name: string };
 };
+
+function isUnsupportedIx40(err: string | null, logs: string[]): boolean {
+  if (!err) return false;
+  const lowErr = err.toLowerCase();
+  if (lowErr.includes("invalidinstructiondata")) return true;
+  const joined = logs.join("\n").toLowerCase();
+  return joined.includes("failed: invalid instruction data");
+}
+
+function isAlreadyExists(err: string | null): boolean {
+  if (!err) return false;
+  return err.includes('"Custom":6120') || err.includes('"Custom",6120');
+}
 
 function loadKeypair(path: string): Keypair {
   if (!existsSync(path)) throw new Error(`missing keypair: ${path}`);
@@ -171,11 +185,15 @@ async function main(): Promise<void> {
     depositLamports: DEPOSIT_LAMPORTS,
   });
   report.simulation = await simulate(conn, user, [initIx]);
-  report.liveProgramHasZkIxs = report.simulation.ok;
+  const unsupportedIx40 = isUnsupportedIx40(report.simulation.err, report.simulation.logs);
+  const alreadyExistsIx40 = isAlreadyExists(report.simulation.err);
+  const ix40Accepted = report.simulation.ok || alreadyExistsIx40;
+  report.liveProgramHasZkIxs = ix40Accepted;
   report.probe = {
-    ix40SimOk: report.simulation.ok,
+    ix40SimOk: ix40Accepted,
     ix40Error: report.simulation.err,
-    verdict: report.simulation.ok ? "upgraded-40-43" : "not-upgraded-40-43",
+    ix40Meaning: report.simulation.ok ? "ok" : alreadyExistsIx40 ? "already-exists" : "unsupported",
+    verdict: ix40Accepted ? "upgraded-40-43" : "not-upgraded-40-43",
   };
   console.log("Simulate initialize_vault (ix 40):", report.simulation.ok ? "OK" : report.simulation.err);
   if (report.simulation.logs.length) {
@@ -183,14 +201,14 @@ async function main(): Promise<void> {
     for (const line of report.simulation.logs.slice(-12)) console.log(" ", line);
   }
 
-  if (report.simulation.ok) {
+  if (ix40Accepted) {
     const existing = await conn.getAccountInfo(vaultPda);
-    if (!existing) {
+    if (!existing && report.simulation.ok) {
       const sig1 = await send(conn, user, [initIx]);
       report.txs.push({ name: "initialize_vault", signature: sig1, explorer: explorer(sig1), kind: "zk-vault" });
       console.log("Tx initialize_vault:", sig1);
     } else {
-      console.log("Vault PDA already exists — skip initialize_vault");
+      console.log("Vault PDA already exists or init rejected with ZkVaultAlreadyExists — skip initialize_vault");
     }
 
     const rootIx = buildUpdatePolicyIx({
@@ -240,7 +258,7 @@ async function main(): Promise<void> {
     console.log("Confirmed on Devnet. Amount lamports:", EXECUTE_LAMPORTS, "(SOL, not USDC)");
   } else {
     const strictReason =
-      "Live program rejected ix 40. 41P2wHK… likely predates zk vault ixs 40–43. Upgrade required. Not claiming Groth16.";
+      `Program ${report.programId} rejected ix 40 as unsupported (InvalidInstructionData). Likely predates zk vault ixs 40–43. Upgrade required. Not claiming Groth16.`;
     if (!ALLOW_FALLBACK) {
       mkdirSync(ARTIFACT_DIR, { recursive: true });
       const out = join(ARTIFACT_DIR, "zk-vault-devnet.json");
