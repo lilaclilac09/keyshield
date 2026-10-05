@@ -59,7 +59,11 @@ const fmtCost = (c: number) => `$${c.toFixed(4)}`;
 
 export const ActivitySection: React.FC = () => {
   const { publicKey, sendTransaction, connected, signMessage } = useWallet();
-  const [tab, setTab] = useState<Tab>('usage');
+  const [tab, setTab] = useState<Tab>(() => (
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
+      ? 'mpp'
+      : 'usage'
+  ));
   const [history, setHistory] = useState<UsageEntry[]>([]);
   const [stats, setStats] = useState<UsageStat[]>([]);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
@@ -152,6 +156,12 @@ export const ActivitySection: React.FC = () => {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (sessionStorage.getItem('ks_landing') === 'activity-mpp') {
+      sessionStorage.removeItem('ks_landing');
+      setTab('mpp');
+    }
+  }, []);
   useEffect(() => {
     const onOr = () => { void fetchOpenRouterStatus().then(setOrStatus).catch(() => {}); };
     window.addEventListener('ks-openrouter-connected', onOr);
@@ -417,6 +427,67 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
+  const handleTwoMinDemo = async () => {
+    setOpenBusy(true); setOpenMsg(''); setOpenOk(false); setOpenStep('2-min: pick stream');
+    try {
+      let stream = mppStreams.find(s => s.status === 'open' && s.stream_pda)
+        ?? mppStreams.find(s => s.status === 'open');
+      if (!stream) {
+        const listed = await apiFetch('/mpp/streams');
+        if (listed.ok) {
+          const d = await listed.json();
+          const rows = (d.streams ?? []) as MppStream[];
+          stream = rows.find(s => s.status === 'open' && s.stream_pda)
+            ?? rows.find(s => s.status === 'open');
+        }
+      }
+      if (!stream) {
+        const agent = openAgent.trim() || agents[0]?.pubkey_b58;
+        if (!agent) throw new Error('No demo agent — click Start demo again');
+        setOpenStep('2-min: vault → grant → open');
+        try {
+          const d = await autosignOpenStream({
+            agentPubkey: agent,
+            agentName: 'demo-agent',
+            upstream: openUpstream.trim() || OPENROUTER_DEMO_UPSTREAM,
+            maxTotalMicroUsdc: Math.round((parseFloat(openCap) || 0.01) * 1_000_000),
+            ratePerTokenMicroUsdc: 1,
+            ratePerCallMicroUsdc: 0,
+          });
+          stream = d.stream as MppStream;
+        } catch (openErr) {
+          const listed = await apiFetch('/mpp/streams');
+          const d = listed.ok ? await listed.json() : { streams: [] };
+          const rows = (d.streams ?? []) as MppStream[];
+          stream = rows.find(s => s.status === 'open' && s.stream_pda);
+          if (!stream) throw openErr;
+        }
+      }
+      if (!stream?.id) throw new Error('Open stream failed');
+      setOpenStep('2-min: meter');
+      await demoMeterStream(stream.id, 'KeyShield two-minute demo');
+      const token = getToken();
+      if (!token) throw new Error('session token required');
+      setOpenStep('2-min: capture');
+      const prep = await fetchCapturePrep(stream.id);
+      const mac = await signCaptureMac(token, prep.artifactHash);
+      await captureMppStream(stream.id, prep.artifactHash, mac);
+      setOpenOk(true);
+      setOpenMsg(
+        `2-min demo done — stream ${stream.id}`
+        + (stream.stream_pda ? ` PDA ${stream.stream_pda.slice(0, 8)}…` : '')
+        + ' metered + captured',
+      );
+      await refresh();
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : '2-min demo failed');
+    } finally {
+      setOpenBusy(false);
+      setOpenStep('');
+    }
+  };
+
   const TABS: { id: Tab; label: string }[] = [
     { id: 'usage', label: 'Usage Log' },
     { id: 'stats', label: 'Statistics' },
@@ -563,6 +634,9 @@ export const ActivitySection: React.FC = () => {
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
               <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
+              {(demoMode || autosignPubkey) && (
+                <Button variant="secondary" size="md" onClick={handleTwoMinDemo} disabled={openBusy} loading={openBusy && openStep.startsWith('2-min')}>2-min demo</Button>
+              )}
             </div>
             <div className="mt-4 rounded-lg border border-[#243365] bg-[#0e1631] p-3">
               <div className="flex items-center justify-between gap-2 mb-2">

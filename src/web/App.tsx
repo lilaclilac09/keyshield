@@ -56,7 +56,11 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
 const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
-  const [section, setSection] = useState<Section>('vault');
+  const [section, setSection] = useState<Section>(() => (
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
+      ? 'activity'
+      : 'vault'
+  ));
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);

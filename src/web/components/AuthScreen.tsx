@@ -36,6 +36,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       const out = await startDemoSession();
       setToken(out.token);
       setWalletAddress(out.userId);
+      sessionStorage.setItem('ks_landing', 'activity-mpp');
       notifyAuthChanged();
       onAuthenticated();
     } catch (e) {
