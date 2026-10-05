@@ -63,7 +63,8 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="white" strokeWidth="1.5" fill="none" /><circle cx="11.5" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" fill="none" className="text-[#a8b3d8]" /><line x1="13" y1="12.5" x2="16" y2="15.5" stroke="currentColor" strokeWidth="1.2" className="text-[#a8b3d8]" /></svg>
         </div>
         <h1 className="text-[34px] leading-tight font-bold text-white tracking-tight uppercase">KeyShield</h1>
-        <p className="mt-3 text-[14px] leading-relaxed text-[#a8b3d8] max-w-sm">{showPasskeyPanel ? `Welcome back. Sign in with Face ID, Touch ID, or your hardware key.` : `Connect your Solana wallet to access your encrypted secrets.`}</p>
+        <p className="mt-2 text-[16px] leading-snug text-white/90 max-w-sm">your API iCloud Keychain</p>
+        <p className="mt-3 text-[14px] leading-relaxed text-[#a8b3d8] max-w-sm">{showPasskeyPanel ? `Welcome back. Sign in with Face ID, Touch ID, or your hardware key.` : `Keep API credentials in your vault and give agents controlled access.`}</p>
         <div className="w-full mt-10">
           {showPasskeyPanel ? (
             <div className="w-full space-y-3">
