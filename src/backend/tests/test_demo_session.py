@@ -129,6 +129,13 @@ def test_demo_meter_records_synthetic_artifact(tmp_path, monkeypatch):
     assert listed[0]["pending_artifact_hash"] == body["artifact_hash"]
     usage = client.get(f"/mpp/streams/{stream_id}/usage", headers=headers).json()
     assert usage["usage"]
+    prep = client.get(f"/mpp/streams/{stream_id}/capture-prep", headers=headers)
+    assert prep.status_code == 200
+    assert prep.json()["artifactHash"] == body["artifact_hash"]
+    assert prep.json()["nextSeq"] == 1
+    closed = client.post(f"/mpp/streams/{stream_id}/close", headers=headers)
+    assert closed.status_code == 200
+    assert closed.json()["stream"]["status"] == "closed"
 
 
 def test_demo_meter_falls_back_when_upstream_rejects_key(tmp_path, monkeypatch):

@@ -865,6 +865,58 @@ async def mpp_submit_withdraw_tx(stream_id: int, request: Request):
     return JSONResponse(result)
 
 
+@router.get("/mpp/streams/{stream_id}/capture-prep")
+async def mpp_capture_prep(stream_id: int, request: Request):
+    """Fields the Activity Capture form needs: HMAC artifact + owner binding."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import mpp_onchain, mpp_streams
+
+    try:
+        stream = _fetch_owned_stream(sess["user_id"], stream_id)
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    conn = mpp_streams._db()
+    try:
+        art = conn.execute(
+            """
+            SELECT artifact_hash, micro_usdc
+              FROM mpp_artifacts
+             WHERE stream_id = ? AND settled = 0
+             ORDER BY id DESC LIMIT 1
+            """,
+            (int(stream_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not art:
+        return JSONResponse({"detail": "no pending artifact"}, status_code=404)
+    digest, debit = str(art[0]), int(art[1] or 0)
+    next_seq = int(stream.get("last_settled_seq") or 0) + 1
+    pda = stream.get("stream_pda")
+    binding = None
+    if pda:
+        try:
+            stream_key = mpp_onchain.coerce_pubkey32(pda)
+            artifact = bytes.fromhex(digest)
+            binding = mpp_onchain.settlement_binding_hash(
+                stream_key, next_seq, debit, artifact
+            ).hex()
+        except Exception:
+            binding = None
+    return JSONResponse(
+        {
+            "artifactHash": digest,
+            "debitMicroUsdc": debit,
+            "nextSeq": next_seq,
+            "streamPda": pda,
+            "bindingHash": binding,
+            "lastSettledSeq": int(stream.get("last_settled_seq") or 0),
+        }
+    )
+
+
 @router.get("/mpp/streams/{stream_id}/usage")
 async def mpp_stream_usage(stream_id: int, request: Request):
     """Per-stream artifacts for packages/shared getMppUsage."""

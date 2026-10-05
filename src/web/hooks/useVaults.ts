@@ -12,7 +12,7 @@
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
-import { isAuthenticated, requestVaultUnlock, API_BASE } from '../lib/auth';
+import { isAuthenticated, requestVaultUnlock, API_BASE, apiFetch } from '../lib/auth';
 import {
   addEntry,
   removeEntry,
@@ -29,6 +29,7 @@ const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string
   mistral: { name: 'Mistral AI', domain: 'mistral.ai', tags: ['AI'] },
   cohere: { name: 'Cohere', domain: 'cohere.ai', tags: ['AI'] },
   groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
+  openrouter: { name: 'OpenRouter', domain: 'openrouter.ai', tags: ['AI', 'NEMOTRON'] },
 };
 
 function userSecretLabel(slug: string): string {
@@ -123,6 +124,14 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) return;
       await addEntry(upstream, rawKey);
+      try {
+        await apiFetch('/manage/store', {
+          method: 'POST',
+          body: JSON.stringify({ upstream, apiKey: rawKey, name: data.name || upstream }),
+        });
+      } catch {
+        /* Device Vault write succeeded; proxy vault is best-effort. */
+      }
       refresh();
     },
     [refresh, unlock],

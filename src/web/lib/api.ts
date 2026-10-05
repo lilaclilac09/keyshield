@@ -181,14 +181,45 @@ export async function buildVaultGrantTx(
   return r.json();
 }
 
+export async function fetchCapturePrep(streamId: number): Promise<{
+  artifactHash: string;
+  debitMicroUsdc: number;
+  nextSeq: number;
+  streamPda: string | null;
+  bindingHash: string | null;
+  lastSettledSeq: number;
+}> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/capture-prep`);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'capture-prep failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'capture-prep failed');
+  }
+  return r.json();
+}
+
+export async function closeMppStream(streamId: number): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/close`, { method: 'POST' });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'close failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'close failed');
+  }
+  return r.json();
+}
+
 export async function captureMppStream(
   streamId: number,
   artifactHash: string,
   signatureHex: string,
+  owner?: { ownerPubkey: string; ownerSignature: string },
 ): Promise<Record<string, unknown>> {
   const r = await apiFetch(`/mpp/streams/${streamId}/capture`, {
     method: 'POST',
-    body: JSON.stringify({ artifactHash, signature: signatureHex }),
+    body: JSON.stringify({
+      artifactHash,
+      signature: signatureHex,
+      ownerPubkey: owner?.ownerPubkey,
+      ownerSignature: owner?.ownerSignature,
+    }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: 'capture failed' }));
