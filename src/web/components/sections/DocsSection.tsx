@@ -62,6 +62,15 @@ export const DocsSection: React.FC = () => {
         </div>
       </Card>
 
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-3"><Key size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">API keychain</span></div>
+        <p className="text-[14px] text-[#a8b3d8] leading-relaxed mb-3">
+          Passkey unlocks the Device Vault. Paste or the extension detects a key → store → one-click <code className="text-white">POST /keychain/call</code>.
+          Frameworks point <code className="text-white">base_url</code> at <code className="text-white">/vproxy/&#123;upstream&#125;</code> — KeyShield cannot inject into every binary.
+          Lowest cached RPC TTL is 2s (<code className="text-white">getSlot</code> / <code className="text-white">getLatestBlockhash</code>). Writes never cache.
+        </p>
+      </Card>
+
       {/* Core concepts */}
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Shield size={12} />CHAPTER 2</div>

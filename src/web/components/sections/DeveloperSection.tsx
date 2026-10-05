@@ -6,8 +6,9 @@ import { RevealField } from '../ui/RevealField';
 import { CodeBlock } from '../ui/CodeBlock';
 import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../../lib/auth';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_CHAT_PATH, OPENROUTER_MODEL_URL, fetchOpenRouterStatus, openrouterCurlSnippet, openrouterPythonSnippet, type OpenRouterStatus } from '../../lib/openrouter-interface';
+import { frameworkSnippets } from '../../lib/keychain';
 
-export const DeveloperSection: React.FC = () => {
+export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaultUpstreams = [] }) => {
   const token = getToken() ?? '';
   const wallet = getWalletAddress() ?? 'YOUR_WALLET';
   const [injectedAt, setInjectedAt] = useState<number | null>(null);
@@ -61,6 +62,22 @@ export const DeveloperSection: React.FC = () => {
         </div>
       </Card>
 
+      <Card title="Every stored API → curl / Python / JS" description="Same session token. Raw keys stay in the vault. Point the SDK base_url at /vproxy/{upstream}.">
+        {(vaultUpstreams.length ? vaultUpstreams : ['openrouter', 'openai', 'helius']).map((up) => {
+          const snippets = frameworkSnippets(up, t);
+          return (
+            <div key={up} className="mb-4 last:mb-0">
+              <p className="text-[12px] font-semibold text-white uppercase tracking-wider mb-2">{up}</p>
+              <div className="space-y-2">
+                <CodeBlock code={snippets.curl} />
+                <CodeBlock code={snippets.python} />
+                <CodeBlock code={snippets.js} />
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+
       <Card title="Python SDK" headerRight={<a href={`${API_BASE}/static/keyshield_sdk.py`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download \u2192</a>}>
         <CodeBlock code={`from keyshield_sdk import KeyShield\nks = KeyShield(token="${t}")\n\n# Store a key\nks.store("anthropic", "sk-ant-your-key")\n\n# Call Anthropic through the zero-trust proxy\nimport anthropic\nclient = anthropic.Anthropic(\n    base_url=ks.proxy_url("anthropic"),\n    api_key="placeholder",\n)\nmsg = client.messages.create(\n    model="claude-opus-4-5",\n    max_tokens=256,\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(msg.content[0].text)`} />
       </Card>
@@ -85,6 +102,11 @@ export const DeveloperSection: React.FC = () => {
             { m: 'POST', p: '/agents/register', d: 'Register an ed25519 pubkey' },
             { m: 'DELETE', p: '/agents/{id}', d: 'Revoke agent' },
             { m: 'GET', p: '/health', d: 'Server + cache status' },
+            { m: 'GET', p: '/keychain/home', d: 'Wallet SOL/USDC + stored APIs + connection' },
+            { m: 'GET', p: '/keychain/rpc-cache', d: 'Helius TTL table — getSlot 2s lowest' },
+            { m: 'POST', p: '/keychain/detect', d: 'Classify a pasted key (prefix only)' },
+            { m: 'POST', p: '/keychain/store', d: 'Detect + store without echoing the secret' },
+            { m: 'POST', p: '/keychain/call', d: 'One-click probe via stored vault key' },
           ].map(({ m, p, d }) => (
             <div key={`${m}-${p}`} className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.02] transition-colors">
               <span className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border mt-0.5 ${m === 'GET' ? 'bg-emerald-950/40 border-emerald-900/50 text-emerald-400' : m === 'POST' ? 'bg-blue-950/40 border-blue-900/50 text-blue-400' : 'bg-red-950/40 border-red-900/50 text-red-400'}`}>{m}</span>
