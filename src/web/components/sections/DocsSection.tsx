@@ -17,7 +17,7 @@ export const DocsSection: React.FC = () => {
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Quickstart</h2>
-        <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute — or install the browser extension (next card) to save keys detected on provider sites while signed in here.</p>
+        <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute — or install the Chrome extension (preferred, next card) to save keys detected on provider sites while signed in here.</p>
       </div>
 
       <Card variant="bordered">
@@ -29,10 +29,10 @@ export const DocsSection: React.FC = () => {
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3">
           <Puzzle size={14} className="text-[#93b4ff]" />
-          <span className="text-[13px] font-semibold uppercase tracking-wider">Browser extension (this dashboard)</span>
+          <span className="text-[13px] font-semibold uppercase tracking-wider">Chrome extension (preferred)</span>
         </div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
-          Use the unpacked extension while signed in here (<code className="text-white">keyshield.dev</code> or your self-hosted dashboard). The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below.
+          Preferred browser is <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Use the unpacked extension while signed in here. The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below. The same steps are on the login screen and Home.
         </p>
         <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
           <li>Clone or download the repo: <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">GitHub</a> — or open the extension folder directly: <a href={`${REPO_URL}/tree/main/src/extension`} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">src/extension</a>.</li>
