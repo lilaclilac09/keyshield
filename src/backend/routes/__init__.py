@@ -27,6 +27,7 @@ def register_routes(app: FastAPI) -> None:
     from . import vault  # local-dev shim
     from . import sessions  # session management
     from . import x402  # x402 payment trust + retry
+    from . import keychain  # detect / one-click call / RPC cache / home
 
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -38,3 +39,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(vault.router)
     app.include_router(sessions.router)
     app.include_router(x402.router)
+    app.include_router(keychain.router)

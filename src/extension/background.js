@@ -57,6 +57,7 @@ async function _getVaultKeyBytes() {
 // ── Domain → upstream map for auto-fill (subset of content.js PROVIDERS) ────
 // Used by GET_KEYS_FOR_DOMAIN to resolve which vault items belong to a page.
 const DOMAIN_TO_UPSTREAM = {
+  'openrouter.ai':         'openrouter',
   'platform.openai.com':   'openai',
   'openai.com':            'openai',
   'console.anthropic.com': 'anthropic',

@@ -56,6 +56,11 @@ def test_routes_register() -> None:
         "/mpp/streams/{stream_id}/usage",
         "/sessions/{token_prefix}/revoke",
         "/demo/openrouter",
+        "/keychain/rpc-cache",
+        "/keychain/home",
+        "/keychain/detect",
+        "/keychain/call",
+        "/keychain/store",
     ):
         assert required in paths, f"expected {required} registered; saw {sorted(paths)}"
 
