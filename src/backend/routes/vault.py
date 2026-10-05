@@ -179,9 +179,7 @@ async def vault_store(request: Request):
     else:
         tags_json = "[]"
     # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
-    stored_value = (
-        body.get("value") or body.get("apiKey") or body.get("api_key") or ""
-    )
+    stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
 
     with _db() as conn:
         conn.execute(
