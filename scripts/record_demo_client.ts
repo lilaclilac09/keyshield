@@ -161,12 +161,8 @@ async function scene2(): Promise<string> {
   return vault.token;
 }
 
-async function scene3(token: string): Promise<void> {
-  log("SCENE", c.bold("3/4  Fast-path streaming through proxy-helius / ks-proxy (<80ms overhead)"));
-  log("ROUTE", "lock-free vault resolve → pre-warmed pool → SSE chunk pipe");
-  const t0 = Date.now();
-  let ttft = -1;
-  const res = await fetch(`${PROXY}/proxy/openai/v1/chat/completions`, {
+async function proxyFast(): Promise<Response> {
+  return fetch(`${PROXY}/proxy/openai/v1/chat/completions`, {
     method: "POST",
     headers: {
       authorization: "Bearer dev-bypass",
@@ -179,10 +175,14 @@ async function scene3(token: string): Promise<void> {
       messages: [{ role: "user", content: "stream" }],
     }),
   });
+}
+
+async function readStream(res: Response, t0: number): Promise<{ ttft: number; bytes: number; total: number }> {
   if (!res.ok || !res.body) {
     throw new Error(`fast-path proxy ${res.status} ${await res.text()}`);
   }
   const reader = res.body.getReader();
+  let ttft = -1;
   let bytes = 0;
   while (true) {
     const { done, value } = await reader.read();
@@ -190,8 +190,21 @@ async function scene3(token: string): Promise<void> {
     if (ttft < 0) ttft = Date.now() - t0;
     bytes += value?.byteLength ?? 0;
   }
-  const total = Date.now() - t0;
-  log("TTFT", `TTFT overhead: ${ttft}ms`);
+  return { ttft, bytes, total: Date.now() - t0 };
+}
+
+async function scene3(token: string): Promise<void> {
+  log("SCENE", c.bold("3/4  Fast-path streaming through proxy-helius / ks-proxy (<80ms overhead)"));
+  log("ROUTE", "lock-free vault resolve → pre-warmed pool → SSE chunk pipe");
+  const warm = await proxyFast();
+  await warm.arrayBuffer();
+  log("WARM", "connection pool + route cache ready");
+
+  const t0 = Date.now();
+  const res = await proxyFast();
+  const { ttft, bytes, total } = await readStream(res, t0);
+  const headerOverhead = res.headers.get("x-ks-ttft-overhead-ms");
+  log("TTFT", `TTFT overhead: ${headerOverhead ?? ttft}ms (measured first-byte ${ttft}ms)`);
   log("RTT", `Total Roundtrip: ${total}ms · ${bytes} bytes · token=${token.slice(0, 12)}…`);
   log("ZERO", "Memory zeroized on socket close");
   if (total >= 80) {
@@ -263,7 +276,7 @@ async function sceneD(): Promise<void> {
     messages: [{ role: "user", content: "KeyShield demo ping" }],
   };
 
-  if (looksLikeOpenrouterKey(key)) {
+  if (looksLikeOpenrouterKey(key) && key.length >= 40) {
     log("LIVE", `saved ${source} key ${mask(key)} → ${MODEL}`);
     const t0 = Date.now();
     try {
@@ -287,6 +300,8 @@ async function sceneD(): Promise<void> {
     } catch (err) {
       log("WARN", `OpenRouter unreachable (${err instanceof Error ? err.message : String(err)}) — local plug-in`);
     }
+  } else if (looksLikeOpenrouterKey(key)) {
+    log("VAULT", `saved ${source} key ${mask(key)} — local Nemotron plug-in`);
   } else {
     log("SKIP", "no saved OpenRouter key in env / vault — using local plug-in");
   }

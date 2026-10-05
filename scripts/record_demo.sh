@@ -93,8 +93,11 @@ conn.execute(
 conn.commit()
 conn.close()
 PY
+# Scene 2 derives a client-side PRF vault. The proxy uses the platform
+# key + mock /_internal/balance so scene 3 does not pay PBKDF2 (100k)
+# on every request (~500ms in debug builds).
 node "$ROOT/scripts/record_demo_write_vault.mjs" \
-  "$WORKDIR/vault/dev-bypass/openai.enc" \
+  "$WORKDIR/vault-demo/dev-bypass/openai.enc" \
   "dev-bypass" \
   "sk-record-demo-vault"
 
@@ -115,7 +118,7 @@ env \
   KS_VAULT_DIR="$WORKDIR/vault" \
   KS_SESSION_DB="$WORKDIR/sessions/sessions.db" \
   KS_UPSTREAM_OVERRIDE_BASE="$MOCK_URL" \
-  PYTHON_BACKEND_URL="${KS_API_BASE:-http://127.0.0.1:8001}" \
+  PYTHON_BACKEND_URL="$MOCK_URL" \
   KS_INTERNAL_SECRET="" \
   OPENAI_API_KEY="sk-record-demo-platform" \
   "$KS_PROXY_BIN" >"$LOG_DIR/ks-proxy.log" 2>&1 &

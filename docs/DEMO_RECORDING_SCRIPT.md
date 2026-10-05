@@ -15,7 +15,7 @@ Components:
 | A | `scripts/record_demo_mock_upstream.mjs` — fast SSE, 502, truncated stream |
 | B | `ks-proxy` (`RUST_LOG=info`, `KS_UPSTREAM_OVERRIDE_BASE` → mock) |
 | C | `scripts/record_demo_client.ts` + `npm run test:fault` |
-| D | OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` when `OPENROUTER_API_KEY` or `KS_OPENROUTER_API_KEY` is set; otherwise the local plug-in on the mock |
+| D | OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` when a saved vault/env key is present; otherwise the local plug-in on the mock |
 
 Do not paste live secrets into the recording. The left-pane `.env` is a fixture under the workdir.
 
@@ -71,4 +71,4 @@ Do not paste live secrets into the recording. The left-pane `.env` is a fixture 
 
 ## OpenRouter plug-in (Component D)
 
-If `OPENROUTER_API_KEY` / `KS_OPENROUTER_API_KEY` is exported, scene D calls `nvidia/nemotron-3-ultra-550b-a55b:free` and prints only a masked prefix. Otherwise the same model id is served from the local mock so the take still completes.
+Scene D looks for a previously saved OpenRouter key in `OPENROUTER_API_KEY`, `KS_OPENROUTER_API_KEY`, `KS_OPENROUTER_API_KEY_FILE`, or `src/backend/data/vault_shim.db`. A live key (40+ chars) calls `nvidia/nemotron-3-ultra-550b-a55b:free` and prints only a masked prefix plus the model output. Otherwise the same model id is served from the local mock so the take still completes.

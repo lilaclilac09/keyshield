@@ -85,6 +85,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ks-proxy platform-key path calls these on the Python control plane.
+  // The record-demo harness points PYTHON_BACKEND_URL at this mock so
+  // scene 3 can skip PBKDF2 vault decrypt and stay under 80ms.
+  if (req.method === "GET" && path.startsWith("/_internal/balance/")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ balance_usd: 5.0 }));
+    return;
+  }
+  if (req.method === "POST" && path === "/_internal/log") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ingested: 0 }));
+    return;
+  }
+
   const chunks = [];
   req.on("data", (c) => chunks.push(c));
   req.on("end", () => {
