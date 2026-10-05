@@ -36,92 +36,7 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
-### Three pillars
-
-| | What you get |
-|---|---|
-| **10x smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks it up instantly. No more `.env` copy-paste loops. |
-| **10x more secure** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same zero-knowledge model as iCloud Keychain, built for API secrets. |
-| **10x faster calls** | Rust proxy with two-tier cache (memory + disk) and single-flight dedup. 50 identical `getBalance` calls hit the network once. Hot-path Solana RPCs land in the 50–80ms band without changing your client code. |
-
-### Architecture
-
-KeyShield is a **non-custodial session-key sandbox for agent commerce**.
-The human (or the agent's operator) encrypts provider keys on-device
-(WebAuthn-PRF → HKDF → AES-256-GCM). The Cloudflare sync-worker stores
-ciphertext only. At request time the client decrypts locally, the
-Python proxy injects `X-Upstream-API-Key` once, and the key is never
-persisted. The agent process holds a session token (`ksv2_…`), not
-`sk-` / `gsk_` material.
-
-The on-chain program is **pinocchio**, not Anchor. Instruction handlers
-are `no_std`, read `aps_offset` instead of deserializing heap types,
-and stay inside a tight CU budget: mint / PDA / tombstone checks run
-after the cheap early returns so a bad settler or a zero-byte artifact
-fails before `TransferChecked`.
-
-**Two-phase commit closes the settlement vs fulfillment gap.** Phase 1
-(`hold_estimate`) locks micro-USDC in the stream ledger. Phase 2
-(`verify_fulfillment` + `assert_settlement_artifact`) hashes the
-upstream body and refuses empty, error, or short digests. Phase 3
-(`settle_receipt`) accepts `HMAC-SHA256(session, artifact)` and only
-then builds `mpp_settle`. A 502, a truncated SSE, or a missing 32-byte
-hash cannot debit the Devnet escrow.
-
-```
-  You ──► Store keys in vault (dashboard or Chrome extension)
-             │
-             ├── encrypted in your browser (AES-256-GCM)
-             └── server only holds ciphertext
-                    │
-  Your agent ──► session token (never the raw key)
-                    │
-                    └──► Python proxy ──► upstream (OpenRouter / Ollama / vLLM / …)
-                            │
-                            ├── hold → verify artifact (32-byte sha256) → capture
-                            ├── Rust hot-path cache: 50–80ms Solana RPCs
-                            └── pinocchio mpp_settle on Devnet USDC
-```
-
-### Same vault. Two interfaces.
-
-**For you** — Dashboard + Chrome extension. Add keys, rotate, see usage, share with teammates (scoped, revocable).
-
-**For your agent** — Python SDK / CLI / REST API. Agent gets a session token, never the raw key. Spending cap enforced on-chain. Kill switch from your dashboard.
-
-```python
-from keyshield import KeyShield
-
-ks = KeyShield(token=os.environ["KS_TOKEN"])
-client = ks.openai_client()   # zero raw keys
-```
-
----
-
-## Quickstart
-
-```bash
-# 1. start the stack
-node dev.cjs
-
-# 2. open the vault UI
-open http://localhost:5173
-
-# 3. connect wallet → store a provider key → copy Developer token
-
-# 4. call an upstream via the proxy
-export KS_TOKEN="ksv2_..."
-export KS_BASE="http://localhost:8001"
-
-curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
-  -H "Authorization: Bearer $KS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
-```
-
-→ Full setup: [DEVELOPMENT.md](DEVELOPMENT.md)
-
----
+**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register)
 
 ## How to use this
 
@@ -288,6 +203,92 @@ Full endpoint list: [docs/API.md](docs/API.md). Design notes:
 [AGENTS.md](AGENTS.md).
 
 ---
+
+
+### Three pillars
+
+| | What you get |
+|---|---|
+| **10x smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks it up instantly. No more `.env` copy-paste loops. |
+| **10x more secure** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same zero-knowledge model as iCloud Keychain, built for API secrets. |
+| **10x faster calls** | Rust proxy with two-tier cache (memory + disk) and single-flight dedup. 50 identical `getBalance` calls hit the network once. Hot-path Solana RPCs land in the 50–80ms band without changing your client code. |
+
+### Architecture
+
+KeyShield is a **non-custodial session-key sandbox for agent commerce**.
+The human (or the agent's operator) encrypts provider keys on-device
+(WebAuthn-PRF → HKDF → AES-256-GCM). The Cloudflare sync-worker stores
+ciphertext only. At request time the client decrypts locally, the
+Python proxy injects `X-Upstream-API-Key` once, and the key is never
+persisted. The agent process holds a session token (`ksv2_…`), not
+`sk-` / `gsk_` material.
+
+The on-chain program is **pinocchio**, not Anchor. Instruction handlers
+are `no_std`, read `aps_offset` instead of deserializing heap types,
+and stay inside a tight CU budget: mint / PDA / tombstone checks run
+after the cheap early returns so a bad settler or a zero-byte artifact
+fails before `TransferChecked`.
+
+**Two-phase commit closes the settlement vs fulfillment gap.** Phase 1
+(`hold_estimate`) locks micro-USDC in the stream ledger. Phase 2
+(`verify_fulfillment` + `assert_settlement_artifact`) hashes the
+upstream body and refuses empty, error, or short digests. Phase 3
+(`settle_receipt`) accepts `HMAC-SHA256(session, artifact)` and only
+then builds `mpp_settle`. A 502, a truncated SSE, or a missing 32-byte
+hash cannot debit the Devnet escrow.
+
+```
+  You ──► Store keys in vault (dashboard or Chrome extension)
+             │
+             ├── encrypted in your browser (AES-256-GCM)
+             └── server only holds ciphertext
+                    │
+  Your agent ──► session token (never the raw key)
+                    │
+                    └──► Python proxy ──► upstream (OpenRouter / Ollama / vLLM / …)
+                            │
+                            ├── hold → verify artifact (32-byte sha256) → capture
+                            ├── Rust hot-path cache: 50–80ms Solana RPCs
+                            └── pinocchio mpp_settle on Devnet USDC
+```
+
+### Same vault. Two interfaces.
+
+**For you** — Dashboard + Chrome extension. Add keys, rotate, see usage, share with teammates (scoped, revocable).
+
+**For your agent** — Python SDK / CLI / REST API. Agent gets a session token, never the raw key. Spending cap enforced on-chain. Kill switch from your dashboard.
+
+```python
+from keyshield import KeyShield
+
+ks = KeyShield(token=os.environ["KS_TOKEN"])
+client = ks.openai_client()   # zero raw keys
+```
+
+---
+
+## Quickstart
+
+```bash
+# 1. start the stack
+node dev.cjs
+
+# 2. open the vault UI
+open http://localhost:5173
+
+# 3. connect wallet → store a provider key → copy Developer token
+
+# 4. call an upstream via the proxy
+export KS_TOKEN="ksv2_..."
+export KS_BASE="http://localhost:8001"
+
+curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+```
+
+→ Full setup: [DEVELOPMENT.md](DEVELOPMENT.md)
 
 ## Repo map
 
