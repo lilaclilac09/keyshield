@@ -120,7 +120,7 @@ pub fn process_store_key(
     }
 
     // Now add the key to the vault (whether new or existing)
-    let mut vault_data = vault.try_borrow_mut_data()?;
+    let vault_data = vault.try_borrow_mut_data()?;
     if vault_data.len() < Vault::SIZE {
         return Err(ProgramError::AccountDataTooSmall);
     }
@@ -139,7 +139,7 @@ pub fn process_store_key(
     }
 
     // Add key to vault
-    let key_index = vault_state.add_key(encrypted_key_hash, key_type)
+    let _key_index = vault_state.add_key(encrypted_key_hash, key_type)
         .ok_or(KeyShieldError::InvalidKeyData)?; // Vault is full
 
     drop(vault_data);

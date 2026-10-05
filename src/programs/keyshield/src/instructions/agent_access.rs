@@ -18,7 +18,7 @@ use pinocchio::{
 use crate::{
     error::KeyShieldError,
     state::{
-        AgentGrant, UniversalVault, MAX_AGENTS,
+        UniversalVault, MAX_AGENTS,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE,
         AGENT_GRANT_REVOKED_AT_OFFSET,
         POLICY_RULES_START, POLICY_RULE_SIZE, MAX_POLICY_RULES_STORED,
@@ -49,7 +49,7 @@ use crate::{
 /// - allowed_models_count (1 byte)
 /// - allowed_models (variable) - Null-terminated strings
 pub fn process_grant_agent_access(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -202,7 +202,7 @@ pub fn process_grant_agent_access(
 /// Instruction data:
 /// - agent_pubkey (32 bytes)
 pub fn process_revoke_agent_access(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -292,7 +292,7 @@ pub fn process_revoke_agent_access(
 /// - proof_data (variable) - ZK proof or MPC signature
 /// - domain (variable, null-terminated) - Requesting domain for policy check
 pub fn process_access_with_agent(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -311,7 +311,7 @@ pub fn process_access_with_agent(
     }
 
     let access_type = data[0];
-    let key_id: [u8; 32] = data[1..33].try_into()
+    let _key_id: [u8; 32] = data[1..33].try_into()
         .map_err(|_| KeyShieldError::InvalidKeyData)?;
 
     // Verify proof based on access type
@@ -441,7 +441,7 @@ pub fn process_access_with_agent(
 /// - allowed_actions (1 byte) - Bitmap of allowed action types
 /// - expiry_seconds (8 bytes) - How long the signer is valid
 pub fn process_create_ephemeral_signer(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -453,7 +453,7 @@ pub fn process_create_ephemeral_signer(
     let accounts_iter = &mut accounts.iter();
     let owner = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let vault = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let ephemeral_signer = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let _ephemeral_signer = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let agent = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let _system_program = accounts_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
@@ -462,8 +462,8 @@ pub fn process_create_ephemeral_signer(
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    let allowed_actions = data[0];
-    let expiry_seconds = u64::from_le_bytes(data[1..9].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?);
+    let _allowed_actions = data[0];
+    let _expiry_seconds = u64::from_le_bytes(data[1..9].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?);
 
     // Read vault to verify agent has access
     let vault_data = borrow_vault!(vault);

@@ -17,7 +17,7 @@ use pinocchio::{
 use crate::{
     error::KeyShieldError,
     state::{
-        PaymentStream, UniversalVault,
+        UniversalVault,
         AGENT_GRANTS_START, AGENT_GRANT_SIZE,
         PAYMENT_STREAMS_START, PAYMENT_STREAM_SIZE, MAX_PAYMENT_STREAMS,
     },
@@ -39,7 +39,7 @@ use crate::{
 /// - unit_type (1 byte) - 0 = per_call, 1 = per_token
 /// - settlement_interval_secs (4 bytes) - How often to settle (e.g., 60 for 60s)
 pub fn process_grant_agent_payment_access(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -65,6 +65,9 @@ pub fn process_grant_agent_payment_access(
     let rate_per_call = u64::from_le_bytes(data[32..40].try_into().map_err(|_| KeyShieldError::InvalidPaymentAmount)?);
     let rate_per_token = u64::from_le_bytes(data[40..48].try_into().map_err(|_| KeyShieldError::InvalidPaymentAmount)?);
     let unit_type = data[48];
+    // Slot +64 stores the active unit rate. Per-token streams must not
+    // silently settle against the per-call price.
+    let stored_rate = if unit_type == 1 { rate_per_token } else { rate_per_call };
     let settlement_interval = u32::from_le_bytes(data[49..53].try_into().map_err(|_| KeyShieldError::InvalidKeyData)?);
 
     // Read vault data
@@ -144,7 +147,7 @@ pub fn process_grant_agent_payment_access(
     // Write payment stream
     vault_data[offset..offset + 32].copy_from_slice(&service_url_hash);
     vault_data[offset + 32..offset + 64].copy_from_slice(agent_pubkey.as_ref());
-    vault_data[offset + 64..offset + 72].copy_from_slice(&rate_per_call.to_le_bytes());
+    vault_data[offset + 64..offset + 72].copy_from_slice(&stored_rate.to_le_bytes());
     vault_data[offset + 72] = unit_type;
     vault_data[offset + 73] = 1; // is_active
     vault_data[offset + 74..offset + 78].copy_from_slice(&settlement_interval.to_le_bytes());
@@ -178,7 +181,7 @@ pub fn process_grant_agent_payment_access(
 /// - service_url_hash (32 bytes)
 /// - units_consumed (8 bytes) - Number of units (calls or tokens)
 pub fn process_settle_payment(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -250,8 +253,6 @@ pub fn process_settle_payment(
     };
 
     // Check against agent's max spend
-    let mut max_spend = 0u64;
-
     for i in 0..32 {
         let grant_offset = AGENT_GRANTS_START + (i * AGENT_GRANT_SIZE);
         let existing_pubkey_bytes: [u8; 32] = vault_data[grant_offset..grant_offset + 32].try_into()
@@ -260,7 +261,7 @@ pub fn process_settle_payment(
             .map_err(|_| KeyShieldError::AgentGrantNotFound)?;
 
         if existing_pubkey == agent_pubkey {
-            max_spend = u64::from_le_bytes(vault_data[grant_offset + 49..grant_offset + 57].try_into()
+            let max_spend = u64::from_le_bytes(vault_data[grant_offset + 49..grant_offset + 57].try_into()
                 .map_err(|_| KeyShieldError::MaxSpendExceeded)?);
             let cumulative = u64::from_le_bytes(vault_data[grant_offset + 69..grant_offset + 77].try_into()
                 .map_err(|_| KeyShieldError::MaxSpendExceeded)?);
@@ -309,7 +310,7 @@ pub fn process_settle_payment(
 /// - amount_micro_usdc (8 bytes) - Amount to pay
 /// - memo (variable, null-terminated) - Payment memo
 pub fn process_pay_for_service(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -327,9 +328,9 @@ pub fn process_pay_for_service(
         return Err(KeyShieldError::AccessDenied.into());
     }
 
-    let agent_pubkey_bytes: [u8; 32] = data[0..32].try_into()
+    let _agent_pubkey_bytes: [u8; 32] = data[0..32].try_into()
         .map_err(|_| KeyShieldError::InvalidAgentPubkey)?;
-    let agent_pubkey = Pubkey::try_from(&agent_pubkey_bytes[..])
+    let _agent_pubkey = Pubkey::try_from(&_agent_pubkey_bytes[..])
         .map_err(|_| KeyShieldError::InvalidAgentPubkey)?;
 
     let _service_url_hash: [u8; 32] = data[32..64].try_into()
@@ -416,7 +417,7 @@ pub fn process_pay_for_service(
 /// Instruction data:
 /// - service_url_hash (32 bytes)
 pub fn process_close_payment_stream(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
