@@ -26,6 +26,7 @@
     "live:e2e:dry": "npx --yes tsx scripts/live_e2e_run.ts --dry-run",
     "live:e2e:setup": "npx --yes tsx scripts/live_e2e_setup.ts",
     "live:zk-vault": "npx --yes tsx scripts/run_devnet_zk_vault.ts",
+    "live:zk-vault:fallback": "KS_ZK_ALLOW_FALLBACK=1 npx --yes tsx scripts/run_devnet_zk_vault.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test:e2e": "playwright test"
   },

@@ -9,7 +9,7 @@
  *
  * If live program `41P2wHK…` rejects disc 40, this script does **not**
  * pretend the ix landed. It records the simulation error and may send a
- * separately labeled wallet-liveness transfer.
+ * separately labeled wallet-liveness transfer only when fallback is enabled.
  *
  *   npx tsx scripts/run_devnet_zk_vault.ts
  *
@@ -51,6 +51,7 @@ const RPC = process.env.KS_RPC_URL || process.env.KS_SOLANA_RPC_URL || "https://
 const PROGRAM_ID = new PublicKey(process.env.KS_KEYSHIELD_PROGRAM_ID || PROGRAM_ID_DEFAULT);
 const DEPOSIT_LAMPORTS = Number(process.env.KS_ZK_DEPOSIT_LAMPORTS || 10_000_000);
 const EXECUTE_LAMPORTS = Number(process.env.KS_ZK_EXECUTE_LAMPORTS || 5_000_000);
+const ALLOW_FALLBACK = /^(1|true|yes|on)$/i.test(process.env.KS_ZK_ALLOW_FALLBACK || "");
 const EXPLORER = "https://explorer.solana.com/tx";
 
 type Report = {
@@ -58,11 +59,17 @@ type Report = {
   owner: string;
   vaultPda: string;
   destination: string;
+  strictMode: boolean;
   verifier: "scaffold-sha256";
   groth16: false;
   altBn128: false;
   liveProgramHasZkIxs: boolean | null;
   simulation: { ok: boolean; err: string | null; logs: string[] };
+  probe?: {
+    ix40SimOk: boolean;
+    ix40Error: string | null;
+    verdict: "upgraded-40-43" | "not-upgraded-40-43";
+  };
   txs: Array<{ name: string; signature: string; explorer: string; kind: "zk-vault" | "fallback-labeled" }>;
   fallback?: { reason: string; name: string };
 };
@@ -123,6 +130,7 @@ async function main(): Promise<void> {
     owner: user.publicKey.toBase58(),
     vaultPda: vaultPda.toBase58(),
     destination: dest.toBase58(),
+    strictMode: !ALLOW_FALLBACK,
     verifier: "scaffold-sha256",
     groth16: false,
     altBn128: false,
@@ -136,6 +144,7 @@ async function main(): Promise<void> {
   console.log("Zk vault PDA [keyshield, owner]:", report.vaultPda);
   console.log("Destination:", report.destination);
   console.log("Verifier: scaffold-sha256 (NOT Groth16 / alt_bn128)");
+  console.log("Mode:", ALLOW_FALLBACK ? "fallback-enabled" : "strict-fail-fast");
   if (PROGRAM_ID.toBase58() !== LIVE_PROGRAM) {
     console.log("Note: KS_KEYSHIELD_PROGRAM_ID overrides default", LIVE_PROGRAM);
   }
@@ -163,6 +172,11 @@ async function main(): Promise<void> {
   });
   report.simulation = await simulate(conn, user, [initIx]);
   report.liveProgramHasZkIxs = report.simulation.ok;
+  report.probe = {
+    ix40SimOk: report.simulation.ok,
+    ix40Error: report.simulation.err,
+    verdict: report.simulation.ok ? "upgraded-40-43" : "not-upgraded-40-43",
+  };
   console.log("Simulate initialize_vault (ix 40):", report.simulation.ok ? "OK" : report.simulation.err);
   if (report.simulation.logs.length) {
     console.log("Sim logs (tail):");
@@ -225,9 +239,19 @@ async function main(): Promise<void> {
     console.log("Tx verify_and_execute:", sig3);
     console.log("Confirmed on Devnet. Amount lamports:", EXECUTE_LAMPORTS, "(SOL, not USDC)");
   } else {
+    const strictReason =
+      "Live program rejected ix 40. 41P2wHK… likely predates zk vault ixs 40–43. Upgrade required. Not claiming Groth16.";
+    if (!ALLOW_FALLBACK) {
+      mkdirSync(ARTIFACT_DIR, { recursive: true });
+      const out = join(ARTIFACT_DIR, "zk-vault-devnet.json");
+      writeFileSync(out, JSON.stringify(report, null, 2));
+      console.error(strictReason);
+      console.error("Strict mode is ON (KS_ZK_ALLOW_FALLBACK is not set).");
+      console.error("Wrote", out);
+      process.exit(2);
+    }
     report.fallback = {
-      reason:
-        "Live program rejected ix 40. 41P2wHK… likely predates zk vault ixs 40–43. Upgrade required. Not claiming Groth16.",
+      reason: strictReason,
       name: "wallet_liveness_transfer",
     };
     console.log(report.fallback.reason);
