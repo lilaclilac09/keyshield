@@ -379,12 +379,12 @@ as instruction 0 so the program does not return 6114.
 
 | Surface | Status (2026-10-05) |
 |---|---|
-| App welcome title | Production still says “Zero-Trust API Key Vault”. The Keychain headline is in this branch until it is reviewed and deployed. |
+| App welcome title | Production still says “Zero-Trust API Key Vault”. The Keychain headline is [PR #67](https://github.com/lilaclilac09/keyshield/pull/67) until it is reviewed and deployed. |
 | How-to + agent register | On `main` (PRs #60, #61). |
-| Free / Plugin / Accelerate plans + 3 device levels | Draft only — [PR #66](https://github.com/lilaclilac09/keyshield/pull/66). `GET /billing/plans` is **404** in production. Do not sell them as shipped. |
-| Vercel Hobby quota / skip preview builds | Draft — [PR #65](https://github.com/lilaclilac09/keyshield/pull/65). Do not merge until the 24h deployment quota window ends. |
+| Free / Plugin / Accelerate plans + 3 device levels | On `main` — [PR #66](https://github.com/lilaclilac09/keyshield/pull/66) merged 2026-10-05T14:29:41Z. Railway `GET /billing/plans` returns JSON (`Free` / `Plugin` / `Accelerate`). The Vercel app bundle may lag the API. |
+| Vercel Hobby quota / skip preview builds | Still open — [PR #65](https://github.com/lilaclilac09/keyshield/pull/65). Do not merge until the 24h `api-deployments-free-per-day` window ends (~2026-10-06T12:25:54Z). |
 
-Closed GitHub PRs were not lost work: stacked drafts #53–#57 landed through #59; duplicates were superseded. You needed the features, not the closed PR numbers. Off-product PRs (#40 Fable5, #41 second brain, #42 DJ set) should stay closed.
+Closed GitHub PRs were not lost work. Stacked drafts #53–#57 look like clones because each PR targeted the previous agent branch, not `main`. GitHub’s green “mergeable” flag is vs that old base. Against current `main`, 21 closed PRs **conflict**, 6 are already on `main` (ancestor or cherry-equivalent), and the 3 unique conflict-free leftovers (#38 ks-agent, #40 Fable5, #41 second brain) should **stay closed** — they are the wrong product surface or an `/agent/execute` executor that is not the current register+proxy model. Do not reopen them to “get the work back.”
 
 ## On-chain verification (Solana Devnet)
 
