@@ -21,6 +21,9 @@ export const PROOF_KIND_SCAFFOLD = 0x00;
 export const PROOF_KIND_GROTH16 = 0x01;
 export const GROTH16_VK_INSTALLED = false;
 export const SCAFFOLD_DOMAIN = Buffer.from("ks-scaffold-v1");
+export const SCAFFOLD_DIR_LEFT = 0;
+export const SCAFFOLD_DIR_RIGHT = 1;
+export const SCAFFOLD_MAX_DEPTH = 16;
 
 export function encodeScaffoldProof(args: {
   nullifier: Buffer | Uint8Array | number[] | string;
@@ -28,7 +31,34 @@ export function encodeScaffoldProof(args: {
   amount: number | bigint;
   validUntilSlot: number | bigint;
   merkleRoot: Buffer | Uint8Array | number[] | string;
+  merklePath?: {
+    leaf: Buffer | Uint8Array | number[] | string;
+    leafIndex: number;
+    siblings: Array<Buffer | Uint8Array | number[] | string>;
+    dirs: Array<"L" | "R">;
+  };
 }): Buffer {
+  const path = args.merklePath ?? {
+    leaf: args.merkleRoot,
+    leafIndex: 0,
+    siblings: [] as Array<Buffer | Uint8Array | number[] | string>,
+    dirs: [] as Array<"L" | "R">,
+  };
+  if (path.siblings.length !== path.dirs.length) {
+    throw new Error("invalid scaffold path: siblings/dirs mismatch");
+  }
+  if (path.siblings.length > SCAFFOLD_MAX_DEPTH) {
+    throw new Error(`invalid scaffold path: depth>${SCAFFOLD_MAX_DEPTH}`);
+  }
+  const depth = path.siblings.length;
+  const suffix = Buffer.alloc(4 + 1 + depth * 33);
+  suffix.writeUInt32LE(path.leafIndex >>> 0, 0);
+  suffix[4] = depth;
+  for (let i = 0; i < depth; i++) {
+    suffix[5 + i * 33] = path.dirs[i] === "L" ? SCAFFOLD_DIR_LEFT : SCAFFOLD_DIR_RIGHT;
+    as32(path.siblings[i]).copy(suffix, 5 + i * 33 + 1);
+  }
+  const leaf = as32(path.leaf);
   const pre = Buffer.concat([
     SCAFFOLD_DOMAIN,
     as32(args.nullifier),
@@ -36,8 +66,10 @@ export function encodeScaffoldProof(args: {
     u64le(args.amount),
     u64le(args.validUntilSlot),
     as32(args.merkleRoot),
+    leaf,
+    suffix,
   ]);
-  return Buffer.concat([Buffer.from([PROOF_KIND_SCAFFOLD]), createHash("sha256").update(pre).digest()]);
+  return Buffer.concat([Buffer.from([PROOF_KIND_SCAFFOLD]), createHash("sha256").update(pre).digest(), leaf, suffix]);
 }
 
 export function u64le(n: number | bigint): Buffer {
@@ -116,6 +148,22 @@ export function buildRegisterRootIx(args: {
       { pubkey: args.vaultPda, isSigner: false, isWritable: true },
     ],
     data: Buffer.concat([Buffer.from([IX_REGISTER_ROOT]), body]),
+  });
+}
+
+export function buildUpdatePolicyIx(args: {
+  programId: PublicKey;
+  owner: PublicKey;
+  vaultPda: PublicKey;
+  spendCap: number | bigint;
+  merkleRoot: Buffer | Uint8Array | number[] | string;
+}): TransactionInstruction {
+  return buildRegisterRootIx({
+    programId: args.programId,
+    owner: args.owner,
+    vaultPda: args.vaultPda,
+    spendCap: args.spendCap,
+    merkleRoot: args.merkleRoot,
   });
 }
 

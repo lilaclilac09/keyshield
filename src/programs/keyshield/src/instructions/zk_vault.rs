@@ -287,7 +287,8 @@ pub fn process_update_zk_policy(
 /// Accounts — USDC path (7):
 ///   payer signer, vault, nullifier, vault_ata, dest_ata, mint, token
 ///
-/// Proof: `0x00 || scaffold_digest` or `0x01 || groth16(A,B,C)`.
+/// Proof: `0x00 || digest || leaf || leaf_index || depth || (dir||sibling)*`
+/// or `0x01 || groth16(A,B,C)`.
 /// Groth16 fails closed until a VK is installed.
 pub fn process_execute_zk_action(
     program_id: &Pubkey,

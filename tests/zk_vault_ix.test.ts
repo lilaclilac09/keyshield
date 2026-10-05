@@ -76,7 +76,7 @@ describe("zk vault ix builders", () => {
       merkleRoot: root,
     });
     expect(proof[0]).toBe(PROOF_KIND_SCAFFOLD);
-    expect(proof).toHaveLength(33);
+    expect(proof).toHaveLength(70);
     const ix = buildVerifyAndExecuteIx({
       programId: PROGRAM_ID,
       payer,

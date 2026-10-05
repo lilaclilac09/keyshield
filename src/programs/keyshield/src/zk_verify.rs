@@ -18,6 +18,11 @@ use crate::error::KeyShieldError;
 pub const PROOF_KIND_SCAFFOLD: u8 = 0x00;
 pub const PROOF_KIND_GROTH16: u8 = 0x01;
 pub const SCAFFOLD_DOMAIN: &[u8] = b"ks-scaffold-v1";
+pub const SCAFFOLD_DIR_LEFT: u8 = 0;
+pub const SCAFFOLD_DIR_RIGHT: u8 = 1;
+pub const SCAFFOLD_PREFIX_LEN: usize = 32 + 32 + 4 + 1;
+pub const SCAFFOLD_STEP_LEN: usize = 1 + 32;
+pub const SCAFFOLD_MAX_DEPTH: usize = 16;
 pub const GROTH16_PROOF_LEN: usize = 64 + 128 + 64;
 pub const G1_LEN: usize = 64;
 pub const G2_LEN: usize = 128;
@@ -46,31 +51,89 @@ pub struct ZkPublicInputs {
     pub merkle_root: [u8; 32],
 }
 
-/// `sha256("ks-scaffold-v1" || nullifier || action || amount_le || until_le || root)`
-pub fn scaffold_digest(pubs: &ZkPublicInputs) -> [u8; 32] {
-    let mut pre = [0u8; 14 + 32 + 32 + 8 + 8 + 32];
+/// `sha256("ks-scaffold-v1" || nullifier || action || amount_le || until_le || root
+///         || merkle_leaf || leaf_index_le || depth || (dir||sibling)*)`
+pub fn scaffold_digest(
+    pubs: &ZkPublicInputs,
+    merkle_leaf: &[u8; 32],
+    merkle_suffix: &[u8],
+) -> [u8; 32] {
+    let mut pre = [0u8; 14 + 32 + 32 + 8 + 8 + 32 + 32 + 4 + 1 + (SCAFFOLD_MAX_DEPTH * 33)];
+    let total = 14 + 32 + 32 + 8 + 8 + 32 + 32 + merkle_suffix.len();
+    if total > pre.len() {
+        return [0u8; 32];
+    }
     pre[..14].copy_from_slice(SCAFFOLD_DOMAIN);
     pre[14..46].copy_from_slice(&pubs.nullifier);
     pre[46..78].copy_from_slice(&pubs.action_hash);
     pre[78..86].copy_from_slice(&pubs.amount.to_le_bytes());
     pre[86..94].copy_from_slice(&pubs.valid_until.to_le_bytes());
     pre[94..126].copy_from_slice(&pubs.merkle_root);
+    pre[126..158].copy_from_slice(merkle_leaf);
+    pre[158..total].copy_from_slice(merkle_suffix);
+    sha256(&pre[..total])
+}
+
+fn hash_node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+    let mut pre = [0u8; 1 + 32 + 32];
+    pre[0] = 0x01;
+    pre[1..33].copy_from_slice(left);
+    pre[33..65].copy_from_slice(right);
     sha256(&pre)
 }
 
-pub fn encode_scaffold_proof(pubs: &ZkPublicInputs) -> [u8; 33] {
-    let mut out = [0u8; 33];
+pub fn encode_scaffold_proof(pubs: &ZkPublicInputs) -> [u8; 70] {
+    let mut out = [0u8; 70];
     out[0] = PROOF_KIND_SCAFFOLD;
-    out[1..].copy_from_slice(&scaffold_digest(pubs));
+    let leaf = pubs.merkle_root;
+    let mut suffix = [0u8; 5];
+    suffix[0..4].copy_from_slice(&0u32.to_le_bytes());
+    suffix[4] = 0;
+    out[1..33].copy_from_slice(&scaffold_digest(pubs, &leaf, &suffix));
+    out[33..65].copy_from_slice(&leaf);
+    out[65..69].copy_from_slice(&0u32.to_le_bytes());
+    out[69] = 0;
     out
 }
 
 fn verify_scaffold(body: &[u8], pubs: &ZkPublicInputs) -> Result<(), ProgramError> {
-    if body.len() != 32 {
+    if body.len() < SCAFFOLD_PREFIX_LEN {
         return Err(KeyShieldError::InvalidZKProof.into());
     }
-    let expect = scaffold_digest(pubs);
-    if body != expect.as_ref() {
+    let depth = body[68] as usize;
+    if depth > SCAFFOLD_MAX_DEPTH {
+        return Err(KeyShieldError::InvalidZKProof.into());
+    }
+    let expect_len = SCAFFOLD_PREFIX_LEN + depth.saturating_mul(SCAFFOLD_STEP_LEN);
+    if body.len() != expect_len {
+        return Err(KeyShieldError::InvalidZKProof.into());
+    }
+
+    let mut digest = [0u8; 32];
+    digest.copy_from_slice(&body[0..32]);
+    let mut leaf = [0u8; 32];
+    leaf.copy_from_slice(&body[32..64]);
+    let merkle_suffix = &body[64..];
+
+    let mut node = leaf;
+    let mut cursor = SCAFFOLD_PREFIX_LEN;
+    for _ in 0..depth {
+        let dir = body[cursor];
+        let mut sib = [0u8; 32];
+        sib.copy_from_slice(&body[cursor + 1..cursor + 33]);
+        node = match dir {
+            SCAFFOLD_DIR_LEFT => hash_node(&node, &sib),
+            SCAFFOLD_DIR_RIGHT => hash_node(&sib, &node),
+            _ => return Err(KeyShieldError::InvalidZKProof.into()),
+        };
+        cursor += SCAFFOLD_STEP_LEN;
+    }
+    if node != pubs.merkle_root {
+        return Err(KeyShieldError::ScaffoldTranscriptMismatch.into());
+    }
+
+    let expect = scaffold_digest(pubs, &leaf, merkle_suffix);
+    if digest != expect {
         return Err(KeyShieldError::ScaffoldTranscriptMismatch.into());
     }
     Ok(())
@@ -206,7 +269,16 @@ mod tests {
     fn scaffold_rejects_wrong_digest() {
         let p = pubs();
         let mut bytes = encode_scaffold_proof(&p);
-        bytes[32] ^= 1;
+        bytes[1] ^= 1;
+        let err = verify_authorization_proof(&bytes, &p).unwrap_err();
+        assert_eq!(code(err), KeyShieldError::ScaffoldTranscriptMismatch as u32);
+    }
+
+    #[test]
+    fn scaffold_rejects_wrong_merkle_path() {
+        let p = pubs();
+        let mut bytes = encode_scaffold_proof(&p);
+        bytes[33] ^= 1;
         let err = verify_authorization_proof(&bytes, &p).unwrap_err();
         assert_eq!(code(err), KeyShieldError::ScaffoldTranscriptMismatch as u32);
     }

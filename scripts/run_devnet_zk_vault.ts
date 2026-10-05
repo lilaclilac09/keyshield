@@ -31,7 +31,7 @@ import {
 import {
   PROGRAM_ID_DEFAULT,
   buildInitializeVaultIx,
-  buildRegisterRootIx,
+  buildUpdatePolicyIx,
   buildVerifyAndExecuteIx,
   deriveZkNullifierPda,
   deriveZkVaultPda,
@@ -179,15 +179,16 @@ async function main(): Promise<void> {
       console.log("Vault PDA already exists — skip initialize_vault");
     }
 
-    const rootIx = buildRegisterRootIx({
+    const rootIx = buildUpdatePolicyIx({
       programId: PROGRAM_ID,
       owner: user.publicKey,
       vaultPda,
+      spendCap: DEPOSIT_LAMPORTS,
       merkleRoot: root,
     });
     const sig2 = await send(conn, user, [rootIx]);
-    report.txs.push({ name: "register_root", signature: sig2, explorer: explorer(sig2), kind: "zk-vault" });
-    console.log("Tx register_root:", sig2);
+    report.txs.push({ name: "update_policy", signature: sig2, explorer: explorer(sig2), kind: "zk-vault" });
+    console.log("Tx update_policy:", sig2);
 
     const execIx = buildVerifyAndExecuteIx({
       programId: PROGRAM_ID,

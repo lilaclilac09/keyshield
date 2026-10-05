@@ -15,6 +15,9 @@ export const ONCHAIN_VERIFIER = 'scaffold-sha256' as const;
 export const PROOF_KIND_SCAFFOLD = 0x00;
 export const PROOF_KIND_GROTH16 = 0x01;
 export const GROTH16_VK_INSTALLED = false;
+export const SCAFFOLD_DIR_LEFT = 0;
+export const SCAFFOLD_DIR_RIGHT = 1;
+export const SCAFFOLD_MAX_DEPTH = 16;
 export const PROGRAM_ID_DEFAULT = '41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j';
 export const ZK_VAULT_SEED = new TextEncoder().encode('keyshield');
 export const ZK_NULLIFIER_SEED = new TextEncoder().encode('nullifier');
@@ -60,7 +63,34 @@ export async function encodeScaffoldOnchainProof(args: {
   amount: bigint | number | string;
   validUntilSlot: bigint | number | string;
   merkleRootHex: string;
+  merklePath?: {
+    leafHex: string;
+    leafIndex: number;
+    siblingsHex: string[];
+    dirs: Array<'L' | 'R'>;
+  };
 }): Promise<Uint8Array> {
+  const path = args.merklePath ?? {
+    leafHex: args.merkleRootHex,
+    leafIndex: 0,
+    siblingsHex: [] as string[],
+    dirs: [] as Array<'L' | 'R'>,
+  };
+  if (path.siblingsHex.length !== path.dirs.length) {
+    throw new Error('invalid scaffold merkle path: dirs/siblings length mismatch');
+  }
+  if (path.siblingsHex.length > SCAFFOLD_MAX_DEPTH) {
+    throw new Error(`invalid scaffold merkle path: depth>${SCAFFOLD_MAX_DEPTH}`);
+  }
+  const depth = path.siblingsHex.length;
+  const suffix = new Uint8Array(4 + 1 + depth * 33);
+  new DataView(suffix.buffer).setUint32(0, path.leafIndex >>> 0, true);
+  suffix[4] = depth;
+  for (let i = 0; i < depth; i++) {
+    suffix[5 + i * 33] = path.dirs[i] === 'L' ? SCAFFOLD_DIR_LEFT : SCAFFOLD_DIR_RIGHT;
+    suffix.set(b32(path.siblingsHex[i]), 5 + i * 33 + 1);
+  }
+  const leaf = b32(path.leafHex);
   const digest = await sha256(
     concatBytes(
       te('ks-scaffold-v1'),
@@ -69,9 +99,11 @@ export async function encodeScaffoldOnchainProof(args: {
       u64le(args.amount),
       u64le(args.validUntilSlot),
       b32(args.merkleRootHex),
+      leaf,
+      suffix,
     ),
   );
-  return concatBytes(new Uint8Array([PROOF_KIND_SCAFFOLD]), digest);
+  return concatBytes(new Uint8Array([PROOF_KIND_SCAFFOLD]), digest, leaf, suffix);
 }
 
 export function programId(): PublicKey {
@@ -117,6 +149,25 @@ export function buildInitializeVaultIx(args: {
   });
 }
 
+export function buildUpdatePolicyIx(args: {
+  owner: PublicKey;
+  newSpendCap: bigint | number | string;
+  merkleRootHex: string;
+  pid?: PublicKey;
+}): TransactionInstruction {
+  const pid = args.pid ?? programId();
+  const [vault] = deriveZkVaultPda(args.owner, pid);
+  return new TransactionInstruction({
+    programId: pid,
+    keys: [
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: vault, isSigner: false, isWritable: true },
+    ],
+    data: Buffer.from(concat(new Uint8Array([IX_REGISTER_ROOT]), u64le(args.newSpendCap), b32(args.merkleRootHex))),
+  });
+}
+
+/** Backward-compatible root-only policy update (`register_root` shape). */
 export function buildRegisterRootIx(args: {
   owner: PublicKey;
   merkleRootHex: string;

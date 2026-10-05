@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
-import { IX_INIT_ZK_VAULT, IX_REGISTER_ROOT, IX_REVOKE_ZK_GRANT, IX_VERIFY_AND_EXECUTE, planVerifyExecute } from './onchain';
+import {
+  IX_INIT_ZK_VAULT,
+  IX_REGISTER_ROOT,
+  IX_REVOKE_ZK_GRANT,
+  IX_VERIFY_AND_EXECUTE,
+  encodeScaffoldOnchainProof,
+  planVerifyExecute,
+} from './onchain';
 import type { AuthorizationProof } from './zk';
 
-function main() {
+async function main() {
   const proof = {
     kind: 'scaffold-sha256',
     publicInputs: {
@@ -31,7 +38,23 @@ function main() {
   assert.equal(planned.ixs[0].args.seeds, '[b"keyshield", owner]');
   assert.equal(planned.ixs[2].args.seeds, '[b"nullifier", nullifier_hash]');
   assert.equal(planned.verifier, 'scaffold-sha256');
+
+  const onchainProof = await encodeScaffoldOnchainProof({
+    nullifierHex: proof.publicInputs.nullifier,
+    actionHashHex: proof.publicInputs.actionHash,
+    amount: BigInt(proof.publicInputs.spendCap),
+    validUntilSlot: BigInt(proof.publicInputs.validUntilSlot),
+    merkleRootHex: proof.publicInputs.merkleRoot,
+    merklePath: {
+      leafHex: proof.merkle.leaf,
+      leafIndex: proof.merkle.leafIndex,
+      siblingsHex: proof.merkle.siblings,
+      dirs: proof.merkle.dirs,
+    },
+  });
+  assert.equal(onchainProof[0], 0x00);
+  assert.equal(onchainProof.length, 70);
   console.log('onchain ix plan ok', planned.ixs.map((i) => i.name).join(' → '));
 }
 
-main();
+void main();
