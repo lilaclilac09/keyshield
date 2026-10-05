@@ -44,7 +44,7 @@ WHY = {
     "scope": (
         "Free collects passkeys and saves keys in the vault. "
         "Plugin (paid 1) turns the vault into auto-plugins plus biometric "
-        "ZK verify. Accelerate (paid 2) is accretion of speed: cache, "
+        "ZK verify. Accelerate (paid 2) is acceleration of the hot path: cache, "
         "batch, and extreme low latency. Every tier still meters overage "
         "as pay-as-you-go so usage cannot outrun the ledger."
     ),
