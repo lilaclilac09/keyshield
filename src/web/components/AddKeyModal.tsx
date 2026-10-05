@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff, Key, Lock, FileText, Terminal, KeyRound } from 'lucide-react';
 import { VaultItem, VaultItemType, TYPE_PREFIX } from '../types';
 import { getPrefs } from '../lib/preferences';
+import { detectUpstream } from '../lib/keychain';
 
 interface Props { isOpen: boolean; onClose: () => void; onSave: (item: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => Promise<void> | void; initialData?: Partial<VaultItem>; }
 
 const PROVIDERS = [
+  { id: 'openrouter', name: 'OpenRouter (Nemotron free)', tag: 'ai', domain: 'openrouter.ai', placeholder: 'sk-or-v1-\u2026' },
   { id: 'openai', name: 'OpenAI', tag: 'ai', domain: 'openai.com', placeholder: 'sk-proj-\u2026' },
   { id: 'anthropic', name: 'Anthropic Claude', tag: 'ai', domain: 'anthropic.com', placeholder: 'sk-ant-api03-\u2026' },
   { id: 'helius', name: 'Helius RPC', tag: 'rpc', domain: 'helius.dev', placeholder: 'xxxxxxxx-xxxx-\u2026' },
@@ -99,7 +101,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
 
           {type === 'api_key' && (<>
             <div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Provider</label><select className={inputCls + ' appearance-none cursor-pointer'} value={provider.id} onChange={(e) => { const found = PROVIDERS.find(p => p.id === e.target.value); if (found) setProvider(found); }}>{PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div><div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Expires</label><input type="date" className={inputCls + ' [color-scheme:dark]'} value={expiryDate} onChange={e => setExpiryDate(e.target.value)} /></div></div>
-            <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">API Key</label><div className="relative"><input required type={showValue ? 'text' : 'password'} placeholder={provider.placeholder ?? 'Paste your API key'} className={inputCls + ' pr-12 font-mono'} value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)} /><button type="button" onClick={() => setShowValue(!showValue)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a96c2] hover:text-white">{showValue ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></div>
+            <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">API Key</label><div className="relative"><input required type={showValue ? 'text' : 'password'} placeholder={provider.placeholder ?? 'Paste your API key'} className={inputCls + ' pr-12 font-mono'} value={apiKeyValue} onChange={(e) => { const next = e.target.value; setApiKeyValue(next); const detected = detectUpstream(next); if (detected.matched && detected.upstream) { const found = PROVIDERS.find(p => p.id === detected.upstream); if (found) setProvider(found); } }} /><button type="button" onClick={() => setShowValue(!showValue)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8a96c2] hover:text-white">{showValue ? <EyeOff size={15} /> : <Eye size={15} />}</button></div>{detectUpstream(apiKeyValue).matched && <p className="text-[11px] text-emerald-400">Detected {detectUpstream(apiKeyValue).upstream}</p>}</div>
           </>)}
 
           {type === 'password' && (<>

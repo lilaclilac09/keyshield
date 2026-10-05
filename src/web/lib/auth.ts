@@ -193,7 +193,11 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   } catch (e) {
     throw describeApiNetError(e, path);
   }
-  if (res.status === 401 && !path.startsWith('/auth/')) {
+  // Only drop the session when THIS request presented a bearer token that
+  // the server rejected. A late 401 from a pre-login /manage/vault probe
+  // must not wipe a token Start demo just wrote (React Strict Mode +
+  // useVaults both fire that GET on the auth screen).
+  if (res.status === 401 && token && getToken() === token && !path.startsWith('/auth/')) {
     clearAuth();
     clearPasskeyTrust();
     notifyAuthChanged();
@@ -226,6 +230,49 @@ export async function proxyFetch(
   } catch (e) {
     throw describeApiNetError(e, `/proxy/${upstream}`);
   }
+}
+
+/** Server vault (`/manage/store`) — no Device Vault unlock required. */
+export async function vproxyFetch(
+  upstream: string,
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(options.headers);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Content-Type', 'application/json');
+  try {
+    return await fetch(
+      `${API_BASE}/vproxy/${upstream}/${path.replace(/^\//, '')}`,
+      { ...options, headers },
+    );
+  } catch (e) {
+    throw describeApiNetError(e, `/vproxy/${upstream}`);
+  }
+}
+
+export async function startDemoSession(): Promise<{
+  token: string;
+  userId: string;
+  demo: boolean;
+  agent?: { pubkey_b58: string; name: string };
+  model?: string;
+  upstream?: string;
+}> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/demo-session`, { method: 'POST' });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/demo-session');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Demo login failed' }));
+    throw new Error((err as { error?: string; detail?: string }).error
+      ?? (err as { detail?: string }).detail
+      ?? 'Demo login failed');
+  }
+  return res.json();
 }
 
 // ── Wallet challenge/login ────────────────────────────────────────────────

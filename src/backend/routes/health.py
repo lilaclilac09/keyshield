@@ -59,11 +59,19 @@ async def health_mpp():
     except Exception:
         owner_autosign = {"loaded": False, "pubkey": None}
 
+    try:
+        from .. import demo as demo_mod
+
+        demo = demo_mod.demo_status()
+    except Exception:
+        demo = {"enabled": False}
+
     return JSONResponse(
         {
             "mpp_config_loaded": mpp_ok,
             "active_program_id": program_id,
             "owner_autosign": owner_autosign,
+            "demo": demo,
             "env_vars": present,
         }
     )

@@ -9,10 +9,12 @@ import {
   buildVaultCreateTx,
   buildVaultEnablePaymentsTx,
   buildVaultGrantTx,
+  buildWithdrawTx,
   openMppStreamRow,
   recordMppTxSignature,
 } from './api';
 import {
+  assembleOpenStreamTx,
   buildTxFromResponse,
   deriveAta,
   deriveStreamPda,
@@ -26,18 +28,25 @@ function alreadyOnChain(err: unknown): boolean {
   return /already in use|already been processed|0x0\b|custom program error: 0/i.test(msg);
 }
 
-async function sendIx(
-  resp: BuildTxResponse,
+async function sendBuilt(
+  tx: Transaction,
   connection: Connection,
   sendTransaction: (tx: Transaction, conn: Connection) => Promise<string>,
 ): Promise<string | null> {
-  const tx = buildTxFromResponse(resp);
   try {
     return await signAndConfirmTx(tx, connection, sendTransaction);
   } catch (err) {
     if (alreadyOnChain(err)) return null;
     throw err;
   }
+}
+
+async function sendVaultIx(
+  resp: BuildTxResponse,
+  connection: Connection,
+  sendTransaction: (tx: Transaction, conn: Connection) => Promise<string>,
+): Promise<string | null> {
+  return sendBuilt(buildTxFromResponse(resp), connection, sendTransaction);
 }
 
 export async function openStreamWithWallet(opts: {
@@ -58,11 +67,11 @@ export async function openStreamWithWallet(opts: {
   const ownerAta = deriveAta(owner, getUsdcMint());
 
   opts.onStep?.('vault');
-  await sendIx(await buildVaultCreateTx(opts.ownerPubkey), connection, opts.sendTransaction);
+  await sendVaultIx(await buildVaultCreateTx(opts.ownerPubkey), connection, opts.sendTransaction);
   opts.onStep?.('enable-payments');
-  await sendIx(await buildVaultEnablePaymentsTx(opts.ownerPubkey), connection, opts.sendTransaction);
+  await sendVaultIx(await buildVaultEnablePaymentsTx(opts.ownerPubkey), connection, opts.sendTransaction);
   opts.onStep?.('grant');
-  await sendIx(
+  await sendVaultIx(
     await buildVaultGrantTx(opts.ownerPubkey, opts.agentPubkey, opts.maxTotalMicroUsdc),
     connection,
     opts.sendTransaction,
@@ -87,11 +96,9 @@ export async function openStreamWithWallet(opts: {
     usdcAta: ownerAta.toBase58(),
     maxTotalMicroUsdc: opts.maxTotalMicroUsdc,
   });
-  if (!built.prereqIxs || built.prereqIxs.length < 2) {
-    throw new Error('build-open-tx missing prereqIxs (create ATA + fund)');
-  }
+  const openTx = assembleOpenStreamTx(built);
   const streamUsdcAta = built.streamUsdcAta ?? deriveAta(streamPda, getUsdcMint()).toBase58();
-  const sig = await sendIx(built, connection, opts.sendTransaction);
+  const sig = await sendBuilt(openTx, connection, opts.sendTransaction);
   if (!sig) throw new Error('open_payment_stream was not submitted');
 
   opts.onStep?.('record-tx');
@@ -105,4 +112,30 @@ export async function openStreamWithWallet(opts: {
     streamPda: streamPda.toBase58(),
     streamUsdcAta,
   };
+}
+
+export async function withdrawStreamWithWallet(opts: {
+  streamId: number;
+  ownerPubkey: string;
+  streamPda: string;
+  streamAta: string;
+  withdrawAmountMicroUsdc: number;
+  sendTransaction: (tx: Transaction, conn: Connection) => Promise<string>;
+}): Promise<string> {
+  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+  const ownerAta = deriveAta(new PublicKey(opts.ownerPubkey), getUsdcMint()).toBase58();
+  const built = await buildWithdrawTx(opts.streamId, {
+    ownerPubkey: opts.ownerPubkey,
+    streamPda: opts.streamPda,
+    streamAta: opts.streamAta,
+    ownerAta,
+    withdrawAmountMicroUsdc: opts.withdrawAmountMicroUsdc,
+  });
+  const sig = await sendVaultIx(built, connection, opts.sendTransaction);
+  if (!sig) throw new Error('withdraw was not submitted');
+  await recordMppTxSignature(opts.streamId, sig, {
+    streamPda: opts.streamPda,
+    streamUsdcAta: opts.streamAta,
+  });
+  return sig;
 }

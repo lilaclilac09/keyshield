@@ -65,6 +65,15 @@ export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
   return new Transaction().add(...prereqs.map(ixFromJson), ixFromJson(resp));
 }
 
+/** Open stream only. Refuses a lone ix 24 — that lands with no escrow ATA. */
+export function assembleOpenStreamTx(resp: BuildTxResponse): Transaction {
+  const prereqs = resp.prereqIxs ?? [];
+  if (prereqs.length < 2) {
+    throw new Error('build-open-tx missing prereqIxs (create ATA + fund USDC)');
+  }
+  return new Transaction().add(...prereqs.map(ixFromJson), ixFromJson(resp));
+}
+
 export async function signAndConfirmTx(
   tx: Transaction, connection: Connection, sendTransaction: (tx: Transaction, conn: Connection) => Promise<string>,
 ): Promise<string> {

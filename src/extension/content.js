@@ -49,6 +49,16 @@
 
 const PROVIDERS = [
   {
+    id:       'openrouter',
+    name:     'OpenRouter',
+    label:    'OR',
+    patterns: [
+      /sk-or-[A-Za-z0-9_-]{12,}/g,
+    ],
+    domains:  ['openrouter.ai'],
+    minLen:   16,
+  },
+  {
     id:       'openai',
     name:     'OpenAI',
     label:    'AI',

@@ -6,13 +6,14 @@
  *                 trigger `unlock()` to do a passkey ceremony
  *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
  *
- * The Python backend is no longer in the vault hot path — `/manage/*` is gone.
- * Use `getDecryptedKey(upstream)` (re-exported from vault-session) when you
- * need a raw key for a `/proxy/*` request.
+ * Device Vault (Path A) plus the Python `/manage/*` shim. Demo login lists
+ * `/manage/vault` without a passkey unlock; reveal falls back to
+ * `/manage/decrypt/{id}`. Use `getDecryptedKey(upstream)` when Device Vault
+ * is unlocked and you need a raw key for `/proxy/*`.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
-import { isAuthenticated, requestVaultUnlock, API_BASE } from '../lib/auth';
+import { isAuthenticated, requestVaultUnlock, API_BASE, apiFetch } from '../lib/auth';
 import {
   addEntry,
   removeEntry,
@@ -29,11 +30,41 @@ const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string
   mistral: { name: 'Mistral AI', domain: 'mistral.ai', tags: ['AI'] },
   cohere: { name: 'Cohere', domain: 'cohere.ai', tags: ['AI'] },
   groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
+  openrouter: { name: 'OpenRouter', domain: 'openrouter.ai', tags: ['AI', 'NEMOTRON'] },
 };
 
 function userSecretLabel(slug: string): string {
   const idx = slug.indexOf('__');
   return idx >= 0 ? slug.slice(idx + 2).replace(/_/g, ' ') : slug;
+}
+
+function serverRowToVault(row: {
+  id: string;
+  name?: string;
+  type?: string;
+  upstream?: string;
+  masked_value?: string;
+  tags?: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+}): VaultItem {
+  const upstream = (row.upstream || row.id || 'custom').toLowerCase();
+  const type = inferType(upstream);
+  const meta = UPSTREAM_META[upstream] ?? { name: row.name || upstream, domain: '', tags: ['KEY'] };
+  const created = row.created_at ? Date.parse(row.created_at) : Date.now();
+  const updated = row.updated_at ? Date.parse(row.updated_at) : created;
+  return {
+    id: row.id,
+    name: row.name || meta.name,
+    type,
+    value: row.masked_value || `${API_BASE}/proxy/${upstream}/`,
+    domain: meta.domain,
+    createdAt: Number.isFinite(created) ? created : Date.now(),
+    lastUsedAt: Number.isFinite(updated) ? updated : Date.now(),
+    tags: [...(Array.isArray(row.tags) ? row.tags : meta.tags), 'PROXY'],
+    expiryDate: row.expires_at ?? undefined,
+  };
 }
 
 function entryToVault(entry: VaultEntry): VaultItem {
@@ -69,13 +100,27 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
 
   const refresh = useCallback(() => {
-    if (!isVaultUnlocked()) {
-      setVaultItems([]);
-      setUnlocked(false);
-      return;
-    }
-    setUnlocked(true);
-    setVaultItems(listEntries().map(entryToVault));
+    const unlockedNow = isVaultUnlocked();
+    setUnlocked(unlockedNow);
+    const local = unlockedNow ? listEntries().map(entryToVault) : [];
+    void (async () => {
+      try {
+        const r = await apiFetch('/manage/vault');
+        if (!r.ok) {
+          setVaultItems(local);
+          return;
+        }
+        const rows = (await r.json()) as Array<Parameters<typeof serverRowToVault>[0]>;
+        const serverItems = (Array.isArray(rows) ? rows : []).map(serverRowToVault);
+        const byId = new Map(serverItems.map((item) => [item.id, item]));
+        for (const item of local) {
+          if (!byId.has(item.id) && !byId.has(item.name)) byId.set(item.id, item);
+        }
+        setVaultItems([...byId.values()]);
+      } catch {
+        setVaultItems(local);
+      }
+    })();
   }, []);
 
   const unlock = useCallback(async () => {
@@ -116,13 +161,26 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
       if (!isVaultUnlocked()) {
-        await unlock();
-        if (!isVaultUnlocked()) throw new Error('Vault still locked after unlock attempt');
+        try {
+          await unlock();
+        } catch {
+          /* Demo / no passkey: still write the Python /manage shim. */
+        }
       }
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) return;
-      await addEntry(upstream, rawKey);
+      if (isVaultUnlocked()) {
+        await addEntry(upstream, rawKey);
+      }
+      const stored = await apiFetch('/manage/store', {
+        method: 'POST',
+        body: JSON.stringify({ upstream, apiKey: rawKey, name: data.name || upstream }),
+      });
+      if (!stored.ok) {
+        const err = await stored.json().catch(() => ({ detail: 'store failed' }));
+        throw new Error((err as { detail?: string }).detail ?? 'store failed');
+      }
       refresh();
     },
     [refresh, unlock],
@@ -130,22 +188,34 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const deleteItem = useCallback(
     async (id: string) => {
-      if (!isVaultUnlocked()) throw new Error('Vault locked');
       setVaultItems((prev) => prev.filter((i) => i.id !== id));
       try {
-        await removeEntry(id);
+        if (isVaultUnlocked()) await removeEntry(id);
       } catch {
+        /* local device vault miss is fine */
+      }
+      const r = await apiFetch(`/manage/vault/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!r.ok && r.status !== 404) {
         refresh();
+        const err = await r.json().catch(() => ({ detail: 'delete failed' }));
+        throw new Error((err as { detail?: string }).detail ?? 'delete failed');
       }
     },
     [refresh],
   );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
-    if (!isVaultUnlocked()) throw new Error('Vault locked — unlock first');
-    const key = getDecryptedKey(id);
-    if (!key) throw new Error(`No key for "${id}"`);
-    return key;
+    if (isVaultUnlocked()) {
+      const key = getDecryptedKey(id);
+      if (key) return key;
+    }
+    const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'decrypt failed' }));
+      throw new Error((err as { detail?: string }).detail ?? 'Vault locked — unlock first');
+    }
+    const data = await r.json();
+    return String(data.value ?? '');
   }, []);
 
   return {

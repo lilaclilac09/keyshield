@@ -178,6 +178,8 @@ async def vault_store(request: Request):
         tags_json = _json.dumps(tags)
     else:
         tags_json = "[]"
+    # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
+    stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
 
     with _db() as conn:
         conn.execute(
@@ -205,7 +207,7 @@ async def vault_store(request: Request):
                 body.get("name") or "unnamed",
                 body.get("type") or "api_key",
                 body.get("upstream") or "",
-                body.get("value") or "",
+                stored_value,
                 tags_json,
                 now,
                 now,

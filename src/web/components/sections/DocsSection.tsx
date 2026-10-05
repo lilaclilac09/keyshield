@@ -4,8 +4,9 @@ import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { API_BASE } from '../../lib/auth';
+import { API_BASE, getToken } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
+import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
 
 export const DocsSection: React.FC = () => {
   const installCmd = `curl -fsSL ${API_BASE}/install.sh | bash`;
@@ -45,6 +46,28 @@ export const DocsSection: React.FC = () => {
         </p>
         <p className="text-[11px] text-[#8a96c2] mt-2">
           After changing <code className="text-white">manifest.json</code>, press <strong className="text-[#a8b3d8]">Reload</strong> on the extension card in <code className="text-white">chrome://extensions</code>.
+        </p>
+      </Card>
+
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">OpenRouter interface (inserted)</span></div>
+        <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
+          Free Nemotron: <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
+          Anyone can get their own key at openrouter.ai/keys — KeyShield will not proxy it without a session. Activity → Connect pastes the key into `/manage/store`, vproxy, and Meter.
+        </p>
+        <div className="space-y-3">
+          <CodeBlock code={openrouterCurlSnippet(getToken() ?? '<TOKEN_HERE>')} />
+          <CodeBlock code={openrouterPythonSnippet(getToken() ?? '<TOKEN_HERE>')} />
+          <p className="text-[11px] text-[#5e6a91]">Files: `src/web/lib/openrouter-interface.ts` · `src/backend/proxy/openrouter_interface.py` · path `{OPENROUTER_CHAT_PATH}`</p>
+        </div>
+      </Card>
+
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-3"><Key size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">API keychain</span></div>
+        <p className="text-[14px] text-[#a8b3d8] leading-relaxed mb-3">
+          Passkey unlocks the Device Vault. Paste or the extension detects a key → store → one-click <code className="text-white">POST /keychain/call</code>.
+          Frameworks point <code className="text-white">base_url</code> at <code className="text-white">/vproxy/&#123;upstream&#125;</code> — KeyShield cannot inject into every binary.
+          Lowest cached RPC TTL is 2s (<code className="text-white">getSlot</code> / <code className="text-white">getLatestBlockhash</code>). Writes never cache.
         </p>
       </Card>
 

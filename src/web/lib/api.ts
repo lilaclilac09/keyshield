@@ -62,6 +62,17 @@ export interface GrantShareInput {
   expires_at?: number | null;
 }
 
+function normalizeShare(raw: Record<string, unknown>): ShareRow {
+  return {
+    id: Number(raw.id),
+    owner_id: String(raw.owner_id ?? ''),
+    recipient_id: String(raw.recipient_id ?? raw.grantee_address ?? ''),
+    key_name: String(raw.key_name ?? raw.vault_key_id ?? ''),
+    expires_at: (raw.expires_at as number | null | undefined) ?? null,
+    created_at: Number(raw.created_at ?? 0),
+  };
+}
+
 export async function grantShare(
   input: GrantShareInput,
 ): Promise<{ ok: boolean; share?: ShareRow; status: number; detail?: string }> {
@@ -78,21 +89,24 @@ export async function grantShare(
     throw new Error((err as { detail: string }).detail ?? 'Share failed');
   }
   const data = await res.json();
-  return { ok: true, status: 200, share: data.share };
+  const share = data.share
+    ? normalizeShare(data.share as Record<string, unknown>)
+    : undefined;
+  return { ok: true, status: 200, share };
 }
 
 export async function listIncomingShares(): Promise<ShareRow[]> {
   const res = await apiFetch('/share/incoming');
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.shares ?? []) as ShareRow[];
+  return ((data.shares ?? []) as Record<string, unknown>[]).map(normalizeShare);
 }
 
 export async function listOutgoingShares(): Promise<ShareRow[]> {
   const res = await apiFetch('/share/outgoing');
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.shares ?? []) as ShareRow[];
+  return ((data.shares ?? []) as Record<string, unknown>[]).map(normalizeShare);
 }
 
 export async function revokeShare(shareId: number): Promise<void> {
@@ -181,14 +195,45 @@ export async function buildVaultGrantTx(
   return r.json();
 }
 
+export async function fetchCapturePrep(streamId: number): Promise<{
+  artifactHash: string;
+  debitMicroUsdc: number;
+  nextSeq: number;
+  streamPda: string | null;
+  bindingHash: string | null;
+  lastSettledSeq: number;
+}> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/capture-prep`);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'capture-prep failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'capture-prep failed');
+  }
+  return r.json();
+}
+
+export async function closeMppStream(streamId: number): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/close`, { method: 'POST' });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'close failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'close failed');
+  }
+  return r.json();
+}
+
 export async function captureMppStream(
   streamId: number,
   artifactHash: string,
   signatureHex: string,
+  owner?: { ownerPubkey: string; ownerSignature: string },
 ): Promise<Record<string, unknown>> {
   const r = await apiFetch(`/mpp/streams/${streamId}/capture`, {
     method: 'POST',
-    body: JSON.stringify({ artifactHash, signature: signatureHex }),
+    body: JSON.stringify({
+      artifactHash,
+      signature: signatureHex,
+      ownerPubkey: owner?.ownerPubkey,
+      ownerSignature: owner?.ownerSignature,
+    }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: 'capture failed' }));
@@ -272,6 +317,110 @@ export async function autosignOpenStream(body: {
     throw new Error((err as { detail: string }).detail ?? 'autosign open failed');
   }
   return r.json();
+}
+
+export async function storeUpstreamKey(
+  upstream: string,
+  apiKey: string,
+): Promise<{ id: string }> {
+  const r = await apiFetch('/manage/store', {
+    method: 'POST',
+    body: JSON.stringify({ upstream, apiKey, name: `${upstream} key` }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'store failed' }));
+    throw new Error((err as { detail?: string; error?: string }).detail
+      ?? (err as { error?: string }).error
+      ?? 'store failed');
+  }
+  return r.json();
+}
+
+export async function demoMeterStream(
+  streamId: number,
+  prompt = 'KeyShield demo ping',
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/demo-meter`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'demo-meter failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'demo-meter failed');
+  }
+  return r.json();
+}
+
+export async function getMppStreamUsage(streamId: number): Promise<unknown[]> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/usage`);
+  if (!r.ok) return [];
+  const data = await r.json();
+  if (Array.isArray(data)) return data;
+  return data.usage ?? [];
+}
+
+export interface SolQuote {
+  amount_usd: number;
+  amount_sol: number;
+  amount_lamports: number;
+  sol_usd_price: number;
+  payment_address: string;
+  memo?: string | null;
+  cluster?: string;
+}
+
+export async function fetchSolQuote(amountUsd: number): Promise<SolQuote> {
+  const r = await apiFetch(`/billing/sol-quote?amount_usd=${encodeURIComponent(String(amountUsd))}`);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'sol-quote failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'sol-quote failed');
+  }
+  return r.json();
+}
+
+export async function creditSolanaTopup(body: {
+  txSignature: string;
+  expectedAmountUsd?: number;
+  memo?: string | null;
+  wallet?: string;
+}): Promise<{ credited_usd: number; balance_usd: number; tx_signature: string }> {
+  const r = await apiFetch('/billing/topup-solana', {
+    method: 'POST',
+    body: JSON.stringify({
+      tx_signature: body.txSignature,
+      expected_amount_usd: body.expectedAmountUsd,
+      memo: body.memo,
+      wallet: body.wallet,
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'topup-solana failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'topup-solana failed');
+  }
+  return r.json();
+}
+
+export async function creditUsdcTopup(
+  txSignature: string,
+  network = 'devnet',
+  wallet?: string,
+): Promise<{ credited_usd: number; balance_usd: number }> {
+  const r = await apiFetch('/billing/topup-solana-usdc', {
+    method: 'POST',
+    body: JSON.stringify({ tx_signature: txSignature, network, wallet }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'topup-solana-usdc failed' }));
+    throw new Error((err as { detail?: string }).detail ?? 'topup-solana-usdc failed');
+  }
+  return r.json();
+}
+
+export async function listTopupHistory(): Promise<unknown[]> {
+  const r = await apiFetch('/billing/topup-history');
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.topups ?? [];
 }
 
 export async function autosignWithdrawStream(

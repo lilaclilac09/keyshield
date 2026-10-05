@@ -18,6 +18,7 @@ export const EphemeralWalletsSection: React.FC = () => {
   useEffect(() => { load(); }, [load]);
 
   const handleCreate = async () => { const id = agentIdInput.trim(); if (!id) return; setCreating(true); setErr(''); setCreated(null); try { const r = await apiFetch(`/agents/${encodeURIComponent(id)}/wallet/create`, { method: 'POST' }); const d = await r.json(); if (!r.ok) { setErr(d.detail ?? 'Failed'); return; } setCreated({ agent_id: d.agent_id, pubkey: d.pubkey }); setAgentIdInput(''); load(); } catch { setErr('Network error'); } finally { setCreating(false); } };
+  const handleRevoke = async (agentId: string) => { setErr(''); try { const r = await apiFetch(`/agents/${encodeURIComponent(agentId)}/wallet`, { method: 'DELETE' }); if (!r.ok) { const d = await r.json().catch(() => ({ detail: 'Revoke failed' })); setErr(d.detail ?? 'Revoke failed'); return; } setWallets(prev => prev.filter(w => w.agent_id !== agentId)); } catch { setErr('Network error'); } };
 
   return (
     <div className="space-y-5 mt-5">
@@ -27,7 +28,7 @@ export const EphemeralWalletsSection: React.FC = () => {
           <div key={w.agent_id} className="flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0">
             <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><span className="text-[11px] font-mono text-white">W</span></div>
             <div className="flex-1 min-w-0"><div className="text-[13px] text-white font-medium truncate">{w.agent_id}</div><div className="text-[11px] text-[#5e6a91] font-mono mt-0.5">{w.pubkey.slice(0, 10)}\u2026{w.pubkey.slice(-8)}</div></div>
-            <Button variant="destructive" size="sm">Revoke</Button>
+            <Button variant="destructive" size="sm" onClick={() => handleRevoke(w.agent_id)}>Revoke</Button>
           </div>
         ))}
       </Card>

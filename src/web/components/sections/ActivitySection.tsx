@@ -7,10 +7,17 @@ import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/Paym
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { apiFetch, getToken, proxyFetch } from '../../lib/auth';
-import { autosignOpenStream, autosignWithdrawStream, captureMppStream } from '../../lib/api';
-import { signCaptureMac } from '../../lib/mpp-capture';
-import { openStreamWithWallet } from '../../lib/mpp-wallet-open';
+import { apiFetch, getToken, proxyFetch, setToken, setWalletAddress, startDemoSession, vproxyFetch } from '../../lib/auth';
+import { getDecryptedKey } from '../../lib/vault-session';
+import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, creditUsdcTopup, demoMeterStream, fetchCapturePrep, getMppStreamUsage } from '../../lib/api';
+import { signCaptureMac, signOwnerBinding } from '../../lib/mpp-capture';
+import { openStreamWithWallet, withdrawStreamWithWallet } from '../../lib/mpp-wallet-open';
+import { topupSolWithWallet } from '../../lib/sol-topup';
+import {
+  OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_DEMO_UPSTREAM, OPENROUTER_MODEL_URL,
+  connectOpenRouter, fetchOpenRouterStatus, looksLikeOpenRouterKey, openrouterChatBody,
+  readOpenRouterKeyFromClipboard, type OpenRouterStatus,
+} from '../../lib/openrouter-interface';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -34,6 +41,7 @@ interface MppStream {
   total_calls: number; total_tokens: number; pending_micro_usdc: number; settled_micro_usdc: number;
   held_micro_usdc?: number; on_chain_signature: string | null;
   stream_pda?: string | null; stream_usdc_ata?: string | null; pending_artifact_hash?: string | null;
+  last_settled_seq?: number;
 }
 interface AgentOpt { name: string; pubkey_b58: string }
 interface MppSummary { streams_total: number; streams_open: number; tokens_total: number; calls_total: number; settled_usd: number; pending_usd: number; }
@@ -50,8 +58,12 @@ const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
 const fmtCost = (c: number) => `$${c.toFixed(4)}`;
 
 export const ActivitySection: React.FC = () => {
-  const { publicKey, sendTransaction, connected } = useWallet();
-  const [tab, setTab] = useState<Tab>('usage');
+  const { publicKey, sendTransaction, connected, signMessage } = useWallet();
+  const [tab, setTab] = useState<Tab>(() => (
+    typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
+      ? 'mpp'
+      : 'usage'
+  ));
   const [history, setHistory] = useState<UsageEntry[]>([]);
   const [stats, setStats] = useState<UsageStat[]>([]);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
@@ -65,17 +77,32 @@ export const ActivitySection: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [autosignPubkey, setAutosignPubkey] = useState<string | null>(null);
   const [openAgent, setOpenAgent] = useState('');
-  const [openUpstream, setOpenUpstream] = useState('openai');
+  const [openUpstream, setOpenUpstream] = useState(OPENROUTER_DEMO_UPSTREAM);
+  const [pasteKey, setPasteKey] = useState('');
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  const [orStatus, setOrStatus] = useState<OpenRouterStatus | null>(null);
   const [openCap, setOpenCap] = useState('0.01');
   const [openBusy, setOpenBusy] = useState(false);
   const [openMsg, setOpenMsg] = useState('');
   const [openOk, setOpenOk] = useState(false);
   const [withdrawBusy, setWithdrawBusy] = useState<number | null>(null);
+  const [closeBusy, setCloseBusy] = useState<number | null>(null);
+  const [streamUsage, setStreamUsage] = useState<Record<number, number>>({});
   const [agents, setAgents] = useState<AgentOpt[]>([]);
   const [programId, setProgramId] = useState('');
   const [openStep, setOpenStep] = useState('');
   const [meterBusy, setMeterBusy] = useState<number | null>(null);
   const [captureBusy, setCaptureBusy] = useState<number | null>(null);
+  const [captureDraft, setCaptureDraft] = useState<{
+    streamId: number;
+    artifactHash: string;
+    debitMicroUsdc: number;
+    nextSeq: number;
+    bindingHash: string | null;
+    mac: string;
+  } | null>(null);
+  const [usdcSig, setUsdcSig] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -93,16 +120,53 @@ export const ActivitySection: React.FC = () => {
       if (hRes.ok) { const d = await hRes.json(); setHistory(d.history ?? []); }
       if (sRes.ok) { const d = await sRes.json(); setStats(Array.isArray(d.stats) ? d.stats : []); }
       if (bRes.ok) { setBilling(await bRes.json()); }
-      if (mRes.ok) { const d = await mRes.json(); setMppStreams(d.streams ?? []); setMppSummary(d.summary ?? null); }
+      if (mRes.ok) {
+        const d = await mRes.json();
+        const streams = (d.streams ?? []) as MppStream[];
+        setMppStreams(streams);
+        setMppSummary(d.summary ?? null);
+        const usagePairs = await Promise.all(
+          streams.slice(0, 8).map(async (s) => {
+            try {
+              const rows = await getMppStreamUsage(s.id);
+              return [s.id, rows.length] as const;
+            } catch {
+              return [s.id, 0] as const;
+            }
+          }),
+        );
+        setStreamUsage(Object.fromEntries(usagePairs));
+      }
       if (mEvRes.ok) { const d = await mEvRes.json(); setMppEvents(d.events ?? []); }
       if (aRes.ok) { const d = await aRes.json(); setAutosignPubkey(d.loaded ? d.pubkey : null); }
-      if (agRes.ok) { const d = await agRes.json(); setAgents(d.agents ?? []); }
-      if (hpRes.ok) { const d = await hpRes.json(); if (d.active_program_id) setProgramId(d.active_program_id); }
+      if (agRes.ok) {
+        const d = await agRes.json();
+        const list = (d.agents ?? []) as AgentOpt[];
+        setAgents(list);
+        setOpenAgent(prev => prev || list[0]?.pubkey_b58 || '');
+      }
+      if (hpRes.ok) {
+        const d = await hpRes.json();
+        if (d.active_program_id) setProgramId(d.active_program_id);
+        if (d.demo?.enabled) setDemoMode(true);
+      }
+      try { setOrStatus(await fetchOpenRouterStatus()); } catch { /* optional */ }
     } catch {}
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (sessionStorage.getItem('ks_landing') === 'activity-mpp') {
+      sessionStorage.removeItem('ks_landing');
+      setTab('mpp');
+    }
+  }, []);
+  useEffect(() => {
+    const onOr = () => { void fetchOpenRouterStatus().then(setOrStatus).catch(() => {}); };
+    window.addEventListener('ks-openrouter-connected', onOr);
+    return () => window.removeEventListener('ks-openrouter-connected', onOr);
+  }, []);
 
   const handleTopup = async () => {
     const amt = parseFloat(topupAmt);
@@ -118,6 +182,47 @@ export const ActivitySection: React.FC = () => {
       if (bRes.ok) setBilling(await bRes.json());
     } catch (e) { setTopupMsg(e instanceof Error ? e.message : 'Network error'); }
     finally { setTopupBusy(false); }
+  };
+
+  const handleSolTopup = async () => {
+    const amt = parseFloat(topupAmt);
+    if (!amt || amt <= 0) return;
+    if (!publicKey) { setTopupOk(false); setTopupMsg('Connect Phantom to send SOL'); return; }
+    setTopupBusy(true); setTopupMsg(''); setTopupOk(false);
+    try {
+      const d = await topupSolWithWallet({
+        amountUsd: amt,
+        ownerPubkey: publicKey.toBase58(),
+        sendTransaction,
+      });
+      setTopupOk(true);
+      setTopupMsg(`Phantom SOL credited $${d.creditedUsd.toFixed(4)} — balance $${d.balanceUsd.toFixed(4)}`);
+      setTopupAmt('');
+      const bRes = await apiFetch('/billing/balance');
+      if (bRes.ok) setBilling(await bRes.json());
+    } catch (e) {
+      setTopupMsg(e instanceof Error ? e.message : 'SOL topup failed');
+    } finally {
+      setTopupBusy(false);
+    }
+  };
+
+  const handleUsdcCredit = async () => {
+    const sig = usdcSig.trim();
+    if (!sig) return;
+    setTopupBusy(true); setTopupMsg(''); setTopupOk(false);
+    try {
+      const d = await creditUsdcTopup(sig, 'devnet', publicKey?.toBase58());
+      setTopupOk(true);
+      setTopupMsg(`USDC credited $${d.credited_usd.toFixed(4)} — balance $${d.balance_usd.toFixed(4)}`);
+      setUsdcSig('');
+      const bRes = await apiFetch('/billing/balance');
+      if (bRes.ok) setBilling(await bRes.json());
+    } catch (e) {
+      setTopupMsg(e instanceof Error ? e.message : 'USDC credit failed');
+    } finally {
+      setTopupBusy(false);
+    }
   };
 
   const handleOpenStream = async (mode: 'autosign' | 'wallet') => {
@@ -163,10 +268,24 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
-  const handleWithdraw = async (streamId: number) => {
-    setWithdrawBusy(streamId);
+  const handleWithdraw = async (stream: MppStream, mode: 'autosign' | 'wallet') => {
+    setWithdrawBusy(stream.id);
     try {
-      await autosignWithdrawStream(streamId);
+      if (mode === 'wallet') {
+        if (!publicKey || !stream.stream_pda || !stream.stream_usdc_ata) {
+          throw new Error('Connect wallet and wait for stream PDA/ATA');
+        }
+        await withdrawStreamWithWallet({
+          streamId: stream.id,
+          ownerPubkey: publicKey.toBase58(),
+          streamPda: stream.stream_pda,
+          streamAta: stream.stream_usdc_ata,
+          withdrawAmountMicroUsdc: stream.pending_micro_usdc || 0,
+          sendTransaction,
+        });
+      } else {
+        await autosignWithdrawStream(stream.id);
+      }
       await refresh();
     } catch (e) {
       setOpenMsg(e instanceof Error ? e.message : 'Withdraw failed');
@@ -175,21 +294,79 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
+  const handleClose = async (streamId: number) => {
+    setCloseBusy(streamId);
+    try {
+      await closeMppStream(streamId);
+      setOpenOk(true);
+      setOpenMsg(`Closed stream ${streamId}`);
+      await refresh();
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'Close failed');
+    } finally {
+      setCloseBusy(null);
+    }
+  };
+
+  const handleConnectOpenRouter = async () => {
+    setPasteBusy(true); setOpenMsg(''); setOpenOk(false);
+    try {
+      let key = pasteKey.trim();
+      if (!key) key = await readOpenRouterKeyFromClipboard();
+      setOpenUpstream(OPENROUTER_DEMO_UPSTREAM);
+      const st = await connectOpenRouter(key || undefined);
+      setOrStatus(st);
+      setPasteKey('');
+      setOpenOk(true);
+      if (st.key_configured) {
+        setOpenMsg(`OpenRouter connected (${st.key_prefix}) → ${st.model}. Meter / vproxy / Vault reuse this key. Not a public API.`);
+      } else if (!key) {
+        setOpenMsg('Model wired. Paste a sk-or- key (or copy it, then Connect) — OpenRouter still requires your key.');
+      } else {
+        setOpenMsg('Key stored. Refresh if the badge does not flip.');
+      }
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'Connect failed');
+    } finally {
+      setPasteBusy(false);
+    }
+  };
+
   const handleMeter = async (stream: MppStream) => {
     setMeterBusy(stream.id);
+    const path = stream.upstream === 'openrouter' || stream.upstream === OPENROUTER_DEMO_UPSTREAM
+      ? OPENROUTER_CHAT_PATH
+      : 'v1/chat/completions';
+    const body = JSON.stringify(openrouterChatBody('KeyShield demo ping', OPENROUTER_DEMO_MODEL));
+    const headers = { 'X-Mpp-Stream-Id': String(stream.id) };
     try {
-      const res = await proxyFetch(stream.upstream, 'v1/chat/completions', {
-        method: 'POST',
-        headers: { 'X-Mpp-Stream-Id': String(stream.id) },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          max_tokens: 8,
-          messages: [{ role: 'user', content: 'ping' }],
-        }),
-      });
+      let res: Response | null = null;
+      let via = '';
+      if (getDecryptedKey(stream.upstream) || getDecryptedKey(OPENROUTER_DEMO_UPSTREAM)) {
+        const up = getDecryptedKey(stream.upstream) ? stream.upstream : OPENROUTER_DEMO_UPSTREAM;
+        res = await proxyFetch(up, path, { method: 'POST', headers, body });
+        via = 'device-vault';
+      } else {
+        try {
+          res = await vproxyFetch(stream.upstream, path, { method: 'POST', headers, body });
+          via = 'vproxy';
+          if (res.status === 422) res = null;
+        } catch {
+          res = null;
+        }
+      }
+      if (!res) {
+        const d = await demoMeterStream(stream.id, 'KeyShield demo ping');
+        setOpenOk(true);
+        setOpenMsg(`Demo meter stream ${stream.id}: ${String(d.meter ?? d.artifact_hash ?? 'ok')}`);
+        await refresh();
+        return;
+      }
       const meter = res.headers.get('x-ks-mpp-meter');
       setOpenOk(res.ok);
-      setOpenMsg(meter ? `Proxy ${stream.upstream}: ${meter}` : `Proxy HTTP ${res.status}`);
+      setOpenMsg(meter ? `${via} ${stream.upstream}: ${meter}` : `${via} HTTP ${res.status}`);
       await refresh();
     } catch (e) {
       setOpenOk(false);
@@ -199,22 +376,122 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
-  const handleCapture = async (stream: MppStream) => {
+  const handleCapturePrep = async (stream: MppStream) => {
     const token = getToken();
-    const artifact = stream.pending_artifact_hash;
-    if (!token || !artifact) return;
+    if (!token) return;
     setCaptureBusy(stream.id);
     try {
-      const mac = await signCaptureMac(token, artifact);
-      await captureMppStream(stream.id, artifact, mac);
+      const prep = await fetchCapturePrep(stream.id);
+      const mac = await signCaptureMac(token, prep.artifactHash);
+      setCaptureDraft({
+        streamId: stream.id,
+        artifactHash: prep.artifactHash,
+        debitMicroUsdc: prep.debitMicroUsdc,
+        nextSeq: prep.nextSeq,
+        bindingHash: prep.bindingHash,
+        mac,
+      });
       setOpenOk(true);
-      setOpenMsg(`Captured stream ${stream.id} — on-chain settle submitted`);
+      setOpenMsg(`Capture form ready for stream ${stream.id} — session HMAC signed`);
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'capture-prep failed');
+    } finally {
+      setCaptureBusy(null);
+    }
+  };
+
+  const handleCaptureSubmit = async () => {
+    if (!captureDraft) return;
+    setCaptureBusy(captureDraft.streamId);
+    try {
+      let owner: { ownerPubkey: string; ownerSignature: string } | undefined;
+      if (connected && publicKey && signMessage && captureDraft.bindingHash) {
+        const ownerSignature = await signOwnerBinding(signMessage, captureDraft.bindingHash);
+        owner = { ownerPubkey: publicKey.toBase58(), ownerSignature };
+      }
+      await captureMppStream(captureDraft.streamId, captureDraft.artifactHash, captureDraft.mac, owner);
+      setOpenOk(true);
+      setOpenMsg(
+        owner
+          ? `Captured stream ${captureDraft.streamId} — session HMAC + wallet Ed25519`
+          : `Captured stream ${captureDraft.streamId} — session HMAC (owner keystore binds)`,
+      );
+      setCaptureDraft(null);
       await refresh();
     } catch (e) {
       setOpenOk(false);
       setOpenMsg(e instanceof Error ? e.message : 'Capture failed');
     } finally {
       setCaptureBusy(null);
+    }
+  };
+
+  const handleTwoMinDemo = async () => {
+    setOpenBusy(true); setOpenMsg(''); setOpenOk(false); setOpenStep('2-min: session');
+    try {
+      if (!getToken()) {
+        const out = await startDemoSession();
+        if (!out.token) throw new Error('demo session missing token');
+        setToken(out.token);
+        setWalletAddress(out.userId);
+        if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
+      }
+      const listed = await apiFetch('/mpp/streams');
+      if (listed.status === 401) throw new Error('demo session expired — click Start demo again');
+      const listedBody = listed.ok ? await listed.json() : { streams: [] };
+      let stream = ((listedBody.streams ?? []) as MppStream[]).find(s => s.status === 'open' && s.stream_pda)
+        ?? ((listedBody.streams ?? []) as MppStream[]).find(s => s.status === 'open')
+        ?? mppStreams.find(s => s.status === 'open' && s.stream_pda);
+      if (!stream) {
+        const agRes = await apiFetch('/agents/list');
+        const agBody = agRes.ok ? await agRes.json() : { agents: [] };
+        const agent = openAgent.trim()
+          || (agBody.agents as AgentOpt[] | undefined)?.[0]?.pubkey_b58
+          || agents[0]?.pubkey_b58
+          || sessionStorage.getItem('ks_demo_agent')
+          || '';
+        if (!agent) throw new Error('No demo agent — click Start demo again');
+        setOpenStep('2-min: vault → grant → open');
+        try {
+          const d = await autosignOpenStream({
+            agentPubkey: agent,
+            agentName: 'demo-agent',
+            upstream: openUpstream.trim() || OPENROUTER_DEMO_UPSTREAM,
+            maxTotalMicroUsdc: Math.round((parseFloat(openCap) || 0.01) * 1_000_000),
+            ratePerTokenMicroUsdc: 1,
+            ratePerCallMicroUsdc: 0,
+          });
+          stream = d.stream as MppStream;
+        } catch (openErr) {
+          const again = await apiFetch('/mpp/streams');
+          const d = again.ok ? await again.json() : { streams: [] };
+          stream = ((d.streams ?? []) as MppStream[]).find(s => s.status === 'open' && s.stream_pda);
+          if (!stream) throw openErr;
+        }
+      }
+      if (!stream?.id) throw new Error('Open stream failed');
+      setOpenStep('2-min: meter');
+      await demoMeterStream(stream.id, 'KeyShield two-minute demo');
+      const token = getToken();
+      if (!token) throw new Error('session token required');
+      setOpenStep('2-min: capture');
+      const prep = await fetchCapturePrep(stream.id);
+      const mac = await signCaptureMac(token, prep.artifactHash);
+      await captureMppStream(stream.id, prep.artifactHash, mac);
+      setOpenOk(true);
+      setOpenMsg(
+        `2-min demo done — stream ${stream.id}`
+        + (stream.stream_pda ? ` PDA ${stream.stream_pda.slice(0, 8)}…` : '')
+        + ' metered + captured',
+      );
+      await refresh();
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : '2-min demo failed');
+    } finally {
+      setOpenBusy(false);
+      setOpenStep('');
     }
   };
 
@@ -289,13 +566,14 @@ export const ActivitySection: React.FC = () => {
             <StatCard label="Total Spent" value={fmtCost(billing.total_spent_usd)} />
             <StatCard label="Free Credit" value={fmtCost(billing.free_credit_usd)} hint={billing.free_credit_usd <= 0 ? 'Used up' : '~100 GPT-4o-mini calls'} />
           </div>
-          <Card title="Top Up" description="Add funds with SOL. Converted to USDC at current Pyth oracle rate.">
+          <Card title="Top Up" description="Ledger credit via POST /billing/topup. Phantom SOL uses GET /billing/sol-quote then POST /billing/topup-solana. Paste a USDC tx for /billing/topup-solana-usdc.">
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
                 <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
               </div>
-              <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+              <Button variant="secondary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Ledger</Button>
+              <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
             </div>
             {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
           </Card>
@@ -303,13 +581,18 @@ export const ActivitySection: React.FC = () => {
       )}
 
       {tab === 'topup' && (
-        <Card title="Top Up" description="Add prepaid credit. This is the Activity ledger, not an on-chain transfer.">
+        <Card title="Top Up" description="Ledger credit, Phantom SOL (quote + transfer + verify), or paste a Devnet USDC tx signature.">
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
               <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
             </div>
-            <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+            <Button variant="secondary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Ledger</Button>
+            <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <input value={usdcSig} onChange={e => setUsdcSig(e.target.value)} placeholder="USDC tx signature" className="flex-1 bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+            <Button variant="secondary" size="md" onClick={handleUsdcCredit} disabled={topupBusy || !usdcSig.trim()} loading={topupBusy}>Credit USDC</Button>
           </div>
           {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
         </Card>
@@ -326,7 +609,7 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
-          <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet.">
+          <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet. Meter: Device Vault → server vault → demo-meter.">
             <p className="text-[11px] text-[#8a96c2] mb-3">
               {autosignPubkey ? `Auto-sign ${autosignPubkey.slice(0, 4)}…${autosignPubkey.slice(-4)}` : 'Auto-sign off'}
               {' · '}
@@ -348,7 +631,7 @@ export const ActivitySection: React.FC = () => {
               </div>
               <div>
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Upstream</label>
-                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder="openai" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder={OPENROUTER_DEMO_UPSTREAM} className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
               </div>
               <div>
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Cap (USDC)</label>
@@ -358,10 +641,56 @@ export const ActivitySection: React.FC = () => {
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
               <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
+              {(demoMode || autosignPubkey) && (
+                <Button variant="secondary" size="md" onClick={handleTwoMinDemo} disabled={openBusy} loading={openBusy && openStep.startsWith('2-min')}>2-min demo</Button>
+              )}
+            </div>
+            <div className="mt-4 rounded-lg border border-[#243365] bg-[#0e1631] p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[12px] text-white font-medium">One-click OpenRouter</p>
+                <span className={`text-[10px] ${orStatus?.key_configured ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>
+                  {orStatus?.key_configured ? `Connected ${orStatus.key_prefix}` : 'Key not stored'}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#8a96c2] mb-2">
+                Free model <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
+                Not public — anyone needs their own OpenRouter key + a KeyShield session. Paste once; Connect fills `/manage/store`, demo vault, Device Vault (if unlocked), Meter, and Developer snippets.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={pasteKey}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setPasteKey(v);
+                    if (looksLikeOpenRouterKey(v)) setOpenUpstream(OPENROUTER_DEMO_UPSTREAM);
+                  }}
+                  placeholder="sk-or-v1-… or copy the key, then Connect"
+                  className="flex-1 bg-[#0b1226] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10"
+                />
+                <Button variant="primary" size="md" onClick={handleConnectOpenRouter} disabled={pasteBusy} loading={pasteBusy}>Connect</Button>
+              </div>
             </div>
             {openStep && <p className="text-[11px] text-[#8a96c2] mt-2">Step: {openStep}</p>}
             {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
+            {demoMode && <p className="text-[10px] text-[#5e6a91] mt-2">Demo mode on — Meter falls back to synthetic hold if no key is pasted.</p>}
           </Card>
+          {captureDraft && (
+            <Card title="Capture settlement" description="Session HMAC is SHA-256 over the raw 32-byte artifact. Wallet Ed25519 signs the binding hash when Phantom is connected; otherwise the owner keystore binds.">
+              <div className="space-y-2 text-[12px] font-mono text-[#a8b3d8]">
+                <div>stream {captureDraft.streamId} · seq {captureDraft.nextSeq} · debit {(captureDraft.debitMicroUsdc / 1_000_000).toFixed(6)} USDC</div>
+                <div className="break-all">artifact {captureDraft.artifactHash}</div>
+                <div className="break-all">session HMAC {captureDraft.mac.slice(0, 16)}…</div>
+                <div className="break-all">binding {captureDraft.bindingHash ?? 'none — keystore will bind'}</div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button variant="primary" size="md" onClick={handleCaptureSubmit} loading={captureBusy === captureDraft.streamId} disabled={captureBusy !== null}>
+                  {connected && captureDraft.bindingHash ? 'Sign owner + capture' : 'Capture (keystore bind)'}
+                </Button>
+                <Button variant="ghost" size="md" onClick={() => setCaptureDraft(null)}>Cancel</Button>
+              </div>
+            </Card>
+          )}
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (
@@ -369,17 +698,23 @@ export const ActivitySection: React.FC = () => {
                   <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><span className="text-[11px] font-mono text-white">M</span></div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2"><span className="text-[13px] text-white font-medium">{s.agent_name || s.agent_pubkey.slice(0, 8)}</span><Badge variant={s.status === 'open' ? 'success' : 'neutral'}>{s.status}</Badge></div>
-                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} · {s.total_calls} calls · settled {fmtCost(s.settled_micro_usdc / 1_000_000)} · pending {fmtCost((s.pending_micro_usdc || 0) / 1_000_000)}</div>
+                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} · {s.total_calls} calls · settled {fmtCost(s.settled_micro_usdc / 1_000_000)} · pending {fmtCost((s.pending_micro_usdc || 0) / 1_000_000)} · usage {streamUsage[s.id] ?? 0}</div>
                     {s.stream_pda && <div className="text-[10px] font-mono text-[#3e4a72] mt-0.5">PDA {s.stream_pda.slice(0, 8)}…{s.stream_pda.slice(-4)}</div>}
                   </div>
                   {s.status === 'open' && (
                     <Button variant="secondary" size="sm" loading={meterBusy === s.id} disabled={meterBusy !== null} onClick={() => handleMeter(s)}>Meter</Button>
                   )}
                   {s.status === 'open' && s.pending_artifact_hash && (
-                    <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapture(s)}>Capture</Button>
+                    <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapturePrep(s)}>Capture</Button>
                   )}
                   {s.status === 'open' && autosignPubkey && (
-                    <Button variant="destructive" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s.id)}>Withdraw</Button>
+                    <Button variant="destructive" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s, 'autosign')}>Withdraw</Button>
+                  )}
+                  {s.status === 'open' && connected && s.stream_pda && (
+                    <Button variant="secondary" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s, 'wallet')}>Withdraw (wallet)</Button>
+                  )}
+                  {s.status === 'open' && (
+                    <Button variant="ghost" size="sm" loading={closeBusy === s.id} disabled={closeBusy !== null} onClick={() => handleClose(s.id)}>Close</Button>
                   )}
                   {s.on_chain_signature && <a href={`https://explorer.solana.com/tx/${s.on_chain_signature}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-[11px] text-white hover:underline">View TX</a>}
                 </div>

@@ -34,6 +34,8 @@ COST_PER_1K: dict[str, tuple[float, float]] = {
     "titan": (0.0, 0.0),
     "pyth": (0.0, 0.0),
     "alchemy": (0.0, 0.0),
+    "openrouter": (0.0, 0.0),
+    "ollama": (0.0, 0.0),
 }
 
 # Flat per-call cost for non-AI upstreams when platform key is used
