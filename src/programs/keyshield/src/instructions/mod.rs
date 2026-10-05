@@ -1,18 +1,19 @@
 //! Instruction handlers
 
-pub mod store_key;
 pub mod access_key;
-pub mod share_key;
-pub mod universal_vault;
 pub mod agent_access;
 pub mod payment_stream;
+pub mod share_key;
+pub mod store_key;
+pub mod universal_vault;
 // Spec 10 — Embedded wallet pillar (ix #24-#27).
+pub mod clawback;
+pub mod mpp_settle;
 pub mod open_stream;
 pub mod pay_x402;
-pub mod mpp_settle;
-pub mod withdraw;
-pub mod clawback;
 pub mod revocation;
+pub mod withdraw;
+pub mod zk_vault;
 
 /// Instruction discriminator enum
 ///
@@ -54,6 +55,12 @@ pub enum Instruction {
     SettlePayment = 31,
     PayForService = 32,
     ClosePaymentStream = 33,
+
+    // Passkey-commitment escrow (40-43). Proof check is scaffold, not Groth16.
+    InitZkVault = 40,
+    UpdateZkPolicy = 41,
+    ExecuteZkAction = 42,
+    RevokeZkGrant = 43,
 }
 
 impl Instruction {
@@ -88,6 +95,11 @@ impl Instruction {
             31 => Some(Instruction::SettlePayment),
             32 => Some(Instruction::PayForService),
             33 => Some(Instruction::ClosePaymentStream),
+
+            40 => Some(Instruction::InitZkVault),
+            41 => Some(Instruction::UpdateZkPolicy),
+            42 => Some(Instruction::ExecuteZkAction),
+            43 => Some(Instruction::RevokeZkGrant),
 
             _ => None,
         }

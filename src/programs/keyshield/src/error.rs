@@ -92,6 +92,18 @@ pub enum KeyShieldError {
     DisputeWindowActive = 6115,
     /// The session bit in the owner's revocation bitmap is set.
     SessionRevoked = 6116,
+    /// Same Passkey/ZK nullifier consumed twice.
+    NullifierUsed = 6117,
+    /// Execute amount exceeds remaining spend_cap.
+    CapExceeded = 6118,
+    /// Clock slot is past valid_until_slot.
+    ProofExpired = 6119,
+    /// `[b"keyshield", owner]` PDA already initialized.
+    ZkVaultAlreadyExists = 6120,
+    /// Owner revoked the zk escrow grant.
+    ZkVaultRevoked = 6121,
+    /// Zk escrow account missing or wrong discriminator.
+    ZkVaultNotFound = 6122,
 }
 
 impl From<KeyShieldError> for ProgramError {

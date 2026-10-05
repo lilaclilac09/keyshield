@@ -24,7 +24,7 @@ export function planVerifyExecute(proof: AuthorizationProof, amount: string): Pl
   return {
     verifier: ONCHAIN_VERIFIER,
     programNote:
-      'Groth16 / alt_bn128 pairing is not in the live KeyShield program. Nullifier + proof bytes stay client-side until that ix lands.',
+      'Pinocchio ixs 40–43 exist (init/update/execute/revoke). Proof check is scaffold (non-empty bytes), not Groth16 pairing. Passkey verify stays client-layer.',
     ixs: [
       {
         name: 'initialize_vault',

@@ -9,9 +9,9 @@
 
 use keyshield::error::KeyShieldError;
 use keyshield::guards::{
-    assert_canonical_usdc_mint, debit_within_budget, is_closed_account, refuse_program_owned_reopen,
-    remaining_budget, seal_closed_account, SPL_TOKEN_PROGRAM_ID, USDC_MINT_DEVNET,
-    MINT_ACCOUNT_LEN, MINT_DECIMALS_OFFSET, MINT_INITIALIZED_OFFSET,
+    assert_canonical_usdc_mint, debit_within_budget, is_closed_account,
+    refuse_program_owned_reopen, remaining_budget, seal_closed_account, MINT_ACCOUNT_LEN,
+    MINT_DECIMALS_OFFSET, MINT_INITIALIZED_OFFSET, SPL_TOKEN_PROGRAM_ID, USDC_MINT_DEVNET,
 };
 use keyshield::instructions::clawback::clawback_ready;
 use keyshield::state::{AGENT_PAYMENT_STREAM_DISCRIMINATOR, DEFAULT_DISPUTE_TIMEOUT_SLOTS};
@@ -102,12 +102,11 @@ fn account_resurrection_and_zero_data_check() {
 fn counterfeit_mint_and_token_safety() {
     let mut fake = [3u8; 32];
     fake[0] = 0xAA;
-    let err = assert_canonical_usdc_mint(&fake, &SPL_TOKEN_PROGRAM_ID, &mint_data(6, 1))
-        .unwrap_err();
+    let err =
+        assert_canonical_usdc_mint(&fake, &SPL_TOKEN_PROGRAM_ID, &mint_data(6, 1)).unwrap_err();
     assert_eq!(code(err), KeyShieldError::InvalidMint as u32);
 
-    assert_canonical_usdc_mint(&USDC_MINT_DEVNET, &SPL_TOKEN_PROGRAM_ID, &mint_data(6, 1))
-        .unwrap();
+    assert_canonical_usdc_mint(&USDC_MINT_DEVNET, &SPL_TOKEN_PROGRAM_ID, &mint_data(6, 1)).unwrap();
 }
 
 /// Two 60-unit settles against a 100-unit cap in one transaction.
@@ -138,4 +137,30 @@ fn concurrency_and_underflow_defense() {
     spent = debit_within_budget(0, 60, cap).unwrap();
     assert_eq!(spent, 60);
     assert_eq!(remaining_budget(cap, spent).unwrap(), 40);
+}
+
+#[test]
+fn zk_vault_policy_and_replay_matrix() {
+    use keyshield::instructions::zk_vault::{
+        assert_zk_execute, assert_zk_init_fresh, assert_zk_owner,
+    };
+
+    assert_zk_init_fresh(false).unwrap();
+    assert_eq!(
+        code(assert_zk_init_fresh(true).unwrap_err()),
+        KeyShieldError::ZkVaultAlreadyExists as u32
+    );
+    assert_eq!(
+        code(assert_zk_owner(false).unwrap_err()),
+        KeyShieldError::NotOwner as u32
+    );
+    assert_eq!(
+        code(assert_zk_execute(1, 10, false, 1, 10, &[1], true).unwrap_err()),
+        KeyShieldError::NullifierUsed as u32
+    );
+    assert_eq!(
+        code(assert_zk_execute(11, 10, false, 1, 10, &[1], false).unwrap_err()),
+        KeyShieldError::CapExceeded as u32
+    );
+    assert_zk_execute(5, 10, false, 5, 10, &[1, 2], false).unwrap();
 }

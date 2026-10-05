@@ -44,42 +44,35 @@ pub mod pda;
 pub mod state;
 
 use instructions::{
-    store_key::process_store_key,
     access_key::process_access_key,
-    share_key::process_share_key,
-    universal_vault::{
-        process_create_universal_vault,
-        process_update_universal_policy,
-        process_add_key_to_group,
-    },
     agent_access::{
-        process_grant_agent_access,
+        process_access_with_agent, process_create_ephemeral_signer, process_grant_agent_access,
         process_revoke_agent_access,
-        process_access_with_agent,
-        process_create_ephemeral_signer,
     },
-    payment_stream::{
-        process_grant_agent_payment_access,
-        process_settle_payment,
-        process_pay_for_service,
-        process_close_payment_stream,
-    },
+    clawback::process_force_clawback,
+    mpp_settle::process_mpp_settle,
     open_stream::process_open_payment_stream,
     pay_x402::process_pay_x402,
-    mpp_settle::process_mpp_settle,
-    withdraw::process_withdraw_agent_wallet,
-    clawback::process_force_clawback,
+    payment_stream::{
+        process_close_payment_stream, process_grant_agent_payment_access, process_pay_for_service,
+        process_settle_payment,
+    },
     revocation::process_set_revocation_bit,
+    share_key::process_share_key,
+    store_key::process_store_key,
+    universal_vault::{
+        process_add_key_to_group, process_create_universal_vault, process_update_universal_policy,
+    },
+    withdraw::process_withdraw_agent_wallet,
+    zk_vault::{
+        process_execute_zk_action, process_init_zk_vault, process_revoke_zk_grant,
+        process_update_zk_policy,
+    },
     Instruction,
 };
 use pinocchio::{
-    account_info::AccountInfo,
-    default_allocator,
-    nostd_panic_handler,
-    program_entrypoint,
-    program_error::ProgramError,
-    pubkey::Pubkey,
-    ProgramResult,
+    account_info::AccountInfo, default_allocator, nostd_panic_handler, program_entrypoint,
+    program_error::ProgramError, pubkey::Pubkey, ProgramResult,
 };
 
 program_entrypoint!(process_instruction);
@@ -87,7 +80,7 @@ default_allocator!();
 nostd_panic_handler!();
 
 /// Program entrypoint
-/// 
+///
 /// Routes all instruction calls to their respective handlers based on discriminator:
 /// - 0-2: Legacy KeyShield (StoreKey, AccessKey, ShareKey)
 /// - 10-12: Universal Vault (Create, UpdatePolicy, AddKeyToGroup)
@@ -116,32 +109,46 @@ fn process_instruction(
         Instruction::StoreKey => process_store_key(program_id, accounts, data),
         Instruction::AccessKey => process_access_key(program_id, accounts, data),
         Instruction::ShareKey => process_share_key(program_id, accounts, data),
-        
+
         // Universal Vault instructions
-        Instruction::CreateUniversalVault => process_create_universal_vault(program_id, accounts, data),
-        Instruction::UpdateUniversalPolicy => process_update_universal_policy(program_id, accounts, data),
+        Instruction::CreateUniversalVault => {
+            process_create_universal_vault(program_id, accounts, data)
+        }
+        Instruction::UpdateUniversalPolicy => {
+            process_update_universal_policy(program_id, accounts, data)
+        }
         Instruction::AddKeyToGroup => process_add_key_to_group(program_id, accounts, data),
-        
+
         // Agent Access instructions
         Instruction::GrantAgentAccess => process_grant_agent_access(program_id, accounts, data),
         Instruction::RevokeAgentAccess => process_revoke_agent_access(program_id, accounts, data),
         Instruction::AccessWithAgent => process_access_with_agent(program_id, accounts, data),
-        Instruction::CreateEphemeralSigner => process_create_ephemeral_signer(program_id, accounts, data),
+        Instruction::CreateEphemeralSigner => {
+            process_create_ephemeral_signer(program_id, accounts, data)
+        }
 
         // Embedded Wallet — spec 10 Phase 10.1 + 10.2
         Instruction::OpenPaymentStream => process_open_payment_stream(program_id, accounts, data),
         Instruction::PayX402 => process_pay_x402(program_id, accounts, data),
         Instruction::MppSettle => process_mpp_settle(program_id, accounts, data),
-        Instruction::WithdrawAgentWallet => process_withdraw_agent_wallet(program_id, accounts, data),
+        Instruction::WithdrawAgentWallet => {
+            process_withdraw_agent_wallet(program_id, accounts, data)
+        }
         Instruction::ForceClawback => process_force_clawback(program_id, accounts, data),
         Instruction::SetRevocationBit => process_set_revocation_bit(program_id, accounts, data),
 
-
         // Payment Stream instructions
-        Instruction::GrantAgentPaymentAccess => process_grant_agent_payment_access(program_id, accounts, data),
+        Instruction::GrantAgentPaymentAccess => {
+            process_grant_agent_payment_access(program_id, accounts, data)
+        }
         Instruction::SettlePayment => process_settle_payment(program_id, accounts, data),
         Instruction::PayForService => process_pay_for_service(program_id, accounts, data),
         Instruction::ClosePaymentStream => process_close_payment_stream(program_id, accounts, data),
+
+        Instruction::InitZkVault => process_init_zk_vault(program_id, accounts, data),
+        Instruction::UpdateZkPolicy => process_update_zk_policy(program_id, accounts, data),
+        Instruction::ExecuteZkAction => process_execute_zk_action(program_id, accounts, data),
+        Instruction::RevokeZkGrant => process_revoke_zk_grant(program_id, accounts, data),
     }
 }
 
@@ -155,32 +162,91 @@ mod tests {
         assert_eq!(Instruction::try_from_u8(0), Some(Instruction::StoreKey));
         assert_eq!(Instruction::try_from_u8(1), Some(Instruction::AccessKey));
         assert_eq!(Instruction::try_from_u8(2), Some(Instruction::ShareKey));
-        
+
         // Universal Vault
-        assert_eq!(Instruction::try_from_u8(10), Some(Instruction::CreateUniversalVault));
-        assert_eq!(Instruction::try_from_u8(11), Some(Instruction::UpdateUniversalPolicy));
-        assert_eq!(Instruction::try_from_u8(12), Some(Instruction::AddKeyToGroup));
-        
+        assert_eq!(
+            Instruction::try_from_u8(10),
+            Some(Instruction::CreateUniversalVault)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(11),
+            Some(Instruction::UpdateUniversalPolicy)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(12),
+            Some(Instruction::AddKeyToGroup)
+        );
+
         // Agent Access
-        assert_eq!(Instruction::try_from_u8(20), Some(Instruction::GrantAgentAccess));
-        assert_eq!(Instruction::try_from_u8(21), Some(Instruction::RevokeAgentAccess));
-        assert_eq!(Instruction::try_from_u8(22), Some(Instruction::AccessWithAgent));
-        assert_eq!(Instruction::try_from_u8(23), Some(Instruction::CreateEphemeralSigner));
+        assert_eq!(
+            Instruction::try_from_u8(20),
+            Some(Instruction::GrantAgentAccess)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(21),
+            Some(Instruction::RevokeAgentAccess)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(22),
+            Some(Instruction::AccessWithAgent)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(23),
+            Some(Instruction::CreateEphemeralSigner)
+        );
 
         // Embedded Wallet (spec 10)
-        assert_eq!(Instruction::try_from_u8(24), Some(Instruction::OpenPaymentStream));
+        assert_eq!(
+            Instruction::try_from_u8(24),
+            Some(Instruction::OpenPaymentStream)
+        );
         assert_eq!(Instruction::try_from_u8(25), Some(Instruction::PayX402));
         assert_eq!(Instruction::try_from_u8(26), Some(Instruction::MppSettle));
-        assert_eq!(Instruction::try_from_u8(27), Some(Instruction::WithdrawAgentWallet));
-        assert_eq!(Instruction::try_from_u8(28), Some(Instruction::ForceClawback));
-        assert_eq!(Instruction::try_from_u8(29), Some(Instruction::SetRevocationBit));
-        
+        assert_eq!(
+            Instruction::try_from_u8(27),
+            Some(Instruction::WithdrawAgentWallet)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(28),
+            Some(Instruction::ForceClawback)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(29),
+            Some(Instruction::SetRevocationBit)
+        );
+
         // Payment Stream
-        assert_eq!(Instruction::try_from_u8(30), Some(Instruction::GrantAgentPaymentAccess));
-        assert_eq!(Instruction::try_from_u8(31), Some(Instruction::SettlePayment));
-        assert_eq!(Instruction::try_from_u8(32), Some(Instruction::PayForService));
-        assert_eq!(Instruction::try_from_u8(33), Some(Instruction::ClosePaymentStream));
-        
+        assert_eq!(
+            Instruction::try_from_u8(30),
+            Some(Instruction::GrantAgentPaymentAccess)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(31),
+            Some(Instruction::SettlePayment)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(32),
+            Some(Instruction::PayForService)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(33),
+            Some(Instruction::ClosePaymentStream)
+        );
+
+        assert_eq!(Instruction::try_from_u8(40), Some(Instruction::InitZkVault));
+        assert_eq!(
+            Instruction::try_from_u8(41),
+            Some(Instruction::UpdateZkPolicy)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(42),
+            Some(Instruction::ExecuteZkAction)
+        );
+        assert_eq!(
+            Instruction::try_from_u8(43),
+            Some(Instruction::RevokeZkGrant)
+        );
+
         // Invalid
         assert_eq!(Instruction::try_from_u8(3), None);
         assert_eq!(Instruction::try_from_u8(9), None);
