@@ -86,14 +86,19 @@ export async function settleMppStream(streamId) {
 export async function closeMppStream(streamId) {
     return request(`/mpp/streams/${encodeURIComponent(streamId)}/close`, { method: 'POST' });
 }
-export async function recordMppTx(streamId, txSig) {
+export async function recordMppTx(streamId, txSig, extra) {
     return request(`/mpp/streams/${encodeURIComponent(streamId)}/record-tx`, {
         method: 'POST',
-        body: JSON.stringify({ tx_signature: txSig }),
+        body: JSON.stringify({
+            tx_signature: txSig,
+            streamPda: extra?.streamPda,
+            streamUsdcAta: extra?.streamUsdcAta,
+        }),
     });
 }
 export async function getMppUsage(streamId) {
-    return request(`/mpp/streams/${encodeURIComponent(streamId)}/usage`);
+    const data = await request(`/mpp/streams/${encodeURIComponent(streamId)}/usage`);
+    return Array.isArray(data) ? data : (data.usage ?? []);
 }
 // ============ Billing Endpoints ============
 export async function getBillingInfo() {

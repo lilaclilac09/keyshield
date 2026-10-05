@@ -73,28 +73,58 @@ async def list_sessions(request: Request):
             (user_id, now),
         ).fetchall()
 
+        current_token = request.headers.get("Authorization", "")[7:]
+        ip = _get_ip(request)
+        ua = _get_ua(request)
+        device = _detect_device(ua)
         result = []
+        saw_current = False
         for row in rows:
-            token_prefix = row["token"][:8] if row["token"] else ""
+            token = row["token"] or ""
+            token_prefix = token[-8:] if len(token) >= 8 else token
+            is_current = bool(token) and token == current_token
+            saw_current = saw_current or is_current
             result.append(
                 {
                     "id": token_prefix,
-                    "token": row["token"],
+                    "token_id": token_prefix,
                     "user_id": row["user_id"],
-                    "ip_address": _get_ip(request),
-                    "user_agent": _get_ua(request),
-                    "device": _detect_device(_get_ua(request)),
+                    "ip": ip,
+                    "ip_address": ip,
+                    "user_agent": ua,
+                    "device": device,
+                    "device_label": device,
+                    "last_seen_at": now,
                     "last_active_at": now,
                     "expires_at": row["expires_at"],
-                    "is_current": True,  # only the current token can list sessions
+                    "is_current": is_current,
                 }
+            )
+        if current_token and not saw_current:
+            result.insert(
+                0,
+                {
+                    "id": current_token[-8:] if len(current_token) >= 8 else current_token,
+                    "token_id": current_token[-8:] if len(current_token) >= 8 else current_token,
+                    "user_id": user_id,
+                    "ip": ip,
+                    "ip_address": ip,
+                    "user_agent": ua,
+                    "device": device,
+                    "device_label": device,
+                    "last_seen_at": now,
+                    "last_active_at": now,
+                    "expires_at": sess.get("expires_at") or now + 86400,
+                    "is_current": True,
+                },
             )
     finally:
         conn.close()
 
-    return JSONResponse(result)
+    return JSONResponse({"sessions": result})
 
 
+@router.post("/sessions/{token_prefix}/revoke")
 @router.delete("/sessions/{token_prefix}")
 async def revoke_session(token_prefix: str, request: Request):
     """Revoke a session by its token prefix."""
@@ -105,16 +135,17 @@ async def revoke_session(token_prefix: str, request: Request):
     user_id = sess["user_id"]
     current_token = request.headers.get("Authorization", "")[7:]
 
-    # Don't allow revoking the current session
-    if current_token.startswith(token_prefix):
+    if current_token.startswith(token_prefix) or current_token.endswith(token_prefix):
         return JSONResponse({"detail": "cannot revoke current session"}, status_code=400)
 
     conn = _db()
     try:
-        # Find the full token that matches the prefix for this user
         row = conn.execute(
-            "SELECT token FROM sessions WHERE user_id = ? AND token LIKE ?",
-            (user_id, f"{token_prefix}%"),
+            """
+            SELECT token FROM sessions
+             WHERE user_id = ? AND (token LIKE ? OR token LIKE ?)
+            """,
+            (user_id, f"{token_prefix}%", f"%{token_prefix}"),
         ).fetchone()
 
         if not row:

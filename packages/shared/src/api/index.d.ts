@@ -68,7 +68,10 @@ export declare function openMppStream(agentId: string, amountSol: number): Promi
 }>;
 export declare function settleMppStream(streamId: string): Promise<void>;
 export declare function closeMppStream(streamId: string): Promise<void>;
-export declare function recordMppTx(streamId: string, txSig: string): Promise<void>;
+export declare function recordMppTx(streamId: string, txSig: string, extra?: {
+    streamPda?: string;
+    streamUsdcAta?: string;
+}): Promise<void>;
 export declare function getMppUsage(streamId: string): Promise<{
     id: string;
     agent_id: string;

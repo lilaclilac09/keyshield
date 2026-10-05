@@ -50,6 +50,13 @@ def test_routes_register() -> None:
     assert (
         "/health" in paths or "/health/" in paths or any(p.startswith("/health") for p in paths)
     ), f"expected /health endpoint registered; saw {sorted(paths)[:12]}"
+    for required in (
+        "/billing/sol-quote",
+        "/billing/topup-solana",
+        "/mpp/streams/{stream_id}/usage",
+        "/sessions/{token_prefix}/revoke",
+    ):
+        assert required in paths, f"expected {required} registered; saw {sorted(paths)}"
 
 
 def test_settings_loads() -> None:

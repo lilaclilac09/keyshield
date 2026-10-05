@@ -9,9 +9,10 @@ import { CostBadge } from '../ui/CostBadge';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { apiFetch, getToken, proxyFetch, vproxyFetch } from '../../lib/auth';
 import { getDecryptedKey } from '../../lib/vault-session';
-import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, demoMeterStream, fetchCapturePrep, getMppStreamUsage, storeUpstreamKey } from '../../lib/api';
+import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, creditUsdcTopup, demoMeterStream, fetchCapturePrep, getMppStreamUsage, storeUpstreamKey } from '../../lib/api';
 import { signCaptureMac, signOwnerBinding } from '../../lib/mpp-capture';
 import { openStreamWithWallet, withdrawStreamWithWallet } from '../../lib/mpp-wallet-open';
+import { topupSolWithWallet } from '../../lib/sol-topup';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_DEMO_UPSTREAM, openrouterChatBody } from '../../lib/openrouter-interface';
 
 interface UsageEntry {
@@ -84,6 +85,15 @@ export const ActivitySection: React.FC = () => {
   const [openStep, setOpenStep] = useState('');
   const [meterBusy, setMeterBusy] = useState<number | null>(null);
   const [captureBusy, setCaptureBusy] = useState<number | null>(null);
+  const [captureDraft, setCaptureDraft] = useState<{
+    streamId: number;
+    artifactHash: string;
+    debitMicroUsdc: number;
+    nextSeq: number;
+    bindingHash: string | null;
+    mac: string;
+  } | null>(null);
+  const [usdcSig, setUsdcSig] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -151,6 +161,47 @@ export const ActivitySection: React.FC = () => {
       if (bRes.ok) setBilling(await bRes.json());
     } catch (e) { setTopupMsg(e instanceof Error ? e.message : 'Network error'); }
     finally { setTopupBusy(false); }
+  };
+
+  const handleSolTopup = async () => {
+    const amt = parseFloat(topupAmt);
+    if (!amt || amt <= 0) return;
+    if (!publicKey) { setTopupOk(false); setTopupMsg('Connect Phantom to send SOL'); return; }
+    setTopupBusy(true); setTopupMsg(''); setTopupOk(false);
+    try {
+      const d = await topupSolWithWallet({
+        amountUsd: amt,
+        ownerPubkey: publicKey.toBase58(),
+        sendTransaction,
+      });
+      setTopupOk(true);
+      setTopupMsg(`Phantom SOL credited $${d.creditedUsd.toFixed(4)} — balance $${d.balanceUsd.toFixed(4)}`);
+      setTopupAmt('');
+      const bRes = await apiFetch('/billing/balance');
+      if (bRes.ok) setBilling(await bRes.json());
+    } catch (e) {
+      setTopupMsg(e instanceof Error ? e.message : 'SOL topup failed');
+    } finally {
+      setTopupBusy(false);
+    }
+  };
+
+  const handleUsdcCredit = async () => {
+    const sig = usdcSig.trim();
+    if (!sig) return;
+    setTopupBusy(true); setTopupMsg(''); setTopupOk(false);
+    try {
+      const d = await creditUsdcTopup(sig, 'devnet', publicKey?.toBase58());
+      setTopupOk(true);
+      setTopupMsg(`USDC credited $${d.credited_usd.toFixed(4)} — balance $${d.balance_usd.toFixed(4)}`);
+      setUsdcSig('');
+      const bRes = await apiFetch('/billing/balance');
+      if (bRes.ok) setBilling(await bRes.json());
+    } catch (e) {
+      setTopupMsg(e instanceof Error ? e.message : 'USDC credit failed');
+    } finally {
+      setTopupBusy(false);
+    }
   };
 
   const handleOpenStream = async (mode: 'autosign' | 'wallet') => {
@@ -295,25 +346,48 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
-  const handleCapture = async (stream: MppStream) => {
+  const handleCapturePrep = async (stream: MppStream) => {
     const token = getToken();
     if (!token) return;
     setCaptureBusy(stream.id);
     try {
       const prep = await fetchCapturePrep(stream.id);
       const mac = await signCaptureMac(token, prep.artifactHash);
+      setCaptureDraft({
+        streamId: stream.id,
+        artifactHash: prep.artifactHash,
+        debitMicroUsdc: prep.debitMicroUsdc,
+        nextSeq: prep.nextSeq,
+        bindingHash: prep.bindingHash,
+        mac,
+      });
+      setOpenOk(true);
+      setOpenMsg(`Capture form ready for stream ${stream.id} — session HMAC signed`);
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'capture-prep failed');
+    } finally {
+      setCaptureBusy(null);
+    }
+  };
+
+  const handleCaptureSubmit = async () => {
+    if (!captureDraft) return;
+    setCaptureBusy(captureDraft.streamId);
+    try {
       let owner: { ownerPubkey: string; ownerSignature: string } | undefined;
-      if (connected && publicKey && signMessage && prep.bindingHash) {
-        const ownerSignature = await signOwnerBinding(signMessage, prep.bindingHash);
+      if (connected && publicKey && signMessage && captureDraft.bindingHash) {
+        const ownerSignature = await signOwnerBinding(signMessage, captureDraft.bindingHash);
         owner = { ownerPubkey: publicKey.toBase58(), ownerSignature };
       }
-      await captureMppStream(stream.id, prep.artifactHash, mac, owner);
+      await captureMppStream(captureDraft.streamId, captureDraft.artifactHash, captureDraft.mac, owner);
       setOpenOk(true);
       setOpenMsg(
         owner
-          ? `Captured stream ${stream.id} — session HMAC + wallet Ed25519`
-          : `Captured stream ${stream.id} — session HMAC (owner keystore binds)`,
+          ? `Captured stream ${captureDraft.streamId} — session HMAC + wallet Ed25519`
+          : `Captured stream ${captureDraft.streamId} — session HMAC (owner keystore binds)`,
       );
+      setCaptureDraft(null);
       await refresh();
     } catch (e) {
       setOpenOk(false);
@@ -394,13 +468,14 @@ export const ActivitySection: React.FC = () => {
             <StatCard label="Total Spent" value={fmtCost(billing.total_spent_usd)} />
             <StatCard label="Free Credit" value={fmtCost(billing.free_credit_usd)} hint={billing.free_credit_usd <= 0 ? 'Used up' : '~100 GPT-4o-mini calls'} />
           </div>
-          <Card title="Top Up" description="Activity ledger credit via POST /billing/topup. Phantom SOL on-chain top-up has no /billing/sol-quote route — use Devnet wallet USDC for MPP escrow.">
+          <Card title="Top Up" description="Ledger credit via POST /billing/topup. Phantom SOL uses GET /billing/sol-quote then POST /billing/topup-solana. Paste a USDC tx for /billing/topup-solana-usdc.">
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
                 <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
               </div>
-              <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+              <Button variant="secondary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Ledger</Button>
+              <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
             </div>
             {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
           </Card>
@@ -408,13 +483,18 @@ export const ActivitySection: React.FC = () => {
       )}
 
       {tab === 'topup' && (
-        <Card title="Top Up" description="POST /billing/topup ledger credit. Not Phantom SOL. MPP escrow is funded on Open (auto-sign / wallet).">
+        <Card title="Top Up" description="Ledger credit, Phantom SOL (quote + transfer + verify), or paste a Devnet USDC tx signature.">
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
               <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
             </div>
-            <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+            <Button variant="secondary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Ledger</Button>
+            <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <input value={usdcSig} onChange={e => setUsdcSig(e.target.value)} placeholder="USDC tx signature" className="flex-1 bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+            <Button variant="secondary" size="md" onClick={handleUsdcCredit} disabled={topupBusy || !usdcSig.trim()} loading={topupBusy}>Credit USDC</Button>
           </div>
           {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
         </Card>
@@ -476,6 +556,22 @@ export const ActivitySection: React.FC = () => {
             {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
             {demoMode && <p className="text-[10px] text-[#5e6a91] mt-2">Demo mode on — Meter falls back to synthetic hold if no key is pasted.</p>}
           </Card>
+          {captureDraft && (
+            <Card title="Capture settlement" description="Session HMAC is SHA-256 over the raw 32-byte artifact. Wallet Ed25519 signs the binding hash when Phantom is connected; otherwise the owner keystore binds.">
+              <div className="space-y-2 text-[12px] font-mono text-[#a8b3d8]">
+                <div>stream {captureDraft.streamId} · seq {captureDraft.nextSeq} · debit {(captureDraft.debitMicroUsdc / 1_000_000).toFixed(6)} USDC</div>
+                <div className="break-all">artifact {captureDraft.artifactHash}</div>
+                <div className="break-all">session HMAC {captureDraft.mac.slice(0, 16)}…</div>
+                <div className="break-all">binding {captureDraft.bindingHash ?? 'none — keystore will bind'}</div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button variant="primary" size="md" onClick={handleCaptureSubmit} loading={captureBusy === captureDraft.streamId} disabled={captureBusy !== null}>
+                  {connected && captureDraft.bindingHash ? 'Sign owner + capture' : 'Capture (keystore bind)'}
+                </Button>
+                <Button variant="ghost" size="md" onClick={() => setCaptureDraft(null)}>Cancel</Button>
+              </div>
+            </Card>
+          )}
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (
@@ -490,7 +586,7 @@ export const ActivitySection: React.FC = () => {
                     <Button variant="secondary" size="sm" loading={meterBusy === s.id} disabled={meterBusy !== null} onClick={() => handleMeter(s)}>Meter</Button>
                   )}
                   {s.status === 'open' && s.pending_artifact_hash && (
-                    <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapture(s)}>Capture</Button>
+                    <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapturePrep(s)}>Capture</Button>
                   )}
                   {s.status === 'open' && autosignPubkey && (
                     <Button variant="destructive" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s, 'autosign')}>Withdraw</Button>

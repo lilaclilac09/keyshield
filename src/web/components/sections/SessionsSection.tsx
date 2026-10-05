@@ -23,7 +23,7 @@ export const SessionsSection: React.FC<{ onLogout: () => void }> = ({ onLogout }
   useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 60000); return () => window.clearInterval(id); }, []);
   void now;
 
-  const load = async () => { setLoading(true); try { const r = await apiFetch('/sessions'); if (r.status === 404) { setList(null); return; } if (!r.ok) return; const d = await r.json(); setList(Array.isArray(d.sessions) ? d.sessions : []); } catch {} finally { setLoading(false); } };
+  const load = async () => { setLoading(true); try { const r = await apiFetch('/sessions'); if (r.status === 404) { setList(null); return; } if (!r.ok) return; const d = await r.json(); const rows = Array.isArray(d) ? d : (d.sessions ?? []); setList(rows.map((s: SessionRow & { id?: string; ip_address?: string; device?: string }) => ({ token_id: s.token_id || s.id || '', device_label: s.device_label || s.device, ip: s.ip || s.ip_address, user_agent: s.user_agent, last_seen_at: s.last_seen_at, expires_at: s.expires_at, is_current: !!s.is_current }))); } catch {} finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
 
   const current = useMemo(() => list?.find(s => s.is_current) ?? null, [list]);

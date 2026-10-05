@@ -169,15 +169,26 @@ export async function closeMppStream(streamId: string) {
   return request<void>(`/mpp/streams/${encodeURIComponent(streamId)}/close`, { method: 'POST' });
 }
 
-export async function recordMppTx(streamId: string, txSig: string) {
+export async function recordMppTx(
+  streamId: string,
+  txSig: string,
+  extra?: { streamPda?: string; streamUsdcAta?: string },
+) {
   return request<void>(`/mpp/streams/${encodeURIComponent(streamId)}/record-tx`, {
     method: 'POST',
-    body: JSON.stringify({ tx_signature: txSig }),
+    body: JSON.stringify({
+      tx_signature: txSig,
+      streamPda: extra?.streamPda,
+      streamUsdcAta: extra?.streamUsdcAta,
+    }),
   });
 }
 
 export async function getMppUsage(streamId: string) {
-  return request<Array<import('../types').MppUsageEntry>>(`/mpp/streams/${encodeURIComponent(streamId)}/usage`);
+  const data = await request<{ usage?: Array<import('../types').MppUsageEntry> } | Array<import('../types').MppUsageEntry>>(
+    `/mpp/streams/${encodeURIComponent(streamId)}/usage`,
+  );
+  return Array.isArray(data) ? data : (data.usage ?? []);
 }
 
 /* ─── /build-open-tx — wallet sign-off prep (Solana) ────────────────

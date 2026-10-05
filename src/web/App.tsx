@@ -62,7 +62,7 @@ const MainContent: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [prefilledData, setPrefilledData] = useState<Partial<VaultItem> | undefined>(undefined);
 
-  const { items, allItems, addItem, deleteItem, decryptItem } = useVaults(searchQuery, 'All Items');
+  const { items, allItems, addItem, deleteItem, decryptItem, unlocked, unlock, loading: vaultLoading, error: vaultError } = useVaults(searchQuery, 'All Items');
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -100,7 +100,7 @@ const MainContent: React.FC = () => {
           <Header title={config.title} subtitle={config.subtitle} onSearch={() => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
-              {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} />}
+              {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} />}
               {section === 'activity' && <ActivitySection />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}

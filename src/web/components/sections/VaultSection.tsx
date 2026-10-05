@@ -7,15 +7,23 @@ import { StatCard } from '../ui/Card';
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
   onAdd: () => void; onDelete: (id: string) => void; onDecrypt: (id: string) => Promise<string>;
+  unlocked?: boolean; unlocking?: boolean; unlockError?: string | null; onUnlock?: () => void;
 }
 
-export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt }) => (
+export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlocked, unlocking, unlockError, onUnlock }) => (
   <div className="space-y-6">
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />
       <StatCard label="Used This Week" value={items.filter(i => Date.now() - i.lastUsedAt < 86400000 * 7).length} hint="across agents and apps" />
       <StatCard label="Expiring Soon" value={items.filter(i => { if (!i.expiryDate) return false; const d = (new Date(i.expiryDate).getTime() - Date.now()) / 86400000; return d >= 0 && d <= 14; }).length} hint="within 14 days" />
     </div>
+    {onUnlock && !unlocked && (
+      <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3 flex items-center justify-between gap-3">
+        <p className="text-[12px] text-[#8a96c2]">Device Vault is locked. Proxy vault (`/manage/vault`) still lists stored keys.</p>
+        <button onClick={onUnlock} disabled={unlocking} className="h-8 px-3 rounded-lg bg-white text-black text-[12px] font-semibold disabled:opacity-50">{unlocking ? 'Unlocking…' : 'Unlock Device Vault'}</button>
+      </div>
+    )}
+    {unlockError && <p className="text-[12px] text-red-400">{unlockError}</p>}
     {items.length === 0 ? (
       <div className="rounded-xl border border-dashed border-[#243365]/50 py-16 flex flex-col items-center justify-center text-center px-6">
         <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
