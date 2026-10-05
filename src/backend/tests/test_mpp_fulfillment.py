@@ -265,9 +265,7 @@ def test_verified_usage_holds_until_signed_capture(db):
     root = artifact_root([bytes.fromhex(row[1])])
     request_hash = bytes.fromhex(row[1])
     assert root != bytes(32)
-    payload = mpp_onchain.build_mpp_settle_ix_data(
-        1020, root, 1, signature, request_hash
-    )
+    payload = mpp_onchain.build_mpp_settle_ix_data(1020, root, 1, signature, request_hash)
     assert len(payload) == 113
     assert payload[0] == 26
     assert int.from_bytes(payload[1:9], "little") == 1020
