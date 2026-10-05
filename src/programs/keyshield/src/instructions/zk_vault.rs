@@ -547,6 +547,121 @@ pub fn process_revoke_zk_grant(
     Ok(())
 }
 
+/// Host-oracle layout: `owner, spend_cap, last_nonce, merkle_root, bump`.
+pub fn encode_fresh_vault(
+    owner: &[u8; 32],
+    spend_cap: u64,
+    root: &[u8; 32],
+    bump: u8,
+) -> Result<[u8; ZK_VAULT_SIZE], ProgramError> {
+    assert_zk_init_fresh(false)?;
+    let mut buf = [0u8; ZK_VAULT_SIZE];
+    buf[off::DISC..off::DISC + 8].copy_from_slice(&ZK_VAULT_DISCRIMINATOR);
+    buf[off::OWNER..off::OWNER + 32].copy_from_slice(owner);
+    write_u64(&mut buf, off::SPEND_CAP, spend_cap)?;
+    buf[off::ROOT..off::ROOT + 32].copy_from_slice(root);
+    write_u64(&mut buf, off::NONCE, 0)?;
+    buf[off::BUMP] = bump;
+    buf[off::REVOKED] = 0;
+    Ok(buf)
+}
+
+pub fn vault_nonce(buf: &[u8]) -> Result<u64, ProgramError> {
+    read_u64(buf, off::NONCE)
+}
+
+pub fn vault_spend_cap(buf: &[u8]) -> Result<u64, ProgramError> {
+    read_u64(buf, off::SPEND_CAP)
+}
+
+pub fn vault_root(buf: &[u8]) -> Result<[u8; 32], ProgramError> {
+    let slice = buf
+        .get(off::ROOT..off::ROOT + 32)
+        .ok_or(KeyShieldError::ZkVaultNotFound)?;
+    let mut out = [0u8; 32];
+    out.copy_from_slice(slice);
+    Ok(out)
+}
+
+/// `update_policy(new_spend_cap, new_root)` — owner signer only.
+pub fn apply_update_policy(
+    buf: &mut [u8],
+    signer: &[u8; 32],
+    is_signer: bool,
+    new_cap: u64,
+    new_root: &[u8; 32],
+) -> Result<(), ProgramError> {
+    assert_zk_owner(is_signer)?;
+    if buf.len() < ZK_VAULT_SIZE
+        || &buf[off::DISC..off::DISC + 8] != ZK_VAULT_DISCRIMINATOR.as_ref()
+    {
+        return Err(KeyShieldError::ZkVaultNotFound.into());
+    }
+    if &buf[off::OWNER..off::OWNER + 32] != signer {
+        return Err(KeyShieldError::NotOwner.into());
+    }
+    if buf[off::REVOKED] != 0 {
+        return Err(KeyShieldError::ZkVaultRevoked.into());
+    }
+    write_u64(buf, off::SPEND_CAP, new_cap)?;
+    buf[off::ROOT..off::ROOT + 32].copy_from_slice(new_root);
+    Ok(())
+}
+
+/// `revoke_grant()` — owner signer only. Does not move funds.
+pub fn apply_revoke_grant(
+    buf: &mut [u8],
+    signer: &[u8; 32],
+    is_signer: bool,
+) -> Result<(), ProgramError> {
+    assert_zk_owner(is_signer)?;
+    if buf.len() < ZK_VAULT_SIZE
+        || &buf[off::DISC..off::DISC + 8] != ZK_VAULT_DISCRIMINATOR.as_ref()
+    {
+        return Err(KeyShieldError::ZkVaultNotFound.into());
+    }
+    if &buf[off::OWNER..off::OWNER + 32] != signer {
+        return Err(KeyShieldError::NotOwner.into());
+    }
+    buf[off::REVOKED] = 1;
+    Ok(())
+}
+
+/// Debit only after `assert_zk_execute` succeeded. Cap/nonce stay put on error.
+pub fn apply_execute_debit(
+    buf: &mut [u8],
+    amount: u64,
+    action: &[u8; 32],
+) -> Result<(), ProgramError> {
+    let cap = read_u64(buf, off::SPEND_CAP)?;
+    let new_cap = cap
+        .checked_sub(amount)
+        .ok_or(KeyShieldError::ArithmeticOverflow)?;
+    write_u64(buf, off::SPEND_CAP, new_cap)?;
+    let nonce = read_u64(buf, off::NONCE)?;
+    write_u64(
+        buf,
+        off::NONCE,
+        nonce
+            .checked_add(1)
+            .ok_or(KeyShieldError::ArithmeticOverflow)?,
+    )?;
+    buf[off::LAST_ACTION..off::LAST_ACTION + 32].copy_from_slice(action);
+    write_u64(buf, off::LAST_AMOUNT, amount)?;
+    Ok(())
+}
+
+/// Client/proxy gate: empty or mismatched SHA-256 must not reach execute.
+pub fn assert_artifact_matches(
+    action_hash: &[u8; 32],
+    payload_hash: &[u8; 32],
+) -> Result<(), ProgramError> {
+    if payload_hash.iter().all(|b| *b == 0) || action_hash != payload_hash {
+        return Err(KeyShieldError::UnverifiedFulfillment.into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

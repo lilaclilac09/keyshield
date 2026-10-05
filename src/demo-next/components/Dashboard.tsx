@@ -435,6 +435,7 @@ function DashboardInner() {
             {planned && (
               <div>
                 planned ixs: {planned.ixs.map((i) => i.name).join(' → ')} · verifier={planned.verifier}
+                {' · PDA [b"keyshield", owner] + [b"nullifier", hash]'}
               </div>
             )}
             <div>breakpoint={ks.snapshot.breakpointLine}</div>

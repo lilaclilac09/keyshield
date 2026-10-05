@@ -1,5 +1,6 @@
 /**
- * Pinocchio zk-vault surface on 41P2wHK… — ixs 40 / 41 / 42.
+ * Pinocchio zk-vault surface on 41P2wHK… — ixs 40–43.
+ * Spec names: init_vault / update_policy / execute_action / revoke_grant.
  *
  * On-chain proof is tagged:
  *   0x00 scaffold-sha256 — binds public inputs (not pairing)
@@ -20,6 +21,7 @@ export const ZK_NULLIFIER_SEED = new TextEncoder().encode('nullifier');
 export const IX_INIT_ZK_VAULT = 40;
 export const IX_REGISTER_ROOT = 41;
 export const IX_VERIFY_AND_EXECUTE = 42;
+export const IX_REVOKE_ZK_GRANT = 43;
 
 export interface PlannedIxs {
   verifier: typeof ONCHAIN_VERIFIER;
@@ -176,26 +178,39 @@ export function planVerifyExecute(proof: AuthorizationProof, amount: string): Pl
       'Pinocchio ixs 40–43. Scaffold 0x00 binds public inputs. Groth16 0x01 calls alt_bn128 only after a VK is installed — currently fail-closed, not live pairing. Passkey stays client-layer. Live 41P2wHK… must be upgraded before 40–43 land.',
     ixs: [
       {
-        name: 'initialize_vault',
+        name: 'init_vault',
         args: {
           spend_cap: proof.publicInputs.spendCap,
           merkle_root: proof.publicInputs.merkleRoot,
+          seeds: '[b"keyshield", owner]',
           disc: String(IX_INIT_ZK_VAULT),
         },
       },
       {
-        name: 'register_root',
-        args: { merkle_root: proof.publicInputs.merkleRoot, disc: String(IX_REGISTER_ROOT) },
+        name: 'update_policy',
+        args: {
+          new_spend_cap: proof.publicInputs.spendCap,
+          new_root: proof.publicInputs.merkleRoot,
+          disc: String(IX_REGISTER_ROOT),
+        },
       },
       {
-        name: 'verify_and_execute',
+        name: 'execute_action',
         args: {
           nullifier: proof.publicInputs.nullifier,
           action_hash: proof.publicInputs.actionHash,
           amount,
           proof_kind: proof.kind,
           proof: proof.proofHex,
+          seeds: '[b"nullifier", nullifier_hash]',
           disc: String(IX_VERIFY_AND_EXECUTE),
+        },
+      },
+      {
+        name: 'revoke_grant',
+        args: {
+          disc: String(IX_REVOKE_ZK_GRANT),
+          note: 'owner-only; not a chain rollback of a landed execute',
         },
       },
     ],

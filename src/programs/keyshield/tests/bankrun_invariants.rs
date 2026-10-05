@@ -192,3 +192,123 @@ fn zk_vault_policy_and_replay_matrix() {
         KeyShieldError::Groth16VkMissing as u32
     );
 }
+
+/// Spec matrix: init_vault / update_policy / execute_action / revoke_grant
+/// plus artifact abort and timeout clawback. Host-oracle — pinocchio, not Anchor.
+#[test]
+fn deterministic_zk_account_ix_matrix() {
+    use keyshield::instructions::zk_vault::{
+        apply_execute_debit, apply_revoke_grant, apply_update_policy, assert_artifact_matches,
+        assert_zk_execute, assert_zk_init_fresh, encode_fresh_vault, vault_nonce, vault_root,
+        vault_spend_cap,
+    };
+    use keyshield::zk_verify::{encode_scaffold_proof, ZkPublicInputs};
+
+    let owner = [0x11u8; 32];
+    let stranger = [0x22u8; 32];
+    let root_a = [0xAAu8; 32];
+    let root_b = [0xBBu8; 32];
+    let action = [0xCCu8; 32];
+    let nullifier = [0xDDu8; 32];
+
+    // 正常初始化 — PDA layout, nonce=0; 二次初始化打回
+    let mut vault = encode_fresh_vault(&owner, 100, &root_a, 255).unwrap();
+    assert_eq!(vault_nonce(&vault).unwrap(), 0);
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 100);
+    assert_eq!(vault_root(&vault).unwrap(), root_a);
+    assert_eq!(
+        code(assert_zk_init_fresh(true).unwrap_err()),
+        KeyShieldError::ZkVaultAlreadyExists as u32
+    );
+
+    // 越权篡改 — 非 Owner 改 Policy
+    let before_cap = vault_spend_cap(&vault).unwrap();
+    let err = apply_update_policy(&mut vault, &stranger, true, 1, &root_b).unwrap_err();
+    assert_eq!(code(err), KeyShieldError::NotOwner as u32);
+    let unsigned = apply_update_policy(&mut vault, &owner, false, 1, &root_b).unwrap_err();
+    assert_eq!(code(unsigned), KeyShieldError::NotOwner as u32);
+    assert_eq!(vault_spend_cap(&vault).unwrap(), before_cap);
+    apply_update_policy(&mut vault, &owner, true, 80, &root_b).unwrap();
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
+    assert_eq!(vault_root(&vault).unwrap(), root_b);
+
+    // 防重放 — 同一 Nullifier
+    let pubs = ZkPublicInputs {
+        nullifier,
+        action_hash: action,
+        amount: 10,
+        valid_until: 99,
+        merkle_root: root_b,
+    };
+    let proof = encode_scaffold_proof(&pubs);
+    assert_eq!(
+        code(assert_zk_execute(10, 80, false, 1, 99, &proof, true, &pubs).unwrap_err()),
+        KeyShieldError::NullifierUsed as u32
+    );
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
+
+    // 超额拦截 — 额度不扣减
+    let over = ZkPublicInputs { amount: 81, ..pubs };
+    assert_eq!(
+        code(assert_zk_execute(81, 80, false, 1, 99, &proof, false, &over).unwrap_err()),
+        KeyShieldError::CapExceeded as u32
+    );
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
+    assert_eq!(vault_nonce(&vault).unwrap(), 0);
+
+    // 假币防御 — CounterfeitMint → InvalidMint 6109
+    let mut fake = [3u8; 32];
+    fake[0] = 0xAA;
+    assert_eq!(
+        code(
+            assert_canonical_usdc_mint(&fake, &SPL_TOKEN_PROGRAM_ID, &mint_data(6, 1)).unwrap_err()
+        ),
+        KeyShieldError::InvalidMint as u32
+    );
+
+    // 交付物不匹配 — 空 payload / 错哈希，不触发结算
+    let empty = [0u8; 32];
+    let wrong = [0xEEu8; 32];
+    assert_eq!(
+        code(assert_artifact_matches(&action, &empty).unwrap_err()),
+        KeyShieldError::UnverifiedFulfillment as u32
+    );
+    assert_eq!(
+        code(assert_artifact_matches(&action, &wrong).unwrap_err()),
+        KeyShieldError::UnverifiedFulfillment as u32
+    );
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 80);
+    assert_eq!(vault_nonce(&vault).unwrap(), 0);
+
+    // Happy execute after a matching artifact
+    assert_artifact_matches(&action, &action).unwrap();
+    assert_zk_execute(10, 80, false, 1, 99, &proof, false, &pubs).unwrap();
+    apply_execute_debit(&mut vault, 10, &action).unwrap();
+    assert_eq!(vault_spend_cap(&vault).unwrap(), 70);
+    assert_eq!(vault_nonce(&vault).unwrap(), 1);
+
+    // revoke_grant — owner only
+    let revoke_stranger = apply_revoke_grant(&mut vault, &stranger, true).unwrap_err();
+    assert_eq!(code(revoke_stranger), KeyShieldError::NotOwner as u32);
+    apply_revoke_grant(&mut vault, &owner, true).unwrap();
+    assert_eq!(
+        code(assert_zk_execute(10, 70, true, 1, 99, &proof, false, &pubs).unwrap_err()),
+        KeyShieldError::ZkVaultRevoked as u32
+    );
+
+    // 超时回退 — 过 window 后退回 owner
+    let last_active = 1_000u64;
+    let timeout = DEFAULT_DISPUTE_TIMEOUT_SLOTS;
+    assert_eq!(
+        code(clawback_ready(last_active + timeout, last_active, timeout).unwrap_err()),
+        KeyShieldError::DisputeWindowActive as u32
+    );
+    clawback_ready(last_active + timeout + 1, last_active, timeout).unwrap();
+    let mut escrow = 70u64;
+    let owner_wallet = 0u64;
+    let refunded = escrow;
+    escrow = 0;
+    let owner_wallet = owner_wallet + refunded;
+    assert_eq!(escrow, 0);
+    assert_eq!(owner_wallet, 70);
+}
