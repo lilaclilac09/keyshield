@@ -113,11 +113,7 @@ def seed_demo_agent(owner_wallet: str) -> dict:
         )
     except ValueError:
         found = next(
-            (
-                a
-                for a in agents_mod.list_agents(owner_wallet)
-                if a.get("pubkey_b58") == pubkey
-            ),
+            (a for a in agents_mod.list_agents(owner_wallet) if a.get("pubkey_b58") == pubkey),
             None,
         )
         if found:

@@ -49,11 +49,7 @@ def test_parse_balances_from_rpc_shapes():
                 "value": [
                     {
                         "account": {
-                            "data": {
-                                "parsed": {
-                                    "info": {"tokenAmount": {"amount": "9999987"}}
-                                }
-                            }
+                            "data": {"parsed": {"info": {"tokenAmount": {"amount": "9999987"}}}}
                         }
                     }
                 ]

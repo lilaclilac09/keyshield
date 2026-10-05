@@ -90,9 +90,7 @@ def test_vault_store_accepts_api_key_alias(tmp_path, monkeypatch):
         json={"upstream": "openrouter", "apiKey": "sk-or-demo-not-a-real-key"},
     )
     assert res.status_code == 200
-    listed = client.get(
-        "/manage/vault", headers={"Authorization": f"Bearer {token}"}
-    ).json()
+    listed = client.get("/manage/vault", headers={"Authorization": f"Bearer {token}"}).json()
     row = next(item for item in listed if item["upstream"] == "openrouter")
     assert row["masked_value"]
     assert "sk-or-demo-not-a-real-key" not in json.dumps(listed)
