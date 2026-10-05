@@ -103,3 +103,4 @@ src/.keyshield-devnet/
 
 # Cloudflare Wrangler local dev/cache (never commit)
 **/.wrangler/
+src/demo-next/tsconfig.tsbuildinfo

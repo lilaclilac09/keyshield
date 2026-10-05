@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "dev:web": "cd src/web && npm run dev",
+    "dev:demo-next": "cd src/demo-next && npm run dev",
     "dev:worker": "npm run dev --workspace=@keyshield/sync-worker",
     "dev:api": "python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001 --log-level info",
     "build:web": "cd src/web && npm run build",
