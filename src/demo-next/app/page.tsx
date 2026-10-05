@@ -71,6 +71,7 @@ async function sha256Hex(payload: string) {
 }
 
 export default function Page() {
+  const [activeTab, setActiveTab] = useState<"priority" | "secondary">("priority");
   const [state, setState] = useState<MachineState>("IDLE");
   const [target, setTarget] = useState<UpstreamTarget>("scvd.store");
   const [faultMode, setFaultMode] = useState<FaultMode>("none");
@@ -262,35 +263,66 @@ export default function Page() {
           </div>
         </header>
 
-        <section className="mt-5 border border-zinc-800 bg-zinc-900/20 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400">State Machine</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {STATES.map((s, idx) => {
-              const active = state === s;
-              const reached = idx <= stateIndex;
-              return (
-                <div
-                  key={s}
-                  className={`rounded-none border px-2 py-1 font-mono text-[11px] ${
-                    active
-                      ? s === "SETTLED_CAPTURED"
-                        ? "border-emerald-400 text-emerald-400"
-                        : s === "CLAWBACK_TRIGGERED"
-                          ? "border-rose-500 text-rose-400"
-                          : "border-amber-400 text-amber-300"
-                      : reached
-                        ? "border-zinc-600 text-zinc-200"
-                        : "border-zinc-800 text-zinc-500"
-                  }`}
-                >
-                  {s}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="border border-zinc-800 bg-zinc-900/20 p-3">
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-400">Tabs</p>
+            <div className="mt-3 space-y-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("priority")}
+                className={`w-full border px-3 py-2 text-left font-mono text-xs uppercase tracking-[0.12em] ${
+                  activeTab === "priority"
+                    ? "border-emerald-400 text-emerald-300 bg-emerald-950/20"
+                    : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                }`}
+              >
+                Priority Tab
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("secondary")}
+                className={`w-full border px-3 py-2 text-left font-mono text-xs uppercase tracking-[0.12em] ${
+                  activeTab === "secondary"
+                    ? "border-amber-400 text-amber-300 bg-amber-950/20"
+                    : "border-zinc-800 text-zinc-300 hover:border-zinc-600"
+                }`}
+              >
+                Secondary Tab
+              </button>
+            </div>
+          </aside>
 
-        <section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="min-w-0">
+            <section className="border border-zinc-800 bg-zinc-900/20 p-4">
+              <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400">State Machine</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {STATES.map((s, idx) => {
+                  const active = state === s;
+                  const reached = idx <= stateIndex;
+                  return (
+                    <div
+                      key={s}
+                      className={`rounded-none border px-2 py-1 font-mono text-[11px] ${
+                        active
+                          ? s === "SETTLED_CAPTURED"
+                            ? "border-emerald-400 text-emerald-400"
+                            : s === "CLAWBACK_TRIGGERED"
+                              ? "border-rose-500 text-rose-400"
+                              : "border-amber-400 text-amber-300"
+                          : reached
+                            ? "border-zinc-600 text-zinc-200"
+                            : "border-zinc-800 text-zinc-500"
+                      }`}
+                    >
+                      {s}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {activeTab === "priority" ? (
+              <section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
           <article className="border border-zinc-800 bg-zinc-900/25 p-5">
             <div className="flex items-center gap-2">
               <Wallet className="h-4 w-4 text-zinc-300" />
@@ -482,114 +514,124 @@ export default function Page() {
               {isRunning ? "Executing…" : "Run x402 / MPP flow"}
             </button>
           </article>
-        </section>
+              </section>
+            ) : (
+              <>
+                <section className="mt-5 border border-zinc-800 bg-zinc-900/20 p-4">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400">
+                    Settlement vs Fulfillment Visualizer
+                  </p>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {[
+                      "1) Intercept HTTP 402 Payment Required header",
+                      "2) Escrow Hold on-chain (funds held, not settled)",
+                      "3) Stream payload + compute SHA-256 artifact hash",
+                      "4) Capture on match or Clawback on fault",
+                    ].map((step, idx) => {
+                      const done = idx < Math.min(stateIndex, coreFlow.length);
+                      const isCurrent = idx === Math.min(stateIndex, coreFlow.length - 1);
+                      const failed = state === "CLAWBACK_TRIGGERED" && idx >= 2;
+                      return (
+                        <div
+                          key={step}
+                          className={`flex items-center gap-2 border px-3 py-2 font-mono text-xs ${
+                            failed
+                              ? "border-rose-500 text-rose-300"
+                              : done
+                                ? "border-emerald-400 text-emerald-300"
+                                : isCurrent
+                                  ? "border-amber-400 text-amber-300"
+                                  : "border-zinc-800 text-zinc-500"
+                          }`}
+                        >
+                          {failed ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : done ? (
+                            <CheckCircle2 className="h-4 w-4" />
+                          ) : (
+                            <AlertTriangle className="h-4 w-4" />
+                          )}
+                          <span>{step}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-        <section className="mt-5 border border-zinc-800 bg-zinc-900/20 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400">
-            Settlement vs Fulfillment Visualizer
-          </p>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {[
-              "1) Intercept HTTP 402 Payment Required header",
-              "2) Escrow Hold on-chain (funds held, not settled)",
-              "3) Stream payload + compute SHA-256 artifact hash",
-              "4) Capture on match or Clawback on fault",
-            ].map((step, idx) => {
-              const done = idx < Math.min(stateIndex, coreFlow.length);
-              const isCurrent = idx === Math.min(stateIndex, coreFlow.length - 1);
-              const failed = state === "CLAWBACK_TRIGGERED" && idx >= 2;
-              return (
-                <div
-                  key={step}
-                  className={`flex items-center gap-2 border px-3 py-2 font-mono text-xs ${
-                    failed
-                      ? "border-rose-500 text-rose-300"
-                      : done
-                        ? "border-emerald-400 text-emerald-300"
-                        : isCurrent
-                          ? "border-amber-400 text-amber-300"
-                          : "border-zinc-800 text-zinc-500"
-                  }`}
-                >
-                  {failed ? (
-                    <XCircle className="h-4 w-4" />
-                  ) : done ? (
-                    <CheckCircle2 className="h-4 w-4" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4" />
-                  )}
-                  <span>{step}</span>
-                </div>
-              );
-            })}
-          </div>
+                  <div className="mt-4 grid gap-2 md:grid-cols-2">
+                    <div className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs">
+                      <div className="text-zinc-400">Expected SHA-256</div>
+                      <div className="mt-1 break-all text-zinc-200">{expectedHash}</div>
+                    </div>
+                    <div className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs">
+                      <div className="text-zinc-400">Received SHA-256</div>
+                      <div className="mt-1 break-all text-zinc-200">{receivedHash}</div>
+                    </div>
+                  </div>
 
-          <div className="mt-4 grid gap-2 md:grid-cols-2">
-            <div className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs">
-              <div className="text-zinc-400">Expected SHA-256</div>
-              <div className="mt-1 break-all text-zinc-200">{expectedHash}</div>
-            </div>
-            <div className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs">
-              <div className="text-zinc-400">Received SHA-256</div>
-              <div className="mt-1 break-all text-zinc-200">{receivedHash}</div>
-            </div>
-          </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs">
+                    <span className="border border-zinc-800 px-2 py-1 text-zinc-300">target={requestLabel}</span>
+                    <span className="border border-zinc-800 px-2 py-1 text-zinc-300">fault={faultMode}</span>
+                    <span
+                      className={`border px-2 py-1 ${
+                        state === "SETTLED_CAPTURED"
+                          ? "border-emerald-400 text-emerald-300"
+                          : state === "CLAWBACK_TRIGGERED"
+                            ? "border-rose-500 text-rose-400"
+                            : "border-zinc-800 text-zinc-300"
+                      }`}
+                    >
+                      state={state}
+                    </span>
+                    {txSig ? (
+                      <a
+                        href={txLink(txSig)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="border border-emerald-400 px-2 py-1 text-emerald-400 underline"
+                      >
+                        Explorer: {txSig.slice(0, 18)}…
+                      </a>
+                    ) : null}
+                  </div>
+                </section>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 font-mono text-xs">
-            <span className="border border-zinc-800 px-2 py-1 text-zinc-300">target={requestLabel}</span>
-            <span className="border border-zinc-800 px-2 py-1 text-zinc-300">fault={faultMode}</span>
-            <span
-              className={`border px-2 py-1 ${
-                state === "SETTLED_CAPTURED"
-                  ? "border-emerald-400 text-emerald-300"
-                  : state === "CLAWBACK_TRIGGERED"
-                    ? "border-rose-500 text-rose-400"
-                    : "border-zinc-800 text-zinc-300"
-              }`}
-            >
-              state={state}
-            </span>
-            {txSig ? (
-              <a href={txLink(txSig)} target="_blank" rel="noreferrer" className="border border-emerald-400 px-2 py-1 text-emerald-400 underline">
-                Explorer: {txSig.slice(0, 18)}…
-              </a>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="mt-5 border border-zinc-800 bg-zinc-900/10">
-          <button
-            type="button"
-            onClick={() => setLogOpen((v) => !v)}
-            className="flex h-10 w-full items-center justify-between px-4 font-mono text-xs uppercase tracking-[0.18em] text-zinc-300 hover:bg-zinc-900/40"
-          >
-            <span>Agent Wire Logs</span>
-            <span>{logOpen ? "Hide" : "Show"}</span>
-          </button>
-          {logOpen ? (
-            <div className="max-h-64 overflow-auto border-t border-zinc-800 bg-zinc-950 p-4 font-mono text-xs">
-              {logs.map((l, i) => (
-                <div key={`${l.at}-${i}`} className="mb-1 flex gap-3">
-                  <span className="text-zinc-500">{l.at}</span>
-                  <span
-                    className={
-                      l.level === "OK"
-                        ? "text-emerald-400"
-                        : l.level === "WARN"
-                          ? "text-amber-400"
-                          : l.level === "ERROR"
-                            ? "text-rose-500"
-                            : "text-zinc-300"
-                    }
+                <section className="mt-5 border border-zinc-800 bg-zinc-900/10">
+                  <button
+                    type="button"
+                    onClick={() => setLogOpen((v) => !v)}
+                    className="flex h-10 w-full items-center justify-between px-4 font-mono text-xs uppercase tracking-[0.18em] text-zinc-300 hover:bg-zinc-900/40"
                   >
-                    [{l.level}]
-                  </span>
-                  <span className="text-zinc-200">{l.line}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
+                    <span>Agent Wire Logs</span>
+                    <span>{logOpen ? "Hide" : "Show"}</span>
+                  </button>
+                  {logOpen ? (
+                    <div className="max-h-64 overflow-auto border-t border-zinc-800 bg-zinc-950 p-4 font-mono text-xs">
+                      {logs.map((l, i) => (
+                        <div key={`${l.at}-${i}`} className="mb-1 flex gap-3">
+                          <span className="text-zinc-500">{l.at}</span>
+                          <span
+                            className={
+                              l.level === "OK"
+                                ? "text-emerald-400"
+                                : l.level === "WARN"
+                                  ? "text-amber-400"
+                                  : l.level === "ERROR"
+                                    ? "text-rose-500"
+                                    : "text-zinc-300"
+                            }
+                          >
+                            [{l.level}]
+                          </span>
+                          <span className="text-zinc-200">{l.line}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              </>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );
