@@ -34,9 +34,11 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     setDemoLoading(true); setDemoError('');
     try {
       const out = await startDemoSession();
+      if (!out.token) throw new Error('demo session missing token');
       setToken(out.token);
       setWalletAddress(out.userId);
       sessionStorage.setItem('ks_landing', 'activity-mpp');
+      if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
       notifyAuthChanged();
       onAuthenticated();
     } catch (e) {

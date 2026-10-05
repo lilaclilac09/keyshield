@@ -7,7 +7,7 @@ import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/Paym
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { apiFetch, getToken, proxyFetch, vproxyFetch } from '../../lib/auth';
+import { apiFetch, getToken, proxyFetch, setToken, setWalletAddress, startDemoSession, vproxyFetch } from '../../lib/auth';
 import { getDecryptedKey } from '../../lib/vault-session';
 import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, creditUsdcTopup, demoMeterStream, fetchCapturePrep, getMppStreamUsage } from '../../lib/api';
 import { signCaptureMac, signOwnerBinding } from '../../lib/mpp-capture';
@@ -428,21 +428,29 @@ export const ActivitySection: React.FC = () => {
   };
 
   const handleTwoMinDemo = async () => {
-    setOpenBusy(true); setOpenMsg(''); setOpenOk(false); setOpenStep('2-min: pick stream');
+    setOpenBusy(true); setOpenMsg(''); setOpenOk(false); setOpenStep('2-min: session');
     try {
-      let stream = mppStreams.find(s => s.status === 'open' && s.stream_pda)
-        ?? mppStreams.find(s => s.status === 'open');
-      if (!stream) {
-        const listed = await apiFetch('/mpp/streams');
-        if (listed.ok) {
-          const d = await listed.json();
-          const rows = (d.streams ?? []) as MppStream[];
-          stream = rows.find(s => s.status === 'open' && s.stream_pda)
-            ?? rows.find(s => s.status === 'open');
-        }
+      if (!getToken()) {
+        const out = await startDemoSession();
+        if (!out.token) throw new Error('demo session missing token');
+        setToken(out.token);
+        setWalletAddress(out.userId);
+        if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
       }
+      const listed = await apiFetch('/mpp/streams');
+      if (listed.status === 401) throw new Error('demo session expired — click Start demo again');
+      const listedBody = listed.ok ? await listed.json() : { streams: [] };
+      let stream = ((listedBody.streams ?? []) as MppStream[]).find(s => s.status === 'open' && s.stream_pda)
+        ?? ((listedBody.streams ?? []) as MppStream[]).find(s => s.status === 'open')
+        ?? mppStreams.find(s => s.status === 'open' && s.stream_pda);
       if (!stream) {
-        const agent = openAgent.trim() || agents[0]?.pubkey_b58;
+        const agRes = await apiFetch('/agents/list');
+        const agBody = agRes.ok ? await agRes.json() : { agents: [] };
+        const agent = openAgent.trim()
+          || (agBody.agents as AgentOpt[] | undefined)?.[0]?.pubkey_b58
+          || agents[0]?.pubkey_b58
+          || sessionStorage.getItem('ks_demo_agent')
+          || '';
         if (!agent) throw new Error('No demo agent — click Start demo again');
         setOpenStep('2-min: vault → grant → open');
         try {
@@ -456,10 +464,9 @@ export const ActivitySection: React.FC = () => {
           });
           stream = d.stream as MppStream;
         } catch (openErr) {
-          const listed = await apiFetch('/mpp/streams');
-          const d = listed.ok ? await listed.json() : { streams: [] };
-          const rows = (d.streams ?? []) as MppStream[];
-          stream = rows.find(s => s.status === 'open' && s.stream_pda);
+          const again = await apiFetch('/mpp/streams');
+          const d = again.ok ? await again.json() : { streams: [] };
+          stream = ((d.streams ?? []) as MppStream[]).find(s => s.status === 'open' && s.stream_pda);
           if (!stream) throw openErr;
         }
       }
