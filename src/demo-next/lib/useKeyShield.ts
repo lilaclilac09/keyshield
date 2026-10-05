@@ -14,7 +14,18 @@ import {
   type AuthorizationProof,
 } from './zk';
 import { te } from './bytes';
-import { abortHold, captureHold, openHold, tryDemoMeter, verifyArtifact } from './fulfillment';
+import {
+  abortHold,
+  captureHold,
+  clawbackHold,
+  forceClawbackReady,
+  getHold,
+  openHold,
+  tryDemoMeter,
+  upstreamFromMethod,
+  verifyUpstream,
+  type PublicHold,
+} from './fulfillment';
 
 export type VaultState =
   | 'IDLE'
@@ -36,7 +47,8 @@ export interface KeyShieldSnapshot {
   pasted: Record<string, boolean>;
   grants: Array<{ id: string; ttlMs: number; upstream: string }>;
   holdId: string | null;
-  settlement: 'none' | 'local-hold' | 'mpp-demo-meter';
+  hold: PublicHold | null;
+  settlement: 'none' | 'local-hold' | 'mpp-demo-meter' | 'aborted' | 'clawback';
   pendingLocked: boolean;
 }
 
@@ -178,10 +190,23 @@ export function useKeyShield() {
         });
         setHoldId(hid);
 
-        const ok = await verifyArtifact(hid, payload);
-        if (!ok) {
-          abortHold(hid, 'artifact hash mismatch');
-          fail('local-error', 'artifact hash mismatch — no debit');
+        const upstream = upstreamFromMethod(opts.method, payload);
+        if (upstream.kind === 'timeout-clawback') {
+          const refunded = clawbackHold(hid, opts.slot + 65n);
+          if (!refunded) {
+            fail('local-error', 'DisputeWindowActive — no clawback');
+            return;
+          }
+          setSettlement('clawback');
+          setState('SETTLED');
+          return;
+        }
+
+        const verified = await verifyUpstream(hid, upstream);
+        if (!verified.ok) {
+          abortHold(hid, verified.reason || 'unverified fulfillment');
+          setSettlement('aborted');
+          fail('local-error', `${verified.reason || 'unverified fulfillment'} — no debit`);
           return;
         }
 
@@ -194,7 +219,8 @@ export function useKeyShield() {
           pendingSigRef.current = null;
           if (!meter.ok) {
             abortHold(hid, meter.detail);
-            fail('chain-failed', meter.detail);
+            setSettlement('aborted');
+            fail('chain-failed', `${meter.detail} — no debit`);
             return;
           }
           captureHold(hid);
@@ -225,6 +251,26 @@ export function useKeyShield() {
     else revokeAllGrants();
   }, []);
 
+  const forceClawback = useCallback(
+    (nowSlot: bigint) => {
+      if (!holdId) return;
+      const current = getHold(holdId);
+      if (!current || current.status !== 'in-flight') return;
+      if (!forceClawbackReady(holdId, nowSlot)) {
+        fail('local-error', 'DisputeWindowActive — escrow stays in-flight');
+        return;
+      }
+      const refunded = clawbackHold(holdId, nowSlot);
+      if (!refunded) {
+        fail('local-error', 'clawback failed — hold not in-flight');
+        return;
+      }
+      setSettlement('clawback');
+      setState('SETTLED');
+    },
+    [fail, holdId],
+  );
+
   const snapshot: KeyShieldSnapshot = {
     state,
     failKind,
@@ -234,6 +280,7 @@ export function useKeyShield() {
     pasted,
     grants: listGrantMeta(),
     holdId,
+    hold: holdId ? getHold(holdId) ?? null : null,
     settlement,
     pendingLocked,
   };
@@ -243,6 +290,7 @@ export function useKeyShield() {
     decryptCredential,
     authorizeAgent,
     revoke,
+    forceClawback,
     resetPendingUi,
     grantMeta,
   };

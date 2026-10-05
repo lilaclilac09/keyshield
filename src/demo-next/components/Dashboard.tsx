@@ -39,6 +39,10 @@ const AGENT_METHODS = [
   { id: 'proxy.call', label: 'proxy.call — inject vault key once, never persist', danger: false },
   { id: 'mpp.meter', label: 'mpp.meter — 2-phase hold (pending artifact)', danger: false },
   { id: 'mpp.capture', label: 'mpp.capture — Ed25519 session MAC settle', danger: false },
+  { id: 'fulfill.502', label: 'upstream 502 — abort hold, no debit', danger: false },
+  { id: 'fulfill.empty', label: 'empty payload — abort hold, no debit', danger: false },
+  { id: 'fulfill.mismatch', label: 'artifact hash mismatch — abort, no debit', danger: false },
+  { id: 'fulfill.clawback', label: 'dispute timeout — force_clawback refund', danger: false },
   {
     id: 'export.session-key',
     label: 'Export Temporary Session Private Key / High-Value Sign',
@@ -400,17 +404,37 @@ function DashboardInner() {
             )}
             <div>
               settlement={ks.snapshot.settlement} · hold={ks.snapshot.holdId || '—'}
+              {ks.snapshot.hold
+                ? ` · status=${ks.snapshot.hold.status} · debit=${ks.snapshot.hold.debit} · until=${ks.snapshot.hold.disputeTimeoutSlot} · released=${ks.snapshot.hold.released ? 'yes' : 'no'}`
+                : ''}
               {ks.snapshot.grants.length
                 ? ` · grant ${ks.snapshot.grants.map((g) => `${g.upstream}:${Math.ceil(g.ttlMs / 1000)}s`).join(',')}`
                 : ' · grant none'}
             </div>
+            {ks.snapshot.hold?.status === 'in-flight' && (
+              <button
+                type="button"
+                onClick={() => ks.forceClawback(BigInt(slot ?? 0))}
+                className="h-8 px-3 border border-zinc-700 text-[11px] uppercase tracking-wide hover:bg-zinc-900"
+              >
+                Force clawback (slot {slot ?? 0})
+              </button>
+            )}
             {streams.slice(0, 6).map((s) => (
               <div key={s.id} className="flex flex-wrap gap-x-4">
                 <span>#{s.id}</span>
                 <span className="text-zinc-200">{s.status}</span>
                 <span>artifact={s.pending_artifact_hash || '—'}</span>
                 <span>pda={shortAddr(s.stream_pda)}</span>
-                <span>clawback={s.status === 'closed' || s.status === 'settled' ? 'armed' : 'idle'}</span>
+                <span>
+                  clawback={
+                    ks.snapshot.hold?.status === 'clawback'
+                      ? 'refunded'
+                      : s.status === 'closed' || s.status === 'settled'
+                        ? 'armed'
+                        : 'in-flight'
+                  }
+                </span>
               </div>
             ))}
           </div>
