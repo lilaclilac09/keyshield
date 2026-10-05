@@ -67,6 +67,99 @@ async def billing_usage(request: Request):
     return JSONResponse({"history": history})
 
 
+def _plan_error(exc) -> JSONResponse:
+    payload = getattr(exc, "payload", None) or {"detail": str(exc)}
+    code = payload.get("code", "")
+    status = 409 if code in {"plan_downgrade_blocked", "bad_ref"} else 402
+    if code in {"plan_feature", "plan_limit"}:
+        status = 402
+    if code in {"bad_plan", "bad_device_level"}:
+        status = 400
+    return JSONResponse(payload, status_code=status)
+
+
+@router.get("/billing/plans")
+async def billing_plans():
+    """Public catalog: three plans, three device levels, why hybrid billing."""
+    from ..billing import plans as plans_mod
+
+    return JSONResponse(plans_mod.catalog())
+
+
+@router.get("/billing/plan")
+async def billing_plan(request: Request):
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    return JSONResponse(plans_mod.snapshot(user_id))
+
+
+@router.post("/billing/plan")
+async def billing_plan_select(request: Request):
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    body = await request.json()
+    try:
+        snap = plans_mod.select_plan(sess["user_id"], str(body.get("plan_id") or ""))
+    except plans_mod.PlanLimitError as exc:
+        return _plan_error(exc)
+    return JSONResponse(snap)
+
+
+@router.get("/billing/devices")
+async def billing_devices(request: Request):
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    snap = plans_mod.snapshot(user_id)
+    return JSONResponse(
+        {
+            "devices": snap["devices"],
+            "used": snap["used"],
+            "remaining": snap["remaining"],
+            "plan": snap["plan"],
+        }
+    )
+
+
+@router.post("/billing/devices")
+async def billing_device_claim(request: Request):
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    body = await request.json()
+    try:
+        snap = plans_mod.claim_device(
+            sess["user_id"],
+            str(body.get("level") or body.get("device_level") or ""),
+            str(body.get("name") or "device"),
+            kind=str(body.get("kind") or "passkey"),
+            ref_id=str(body.get("ref_id") or body.get("id") or ""),
+        )
+    except plans_mod.PlanLimitError as exc:
+        return _plan_error(exc)
+    return JSONResponse(snap)
+
+
+@router.delete("/billing/devices/{ref_id}")
+async def billing_device_release(ref_id: str, request: Request):
+    from ..billing import plans as plans_mod
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    kind = request.query_params.get("kind") or "passkey"
+    plans_mod.release_device(sess["user_id"], kind=kind, ref_id=ref_id)
+    return JSONResponse(plans_mod.snapshot(sess["user_id"]))
+
+
 # ─── Legacy endpoints (keep for backward compat) ────────────────────────
 
 

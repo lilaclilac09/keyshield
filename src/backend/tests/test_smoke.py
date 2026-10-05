@@ -53,6 +53,9 @@ def test_routes_register() -> None:
     for required in (
         "/billing/sol-quote",
         "/billing/topup-solana",
+        "/billing/plans",
+        "/billing/plan",
+        "/billing/devices",
         "/mpp/streams/{stream_id}/usage",
         "/sessions/{token_prefix}/revoke",
         "/demo/openrouter",
