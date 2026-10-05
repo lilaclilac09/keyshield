@@ -8,6 +8,7 @@ import { Badge } from '../ui/Badge';
 import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../../lib/auth';
 import { getPrefs, setPrefs, type VaultPreferences } from '../../lib/preferences';
 import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
+import { PlanCatalog, type DeviceLevelCopy, type DeviceLevelId, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
 import { AuditRetentionSettings } from '../AuditRetentionSettings';
 
 const DELETE_CONFIRMATION = 'DELETE my account';
@@ -18,6 +19,14 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [pkError, setPkError] = useState('');
   const [pkSuccess, setPkSuccess] = useState('');
   const [newPkName, setNewPkName] = useState('My passkey');
+  const [deviceLevel, setDeviceLevel] = useState<DeviceLevelId>('personal');
+  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
+  const [planCatalog, setPlanCatalog] = useState<PlanSpec[]>([]);
+  const [planLevels, setPlanLevels] = useState<DeviceLevelCopy[]>([]);
+  const [planWhy, setPlanWhy] = useState<PlanWhy | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState('');
+  const [planOk, setPlanOk] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deviceTrusted, setDeviceTrusted] = useState(() => !!getPasskeyTrust());
@@ -27,12 +36,39 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState('');
 
-  const loadPasskeys = useCallback(async () => { setPkLoading(true); setPkError(''); try { const creds = await listPasskeys(); setPasskeys(creds); } catch { setPkError('Failed to load passkeys'); } finally { setPkLoading(false); } }, []);
+  const loadPasskeys = useCallback(async () => {
+    setPkLoading(true); setPkError('');
+    try {
+      const creds = await listPasskeys();
+      setPasskeys(creds);
+      const [pRes, cRes] = await Promise.all([apiFetch('/billing/plan'), apiFetch('/billing/plans')]);
+      if (pRes.ok) setPlanSnap(await pRes.json());
+      if (cRes.ok) {
+        const d = await cRes.json();
+        setPlanCatalog(d.plans ?? []);
+        setPlanLevels(d.device_levels ?? []);
+        setPlanWhy(d.why ?? null);
+      }
+    } catch { setPkError('Failed to load passkeys'); }
+    finally { setPkLoading(false); }
+  }, []);
   useEffect(() => { loadPasskeys(); }, [loadPasskeys]);
 
   const updatePref = <K extends keyof VaultPreferences>(k: K, v: VaultPreferences[K]) => { setPrefsState(setPrefs({ [k]: v } as Partial<VaultPreferences>)); };
 
-  const handleRegister = async () => { setRegistering(true); setPkError(''); setPkSuccess(''); try { await registerPasskey(newPkName); if (addr) setPasskeyTrust(addr, ''); setDeviceTrusted(true); setPkSuccess('Passkey added. Next time, sign in with Face ID.'); setNewPkName('My passkey'); await loadPasskeys(); } catch (e) { setPkError(e instanceof Error ? e.message : 'Registration failed'); } finally { setRegistering(false); } };
+  const handleRegister = async () => {
+    setRegistering(true); setPkError(''); setPkSuccess('');
+    try {
+      await registerPasskey(newPkName, deviceLevel);
+      if (addr) setPasskeyTrust(addr, '');
+      setDeviceTrusted(true);
+      setPkSuccess(`Passkey added as ${deviceLevel}. Next time, sign in with Face ID.`);
+      setNewPkName('My passkey');
+      await loadPasskeys();
+    } catch (e) {
+      setPkError(e instanceof Error ? e.message : 'Registration failed');
+    } finally { setRegistering(false); }
+  };
   const handleDelete = async (id: string) => { setDeletingId(id); try { await deletePasskey(id); setPasskeys(prev => prev.filter(p => p.id !== id)); } catch { setPkError('Failed to remove passkey'); } finally { setDeletingId(null); } };
   const handleForgetDevice = () => { clearPasskeyTrust(); setDeviceTrusted(false); setPkSuccess('Device trust cleared on this browser.'); };
 
@@ -65,8 +101,51 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
           </div>
         ))}
         {passkeys.length === 0 && !pkLoading && <p className="text-[12px] text-[#5e6a91] text-center py-2">No passkeys registered yet</p>}
-        <div className="flex items-center gap-2 mt-3"><Input label="" value={newPkName} onChange={e => setNewPkName(e.target.value)} placeholder="Device name (e.g. MacBook, iPhone)" /><Button variant="primary" size="md" onClick={handleRegister} disabled={registering || !newPkName.trim()} loading={registering}>Add Passkey</Button></div>
+        <div className="flex items-center gap-2 mt-3">
+          <Input label="" value={newPkName} onChange={e => setNewPkName(e.target.value)} placeholder="Device name (e.g. MacBook, iPhone)" />
+          <select
+            value={deviceLevel}
+            onChange={e => setDeviceLevel(e.target.value as DeviceLevelId)}
+            className="bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white"
+          >
+            <option value="personal">Personal workstation</option>
+            <option value="companion">Companion (phone)</option>
+            <option value="runtime">Runtime host</option>
+          </select>
+          <Button variant="primary" size="md" onClick={handleRegister} disabled={registering || !newPkName.trim()} loading={registering}>Add Passkey</Button>
+        </div>
+        {planSnap && (
+          <p className="text-[11px] text-[#5e6a91] mt-2">
+            {planSnap.plan.name}: personal {planSnap.used.personal}/{planSnap.plan.devices.personal}
+            {' · '}companion {planSnap.used.companion}/{planSnap.plan.devices.companion}
+            {' · '}runtime {planSnap.used.runtime}/{planSnap.plan.devices.runtime}
+            . Seats are the subscription. Extra API calls stay on the PAYG ledger under Payments.
+          </p>
+        )}
       </Card>
+
+      <PlanCatalog
+        snapshot={planSnap}
+        catalog={planCatalog}
+        levels={planLevels}
+        why={planWhy}
+        busy={planBusy}
+        message={planMsg}
+        ok={planOk}
+        onSelect={async (planId) => {
+          setPlanBusy(true); setPlanMsg(''); setPlanOk(false);
+          try {
+            const r = await apiFetch('/billing/plan', { method: 'POST', body: JSON.stringify({ plan_id: planId }) });
+            const d = await r.json();
+            if (!r.ok) { setPlanMsg(d.detail ?? d.error ?? 'Could not switch plan'); return; }
+            setPlanSnap(d);
+            setPlanOk(true);
+            setPlanMsg(`${d.plan?.name ?? planId} is active.`);
+            await loadPasskeys();
+          } catch { setPlanMsg('Network error'); }
+          finally { setPlanBusy(false); }
+        }}
+      />
 
       <Card title="Vault Preferences" description="Control how secrets reveal, expire, and notify. Saved to this browser only.">
         <div className="space-y-3">

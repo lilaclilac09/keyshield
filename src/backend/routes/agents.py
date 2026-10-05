@@ -37,6 +37,18 @@ def _auth(request: Request) -> dict | None:
     return sess_mod.get(token[7:])
 
 
+def _guard_runtime(owner: str):
+    from ..billing import plans as plans_mod
+
+    try:
+        plans_mod.assert_slot(owner, "runtime", extra=1)
+    except plans_mod.PlanLimitError as exc:
+        body = dict(exc.payload)
+        body.setdefault("error", body.get("detail"))
+        return JSONResponse(body, status_code=402)
+    return None
+
+
 # ─── Frontend-compatible endpoints ─────────────────────────────────────
 # The frontend dashboard calls GET/POST/DELETE /agents directly (RESTful).
 # We expose these aliases alongside the legacy /agents/register, /agents/list paths.
@@ -76,6 +88,9 @@ async def agent_register_rest(request: Request):
 
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
+    blocked = _guard_runtime(owner)
+    if blocked:
+        return blocked
     name = body.get("name", "agent")
     # Generate a random pubkey placeholder for agents created without crypto
     pubkey = f"agent_{secrets.token_hex(16)}"
@@ -116,6 +131,9 @@ async def agent_register(request: Request):
 
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
+    blocked = _guard_runtime(owner)
+    if blocked:
+        return blocked
     pubkey = body.get("pubkeyB58")
     if not pubkey:
         return JSONResponse({"error": "pubkeyB58 required"}, status_code=400)

@@ -161,19 +161,29 @@ export const HomeSection: React.FC<Props> = ({
           <Pill ok={!!conn?.api && !error} label="API" sub={loading ? 'Connecting…' : error ? `Offline · ${error}` : `Online${homeMs != null ? ` · ${Math.round(homeMs)}ms` : ''}`} />
           <Pill ok={walletConnected && !!wallet?.address} label="Wallet" sub={wallet?.address ? `${wallet.address.slice(0, 4)}…${wallet.address.slice(-4)}` : 'Not connected'} />
           <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'You keep the secret — unlock to verify'} />
+          <Pill ok={!!home?.plan} label={home?.plan?.name ?? 'Free'} sub={home?.plan?.auto_plugin ? (home.plan.low_latency ? 'Accelerate · cache on' : 'Plugin · biometric ZK') : 'Vault + passkeys · PAYG calls'} />
           <Pill ok={!!conn?.autosign} label="Autosign" sub={conn?.autosign ? 'Owner keystore ready' : 'Off'} />
           <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
         </div>
-        {onUnlock && !vaultOpen && (
+        <div className="flex flex-wrap gap-3 mt-4">
+          {onUnlock && !vaultOpen && (
+            <button
+              type="button"
+              onClick={onUnlock}
+              disabled={unlocking}
+              className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
+            >
+              {unlocking ? 'Unlocking…' : 'Unlock with passkey'}
+            </button>
+          )}
           <button
             type="button"
-            onClick={onUnlock}
-            disabled={unlocking}
-            className="mt-4 h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
+            onClick={() => onGo('activity')}
+            className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[16px] font-semibold"
           >
-            {unlocking ? 'Unlocking…' : 'Unlock with passkey'}
+            Plans →
           </button>
-        )}
+        </div>
       </div>
 
       <details className="rounded-2xl border border-[#243365] bg-[#131c39] p-5">

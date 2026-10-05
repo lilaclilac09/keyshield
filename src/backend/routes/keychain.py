@@ -98,11 +98,25 @@ async def keychain_home(request: Request):
     except Exception:
         demo = {"enabled": False}
 
+    from ..billing import plans as plans_mod
+
+    plan_snap = plans_mod.snapshot(user_id)
+    accelerated = bool(plan_snap["allows"].get("accelerate"))
     body = {
         "wallet": wallet,
         "ledger": {
             "balance_usd": round(ledger_usd, 6),
             "free_credit_usd": round(free_usd, 6),
+        },
+        "plan": {
+            "id": plan_snap["plan"]["id"],
+            "name": plan_snap["plan"]["name"],
+            "tier": plan_snap["plan"]["tier"],
+            "features": plan_snap["features"],
+            "accelerated": accelerated,
+            "auto_plugin": bool(plan_snap["allows"].get("auto_plugin")),
+            "biometric_zk": bool(plan_snap["allows"].get("biometric_zk")),
+            "low_latency": bool(plan_snap["allows"].get("low_latency")),
         },
         "apis": apis,
         "connection": {
@@ -117,6 +131,7 @@ async def keychain_home(request: Request):
         "rpc_cache": {
             "lowest_ttl_sec": catalog.get("lowest_ttl_sec"),
             "writes_bypass": catalog.get("writes_bypass"),
+            "accelerated": accelerated,
         },
         "latency": {
             "wallet_ms": wallet_ms,

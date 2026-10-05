@@ -253,6 +253,13 @@ async def passkey_register_options(request: Request):
     if not sess:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
+    from ..billing import plans as plans_mod
+
+    level = request.query_params.get("device_level") or "personal"
+    try:
+        plans_mod.assert_slot(user_id, level, extra=1)
+    except plans_mod.PlanLimitError as exc:
+        return JSONResponse(exc.payload, status_code=402)
     rp_id, _ = _origin_rp_id(request)
     opts = pk_mod.registration_options(user_id, display_name="Device Vault", rp_id=rp_id)
     return JSONResponse(opts)
@@ -265,6 +272,13 @@ async def passkey_register_verify(request: Request):
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
     body = await request.json()
+    from ..billing import plans as plans_mod
+
+    level = body.get("device_level") or body.get("level") or "personal"
+    try:
+        plans_mod.assert_slot(user_id, level, extra=1)
+    except plans_mod.PlanLimitError as exc:
+        return JSONResponse(exc.payload, status_code=402)
     rp_id, origins = _origin_rp_id(request)
     try:
         out = pk_mod.registration_verify(
@@ -276,7 +290,19 @@ async def passkey_register_verify(request: Request):
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    return JSONResponse({"ok": True, **out})
+    cred_id = out.get("credentialId") or (body.get("credential") or {}).get("id")
+    try:
+        if cred_id:
+            plans_mod.claim_device(
+                user_id,
+                level,
+                str(body.get("name") or "Passkey"),
+                kind="passkey",
+                ref_id=str(cred_id),
+            )
+    except plans_mod.PlanLimitError as exc:
+        return JSONResponse(exc.payload, status_code=402)
+    return JSONResponse({"ok": True, "device_level": level, **out})
 
 
 @router.get("/auth/passkey/auth-options")
@@ -330,6 +356,9 @@ async def passkey_delete(cred_id: str, request: Request):
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     user_id = sess.get("user_id") or sess.get("userId")
     pk_mod.delete_credential(user_id, cred_id)
+    from ..billing import plans as plans_mod
+
+    plans_mod.release_device(user_id, kind="passkey", ref_id=cred_id)
     return JSONResponse({"ok": True})
 
 

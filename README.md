@@ -40,7 +40,19 @@ KeyShield is **your API iCloud Keychain**: store provider credentials in a vault
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath. Extremely low latency is the engineering target; do not publish “instant”, “under 50ms”, or “50–80ms” until the named environment is measured.
 
-**Start here:** [How to use this](#how-to-use-this) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+### Business scope
+
+Three layers. Two meters. Seats are not calls.
+
+| Layer | What it is | What you get |
+|---|---|---|
+| **Free** | Passkey auto-collection + save in the vault | Face ID / Touch ID enrolls the device. Secrets encrypt on-device (WebAuthn-PRF → AES-GCM). Server stores ciphertext only. Agent calls are **pay-as-you-go**. |
+| **Plugin** (paid 1) | Auto plugins + biometric ZK verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device; the server never sees the raw key. $20/mo included, then PAYG. |
+| **Accelerate** (paid 2) | Acceleration + extreme-low-latency *target* | RPC cache, batch, parallel quote+analyze, Groq-class urgent path. $100/mo included, then PAYG. Fleet seats. Latency numbers are not published until measured. |
+
+**Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
+
+**Start here:** [How to use this](#how-to-use-this) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -111,6 +123,48 @@ npm run live:e2e:dry
 
 Do not run a live Devnet settle unless you intend to spend operator
 USDC. Stage 4 live stays opt-in (`LIVE_E2E=1`).
+
+### 4. Plans — business scope
+
+KeyShield sells **two different things**, so it uses **two meters**.
+
+| You are buying | Meter | Why |
+|---|---|---|
+| Trusted devices + control plane (vault, plugins, latency) | **Subscription** (monthly) | Humans have calendars. A laptop, a phone, and a runtime host are seats you keep all month. Latency SLAs are monthly too. |
+| Agent API calls (inference, RPC, streams) | **Pay-as-you-go** (ledger / MPP / x402) | Agents are bursty. A runaway bot must not become an unlimited monthly liability. Each call debits the ledger or settles on-chain after fulfillment. |
+
+That is why we go with **subscription and pay-as-you-go together**. Subscription without PAYG would let one agent print an unbounded bill inside a flat month. PAYG without subscription would charge you per Face ID and per laptop — seats are not calls.
+
+#### Three subscription layers
+
+| Layer | Plan id | What you get | Devices |
+|---|---|---|---|
+| **Free** | `starter` · $0 | Passkey **auto-collection** and **save in the vault**. Path A: WebAuthn-PRF → HKDF → AES-GCM. Server stores ciphertext only. | 1 personal · 0 companion · 1 runtime |
+| **Plugin** (paid 1) | `pro` · $12/mo | **Auto plugins** (SDK/CLI inject `X-Upstream-API-Key`) and **biometric ZK verify** (passkey PRF proves the device; server never sees the raw key). $20 included proxy budget, then PAYG. | 1 personal · 1 companion · 1 runtime |
+| **Accelerate** (paid 2) | `accelerate` · $49/mo | **Acceleration** and **extreme low latency**: Helius RPC cache, batch RPC, parallel quote + analyze, Groq urgent path. $100 included, then PAYG. Fleet seats. | 3 personal · 3 companion · 10 runtime |
+
+Open **Payments → Plans** (or **Settings**). Switching is `POST /billing/plan` `{ "plan_id": "pro" }`. Catalog is public: `GET /billing/plans`.
+
+#### Three device levels (jobs, not copies)
+
+Not three copies of the same laptop — three different jobs:
+
+| Level | What it is | What it may hold |
+|---|---|---|
+| Personal workstation | Laptop / desktop with Path A vault | Decrypts keys via WebAuthn-PRF |
+| Companion | Phone / tablet passkey | Biometric sign-in and unlock; not the vault source of truth |
+| Runtime / agent host | CI box, bot, headless agent | Session token only — never `sk-` / `gsk_` |
+
+Seats are plan-gated (`402 plan_limit` when a level is full). Extra proxy calls still use `POST /billing/topup` and MPP — they do not consume a device seat. Downgrade is blocked (`409`) while you hold more seats than the cheaper plan allows.
+
+```
+Free          collect passkeys + save vault
+              └── PAYG for every agent call
+Plugin        + auto-plugin + biometric ZK
+              └── $20 included, then PAYG
+Accelerate    + cache / batch / low latency
+              └── $100 included, then PAYG
+```
 
 ---
 
@@ -463,6 +517,7 @@ as instruction 0 so the program does not return 6114.
 | App welcome title | Production still says “Zero-Trust API Key Vault”. The Keychain headline is [PR #67](https://github.com/lilaclilac09/keyshield/pull/67) until it is reviewed and deployed. |
 | How-to + agent register | On `main` (PRs #60, #61). |
 | Free / Plugin / Accelerate plans + 3 device levels | On `main` — [PR #66](https://github.com/lilaclilac09/keyshield/pull/66) merged 2026-10-05T14:29:41Z. Railway `GET /billing/plans` returns JSON (`Free` / `Plugin` / `Accelerate`). The Vercel app bundle may lag the API. |
+| Free Nemotron in any agent framework | Documented in this README. Default model is [`nvidia/nemotron-3-ultra-550b-a55b:free`](https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free). Railway `GET /demo/openrouter` already returns that id. You still need your own OpenRouter key + a KeyShield session — not a public free proxy. |
 | Vercel Hobby quota / skip preview builds | Still open — [PR #65](https://github.com/lilaclilac09/keyshield/pull/65). Do not merge until the 24h `api-deployments-free-per-day` window ends (~2026-10-06T12:25:54Z). |
 
 Closed GitHub PRs were not lost work. Stacked drafts #53–#57 look like clones because each PR targeted the previous agent branch, not `main`. GitHub’s green “mergeable” flag is vs that old base. Against current `main`, 21 closed PRs **conflict**, 6 are already on `main` (ancestor or cherry-equivalent), and the 3 unique conflict-free leftovers (#38 ks-agent, #40 Fable5, #41 second brain) should **stay closed** — they are the wrong product surface or an `/agent/execute` executor that is not the current register+proxy model. Do not reopen them to “get the work back.”

@@ -406,9 +406,21 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   return verRes.json();
 }
 
-export async function registerPasskey(name: string): Promise<{ credentialId: string; name: string }> {
-  const optsRes = await apiFetch('/auth/passkey/register-options');
-  if (!optsRes.ok) throw new Error('Failed to get registration options');
+export async function registerPasskey(
+  name: string,
+  deviceLevel: 'personal' | 'companion' | 'runtime' = 'personal',
+): Promise<{ credentialId: string; name: string }> {
+  const optsRes = await apiFetch(
+    `/auth/passkey/register-options?device_level=${encodeURIComponent(deviceLevel)}`,
+  );
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({ detail: 'Failed to get registration options' }));
+    throw new Error(
+      (err as { detail?: string; error?: string }).detail
+        ?? (err as { error?: string }).error
+        ?? 'Failed to get registration options',
+    );
+  }
   const opts = await optsRes.json();
 
   // Why: WebAuthn challenge from Python is base64url ASCII; CF Worker's
@@ -455,7 +467,7 @@ export async function registerPasskey(name: string): Promise<{ credentialId: str
 
   const verRes = await apiFetch('/auth/passkey/register-verify', {
     method: 'POST',
-    body: JSON.stringify({ credential: credPayload, name }),
+    body: JSON.stringify({ credential: credPayload, name, device_level: deviceLevel }),
   });
   if (!verRes.ok) {
     const err = await verRes.json().catch(() => ({ detail: 'Registration failed' }));

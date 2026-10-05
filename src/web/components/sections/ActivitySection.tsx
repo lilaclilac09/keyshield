@@ -18,6 +18,7 @@ import {
   connectOpenRouter, fetchOpenRouterStatus, looksLikeOpenRouterKey, openrouterChatBody,
   readOpenRouterKeyFromClipboard, type OpenRouterStatus,
 } from '../../lib/openrouter-interface';
+import { PlanCatalog, type DeviceLevelCopy, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -47,7 +48,7 @@ interface AgentOpt { name: string; pubkey_b58: string }
 interface MppSummary { streams_total: number; streams_open: number; tokens_total: number; calls_total: number; settled_usd: number; pending_usd: number; }
 interface MppEvent { id: number; stream_id: number; kind: string; calls: number; tokens: number; micro_usdc: number; cost_usd: number; ts: number; upstream: string; agent_name: string; agent_pubkey: string; }
 
-type Tab = 'usage' | 'stats' | 'billing' | 'topup' | 'mpp';
+type Tab = 'usage' | 'stats' | 'billing' | 'topup' | 'mpp' | 'plans';
 
 const upstreamColor = (u: string) => {
   const m: Record<string, string> = { openai: 'text-emerald-400', anthropic: 'text-orange-400', groq: 'text-yellow-400', mistral: 'text-blue-400', cohere: 'text-purple-400', helius: 'text-white', '0x': 'text-pink-400', alchemy: 'text-cyan-400', pyth: 'text-violet-400', titan: 'text-rose-400' };
@@ -103,11 +104,18 @@ export const ActivitySection: React.FC = () => {
     mac: string;
   } | null>(null);
   const [usdcSig, setUsdcSig] = useState('');
+  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
+  const [planCatalog, setPlanCatalog] = useState<PlanSpec[]>([]);
+  const [planLevels, setPlanLevels] = useState<DeviceLevelCopy[]>([]);
+  const [planWhy, setPlanWhy] = useState<PlanWhy | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState('');
+  const [planOk, setPlanOk] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [hRes, sRes, bRes, mRes, mEvRes, aRes, agRes, hpRes] = await Promise.all([
+      const [hRes, sRes, bRes, mRes, mEvRes, aRes, agRes, hpRes, pRes, cRes] = await Promise.all([
         apiFetch('/usage/history?limit=30'),
         apiFetch('/usage/stats'),
         apiFetch('/billing/balance'),
@@ -116,6 +124,8 @@ export const ActivitySection: React.FC = () => {
         apiFetch('/mpp/autosign/status'),
         apiFetch('/agents/list'),
         apiFetch('/health/mpp'),
+        apiFetch('/billing/plan'),
+        apiFetch('/billing/plans'),
       ]);
       if (hRes.ok) { const d = await hRes.json(); setHistory(d.history ?? []); }
       if (sRes.ok) { const d = await sRes.json(); setStats(Array.isArray(d.stats) ? d.stats : []); }
@@ -150,6 +160,13 @@ export const ActivitySection: React.FC = () => {
         if (d.active_program_id) setProgramId(d.active_program_id);
         if (d.demo?.enabled) setDemoMode(true);
       }
+      if (pRes.ok) setPlanSnap(await pRes.json());
+      if (cRes.ok) {
+        const d = await cRes.json();
+        setPlanCatalog(d.plans ?? []);
+        setPlanLevels(d.device_levels ?? []);
+        setPlanWhy(d.why ?? null);
+      }
       try { setOrStatus(await fetchOpenRouterStatus()); } catch { /* optional */ }
     } catch {}
     finally { setLoading(false); }
@@ -167,6 +184,27 @@ export const ActivitySection: React.FC = () => {
     window.addEventListener('ks-openrouter-connected', onOr);
     return () => window.removeEventListener('ks-openrouter-connected', onOr);
   }, []);
+
+  const handleSelectPlan = async (planId: string) => {
+    setPlanBusy(true); setPlanMsg(''); setPlanOk(false);
+    try {
+      const r = await apiFetch('/billing/plan', { method: 'POST', body: JSON.stringify({ plan_id: planId }) });
+      const d = await r.json();
+      if (!r.ok) {
+        setPlanMsg(d.detail ?? d.error ?? 'Could not switch plan');
+        return;
+      }
+      setPlanSnap(d);
+      setPlanOk(true);
+      const credit = d.credited_usd ? ` Credited $${Number(d.credited_usd).toFixed(2)} included usage.` : '';
+      setPlanMsg(`${d.plan?.name ?? planId} is active.${credit} Extra proxy calls still use the PAYG ledger.`);
+      await refresh();
+    } catch {
+      setPlanMsg('Network error');
+    } finally {
+      setPlanBusy(false);
+    }
+  };
 
   const handleTopup = async () => {
     const amt = parseFloat(topupAmt);
@@ -498,6 +536,7 @@ export const ActivitySection: React.FC = () => {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'usage', label: 'Usage Log' },
     { id: 'stats', label: 'Statistics' },
+    { id: 'plans', label: 'Plans' },
     { id: 'billing', label: 'Billing' },
     { id: 'topup', label: 'Top Up' },
     { id: 'mpp', label: 'MPP Streams' },
@@ -558,6 +597,20 @@ export const ActivitySection: React.FC = () => {
         </div>
       )}
 
+      {/* Plans */}
+      {tab === 'plans' && (
+        <PlanCatalog
+          snapshot={planSnap}
+          catalog={planCatalog}
+          levels={planLevels}
+          why={planWhy}
+          busy={planBusy}
+          message={planMsg}
+          ok={planOk}
+          onSelect={handleSelectPlan}
+        />
+      )}
+
       {/* Billing */}
       {tab === 'billing' && billing && (
         <div className="space-y-4">
@@ -566,6 +619,18 @@ export const ActivitySection: React.FC = () => {
             <StatCard label="Total Spent" value={fmtCost(billing.total_spent_usd)} />
             <StatCard label="Free Credit" value={fmtCost(billing.free_credit_usd)} hint={billing.free_credit_usd <= 0 ? 'Used up' : '~100 GPT-4o-mini calls'} />
           </div>
+          {planSnap && (
+            <Card title={`Plan · ${planSnap.plan.name}`} description="Seats are subscription. Extra calls are pay-as-you-go on this ledger.">
+              <p className="text-[12px] text-[#8a96c2] mb-3">{planSnap.plan.blurb}</p>
+              <div className="flex flex-wrap gap-2">
+                {(['personal', 'companion', 'runtime'] as const).map((k) => (
+                  <Badge key={k} variant={planSnap.remaining[k] > 0 ? 'success' : 'neutral'}>
+                    {k} {planSnap.used[k]}/{planSnap.plan.devices[k]}
+                  </Badge>
+                ))}
+              </div>
+            </Card>
+          )}
           <Card title="Top Up" description="Ledger credit via POST /billing/topup. Phantom SOL uses GET /billing/sol-quote then POST /billing/topup-solana. Paste a USDC tx for /billing/topup-solana-usdc.">
             <div className="flex items-center gap-2">
               <div className="flex-1">

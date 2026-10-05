@@ -11,11 +11,13 @@ from src.backend.proxy import keychain as kc
 
 def _iso(tmp_path, monkeypatch):
     from src.backend.billing import usage as usage_mod
+    from src.backend.billing import plans as plans_mod
     from src.backend.routes import vault as vault_mod
 
     monkeypatch.setattr(sess_mod, "DB_PATH", tmp_path / "sessions.db")
     monkeypatch.setattr(vault_mod, "_DB_PATH", tmp_path / "vault.db")
     monkeypatch.setattr(usage_mod, "DB_PATH", tmp_path / "usage.db")
+    monkeypatch.setattr(plans_mod, "DB_PATH", tmp_path / "usage.db")
     monkeypatch.setenv("SERVER_SECRET", "test-keychain-secret")
     monkeypatch.delenv("KS_OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("KS_HELIUS_API_KEY", raising=False)
@@ -139,6 +141,9 @@ def test_store_then_home_lists_prefix_only(tmp_path, monkeypatch):
     assert any(row["upstream"] == "openrouter" for row in snap["apis"])
     assert snap["connection"]["api"] is True
     assert snap["rpc_cache"]["lowest_ttl_sec"] == 2
+    assert snap["plan"]["id"] == "starter"
+    assert snap["plan"]["accelerated"] is False
+    assert "passkey_collect" in snap["plan"]["features"]
     assert "ledger" in snap
     assert "wallet" in snap
     assert "wallet_ms" in snap.get("latency", {})
