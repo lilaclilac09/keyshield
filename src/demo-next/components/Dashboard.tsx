@@ -4,8 +4,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletProviders } from './WalletProviders';
 import { WalletButton } from './WalletButton';
+import { useKeyShield } from '@/lib/useKeyShield';
+import { planVerifyExecute } from '@/lib/onchain';
+import { pingDevnetSlot } from '@/lib/rpc-ping';
+import { shortHex } from '@/lib/bytes';
 import {
-  decryptManaged,
   demoTopup,
   ensureDemoSession,
   fetchHome,
@@ -43,64 +46,33 @@ const AGENT_METHODS = [
   },
 ];
 
-async function webauthnGet(): Promise<'ok' | 'cancel' | 'sim'> {
-  if (typeof window === 'undefined' || !window.PublicKeyCredential) return 'sim';
-  try {
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        timeout: 12_000,
-        userVerification: 'required',
-        rpId: window.location.hostname,
-        allowCredentials: [],
-      },
-    });
-    return 'ok';
-  } catch (err) {
-    if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
-      return 'cancel';
-    }
-    return 'sim';
-  }
-}
-
 function DashboardInner() {
   const wallet = useWallet();
   const address = wallet.publicKey?.toBase58() || '';
+  const ks = useKeyShield();
 
   const [home, setHome] = useState<KeychainHome | null>(null);
   const [rpcMs, setRpcMs] = useState<number | null>(null);
   const [rpcOk, setRpcOk] = useState(false);
-  const [rpcLabel, setRpcLabel] = useState('Devnet RPC');
+  const [slot, setSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [pasted, setPasted] = useState<Record<string, boolean>>({});
   const [drawer, setDrawer] = useState(false);
   const [streams, setStreams] = useState<StreamLog[]>([]);
   const [agents, setAgents] = useState<{ name: string; pubkey_b58: string }[]>([]);
   const [modal, setModal] = useState<null | { method: string }>(null);
-  const [authState, setAuthState] = useState<'idle' | 'ok' | 'sim' | 'fail'>('idle');
-  const [lastHash, setLastHash] = useState<string>('');
 
   const reload = useCallback(async () => {
     const data = await fetchHome(address || undefined);
     setHome(data);
-    const rpc = data.wallet.rpc || 'devnet';
-    setRpcLabel(
-      data.connection.demo || rpc.includes('devnet')
-        ? 'Devnet RPC'
-        : rpc.includes('helius')
-          ? 'Helius RPC'
-          : 'Solana RPC',
-    );
     return data;
   }, [address]);
 
   const ping = useCallback(async () => {
     try {
-      const ms = await pingHealth();
-      setRpcMs(ms);
+      const [healthMs, devnet] = await Promise.all([pingHealth(), pingDevnetSlot()]);
+      setRpcMs(devnet.ms || healthMs);
+      setSlot(devnet.slot);
       setRpcOk(true);
     } catch {
       setRpcOk(false);
@@ -130,7 +102,7 @@ function DashboardInner() {
 
   useEffect(() => {
     void ping();
-    const id = setInterval(() => void ping(), 4000);
+    const id = setInterval(() => void ping(), 3000);
     return () => clearInterval(id);
   }, [ping]);
 
@@ -161,66 +133,36 @@ function DashboardInner() {
 
   const onPasskeyDecrypt = async (row: CredRow) => {
     setBusy(`prf:${row.id}`);
-    setError(null);
-    try {
-      const ceremony = await webauthnGet();
-      if (ceremony === 'cancel') {
-        setError('Passkey cancelled');
-        return;
-      }
-      let paste = '';
-      if (row.stored) {
-        const value = await decryptManaged(row.id);
-        paste = value || `https://api.ks.local/vproxy/${row.upstream}/`;
-      } else {
-        paste = `https://api.ks.local/vproxy/${row.upstream}/`;
-      }
-      try {
-        await navigator.clipboard.writeText(paste);
-      } catch {
-        /* clipboard may be blocked — still mark pasted */
-      }
-      setPasted((p) => ({ ...p, [row.id]: true }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
+    await ks.decryptCredential(row, 'human');
+    setBusy(null);
   };
 
   const onSimulate = (method = 'export.session-key') => {
-    setAuthState('idle');
+    ks.resetPendingUi();
     setModal({ method });
   };
 
   const onAuthorize = async () => {
-    setBusy('auth');
-    const ceremony = await webauthnGet();
-    setBusy(null);
-    if (ceremony === 'cancel') {
-      setAuthState('fail');
-      return;
-    }
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    const hash = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-    setLastHash(hash);
-    setAuthState(ceremony === 'ok' ? 'ok' : 'sim');
-    setStreams((prev) => [
-      {
-        id: Date.now(),
-        status: 'authorized',
-        pending_artifact_hash: hash,
-        stream_pda: home?.wallet.address || null,
-        settled_micro_usdc: 0,
-      },
-      ...prev,
-    ]);
+    const agentId = agents[0]?.name || 'demo-agent';
+    const open = streams.find((s) => s.status === 'open');
+    await ks.authorizeAgent({
+      method: modal?.method || 'export.session-key',
+      agentId,
+      spendCap: 5000n,
+      slot: BigInt(slot || 0),
+      streamId: open?.id,
+    });
   };
 
   const sol = home?.wallet.sol ?? null;
   const usdc = home?.wallet.usdc ?? null;
   const escrow = home?.ledger.balance_usd ?? 0;
   const pingText = rpcMs === null ? '…' : `${rpcMs}ms`;
+  const banner = error || ks.snapshot.error;
+  const prf = ks.snapshot.prf;
+  const proof = ks.snapshot.proof;
+  const planned = proof ? planVerifyExecute(proof, proof.publicInputs.spendCap) : null;
+  const passkeyGreen = ks.snapshot.state === 'SETTLED' || Object.keys(ks.snapshot.pasted).length > 0;
 
   return (
     <div className="h-screen bg-zinc-950 text-zinc-100 flex flex-col overflow-hidden">
@@ -230,20 +172,33 @@ function DashboardInner() {
           <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
             KeyShield // Zero-Knowledge Agent Vault
           </h1>
+          <div className="font-mono text-[11px] text-zinc-500 mt-1">
+            state={ks.snapshot.state}
+            {prf ? ` · prf=${prf.source}/${prf.verifyLayer}` : ''}
+            {slot != null ? ` · slot=${slot}` : ''}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="font-mono text-sm text-zinc-300 flex items-center gap-2">
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${rpcOk ? 'bg-emerald-400' : 'bg-red-500'}`} />
             <span>
-              {pingText} <span className="text-zinc-500">({rpcLabel})</span>
+              {pingText} <span className="text-zinc-500">(Devnet RPC)</span>
             </span>
           </div>
           <WalletButton />
         </div>
       </header>
 
-      {error && (
-        <div className="shrink-0 px-6 py-2 text-sm text-red-300 border-b border-red-900/60 bg-red-950/40">{error}</div>
+      {banner && (
+        <div className="shrink-0 px-6 py-2 text-sm text-red-300 border-b border-red-900/60 bg-red-950/40">
+          {ks.snapshot.failKind ? `[${ks.snapshot.failKind}] ` : ''}
+          {banner}
+          {!ks.snapshot.pendingLocked && ks.snapshot.state === 'FAILED' && (
+            <button type="button" className="ml-3 underline" onClick={() => ks.resetPendingUi()}>
+              Retry
+            </button>
+          )}
+        </div>
       )}
 
       <main className="flex-1 min-h-0 overflow-auto p-5 grid grid-cols-12 gap-4 content-start">
@@ -264,7 +219,7 @@ function DashboardInner() {
           <button
             type="button"
             onClick={() => void onTopup()}
-            disabled={busy === 'topup'}
+            disabled={busy === 'topup' || ks.snapshot.pendingLocked}
             className="mt-4 h-11 border border-zinc-700 bg-zinc-900 text-zinc-100 text-sm tracking-wide uppercase hover:bg-zinc-800 disabled:opacity-50"
           >
             {busy === 'topup' ? 'Crediting…' : 'Top-up Escrow'}
@@ -293,16 +248,22 @@ function DashboardInner() {
                     </td>
                     <td className="py-3 font-mono text-zinc-300">{row.prefix}</td>
                     <td className="py-3 text-right">
-                      {pasted[row.id] ? (
+                      {ks.snapshot.pasted[row.id] ? (
                         <span className="text-emerald-400 text-sm font-medium">Decrypted & Pasted</span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => void onPasskeyDecrypt(row)}
-                          disabled={busy === `prf:${row.id}`}
-                          className="h-9 px-3 border border-zinc-700 text-xs uppercase tracking-wide hover:bg-zinc-900 disabled:opacity-50"
+                          disabled={busy === `prf:${row.id}` || ks.snapshot.pendingLocked}
+                          className={`h-9 px-3 border text-xs uppercase tracking-wide disabled:opacity-50 ${
+                            passkeyGreen
+                              ? 'border-emerald-700 text-emerald-300'
+                              : 'border-zinc-700 hover:bg-zinc-900'
+                          }`}
                         >
-                          One-Click Passkey
+                          {ks.snapshot.state === 'AWAITING_PASSKEY' && busy === `prf:${row.id}`
+                            ? 'Touch ID…'
+                            : 'One-Click Passkey'}
                         </button>
                       )}
                     </td>
@@ -311,6 +272,11 @@ function DashboardInner() {
               </tbody>
             </table>
           </div>
+          {prf && (
+            <div className="mt-3 font-mono text-[11px] text-zinc-500">
+              HKDF session + witness · commit {shortHex(prf.witnessCommitment)} · vault {shortHex(prf.vaultId, 8)}
+            </div>
+          )}
         </section>
 
         <section className="col-span-12 border border-zinc-800 bg-zinc-950 p-5 flex flex-col min-h-0">
@@ -321,7 +287,8 @@ function DashboardInner() {
             <button
               type="button"
               onClick={() => onSimulate()}
-              className="h-10 px-4 border border-amber-700/70 text-amber-200 text-xs uppercase tracking-wide hover:bg-amber-950/40"
+              disabled={ks.snapshot.pendingLocked}
+              className="h-10 px-4 border border-amber-700/70 text-amber-200 text-xs uppercase tracking-wide hover:bg-amber-950/40 disabled:opacity-50"
             >
               Simulate Agent Request
             </button>
@@ -338,7 +305,7 @@ function DashboardInner() {
                   <div className="text-base">{m.label}</div>
                   {m.danger && (
                     <span className="inline-block mt-1 text-[10px] uppercase tracking-widest border border-amber-600 text-amber-300 px-1.5 py-0.5">
-                      Warning · human-in-the-loop
+                      Warning · session keypair only · never master wallet
                     </span>
                   )}
                 </div>
@@ -371,15 +338,23 @@ function DashboardInner() {
           {drawer ? 'Hide' : 'View'} Verification & Monotonic State Logs
         </button>
         {drawer && (
-          <div className="max-h-40 overflow-auto border-t border-zinc-800 px-5 py-3 font-mono text-xs text-zinc-400 space-y-2">
-            {lastHash && (
+          <div className="max-h-48 overflow-auto border-t border-zinc-800 px-5 py-3 font-mono text-xs text-zinc-400 space-y-2">
+            {proof && (
               <div>
-                last authorize hash <span className="text-zinc-200">{lastHash}</span>
+                proof={proof.kind} (not Groth16) · nullifier={shortHex(proof.publicInputs.nullifier)} ·
+                root={shortHex(proof.publicInputs.merkleRoot)} · cap={proof.publicInputs.spendCap}
               </div>
             )}
-            {streams.length === 0 && <div>no streams — 2-phase commit idle · clawback=n/a</div>}
-            {streams.slice(0, 8).map((s) => (
-              <div key={s.id} className="flex flex-wrap gap-x-4 gap-y-1">
+            {planned && (
+              <div>
+                planned ixs: {planned.ixs.map((i) => i.name).join(' → ')} · verifier={planned.verifier}
+              </div>
+            )}
+            <div>
+              settlement={ks.snapshot.settlement} · hold={ks.snapshot.holdId || '—'}
+            </div>
+            {streams.slice(0, 6).map((s) => (
+              <div key={s.id} className="flex flex-wrap gap-x-4">
                 <span>#{s.id}</span>
                 <span className="text-zinc-200">{s.status}</span>
                 <span>artifact={s.pending_artifact_hash || '—'}</span>
@@ -397,27 +372,31 @@ function DashboardInner() {
             <div className="text-[11px] tracking-[0.22em] text-amber-400 uppercase">Passkey verification</div>
             <h2 className="text-2xl font-semibold mt-2">Authorize agent</h2>
             <p className="text-zinc-400 mt-3 text-sm leading-relaxed">
-              Method <span className="text-zinc-100 font-mono">{modal.method}</span> is sensitive. Face ID / Touch ID
-              (WebAuthn PRF) stays on this device. Server never sees the session private key.
+              <span className="text-zinc-100 font-mono">{modal.method}</span> needs WebAuthn PRF → HKDF
+              witness. Hardware key never leaves the chip. On-chain Passkey verify is{' '}
+              <span className="text-amber-200">client-layer only</span> until the Groth16 ix ships.
             </p>
-            {authState === 'ok' && <p className="text-emerald-400 mt-4">Authorized — real passkey.</p>}
-            {authState === 'sim' && (
-              <p className="text-emerald-400 mt-4">Authorized — demo ceremony (no authenticator on this host).</p>
+            <p className="text-zinc-500 text-xs font-mono mt-2">state={ks.snapshot.state}</p>
+            {ks.snapshot.state === 'SETTLED' && (
+              <p className="text-emerald-400 mt-4">
+                Authorized · {prf?.source} PRF · proof {proof?.kind} · settlement {ks.snapshot.settlement}
+              </p>
             )}
-            {authState === 'fail' && <p className="text-red-400 mt-4">Cancelled.</p>}
+            {ks.snapshot.state === 'FAILED' && <p className="text-red-400 mt-4">{ks.snapshot.error}</p>}
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
                 onClick={() => void onAuthorize()}
-                disabled={busy === 'auth'}
+                disabled={ks.snapshot.pendingLocked || ks.snapshot.state === 'AWAITING_PASSKEY' || ks.snapshot.state === 'GENERATING_PROOF'}
                 className="flex-1 h-12 border border-amber-600 bg-amber-950/40 text-amber-100 uppercase tracking-wide text-sm hover:bg-amber-900/40 disabled:opacity-50"
               >
-                {busy === 'auth' ? 'Waiting…' : 'Verify with Passkey'}
+                {ks.snapshot.state === 'AWAITING_PASSKEY' ? 'Waiting…' : 'Verify with Passkey'}
               </button>
               <button
                 type="button"
                 onClick={() => setModal(null)}
-                className="h-12 px-4 border border-zinc-700 text-sm uppercase tracking-wide"
+                disabled={ks.snapshot.pendingLocked}
+                className="h-12 px-4 border border-zinc-700 text-sm uppercase tracking-wide disabled:opacity-50"
               >
                 Close
               </button>
