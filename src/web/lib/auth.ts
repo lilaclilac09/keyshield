@@ -193,7 +193,11 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   } catch (e) {
     throw describeApiNetError(e, path);
   }
-  if (res.status === 401 && !path.startsWith('/auth/')) {
+  // Only drop the session when THIS request presented a bearer token that
+  // the server rejected. A late 401 from a pre-login /manage/vault probe
+  // must not wipe a token Start demo just wrote (React Strict Mode +
+  // useVaults both fire that GET on the auth screen).
+  if (res.status === 401 && token && getToken() === token && !path.startsWith('/auth/')) {
     clearAuth();
     clearPasskeyTrust();
     notifyAuthChanged();
