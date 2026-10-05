@@ -1,0 +1,38 @@
+# FILE_INDEX — 06 Vault, credentials, and permissions
+
+[← category](README.md) · [← repository index](../README.md)
+
+| ID | original path | type | primary category | purpose | evidence | notes |
+|---|---|---|---|---|---|---|
+| `KS-06-001` | [`.github/workflows/sync-worker-deploy.yml`](../../../.github/workflows/sync-worker-deploy.yml) | config | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-002` | [`docs/technical/SYNC_VAULT_ARCHITECTURE.md`](../../technical/SYNC_VAULT_ARCHITECTURE.md) | doc | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-003` | [`docs/technical/cryptography.md`](../../technical/cryptography.md) | doc | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-004` | [`src/backend/routes/vault.py`](../../../src/backend/routes/vault.py) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-005` | [`src/infra/grafana/provisioning/dashboards/dashboard.yml`](../../../src/infra/grafana/provisioning/dashboards/dashboard.yml) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-006` | [`src/infra/grafana/provisioning/dashboards/keyshield.json`](../../../src/infra/grafana/provisioning/dashboards/keyshield.json) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-007` | [`src/infra/grafana/provisioning/datasources/prometheus.yml`](../../../src/infra/grafana/provisioning/datasources/prometheus.yml) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-008` | [`src/infra/metrics-ui/.env.example`](../../../src/infra/metrics-ui/.env.example) | other | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-009` | [`src/infra/metrics-ui/index.html`](../../../src/infra/metrics-ui/index.html) | source | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-010` | [`src/infra/metrics-ui/package.json`](../../../src/infra/metrics-ui/package.json) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-011` | [`src/infra/metrics-ui/src/App.tsx`](../../../src/infra/metrics-ui/src/App.tsx) | source | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-012` | [`src/infra/metrics-ui/src/main.tsx`](../../../src/infra/metrics-ui/src/main.tsx) | source | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-013` | [`src/infra/metrics-ui/src/parse.ts`](../../../src/infra/metrics-ui/src/parse.ts) | source | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-014` | [`src/infra/metrics-ui/tsconfig.json`](../../../src/infra/metrics-ui/tsconfig.json) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-015` | [`src/infra/metrics-ui/vite.config.ts`](../../../src/infra/metrics-ui/vite.config.ts) | source | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-016` | [`src/infra/prometheus.yml`](../../../src/infra/prometheus.yml) | config | 06 | Infra worker (vault sync). | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-017` | [`src/infra/sync-worker/DEPLOY.md`](../../../src/infra/sync-worker/DEPLOY.md) | doc | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-018` | [`src/infra/sync-worker/package.json`](../../../src/infra/sync-worker/package.json) | config | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-019` | [`src/infra/sync-worker/src/auth.ts`](../../../src/infra/sync-worker/src/auth.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-020` | [`src/infra/sync-worker/src/cas.ts`](../../../src/infra/sync-worker/src/cas.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-021` | [`src/infra/sync-worker/src/index.ts`](../../../src/infra/sync-worker/src/index.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-022` | [`src/infra/sync-worker/src/registry.ts`](../../../src/infra/sync-worker/src/registry.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-023` | [`src/infra/sync-worker/src/webauthn.ts`](../../../src/infra/sync-worker/src/webauthn.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-024` | [`src/infra/sync-worker/tsconfig.json`](../../../src/infra/sync-worker/tsconfig.json) | config | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-025` | [`src/infra/sync-worker/vitest.config.ts`](../../../src/infra/sync-worker/vitest.config.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-026` | [`src/infra/sync-worker/wrangler.toml`](../../../src/infra/sync-worker/wrangler.toml) | config | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-027` | [`src/web/components/sections/SharingSection.tsx`](../../../src/web/components/sections/SharingSection.tsx) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-028` | [`src/web/lib/sync-auth.ts`](../../../src/web/lib/sync-auth.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-029` | [`src/web/lib/sync.ts`](../../../src/web/lib/sync.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-030` | [`src/web/lib/vault-key.ts`](../../../src/web/lib/vault-key.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-031` | [`src/web/lib/vault-session.ts`](../../../src/web/lib/vault-session.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
+| `KS-06-032` | [`src/web/lib/vault.ts`](../../../src/web/lib/vault.ts) | source | 06 | Device vault, sync ciphertext, or sharing. | path + filename (static) | statically inspected; runtime status not verified |
