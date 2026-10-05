@@ -123,6 +123,172 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 
 ---
 
+## How to use this
+
+Two interfaces, one vault. Humans use the dashboard. Agents hold a
+session token and never see `sk-` / `gsk_` material.
+
+### 1. Start the stack
+
+```bash
+node dev.cjs
+# Vault UI     http://localhost:5173
+# Control API  http://localhost:8001
+```
+
+Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
+(marketing: [https://ks.aileena.xyz](https://ks.aileena.xyz)).
+
+### 2. Humans — store a key, copy a token
+
+1. Open the vault UI and connect a Solana wallet (Phantom / Solflare).
+2. Unlock the Device Vault (passkey / WebAuthn-PRF). Encryption stays
+   on this device; the server stores ciphertext only.
+3. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
+   OpenRouter, Groq, …).
+4. **Developer** — copy the session token. That is the Bearer you put
+   in `KS_TOKEN`. Demo / harness tokens may look like `ksv2_…`.
+5. Call any upstream through the proxy. The client decrypts locally and
+   sends the key once in `X-Upstream-API-Key`. The proxy does not persist it.
+
+```bash
+export KS_TOKEN="<paste from Developer>"
+export KS_BASE="http://localhost:8001"   # or https://app.ks.aileena.xyz
+
+curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+```
+
+```python
+import os
+from keyshield import KeyShield
+
+ks = KeyShield(token=os.environ["KS_TOKEN"], base_url=os.environ.get("KS_BASE", "http://localhost:8001"))
+client = ks.openai_client()   # same OpenAI SDK, zero raw keys
+```
+
+CLI equivalent: `source keyshield-cli.sh` then `ks_store openai "sk-…"`
+and `ks_login <wallet> <passphrase>`.
+
+Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
+(Activity), **Developer**, **Agents**, **Sharing**, **Sessions**,
+**Settings**, **Docs**, **Reports**, **X402 Trust**. Do not rename them.
+
+### 3. Pay for a stream (optional)
+
+On **Payments** (Activity): connect / paste an OpenRouter key once, then
+open a stream. On-chain order is Universal Vault → agent grant →
+`OpenStream` (ix 24) → meter → `MppSettle` (ix 26). Dry-run:
+
+```bash
+npm run live:e2e:dry
+```
+
+Do not run a live Devnet settle unless you intend to spend operator
+USDC. Stage 4 live stays opt-in (`LIVE_E2E=1`).
+
+---
+
+## How agents register
+
+An agent is an ed25519 identity. You register its **public** key once.
+The agent keeps the seed. It then signs a server challenge and receives
+a session token. The server never stores the private key.
+
+```
+Owner  →  register pubkey  →  /agents/register
+Agent  →  sign challenge   →  /auth/agent-challenge + /auth/agent-login
+Agent  →  Bearer token     →  /proxy/:upstream/...
+```
+
+### Option A — dashboard (one click)
+
+1. Open **Agents**.
+2. Type a name (e.g. `trading-bot-v1`).
+3. Click **Generate & Register**. The UI creates an ed25519 keypair in
+   the browser, POSTs `pubkeyB58` + `name` to `/agents/register`, and
+   shows the seed **once**. Copy it. If the Device Vault is unlocked,
+   the seed is sealed on this device; the server only has the pubkey.
+4. Or paste an existing base58 pubkey and click **Register**.
+
+### Option B — owner API / SDK
+
+You need an owner session token first (Developer tab, or wallet login).
+
+```bash
+# Register an existing pubkey
+curl -s -X POST "$KS_BASE/agents/register" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pubkeyB58":"9WzDX...","name":"trading-bot-v1","scopes":"*"}'
+
+# List
+curl -s "$KS_BASE/agents/list" -H "Authorization: Bearer $KS_TOKEN"
+```
+
+```python
+from keyshield import KeyShield, generate_keypair
+
+ks = KeyShield(token=os.environ["KS_TOKEN"], base_url=os.environ["KS_BASE"])
+creds = generate_keypair()          # {"private_key_hex", "pubkey_b58"}
+ks.agent_register(creds["pubkey_b58"], name="trading-bot-v1")
+# Ship creds["private_key_hex"] to the agent process only. Not the repo.
+```
+
+`POST /agents` is the REST alias (name only; the server mints a
+placeholder id). Prefer `/agents/register` with a real ed25519 pubkey
+so the agent can self-authenticate.
+
+### Option C — agent process logs itself in
+
+The pubkey must already be registered (A or B). Then:
+
+```bash
+# 1. challenge
+CHAL=$(curl -s -X POST "$KS_BASE/auth/agent-challenge")
+# 2. sign the challenge bytes with the agent seed (ed25519)
+# 3. login
+curl -s -X POST "$KS_BASE/auth/agent-login" \
+  -H "Content-Type: application/json" \
+  -d '{"pubkeyB58":"<agent-pubkey>","challenge":"<challenge>","nonce":"<nonce>","signature":"<ed25519-sig-base64>"}'
+# → { "token": "..." }
+```
+
+```python
+from keyshield import AgentKeyShield
+
+agent = AgentKeyShield(
+    owner_wallet=os.environ["KS_OWNER_WALLET"],
+    private_key_hex=os.environ["KS_AGENT_KEY"],
+    vault_passphrase=os.environ["KS_VAULT_PASS"],
+    base_url=os.environ.get("KS_BASE", "http://localhost:8001"),
+)
+token = agent.authenticate()
+resp = agent.proxy("openai", "v1/chat/completions", json={
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "ping"}],
+})
+```
+
+Unregistered pubkeys get `401 agent not registered`. Duplicate register
+returns `409` with `duplicate: true` (idempotent for demos). Revoke
+from **Agents** or `DELETE /agents/{id}`.
+
+### On-chain grant (paid streams)
+
+Registration is off-chain identity. A live MPP stream also needs an
+on-chain `GrantAgentAccess` on the owner's Universal Vault **before**
+`OpenStream`. The Payments tab and `scripts/live_e2e_run.ts` do that
+order for you. zk-vault ixs 40–43 are in source and are **not** on the
+current Devnet program until upgrade authority extends ProgramData.
+
+Full endpoint list: [docs/API.md](docs/API.md). Design notes:
+[AGENTS.md](AGENTS.md).
+
+---
+
 ## Repo map
 
 | Path | Role |
