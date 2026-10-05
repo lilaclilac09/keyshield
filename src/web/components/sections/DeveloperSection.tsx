@@ -5,13 +5,21 @@ import { Button } from '../ui/Button';
 import { RevealField } from '../ui/RevealField';
 import { CodeBlock } from '../ui/CodeBlock';
 import { API_BASE, apiFetch, getToken, getWalletAddress, clearAuth, clearPasskeyTrust, notifyAuthChanged } from '../../lib/auth';
-import { OPENROUTER_DEMO_MODEL, OPENROUTER_CHAT_PATH, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
+import { OPENROUTER_DEMO_MODEL, OPENROUTER_CHAT_PATH, OPENROUTER_MODEL_URL, fetchOpenRouterStatus, openrouterCurlSnippet, openrouterPythonSnippet, type OpenRouterStatus } from '../../lib/openrouter-interface';
 
 export const DeveloperSection: React.FC = () => {
   const token = getToken() ?? '';
   const wallet = getWalletAddress() ?? 'YOUR_WALLET';
   const [injectedAt, setInjectedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  const [orStatus, setOrStatus] = useState<OpenRouterStatus | null>(null);
+
+  React.useEffect(() => {
+    void fetchOpenRouterStatus().then(setOrStatus).catch(() => {});
+    const onOr = () => { void fetchOpenRouterStatus().then(setOrStatus).catch(() => {}); };
+    window.addEventListener('ks-openrouter-connected', onOr);
+    return () => window.removeEventListener('ks-openrouter-connected', onOr);
+  }, []);
 
   React.useEffect(() => {
     if (!injectedAt) return;
@@ -40,7 +48,12 @@ export const DeveloperSection: React.FC = () => {
         </div>
       </Card>
 
-      <Card title="OpenRouter interface" description={`Inserted chat path + free model ${OPENROUTER_DEMO_MODEL}. Paste a key in Activity → Save to proxy, then this curl hits /vproxy.`}>
+      <Card title="OpenRouter interface" description={`Inserted from src/web/lib/openrouter-interface.ts + src/backend/proxy/openrouter_interface.py. Model ${OPENROUTER_DEMO_MODEL}.`}>
+        <p className="text-[11px] text-[#8a96c2] mb-3">
+          {orStatus?.key_configured ? `Key stored (${orStatus.key_prefix}) via Activity → Connect.` : 'Paste a key once in Activity → Connect. Not a public API.'}
+          {' '}
+          <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">Model page</a>
+        </p>
         <div className="space-y-3">
           <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Auto-fill store</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openrouter","apiKey":"sk-or-v1-paste-here"}'`} /></div>
           <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy {OPENROUTER_CHAT_PATH}</p><CodeBlock code={openrouterCurlSnippet(t)} /></div>

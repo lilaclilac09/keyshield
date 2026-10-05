@@ -18,6 +18,19 @@ DEMO_CHAT_PATH = os.getenv(
     "KS_OPENROUTER_CHAT_PATH",
     "/api/v1/chat/completions",
 )
+DEMO_MODEL_URL = f"https://openrouter.ai/{DEMO_MODEL}"
+
+
+def looks_like_openrouter_key(raw: str) -> bool:
+    text = (raw or "").strip()
+    return text.startswith("sk-or-") and len(text) >= 16
+
+
+def mask_openrouter_key(raw: str) -> str:
+    text = (raw or "").strip()
+    if len(text) < 12:
+        return "sk-or-••••"
+    return f"{text[:7]}…{text[-4:]}"
 
 
 def chat_body(

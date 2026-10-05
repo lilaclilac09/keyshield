@@ -14,7 +14,13 @@ from pathlib import Path
 
 from nacl.signing import SigningKey
 
-from .proxy.openrouter_interface import DEMO_MODEL, DEMO_UPSTREAM
+from .proxy.openrouter_interface import (
+    DEMO_CHAT_PATH,
+    DEMO_MODEL,
+    DEMO_MODEL_URL,
+    DEMO_UPSTREAM,
+    mask_openrouter_key,
+)
 
 DEMO_AGENT_NAME = "demo-agent"
 
@@ -35,8 +41,36 @@ def demo_status() -> dict:
         "owner_pubkey": owner.get("pubkey"),
         "upstream": DEMO_UPSTREAM,
         "model": DEMO_MODEL,
+        "chat_path": DEMO_CHAT_PATH.lstrip("/"),
+        "model_url": DEMO_MODEL_URL,
         "openrouter_key_configured": env_key,
         "public_unauthenticated_proxy": False,
+        "requires_session": True,
+        "requires_openrouter_key": True,
+    }
+
+
+def openrouter_status(user_id: str | None = None) -> dict:
+    """Public shape for the one-click Connect card. Never includes the key."""
+    key, source = (None, "none")
+    if user_id:
+        key, source = resolve_upstream_key(user_id, DEMO_UPSTREAM)
+    else:
+        env = os.getenv("KS_OPENROUTER_API_KEY", "").strip()
+        if env:
+            key, source = env, "env"
+    return {
+        "upstream": DEMO_UPSTREAM,
+        "model": DEMO_MODEL,
+        "chat_path": DEMO_CHAT_PATH.lstrip("/"),
+        "model_url": DEMO_MODEL_URL,
+        "key_configured": bool(key),
+        "key_source": source if key else "none",
+        "key_prefix": mask_openrouter_key(key) if key else None,
+        "public_unauthenticated_proxy": False,
+        "requires_session": True,
+        "requires_openrouter_key": True,
+        "anyone_can_call": False,
     }
 
 
@@ -169,10 +203,22 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
 
     from .routes import vault as vault_mod
 
-    item_id = f"ks_demo_{upstream}_{uuid.uuid4().hex[:8]}"
     now = time.time()
     vault_mod._DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with vault_mod._db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (user_id, upstream),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE vault_items SET value = ?, updated_at = ?, name = ? "
+                "WHERE id = ? AND user_id = ?",
+                (api_key, now, f"{upstream} key", existing[0], user_id),
+            )
+            return str(existing[0])
+        item_id = f"ks_demo_{upstream}_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """
             INSERT INTO vault_items

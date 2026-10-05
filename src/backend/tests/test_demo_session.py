@@ -194,3 +194,45 @@ def test_demo_upstream_key_never_echoes_secret(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert secret not in res.text
     assert res.json()["stored"] is True
+    status = client.get(
+        "/demo/openrouter",
+        headers={"Authorization": f"Bearer {login['token']}"},
+    )
+    assert status.status_code == 200
+    body = status.json()
+    assert body["anyone_can_call"] is False
+    assert body["public_unauthenticated_proxy"] is False
+    assert body["key_configured"] is True
+    assert body["model"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert secret not in status.text
+    assert "sk-or-v1-demo" not in status.text
+    again = client.post(
+        "/demo/upstream-key",
+        headers={"Authorization": f"Bearer {login['token']}"},
+        json={"upstream": "openrouter", "apiKey": secret},
+    )
+    assert again.status_code == 200
+    assert again.json()["id"] == res.json()["id"]
+
+
+def test_openrouter_status_public_has_no_key(tmp_path, monkeypatch):
+    _iso_dbs(tmp_path, monkeypatch)
+    monkeypatch.delenv("KS_OPENROUTER_API_KEY", raising=False)
+    client = TestClient(app)
+    res = client.get("/demo/openrouter")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["anyone_can_call"] is False
+    assert body["key_configured"] is False
+    assert body["model_url"].endswith("nvidia/nemotron-3-ultra-550b-a55b:free")
+
+
+def test_looks_like_openrouter_key():
+    from src.backend.proxy.openrouter_interface import (
+        looks_like_openrouter_key,
+        mask_openrouter_key,
+    )
+
+    assert looks_like_openrouter_key("sk-or-v1-abcdefghijklmnop")
+    assert not looks_like_openrouter_key("sk-proj-nope")
+    assert "abcdefgh" not in mask_openrouter_key("sk-or-v1-abcdefghijklmnop")

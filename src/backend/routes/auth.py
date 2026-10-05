@@ -191,6 +191,16 @@ async def demo_upstream_key(request: Request):
     )
 
 
+@router.get("/demo/openrouter")
+async def demo_openrouter_status(request: Request):
+    """One-click card: model URL, whether a key is stored. Never echoes the key."""
+    from .. import demo as demo_mod
+
+    sess = await _session(_bearer(request) or "")
+    uid = sess.get("user_id") if sess else None
+    return JSONResponse(demo_mod.openrouter_status(str(uid) if uid else None))
+
+
 @router.post("/auth/agent-challenge")
 async def agent_challenge():
     nonce = secrets.token_hex(32)

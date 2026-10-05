@@ -9,11 +9,15 @@ import { CostBadge } from '../ui/CostBadge';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { apiFetch, getToken, proxyFetch, vproxyFetch } from '../../lib/auth';
 import { getDecryptedKey } from '../../lib/vault-session';
-import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, creditUsdcTopup, demoMeterStream, fetchCapturePrep, getMppStreamUsage, storeUpstreamKey } from '../../lib/api';
+import { autosignOpenStream, autosignWithdrawStream, captureMppStream, closeMppStream, creditUsdcTopup, demoMeterStream, fetchCapturePrep, getMppStreamUsage } from '../../lib/api';
 import { signCaptureMac, signOwnerBinding } from '../../lib/mpp-capture';
 import { openStreamWithWallet, withdrawStreamWithWallet } from '../../lib/mpp-wallet-open';
 import { topupSolWithWallet } from '../../lib/sol-topup';
-import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_DEMO_UPSTREAM, openrouterChatBody } from '../../lib/openrouter-interface';
+import {
+  OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_DEMO_UPSTREAM, OPENROUTER_MODEL_URL,
+  connectOpenRouter, fetchOpenRouterStatus, looksLikeOpenRouterKey, openrouterChatBody,
+  readOpenRouterKeyFromClipboard, type OpenRouterStatus,
+} from '../../lib/openrouter-interface';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -73,6 +77,7 @@ export const ActivitySection: React.FC = () => {
   const [pasteKey, setPasteKey] = useState('');
   const [pasteBusy, setPasteBusy] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [orStatus, setOrStatus] = useState<OpenRouterStatus | null>(null);
   const [openCap, setOpenCap] = useState('0.01');
   const [openBusy, setOpenBusy] = useState(false);
   const [openMsg, setOpenMsg] = useState('');
@@ -141,11 +146,17 @@ export const ActivitySection: React.FC = () => {
         if (d.active_program_id) setProgramId(d.active_program_id);
         if (d.demo?.enabled) setDemoMode(true);
       }
+      try { setOrStatus(await fetchOpenRouterStatus()); } catch { /* optional */ }
     } catch {}
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    const onOr = () => { void fetchOpenRouterStatus().then(setOrStatus).catch(() => {}); };
+    window.addEventListener('ks-openrouter-connected', onOr);
+    return () => window.removeEventListener('ks-openrouter-connected', onOr);
+  }, []);
 
   const handleTopup = async () => {
     const amt = parseFloat(topupAmt);
@@ -288,17 +299,26 @@ export const ActivitySection: React.FC = () => {
     }
   };
 
-  const handleSaveKey = async () => {
-    const key = pasteKey.trim();
-    if (!key) return;
+  const handleConnectOpenRouter = async () => {
     setPasteBusy(true); setOpenMsg(''); setOpenOk(false);
     try {
-      await storeUpstreamKey(openUpstream.trim() || OPENROUTER_DEMO_UPSTREAM, key);
+      let key = pasteKey.trim();
+      if (!key) key = await readOpenRouterKeyFromClipboard();
+      setOpenUpstream(OPENROUTER_DEMO_UPSTREAM);
+      const st = await connectOpenRouter(key || undefined);
+      setOrStatus(st);
       setPasteKey('');
       setOpenOk(true);
-      setOpenMsg(`Stored ${openUpstream || OPENROUTER_DEMO_UPSTREAM} key in the proxy vault — Meter uses it without unlocking Device Vault.`);
+      if (st.key_configured) {
+        setOpenMsg(`OpenRouter connected (${st.key_prefix}) → ${st.model}. Meter / vproxy / Vault reuse this key. Not a public API.`);
+      } else if (!key) {
+        setOpenMsg('Model wired. Paste a sk-or- key (or copy it, then Connect) — OpenRouter still requires your key.');
+      } else {
+        setOpenMsg('Key stored. Refresh if the badge does not flip.');
+      }
     } catch (e) {
-      setOpenMsg(e instanceof Error ? e.message : 'Store failed');
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'Connect failed');
     } finally {
       setPasteBusy(false);
     }
@@ -544,13 +564,31 @@ export const ActivitySection: React.FC = () => {
               <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
               <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
             </div>
-            <div className="mt-4">
-              <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Paste OpenRouter API key</label>
-              <div className="flex gap-2">
-                <input type="password" value={pasteKey} onChange={e => setPasteKey(e.target.value)} placeholder="sk-or-v1-… auto-fills /manage/store + vproxy" className="flex-1 bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
-                <Button variant="secondary" size="md" onClick={handleSaveKey} disabled={pasteBusy || !pasteKey.trim()} loading={pasteBusy}>Save to proxy</Button>
+            <div className="mt-4 rounded-lg border border-[#243365] bg-[#0e1631] p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[12px] text-white font-medium">One-click OpenRouter</p>
+                <span className={`text-[10px] ${orStatus?.key_configured ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>
+                  {orStatus?.key_configured ? `Connected ${orStatus.key_prefix}` : 'Key not stored'}
+                </span>
               </div>
-              <p className="text-[10px] text-[#5e6a91] mt-1.5">Free model {OPENROUTER_DEMO_MODEL}. Anyone with this demo session can meter; the proxy is still authenticated. Key is never echoed back.</p>
+              <p className="text-[11px] text-[#8a96c2] mb-2">
+                Free model <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
+                Not public — anyone needs their own OpenRouter key + a KeyShield session. Paste once; Connect fills `/manage/store`, demo vault, Device Vault (if unlocked), Meter, and Developer snippets.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={pasteKey}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setPasteKey(v);
+                    if (looksLikeOpenRouterKey(v)) setOpenUpstream(OPENROUTER_DEMO_UPSTREAM);
+                  }}
+                  placeholder="sk-or-v1-… or copy the key, then Connect"
+                  className="flex-1 bg-[#0b1226] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10"
+                />
+                <Button variant="primary" size="md" onClick={handleConnectOpenRouter} disabled={pasteBusy} loading={pasteBusy}>Connect</Button>
+              </div>
             </div>
             {openStep && <p className="text-[11px] text-[#8a96c2] mt-2">Step: {openStep}</p>}
             {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}

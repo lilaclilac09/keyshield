@@ -55,6 +55,7 @@ def test_routes_register() -> None:
         "/billing/topup-solana",
         "/mpp/streams/{stream_id}/usage",
         "/sessions/{token_prefix}/revoke",
+        "/demo/openrouter",
     ):
         assert required in paths, f"expected {required} registered; saw {sorted(paths)}"
 
