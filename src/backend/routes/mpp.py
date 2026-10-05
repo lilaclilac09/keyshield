@@ -169,6 +169,12 @@ async def mpp_open_stream(request: Request):
     if raw_cap is None:
         raw_cap = body.get("max_total_micro_usdc")
     max_total = int(raw_cap) if raw_cap is not None else None
+    stream_pda = body.get("streamPda") or body.get("stream_pda")
+    stream_usdc_ata = (
+        body.get("streamUsdcAta")
+        or body.get("stream_usdc_ata")
+        or body.get("usdcAta")
+    )
 
     from ..mpp import mpp_streams
 
@@ -181,6 +187,8 @@ async def mpp_open_stream(request: Request):
             rate_per_token=int(rate_per_token or 0),
             rate_per_call=int(rate_per_call or 0),
             settlement_interval=int(settlement_interval or 60),
+            stream_pda=str(stream_pda).strip() if stream_pda else None,
+            stream_usdc_ata=str(stream_usdc_ata).strip() if stream_usdc_ata else None,
             max_total_micro_usdc=max_total,
         )
     except ValueError as e:
@@ -598,13 +606,261 @@ async def mpp_record_tx(stream_id: int, request: Request):
     sig = str(body.get("tx_signature") or body.get("txSignature") or "").strip()
     if not sig:
         return JSONResponse({"detail": "tx_signature is required"}, status_code=400)
+    stream_pda = body.get("streamPda") or body.get("stream_pda")
+    stream_usdc_ata = body.get("streamUsdcAta") or body.get("stream_usdc_ata")
 
     from ..mpp import mpp_streams
 
     try:
-        stream = mpp_streams.record_tx_signature(sess["user_id"], stream_id, sig)
+        stream = mpp_streams.record_tx_signature(
+            sess["user_id"],
+            stream_id,
+            sig,
+            stream_pda=str(stream_pda).strip() if stream_pda else None,
+            stream_usdc_ata=str(stream_usdc_ata).strip() if stream_usdc_ata else None,
+        )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"stream": stream})
+
+
+# ─── 10. POST /mpp/vault/build-create-tx ──────────────────────────────────
+
+
+@router.post("/mpp/vault/build-create-tx")
+async def mpp_build_create_vault_tx(request: Request):
+    """Build CreateUniversalVault (ix #10). Owner-signed.
+
+    Required before `open_payment_stream` — missing vault is 6010.
+    Body: `{ ownerPubkey, vaultPda?, bump? }`. Omitted PDA/bump are
+    derived from `["universal_vault", owner]`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip()
+    bump_raw = body.get("bump")
+    try:
+        if not vault_pda or bump_raw is None:
+            vault_pda, bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        else:
+            bump = int(bump_raw)
+        ix = mpp_onchain.build_create_universal_vault_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            bump=bump,
+        )
+    except (mpp_onchain.MppSubmitError, ValueError) as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    response["bump"] = bump
+    return JSONResponse(response)
+
+
+@router.post("/mpp/vault/build-enable-payments-tx")
+async def mpp_build_enable_payments_tx(request: Request):
+    """Build UpdateUniversalPolicy type=0 with PAYMENT_ENABLED (0x08).
+
+    GrantAgentAccess with `paymentStreamEnabled=1` requires this flag.
+    Body: `{ ownerPubkey, vaultPda? }`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip() or config.vault_pda
+    if not vault_pda:
+        try:
+            vault_pda, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        except mpp_onchain.MppSubmitError as e:
+            return JSONResponse({"detail": str(e)}, status_code=400)
+    flags = int(body.get("flags") or mpp_onchain.PAYMENT_ENABLED_FLAG)
+    try:
+        ix = mpp_onchain.build_update_universal_policy_flags_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            flags=flags,
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    return JSONResponse(response)
+
+
+@router.post("/mpp/vault/build-grant-tx")
+async def mpp_build_grant_tx(request: Request):
+    """Build GrantAgentAccess (ix #20). Owner-signed.
+
+    Registers the agent in a UniversalVault slot. `open_payment_stream`
+    and `mpp_settle` both require `is_active=1` and `revoked_at=0`.
+    Body: `{ ownerPubkey, agentPubkey, vaultPda?, paymentStreamEnabled?,
+    maxSpendMicroUsdc?, sessionTimeoutSecs? }`.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    config, env_err = _load_config_or_503()
+    if env_err:
+        return env_err
+    body = await request.json()
+    from ..mpp import mpp_onchain
+
+    try:
+        owner_pubkey = str(body["ownerPubkey"]).strip()
+        agent_pubkey = str(body["agentPubkey"]).strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"detail": f"missing/invalid field: {e}"}, status_code=400)
+
+    vault_pda = str(body.get("vaultPda") or "").strip() or config.vault_pda
+    if not vault_pda:
+        try:
+            vault_pda, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_pubkey,
+                config.keyshield_program_id,
+            )
+        except mpp_onchain.MppSubmitError as e:
+            return JSONResponse({"detail": str(e)}, status_code=400)
+    try:
+        ix = mpp_onchain.build_grant_agent_access_ix(
+            program_id=config.keyshield_program_id,
+            owner_pubkey=owner_pubkey,
+            vault_pda=vault_pda,
+            agent_pubkey=agent_pubkey,
+            key_group=int(body.get("keyGroup") or 255),
+            rate_limit_calls=int(body.get("rateLimitCalls") or 0),
+            rate_limit_tokens=int(body.get("rateLimitTokens") or 0),
+            session_timeout=int(body.get("sessionTimeoutSecs") or 0),
+            max_spend_micro_usdc=int(body.get("maxSpendMicroUsdc") or 0),
+            payment_stream_enabled=bool(body.get("paymentStreamEnabled", True)),
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    response = _ix_to_response(ix)
+    response["vaultPda"] = vault_pda
+    return JSONResponse(response)
+
+
+# ─── 13. Owner auto-sign (encrypted keystore, no Phantom) ─────────────────
+
+
+def _autosign_error(exc: Exception) -> JSONResponse:
+    from ..mpp.owner_keystore import OwnerKeystoreError
+    from ..mpp.owner_submit import OwnerSubmitError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    if isinstance(exc, OwnerKeystoreError):
+        return JSONResponse({"detail": "owner keystore unavailable"}, status_code=503)
+    if isinstance(exc, (OwnerSubmitError, MppSubmitError, ValueError)):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    logger.exception("mpp autosign failed")
+    return JSONResponse({"detail": "autosign failed"}, status_code=500)
+
+
+@router.get("/mpp/autosign/status")
+async def mpp_autosign_status(request: Request):
+    """Pubkey only. Used by Activity MPP tab to show auto-sign is on."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import owner_keystore
+
+    status = owner_keystore.owner_status()
+    return JSONResponse(status)
+
+
+@router.post("/mpp/autosign/open")
+async def mpp_autosign_open(request: Request):
+    """Vault + grant + open + record-tx, owner-signed from the keystore."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit
+
+    try:
+        result = await owner_submit.submit_full_open(sess["user_id"], body)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-open-tx")
+async def mpp_submit_open_tx(stream_id: int, request: Request):
+    """Sign and send the 3-ix open bundle for an existing off-chain row."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    raw_cap = body.get("maxTotalMicroUsdc", body.get("max_total_micro_usdc"))
+    if raw_cap is None:
+        return JSONResponse({"detail": "maxTotalMicroUsdc is required"}, status_code=400)
+    from ..mpp import owner_submit, mpp_streams
+
+    try:
+        result = await owner_submit.submit_open_for_stream(
+            sess["user_id"],
+            stream_id,
+            int(raw_cap),
+            owner_usdc_ata=body.get("usdcAta") or body.get("ownerUsdcAta"),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-withdraw-tx")
+async def mpp_submit_withdraw_tx(stream_id: int, request: Request):
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    raw = body.get("withdrawAmountMicroUsdc", body.get("withdraw_amount_micro_usdc"))
+    from ..mpp import owner_submit, mpp_streams
+
+    try:
+        result = await owner_submit.submit_withdraw(
+            sess["user_id"],
+            stream_id,
+            None if raw is None else int(raw),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except Exception as exc:  # noqa: BLE001
+        return _autosign_error(exc)
+    return JSONResponse(result)
+

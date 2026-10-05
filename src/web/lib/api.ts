@@ -116,6 +116,87 @@ export interface BuildOpenTxBody {
   settlementIntervalSecsOverride?: number;
 }
 
+export async function openMppStreamRow(body: {
+  agentPubkey: string;
+  agentName?: string;
+  upstream: string;
+  maxTotalMicroUsdc: number;
+  ratePerTokenMicroUsdc?: number;
+  ratePerCallMicroUsdc?: number;
+  settlementIntervalSecs?: number;
+}): Promise<{ stream: { id: number } }> {
+  const r = await apiFetch('/mpp/streams', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'open stream failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'open stream failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultCreateTx(ownerPubkey: string): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-create-tx', {
+    method: 'POST',
+    body: JSON.stringify({ ownerPubkey }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-create-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-create-tx failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultEnablePaymentsTx(ownerPubkey: string): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-enable-payments-tx', {
+    method: 'POST',
+    body: JSON.stringify({ ownerPubkey }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-enable-payments-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-enable-payments-tx failed');
+  }
+  return r.json();
+}
+
+export async function buildVaultGrantTx(
+  ownerPubkey: string,
+  agentPubkey: string,
+  maxSpendMicroUsdc: number,
+): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-grant-tx', {
+    method: 'POST',
+    body: JSON.stringify({
+      ownerPubkey,
+      agentPubkey,
+      paymentStreamEnabled: true,
+      maxSpendMicroUsdc,
+    }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-grant-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-grant-tx failed');
+  }
+  return r.json();
+}
+
+export async function captureMppStream(
+  streamId: number,
+  artifactHash: string,
+  signatureHex: string,
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/capture`, {
+    method: 'POST',
+    body: JSON.stringify({ artifactHash, signature: signatureHex }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'capture failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'capture failed');
+  }
+  return r.json();
+}
+
 export async function buildOpenStreamTx(
   streamId: number,
   body: BuildOpenTxBody,
@@ -154,15 +235,60 @@ export async function buildWithdrawTx(
   return r.json();
 }
 
-export async function recordMppTxSignature(streamId: number, txSignature: string): Promise<void> {
+export async function recordMppTxSignature(
+  streamId: number,
+  txSignature: string,
+  extra?: { streamPda?: string; streamUsdcAta?: string },
+): Promise<void> {
   const r = await apiFetch(`/mpp/streams/${streamId}/record-tx`, {
     method: 'POST',
-    body: JSON.stringify({ tx_signature: txSignature }),
+    body: JSON.stringify({
+      tx_signature: txSignature,
+      streamPda: extra?.streamPda,
+      streamUsdcAta: extra?.streamUsdcAta,
+    }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: 'record-tx failed' }));
     throw new Error((err as { detail: string }).detail ?? 'record-tx failed');
   }
+}
+
+export async function autosignOpenStream(body: {
+  agentPubkey: string;
+  agentName?: string;
+  upstream: string;
+  maxTotalMicroUsdc: number;
+  ratePerTokenMicroUsdc?: number;
+  ratePerCallMicroUsdc?: number;
+  settlementIntervalSecs?: number;
+}): Promise<Record<string, unknown>> {
+  const r = await apiFetch('/mpp/autosign/open', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'autosign open failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'autosign open failed');
+  }
+  return r.json();
+}
+
+export async function autosignWithdrawStream(
+  streamId: number,
+  withdrawAmountMicroUsdc?: number,
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/submit-withdraw-tx`, {
+    method: 'POST',
+    body: JSON.stringify(
+      withdrawAmountMicroUsdc == null ? {} : { withdrawAmountMicroUsdc },
+    ),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'autosign withdraw failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'autosign withdraw failed');
+  }
+  return r.json();
 }
 
 // Re-export
