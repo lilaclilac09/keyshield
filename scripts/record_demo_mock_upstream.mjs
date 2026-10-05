@@ -3,11 +3,11 @@
  * Component A — mock upstream for `scripts/record_demo.sh`.
  *
  * Modes:
- *   POST /v1/chat/completions          fast SSE (success path)
+ *   POST /v1/chat/completions          fast SSE (success path, Content-Length)
  *   POST /fault/disconnect             SSE prefix then TCP drop
  *   POST /fault/bad-gateway            HTTP 502
  *   POST /fault/drop                   connection reset
- *   POST /api/v1/chat/completions      OpenRouter-shaped Nemotron mock
+ *   POST /api/v1/chat/completions      OpenRouter-shaped Nemotron JSON
  *   GET  /health
  */
 import http from "node:http";
@@ -24,24 +24,55 @@ function sseChunk(content, extra = {}) {
 }
 
 function writeFastSse(res, text) {
+  const words = text.split(" ");
+  let body = "";
+  for (const word of words) {
+    body += sseChunk(`${word} `);
+  }
+  body += sseChunk("", {
+    usage: { prompt_tokens: 8, completion_tokens: words.length, total_tokens: 8 + words.length },
+  });
+  body += "data: [DONE]\n\n";
+  const payload = Buffer.from(body);
+  // Content-Length (not chunked) so a buffering proxy can collect the body
+  // and write a valid HTTP/1 response without hop-by-hop Transfer-Encoding.
   res.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
-    connection: "keep-alive",
+    "content-length": String(payload.length),
     "x-ks-mock-mode": "fast",
     "x-ks-mock-work-ms": "0",
+    "x-ks-ttft-overhead-ms": "1.2",
   });
-  const words = text.split(" ");
-  for (const word of words) {
-    res.write(sseChunk(`${word} `));
-  }
-  res.write(
-    sseChunk("", {
-      usage: { prompt_tokens: 8, completion_tokens: words.length, total_tokens: 8 + words.length },
-    }),
-  );
-  res.write("data: [DONE]\n\n");
-  res.end();
+  res.end(payload);
+}
+
+function writeNemotronJson(res) {
+  const body = JSON.stringify({
+    id: "gen-ks-record-demo-nemotron",
+    object: "chat.completion",
+    model: MODEL,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content:
+            "KeyShield vault online. Nemotron-3-Ultra plug-in ready — secret stayed in the vault.",
+        },
+        finish_reason: "stop",
+      },
+    ],
+    usage: { prompt_tokens: 8, completion_tokens: 16, total_tokens: 24 },
+    ks_demo: true,
+  });
+  const payload = Buffer.from(body);
+  res.writeHead(200, {
+    "content-type": "application/json",
+    "content-length": String(payload.length),
+    "x-ks-mock-mode": "nemotron",
+  });
+  res.end(payload);
 }
 
 const server = http.createServer((req, res) => {
@@ -79,11 +110,11 @@ const server = http.createServer((req, res) => {
       setTimeout(() => res.destroy(), 20);
       return;
     }
-    if (path === "/api/v1/chat/completions" || path.endsWith("/chat/completions")) {
-      writeFastSse(res, `KeyShield Nemotron mock via ${MODEL} — vault key never printed`);
+    if (path === "/api/v1/chat/completions") {
+      writeNemotronJson(res);
       return;
     }
-    if (path === "/v1/chat/completions" || path === "/fast") {
+    if (path === "/v1/chat/completions" || path === "/fast" || path.endsWith("/chat/completions")) {
       writeFastSse(res, "fast-path SSE tokens through the KeyShield data plane");
       return;
     }

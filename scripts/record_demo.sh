@@ -2,9 +2,9 @@
 # KeyShield record-demo harness (~2 minutes, zero prompts).
 #
 #   A  mock upstream (SSE / 502 / drop)
-#   B  ks-proxy (RUST_LOG=info) pointed at the mock
+#   B  ks-proxy / proxy-helius (RUST_LOG=info) pointed at the mock
 #   C  timed client — scenes 1–4
-#   D  OpenRouter Nemotron plug-in (live if a key is set, else mock)
+#   D  OpenRouter Nemotron plug-in (saved vault/env key, else mock)
 #
 #   bash scripts/record_demo.sh
 #   bash scripts/record_demo.sh --fast
@@ -98,14 +98,15 @@ node "$ROOT/scripts/record_demo_write_vault.mjs" \
   "dev-bypass" \
   "sk-record-demo-vault"
 
-if [[ ! -x "$KS_PROXY_BIN" ]]; then
-  say "B" "building ks-proxy (one-time)"
+HANDLERS_RS="$ROOT/src/proxy/crates/ks-proxy/src/handlers.rs"
+if [[ ! -x "$KS_PROXY_BIN" || ( -f "$HANDLERS_RS" && "$HANDLERS_RS" -nt "$KS_PROXY_BIN" ) ]]; then
+  say "B" "building ks-proxy / proxy-helius"
   cargo build -p ks-proxy --manifest-path "$ROOT/src/proxy/Cargo.toml" --offline 2>/dev/null \
     || cargo build -p ks-proxy --manifest-path "$ROOT/src/proxy/Cargo.toml"
   KS_PROXY_BIN="$ROOT/src/proxy/target/debug/ks-proxy"
 fi
 
-say "B" "starting ks-proxy on :${PROXY_PORT}  RUST_LOG=info"
+say "B" "starting proxy-helius (ks-proxy) on :${PROXY_PORT}  RUST_LOG=info"
 env \
   RUST_LOG=info \
   KS_BIND="127.0.0.1:${PROXY_PORT}" \
@@ -155,6 +156,7 @@ export KS_RECORD_PROXY_URL="$PROXY_URL"
 export KS_RECORD_WORKDIR="$WORKDIR"
 export KS_RECORD_PACE_MS="$PACE_MS"
 export KS_RECORD_CLIPBOARD="${KS_RECORD_CLIPBOARD:-}"
+export KS_VAULT_DB_PATH="${KS_VAULT_DB_PATH:-$ROOT/src/backend/data/vault_shim.db}"
 npx --yes tsx "$ROOT/scripts/record_demo_client.ts"
 
 # Stage 3 fault-injection suite (same mock contract as the recording)

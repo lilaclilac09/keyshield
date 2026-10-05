@@ -311,6 +311,14 @@ async fn self_custodian_happy_path() {
         "self_custodian"
     );
     assert!(headers.get("x-ks-cache").is_some());
+    assert!(
+        headers.get("transfer-encoding").is_none(),
+        "hop-by-hop transfer-encoding must not be forwarded"
+    );
+    assert!(
+        headers.get("connection").is_none(),
+        "hop-by-hop connection must not be forwarded"
+    );
 
     // Upstream received the request with the user's stored sk-self-custodian-key.
     let reqs = h.upstream_mock.received_requests().await.unwrap();
@@ -652,4 +660,30 @@ async fn payload_too_large_returns_413() {
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[test]
+fn retain_end_to_end_headers_drops_hop_by_hop() {
+    use axum::http::{header, HeaderMap, HeaderValue};
+    use ks_proxy::handlers::retain_end_to_end_headers;
+
+    let mut src = HeaderMap::new();
+    src.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
+    src.insert(header::TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
+    src.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
+    src.insert("x-ks-mock-mode", HeaderValue::from_static("fast"));
+    src.insert(header::CONTENT_LENGTH, HeaderValue::from_static("12"));
+
+    let out = retain_end_to_end_headers(&src);
+    assert_eq!(
+        out.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()),
+        Some("text/event-stream")
+    );
+    assert_eq!(
+        out.get("x-ks-mock-mode").and_then(|v| v.to_str().ok()),
+        Some("fast")
+    );
+    assert!(out.get(header::TRANSFER_ENCODING).is_none());
+    assert!(out.get(header::CONNECTION).is_none());
+    assert!(out.get(header::CONTENT_LENGTH).is_none());
 }

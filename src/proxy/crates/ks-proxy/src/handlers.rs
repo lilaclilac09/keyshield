@@ -199,8 +199,11 @@ async fn proxy_inner(
         }
     };
 
-    // 8. Headers: copy upstream headers, then add x-ks-cache + x-ks-key-type.
-    let mut out_headers = resp.headers.clone();
+    // 8. Headers: copy upstream headers minus hop-by-hop, then add
+    //    x-ks-cache + x-ks-key-type. `forward()` buffers the body, so a
+    //    raw `transfer-encoding: chunked` / `connection` copy makes hyper
+    //    abort the HTTP/1 write (curl 52 empty reply) on SSE upstreams.
+    let mut out_headers = retain_end_to_end_headers(&resp.headers);
     let cache_status =
         cache_status_from(&out_headers).unwrap_or(CacheStatus::Miss);
     out_headers.insert(
@@ -443,6 +446,19 @@ const HOP_BY_HOP: &[&str] = &[
     "content-length",
 ];
 
+/// Drop hop-by-hop headers before attaching a collected body to an axum
+/// response. Shared by `/proxy/*` and Python fallthrough.
+pub fn retain_end_to_end_headers(src: &HeaderMap) -> HeaderMap {
+    let mut out = HeaderMap::new();
+    for (name, value) in src.iter() {
+        if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(name.as_str())) {
+            continue;
+        }
+        out.append(name.clone(), value.clone());
+    }
+    out
+}
+
 /// Headers we strip from inbound client requests before reverse-proxying to
 /// Python. `x-internal-secret` is the firewall token between Rust and Python
 /// — clients must NOT be able to smuggle their own value; ks-proxy re-injects
@@ -515,20 +531,7 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
     };
 
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let mut out_headers = HeaderMap::new();
-    for (name, value) in resp.headers().iter() {
-        let lname = name.as_str();
-        if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
-            continue;
-        }
-        // Construct fresh axum-side header values.
-        if let (Ok(hn), Ok(hv)) = (
-            HeaderName::from_bytes(name.as_str().as_bytes()),
-            HeaderValue::from_bytes(value.as_bytes()),
-        ) {
-            out_headers.append(hn, hv);
-        }
-    }
+    let out_headers = retain_end_to_end_headers(resp.headers());
     let body = match resp.bytes().await {
         Ok(b) => b,
         Err(e) => {
