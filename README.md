@@ -40,7 +40,7 @@ KeyShield is **your API iCloud Keychain**: store provider credentials in a vault
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath. Extremely low latency is the engineering target; do not publish “instant”, “under 50ms”, or “50–80ms” until the named environment is measured.
 
-**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -100,7 +100,9 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 ### 3. Pay for a stream (optional)
 
 On **Payments** (Activity): connect / paste an OpenRouter key once, then
-open a stream. On-chain order is Universal Vault → agent grant →
+open a stream. After Face ID / passkey unlock, that same key is what
+[free Nemotron in any agent framework](#use-case-free-nemotron-in-any-agent-framework)
+uses. On-chain order is Universal Vault → agent grant →
 `OpenStream` (ix 24) → meter → `MppSettle` (ix 26). Dry-run:
 
 ```bash
@@ -207,6 +209,85 @@ current Devnet program until upgrade authority extends ProgramData.
 
 Full endpoint list: [docs/API.md](docs/API.md). Design notes:
 [AGENTS.md](AGENTS.md).
+
+---
+
+## Use case: free Nemotron in any agent framework
+
+Authorize with **Face ID, Touch ID, a passkey, or another WebAuthn
+biometric** on this device. Store an OpenRouter key once. After that,
+any OpenAI-compatible agent framework can call OpenRouter’s free
+Nemotron route through KeyShield and never see `sk-or-…`.
+
+Model (OpenRouter, `:free` tier):
+[nvidia/nemotron-3-ultra-550b-a55b:free](https://openrouter.ai/nvidia/nemotron-3-ultra-550b-a55b:free)
+
+That is KeyShield’s default demo model (`KS_OPENROUTER_MODEL`,
+`src/backend/proxy/openrouter_interface.py`). Production
+`GET /demo/openrouter` reports the same id. The `:free` suffix is
+OpenRouter’s free route — **you still need your own OpenRouter key**
+from [openrouter.ai/keys](https://openrouter.ai/keys). KeyShield is
+not a public unauthenticated proxy (`requires_session: true`,
+`anyone_can_call: false`).
+
+### What “auto get” means here
+
+1. **Unlock** — Face ID / Touch ID / passkey (WebAuthn-PRF) opens the
+   Device Vault. Encryption stays on this device.
+2. **Collect the key once** — paste `sk-or-…` on Home or **Payments →
+   Connect**, or let the browser extension auto-detect it on the
+   OpenRouter keys page. Free plan copy is passkey auto-collection +
+   save to vault. The server stores ciphertext (or a demo vault row);
+   it does not mint you an OpenRouter account.
+3. **Plug the framework anywhere** — point `base_url` at
+   `/vproxy/openrouter`. `/vproxy` looks up the stored OpenRouter key
+   for your session, so LangChain, CrewAI, AutoGen, the OpenAI SDK,
+   Cursor/Claude tools, a cron bot, or a raw `curl` only hold a
+   KeyShield Bearer token. They do not get `sk-or-`.
+4. **Call the free model** — send `nvidia/nemotron-3-ultra-550b-a55b:free`
+   on OpenRouter’s OpenAI-compatible chat path
+   `api/v1/chat/completions`.
+
+KeyShield cannot inject into a binary that never calls the proxy.
+The framework has to use this base URL (or the Python SDK `proxy()`).
+
+### Point any OpenAI-compatible client at it
+
+```bash
+export KS_TOKEN="<session from Developer, or agent-login>"
+export KS_BASE="http://localhost:8001"   # or https://keyshield-production.up.railway.app
+
+curl -sS -X POST "$KS_BASE/vproxy/openrouter/api/v1/chat/completions" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nvidia/nemotron-3-ultra-550b-a55b:free","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'
+```
+
+```python
+import os
+from openai import OpenAI
+
+# api_key here is the KeyShield session — not the OpenRouter secret.
+# /vproxy injects sk-or-… from the vault for this user.
+client = OpenAI(
+    base_url=os.environ["KS_BASE"].rstrip("/") + "/vproxy/openrouter/api/v1",
+    api_key=os.environ["KS_TOKEN"],
+)
+print(client.chat.completions.create(
+    model="nvidia/nemotron-3-ultra-550b-a55b:free",
+    messages=[{"role": "user", "content": "ping"}],
+    max_tokens=64,
+).choices[0].message.content)
+```
+
+Same shape for LangChain `ChatOpenAI`, Vercel AI SDK `createOpenAI`,
+or any other client with `baseURL` + Bearer. Human side: Face ID on
+[app.ks.aileena.xyz](https://app.ks.aileena.xyz). Agent side: register
+once ([How agents register](#how-agents-register)), then this URL.
+
+Dashboard **Docs** already shows the curl/Python snippets. **Home**
+paste-detects `sk-or-…`. **Payments → Connect** wires Meter / vproxy /
+Vault to the same key.
 
 ---
 
