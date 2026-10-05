@@ -88,7 +88,18 @@ const MainContent: React.FC = () => {
 
   const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
 
-  if (!isAuthenticated) return <AuthScreen onAuthenticated={() => setIsAuthenticated(true)} />;
+  if (!isAuthenticated) {
+    return (
+      <AuthScreen
+        onAuthenticated={() => {
+          if (sessionStorage.getItem('ks_landing') === 'activity-mpp') {
+            setSection('activity');
+          }
+          setIsAuthenticated(true);
+        }}
+      />
+    );
+  }
 
   const fullAddr = publicKey?.toBase58() ?? getWalletAddress() ?? '';
   const config = SECTION_CONFIG[section];
