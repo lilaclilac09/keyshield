@@ -10,6 +10,7 @@
     "src/web"
   ],
   "scripts": {
+    "build": "npm run build --workspaces --if-present",
     "dev:web": "cd src/web && npm run dev",
     "dev:demo-next": "cd src/demo-next && npm run dev",
     "dev:worker": "npm run dev --workspace=@keyshield/sync-worker",
