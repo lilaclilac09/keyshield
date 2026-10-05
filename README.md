@@ -141,16 +141,15 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 
 ### Four-stage MPP harness
 
-These suites are first-class. Run them from the repo root. GitNexus
-MCP is not available in this environment, so impact analysis is skipped
-and is not a reason to leave the harness uncommitted.
+These suites are first-class. The matrix in [keyshield.md](keyshield.md)
+mirrors the implementations exactly. Run them from the repo root.
 
 | Stage | What it proves | Command | Files |
 |---|---|---|---|
-| 1 | Clock / tombstone / mint / underflow (host oracle; Mollusk needs `cargo-build-sbf`) | `npm run test:bankrun` + `npm run test:invariants` | `tests/bankrun_security.test.ts`, `src/programs/keyshield/tests/bankrun_invariants.rs` |
-| 2 | Proptest invariants A/B/C on `StreamModel` | `cargo test -p keyshield --test fuzz_invariants` | `tests/fuzz_invariants.rs` |
-| 3 | SSE mid-stream drop, 502/504, empty 200, garbage JSON — meter only a verified prefix | `npm run test:fault` | `tests/proxy_fault_injection.test.ts`, `tests/proxy_fault_injection_driver.py` |
-| 4 | Devnet inference path: vault → grant → open → meter → settle (dry-run default; `LIVE_E2E=1` for real OpenRouter/Ollama) | `npm run live:e2e:dry` | `scripts/live_e2e_run.ts`, `scripts/fixtures/devnet-wallets.json` |
+| 1 | Deterministic slot warp, clawback only after the dispute window, closed-account resurrection blocked, concurrent settle cannot double-claim | `npm run test:bankrun` | `tests/bankrun_security.test.ts` (host oracle: `src/programs/keyshield/tests/bankrun_invariants.rs`) |
+| 2 | Arbitrary instruction sequences: spending bounds, escrow = deposit − spent, unauthorized / revoked / unverified signer paths leave state unchanged | `cargo test -p keyshield --test fuzz_invariants` | `tests/fuzz_invariants.rs` |
+| 3 | Upstream mock: 502/504, dropped TCP, empty 200, truncated JSON — no fulfillment proof, no `mpp_settle`, escrow unmutated | `npm run test:fault` | `tests/proxy_fault_injection.test.ts`, `tests/proxy_fault_injection_driver.py` |
+| 4 | Devnet e2e: WebAuthn-PRF session token → proxy data plane → confirmed `OpenStream` / `MppSettle` (dry-run default; `LIVE_E2E=1` for real OpenRouter/Ollama) | `npm run live:e2e:dry` | `scripts/live_e2e_run.ts`, `scripts/fixtures/devnet-wallets.json` |
 
 ```bash
 npm run test:harness          # Stages 1 + 3 + 4 dry-run
@@ -158,6 +157,7 @@ npm run test:fault            # Stage 3 only
 npm run live:e2e:dry          # Stage 4 crypto + path check
 npm run live:e2e:setup        # gitignored wallets; YOU still add the inference key + USDC
 LIVE_E2E=1 npm run live:e2e   # Stage 4 live (OPENROUTER_API_KEY or ollama)
+npm run demo:record           # unattended ~2 minute take (mock + ks-proxy + clawback)
 ```
 
 Stage 3 does not sign `mpp_settle`. Stage 4 live first creates the
@@ -173,19 +173,44 @@ as instruction 0 so the program does not return 6114.
 |---|---|
 | App (vault + developer token) | https://app.ks.aileena.xyz |
 | Marketing | https://ks.aileena.xyz |
+| Record-demo harness | [`docs/DEMO_RECORDING_SCRIPT.md`](docs/DEMO_RECORDING_SCRIPT.md) · `npm run demo:record` |
+| YouTube cut | Publish the voiced take from `docs/DEMO_RECORDING_SCRIPT.md` and paste the `youtu.be` URL here — none is checked into the repo yet |
 
-## On-chain (Solana devnet)
+## On-chain verification (Solana Devnet)
 
-| What | Address |
-|---|---|
-| KeyShield program | [`41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet) |
-| MPP stream PDA | [`E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR`](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
-| USDC token account | [`6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH`](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet) |
+Reviewers can open these Explorer links with `?cluster=devnet` and confirm the program account is executable under BPFLoaderUpgradeable.
 
-**Verified transactions:**
-- [Open MPP payment stream](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) — stream opened, settle round-trip verified
+| What | Address / fact | Explorer |
+|---|---|---|
+| Program ID | `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` | [program](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet) |
+| Loader | `BPFLoaderUpgradeab1e11111111111111111111111` · `executable: true` | [loader](https://explorer.solana.com/address/BPFLoaderUpgradeab1e11111111111111111111111?cluster=devnet) |
+| ProgramData | `48Ji7Wmwe8DDQxnGpbBRs2ey9oGo2qwdxTEodhwJk2nx` | [program data](https://explorer.solana.com/address/48Ji7Wmwe8DDQxnGpbBRs2ey9oGo2qwdxTEodhwJk2nx?cluster=devnet) |
+| Upgrade authority | `74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY` | [authority](https://explorer.solana.com/address/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet) |
+| Universal vault PDA | `9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV` | [vault](https://explorer.solana.com/address/9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV?cluster=devnet) |
+| MPP stream PDA | `E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR` | [stream](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
+| Stream USDC ATA | `6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH` | [token account](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet) |
+| Devnet USDC mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | [mint](https://explorer.solana.com/address/4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU?cluster=devnet) |
 
-7 on-chain instructions: `CreateUniversalVault`, `GrantAgentAccess`, `RevokeAgentAccess`, `UpdateVaultConfig`, `OpenStream`, `MppSettle`, `CloseStream`.
+**Confirmed execution slots** (err = none):
+
+| Tx | Slot | What |
+|---|---|---|
+| [`t6B8V4Wg…GVEh`](https://explorer.solana.com/tx/t6B8V4WgF3DLWsmWpVaukoogvrsTxY8MtKnLXijYReAmKeoEgaQntoSy9Jd5ZYT8fJJzRzshVSrkHbT5tgyGVEh?cluster=devnet) | 507665661 | Stage 4 live meter + settle |
+| [`u99eN5uh…peyi`](https://explorer.solana.com/tx/u99eN5uhtTHrLBNiWCUzHLJgvj85cLnJ2Xhnhk57Zg7z7GHLDesyiEpGxKuGzP9RtNUQ9PHg2o7wwXUbwr9peyi?cluster=devnet) | 507665693 | Withdraw after settle |
+| [`678bqTSq…XTQc`](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) | 461386827 | Open MPP stream |
+
+Live payment surface on this program: `CreateUniversalVault`, `GrantAgentAccess`, `RevokeAgentAccess`, `UpdateVaultConfig`, `OpenStream` (ix 24), `MppSettle` (ix 26), `CloseStream`. Source also contains zk-vault ixs 40–43; they are **not** on this Devnet allocation until upgrade authority `74Xuc5…` extends ProgramData and swaps the buffer. Do not treat an `InvalidInstructionData` on ix 40 as a local-logic pass.
+
+## Failure modes and security boundaries
+
+| Boundary | What fails | Automated handling |
+|---|---|---|
+| **Settlement vs delivery desync** | Upstream HTTP 502/504 or a truncated SSE stream | `verify_fulfillment` refuses empty / error / short digests. No 32-byte artifact → no `mpp_settle`. Stage 3 asserts `settled=0`. |
+| **Slot-bounded escrow timeout** | Clock drift or a hung counterparty | `clawback_ready` waits `last_active + timeout` (default 2250 slots). After that, `ForceClawback` (ix 28) returns remaining escrow to the owner with no counterparty signature. Inside the window the ix returns 6115 (`DisputeWindowActive`). |
+| **Compute-unit ceiling** | Heap-heavy deserialization under load | Pinocchio handlers read `aps_offset` — no `String` / `Vec` unpack. Design ceiling is **&lt; 5,000 CUs** per hold / verify / settle transition. Cheap mint / PDA / tombstone checks run first. |
+| **Memory boundary** | Proxy panic or error unwind | Decrypted keys and `X-Upstream-API-Key` live only in the request task. They are never written to disk or logs; buffers drop when the socket closes (`Memory zeroized on socket close` in the record-demo). `secrecy` + `zeroize` is the intended crate-level hardening of that drop-on-close contract and is not a current `ks-proxy` Cargo dependency. |
+
+Full write-up: [keyshield.md](keyshield.md).
 
 ---
 
@@ -198,6 +223,8 @@ as instruction 0 so the program does not return 6114.
 | [AGENTS.md](AGENTS.md) | Agent integration design |
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
+| [keyshield.md](keyshield.md) | On-chain verification, failure boundaries, 4-stage test matrix |
+| [docs/DEMO_RECORDING_SCRIPT.md](docs/DEMO_RECORDING_SCRIPT.md) | 2-minute record-demo scenes + voiceover |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
 
 ---

@@ -27,6 +27,7 @@ Operator guides, get-started flows, and architecture notes.
 ## Repo root
 
 - [README.md](../README.md) — project overview + quick start
+- [keyshield.md](../keyshield.md) — on-chain verification, failure boundaries, 4-stage test matrix
 - [AGENTS.md](../AGENTS.md) — agent design guide
 - [DEVELOPMENT.md](../DEVELOPMENT.md) — dev environment setup
 
