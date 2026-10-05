@@ -71,6 +71,53 @@ def test_usage_stats_is_a_list(tmp_path, monkeypatch):
     assert isinstance(res.json()["stats"], list)
 
 
+def test_submit_grant_does_not_swallow_real_errors(tmp_path, monkeypatch):
+    import asyncio
+    import json
+
+    from nacl.signing import SigningKey
+
+    from src.backend.mpp import mpp_onchain, owner_keystore, owner_submit
+
+    wrap = tmp_path / "owner.wrap"
+    enc = tmp_path / "user.enc"
+    monkeypatch.setenv("KS_MPP_OWNER_WRAP_FILE", str(wrap))
+    monkeypatch.setenv("KS_MPP_OWNER_KEY_FILE", str(enc))
+    monkeypatch.delenv("KS_MPP_OWNER_WRAP_KEY", raising=False)
+    owner_keystore.ensure_wrap_key(wrap)
+    sk = SigningKey(bytes([3]) * 32)
+    src = tmp_path / "kp.json"
+    src.write_text(json.dumps(list(bytes(sk) + bytes(sk.verify_key))))
+    owner_keystore.import_solana_keypair_file(src, dest=enc)
+    monkeypatch.setattr(
+        mpp_onchain,
+        "load_mpp_config",
+        lambda: mpp_onchain.MppConfig(
+            secret_key=bytes(range(64)),
+            settler_pubkey=mpp_onchain._b58encode_pure(bytes([0x33]) * 32),
+            platform_usdc_ata=mpp_onchain._b58encode_pure(bytes([0x22]) * 32),
+            keyshield_program_id="11111111111111111111111111111111",
+            usdc_mint=mpp_onchain.USDC_MINT_MAINNET,
+            vault_pda="11111111111111111111111111111111",
+            rpc_url="http://127.0.0.1:8899",
+        ),
+    )
+
+    async def fake_exists(_rpc, _pk):
+        return True
+
+    async def boom(*_a, **_k):
+        raise mpp_onchain.MppSubmitError("InstructionError Custom 6037")
+
+    monkeypatch.setattr(mpp_onchain, "rpc_account_exists", fake_exists)
+    monkeypatch.setattr(owner_submit, "_send", boom)
+    try:
+        asyncio.run(owner_submit.submit_grant("11111111111111111111111111111112", 1000))
+        raise AssertionError("expected OwnerSubmitError")
+    except owner_submit.OwnerSubmitError as exc:
+        assert "grant failed" in str(exc)
+
+
 def test_settle_on_chain_autosigns_from_keystore(tmp_path, monkeypatch):
     from nacl.signing import SigningKey
     import json

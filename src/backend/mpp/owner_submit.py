@@ -19,6 +19,17 @@ class OwnerSubmitError(Exception):
     """Owner auto-sign could not build or submit the transaction."""
 
 
+def _already_on_chain(msg: str) -> bool:
+    return bool(
+        msg
+        and (
+            "already in use" in msg.lower()
+            or "already been processed" in msg.lower()
+            or "already exists" in msg.lower()
+        )
+    )
+
+
 def _require_owner() -> owner_keystore.OwnerKey:
     owner = owner_keystore.load_owner()
     if owner is None:
@@ -103,13 +114,16 @@ async def submit_grant(agent_pubkey: str, max_spend_micro_usdc: int = 0) -> dict
     try:
         sig = await _send(config, owner, [ix])
     except mpp_onchain.MppSubmitError as exc:
-        logger.info("autosign grant skipped: %s", exc)
-        return {
-            "vaultPda": vault_pda,
-            "agentPubkey": agent_pubkey,
-            "skipped": True,
-            "ownerPubkey": owner.pubkey_b58,
-        }
+        msg = str(exc)
+        if _already_on_chain(msg):
+            logger.info("autosign grant already on chain")
+            return {
+                "vaultPda": vault_pda,
+                "agentPubkey": agent_pubkey,
+                "skipped": True,
+                "ownerPubkey": owner.pubkey_b58,
+            }
+        raise OwnerSubmitError(f"grant failed: {exc}") from exc
     return {
         "vaultPda": vault_pda,
         "agentPubkey": agent_pubkey,
