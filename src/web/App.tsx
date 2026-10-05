@@ -5,6 +5,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
 import { SolanaProvider } from './components/SolanaProvider';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useVaults } from './hooks/useVaults';
 import { getWalletAddress, apiFetch, clearAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
 import { syncExtensionVaultKey } from './lib/vault-key';
@@ -59,6 +60,7 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
 
 const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
+  const { setVisible: setWalletModalVisible } = useWalletModal();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
   const [section, setSection] = useState<Section>(() => (
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
@@ -107,6 +109,9 @@ const MainContent: React.FC = () => {
 
   useEffect(() => {
     refreshHome();
+    const onAuth = () => refreshHome();
+    window.addEventListener('ks-auth-changed', onAuth);
+    return () => window.removeEventListener('ks-auth-changed', onAuth);
   }, [refreshHome]);
 
   const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
@@ -115,11 +120,8 @@ const MainContent: React.FC = () => {
     return (
       <AuthScreen
         onAuthenticated={() => {
-          if (sessionStorage.getItem('ks_landing') === 'activity-mpp') {
-            setSection('activity');
-          } else {
-            setSection('home');
-          }
+          const landing = sessionStorage.getItem('ks_landing');
+          setSection(landing === 'activity-mpp' ? 'activity' : 'home');
           setIsAuthenticated(true);
         }}
       />
@@ -137,7 +139,7 @@ const MainContent: React.FC = () => {
       <div className="flex flex-1 min-h-0">
         <Sidebar items={NAV} active={section} onNavigate={(id: string) => setSection(id as Section)} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
-          <Header title={config.title} subtitle={config.subtitle} onSearch={() => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
+          <Header title={config.title} subtitle={config.subtitle} onSearch={section === 'home' ? undefined : () => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
               {section === 'home' && (
@@ -147,6 +149,7 @@ const MainContent: React.FC = () => {
                   error={homeError}
                   homeMs={homeMs}
                   walletConnected={!!fullAddr}
+                  onConnectWallet={() => setWalletModalVisible(true)}
                   onRefresh={() => { refreshHome(); refresh(); }}
                   onUnlock={unlock}
                   unlocking={vaultLoading}

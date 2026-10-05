@@ -4,6 +4,9 @@ import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
 import { callKeychain, detectUpstream, extractDetectedKey, storeDetectedKey } from '../../lib/keychain';
+import { getPasskeyTrust } from '../../lib/auth';
+import { isVaultUnlocked } from '../../lib/vault-session';
+import { ensureVerified } from '../../lib/zk-verify';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -23,6 +26,9 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
     if (!raw) { setMsg('Paste a key first'); return; }
     setBusy(true); setMsg(null);
     try {
+      if (!isVaultUnlocked() && getPasskeyTrust()) {
+        await ensureVerified();
+      }
       const stored = await storeDetectedKey(raw, detected.upstream ?? undefined);
       onStored?.();
       if (alsoCall && stored.upstream) {

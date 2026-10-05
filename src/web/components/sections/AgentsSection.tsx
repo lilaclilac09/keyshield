@@ -5,6 +5,8 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Input } from '../ui/Input';
 import { apiFetch } from '../../lib/auth';
+import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
+import { ensureVerified } from '../../lib/zk-verify';
 
 interface AgentEntry { id: number; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null; }
 
@@ -50,8 +52,20 @@ export const AgentsSection: React.FC = () => {
       const d = await r.json();
       if (!r.ok) { setErr(d.detail ?? 'Registration failed'); return; }
       setNewPubkey(pubB58);
-      setNewPrivkey(_toB64(seed)); // show once so user can save it
-      setOk(`Agent "${d.name}" registered`);
+      const seedB64 = _toB64(seed);
+      setNewPrivkey(seedB64);
+      const slug = `agent__${newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
+      let vaultNote = 'Copy the seed now — you keep it. Server only has the pubkey.';
+      const verified = isVaultUnlocked() ? { ok: true } : await ensureVerified();
+      if (verified.ok) {
+        try {
+          await addEntry(slug, seedB64);
+          vaultNote = 'Private seed saved on this device. Passkey verifies when you retrieve it. Server never sees it.';
+        } catch {
+          /* show the one-time copy box instead */
+        }
+      }
+      setOk(`Agent "${d.name}" registered. ${vaultNote}`);
       setNewName('');
       load();
     } catch { setErr('Network error'); } finally { setRegistering(false); }
@@ -118,7 +132,7 @@ export const AgentsSection: React.FC = () => {
           <div className="mb-4 rounded-lg border border-amber-800/60 bg-amber-950/20 p-3">
             <div className="flex items-center gap-1.5 mb-2">
               <AlertTriangle size={12} className="text-amber-400 shrink-0" />
-              <span className="text-[11px] text-amber-300 font-medium">Save your private key now — it will not be shown again</span>
+              <span className="text-[11px] text-amber-300 font-medium">You keep this seed — KeyShield does not store it on the server. Copy a backup, then passkey unlocks the device copy.</span>
             </div>
             <div className="flex items-start gap-2">
               <code className="text-[11px] font-mono text-amber-200 break-all flex-1">{newPrivkey}</code>

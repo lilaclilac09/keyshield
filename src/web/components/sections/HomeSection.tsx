@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { getPasskeyTrust } from '../../lib/auth';
 import { isVaultUnlocked } from '../../lib/vault-session';
+import { ensureVerified } from '../../lib/zk-verify';
 import {
   callKeychain,
   detectUpstream,
@@ -19,6 +20,7 @@ interface Props {
   walletConnected: boolean;
   passkeyUnlocked?: boolean;
   onRefresh: () => void;
+  onConnectWallet?: () => void;
   onUnlock?: () => void;
   unlocking?: boolean;
   onGo: (section: string) => void;
@@ -40,7 +42,7 @@ const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, labe
 );
 
 export const HomeSection: React.FC<Props> = ({
-  home, loading, error, homeMs, walletConnected, onRefresh, onUnlock, unlocking, onGo,
+  home, loading, error, homeMs, walletConnected, onRefresh, onConnectWallet, onUnlock, unlocking, onGo,
 }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState<'save' | 'call' | string | null>(null);
@@ -76,6 +78,13 @@ export const HomeSection: React.FC<Props> = ({
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
     try {
+      if (!isVaultUnlocked() && getPasskeyTrust()) {
+        setMsg('Verifying with passkey…');
+        const verified = await ensureVerified();
+        if (!verified.ok && verified.detail && /PRF|passkey|Face ID|No passkey/i.test(verified.detail)) {
+          /* Server vault can still call; local decrypt skipped. */
+        }
+      }
       const result = await callKeychain(upstream);
       setLastCall(result);
       setOk(result.live);
@@ -99,7 +108,10 @@ export const HomeSection: React.FC<Props> = ({
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5">
           <p className="text-[15px] text-[#8a96c2]">SOL</p>
           <p className="text-[36px] font-bold tracking-tight text-white leading-none mt-2">{fmt(wallet?.sol)}</p>
-          <p className="text-[14px] text-[#5e6a91] mt-2">{walletConnected ? 'Connected wallet' : 'Connect wallet to load'}</p>
+          <p className="text-[15px] text-[#5e6a91] mt-2">{walletConnected ? 'Connected wallet' : 'Connect wallet to load'}</p>
+          {!walletConnected && onConnectWallet && (
+            <button type="button" onClick={onConnectWallet} className="mt-3 h-11 px-4 rounded-xl bg-white text-black text-[16px] font-semibold">Connect wallet</button>
+          )}
         </div>
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5">
           <p className="text-[15px] text-[#8a96c2]">USDC</p>
@@ -164,10 +176,12 @@ export const HomeSection: React.FC<Props> = ({
         )}
       </div>
 
-      <div className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
+      <details className="rounded-2xl border border-[#243365] bg-[#131c39] p-5">
+        <summary className="cursor-pointer text-[20px] font-semibold text-white">Paste a key · more</summary>
+        <div className="space-y-4 mt-4">
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">Paste → detect → one-click call</h3>
+          <h3 className="text-[18px] font-semibold text-white">Detect → save → one-click call</h3>
         </div>
         <p className="text-[15px] text-[#8a96c2]">
           Paste a key, or save one from the page via the extension. Agent passwords and private keys stay on your device — passkey / PRF verifies without the server seeing plaintext. Frameworks use <code className="text-white">/vproxy/…</code>.
@@ -201,7 +215,8 @@ export const HomeSection: React.FC<Props> = ({
             {lastCall.upstream} {lastCall.path} · {lastCall.latency_ms}ms · {lastCall.cache} · {lastCall.key_prefix}
           </p>
         )}
-      </div>
+        </div>
+      </details>
 
       <div>
         <h3 className="text-[20px] font-semibold text-white mb-3">More</h3>

@@ -37,7 +37,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       if (!out.token) throw new Error('demo session missing token');
       setToken(out.token);
       setWalletAddress(out.userId);
-      sessionStorage.setItem('ks_landing', 'activity-mpp');
+      sessionStorage.setItem('ks_landing', 'home');
       if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
       notifyAuthChanged();
       onAuthenticated();
@@ -86,7 +86,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                     {demoLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                     <span className="text-[13px] font-semibold uppercase tracking-wider">{demoLoading ? 'Starting demo\u2026' : 'Start demo'}</span>
                   </button>
-                  <p className="text-[11px] text-[#5e6a91]">Owner keystore signs in. {demoModel ? `Meter uses ${demoModel}.` : 'Open Activity → MPP to open / meter / capture.'}</p>
+                  <p className="text-[13px] text-[#8a96c2]">Opens Home first — wallet balance, stored APIs, connection time. {demoModel ? `Meter uses ${demoModel}.` : ''}</p>
                   {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}
                 </div>
               )}
