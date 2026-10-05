@@ -9,6 +9,7 @@ import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTr
 import { getPrefs, setPrefs, type VaultPreferences } from '../../lib/preferences';
 import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
 import { PlanCatalog, type DeviceLevelCopy, type DeviceLevelId, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
+import { AuditRetentionSettings } from '../AuditRetentionSettings';
 
 const DELETE_CONFIRMATION = 'DELETE my account';
 
