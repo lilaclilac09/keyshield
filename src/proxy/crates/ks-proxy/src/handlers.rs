@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use axum::{
-    body::{Body, to_bytes as body_to_bytes},
+    body::{to_bytes as body_to_bytes, Body},
     extract::{Path, Request, State},
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
@@ -152,7 +152,12 @@ async fn proxy_inner(
     };
 
     // 6. x402 check on platform key.
-    if key_type == KeyType::Platform {
+    // An open MPP stream is already the payment channel: skip the balance
+    // HTTP call and the 402 so the client does not pay-and-retry. Usage is
+    // debited after the response by the record hook below.
+    let paid_by_stream =
+        key_type == KeyType::Platform && mpp_stream_open(&state, &session.user_id, &headers);
+    if key_type == KeyType::Platform && !paid_by_stream {
         let balance = state.bridge.balance(&session.user_id).await.unwrap_or_else(|err| {
             // Per spec 07: bridge failure → treat as 0 → 402. Logged warn.
             tracing::warn!(error = %err, user = %session.user_id, "balance bridge failed; treating as 0");
@@ -204,8 +209,7 @@ async fn proxy_inner(
     //    raw `transfer-encoding: chunked` / `connection` copy makes hyper
     //    abort the HTTP/1 write (curl 52 empty reply) on SSE upstreams.
     let mut out_headers = retain_end_to_end_headers(&resp.headers);
-    let cache_status =
-        cache_status_from(&out_headers).unwrap_or(CacheStatus::Miss);
+    let cache_status = cache_status_from(&out_headers).unwrap_or(CacheStatus::Miss);
     out_headers.insert(
         HeaderName::from_static("x-ks-cache"),
         HeaderValue::from_static(cache_status.as_str()),
@@ -214,6 +218,12 @@ async fn proxy_inner(
         HeaderName::from_static("x-ks-key-type"),
         HeaderValue::from_static(key_type.as_str()),
     );
+    if paid_by_stream {
+        out_headers.insert(
+            HeaderName::from_static("x-ks-pay"),
+            HeaderValue::from_static("mpp"),
+        );
+    }
 
     // 9. Fire-and-forget usage log.
     let (tok_in, tok_out, cost) = extract_token_usage(&upstream_str, &resp.body);
@@ -239,7 +249,9 @@ async fn proxy_inner(
         if let Some(sid_str) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) {
             if let Ok(stream_id) = sid_str.parse::<u64>() {
                 let tokens = tok_in.saturating_add(tok_out) as u32;
-                state.bridge.record_mpp_call(stream_id, token.to_string(), tokens);
+                state
+                    .bridge
+                    .record_mpp_call(stream_id, token.to_string(), tokens);
             }
         }
     }
@@ -277,11 +289,7 @@ struct BatchRequest {
 /// `POST /manage/batch` — fan out up to 20 items concurrently. Each item's
 /// shape matches the single-call contract; 21+ items → 400. Per-item bad
 /// upstream / oversize → `{"error": ...}` so partial success is observable.
-pub async fn batch(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+pub async fn batch(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     let token = match bearer_token(&headers) {
         Some(t) => t,
         None => {
@@ -394,7 +402,11 @@ async fn run_batch_item(
         Err(_) => return json!({"error": format!("invalid method: {}", item.method)}),
     };
 
-    let path_for_call = if item.path.is_empty() { "/".to_string() } else { item.path.clone() };
+    let path_for_call = if item.path.is_empty() {
+        "/".to_string()
+    } else {
+        item.path.clone()
+    };
 
     let body_bytes = Bytes::from(raw);
     let upstream_resp = state
@@ -451,7 +463,10 @@ const HOP_BY_HOP: &[&str] = &[
 pub fn retain_end_to_end_headers(src: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in src.iter() {
-        if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(name.as_str())) {
+        if HOP_BY_HOP
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(name.as_str()))
+        {
             continue;
         }
         out.append(name.clone(), value.clone());
@@ -508,7 +523,10 @@ pub async fn fallthrough(State(state): State<AppState>, req: Request) -> Respons
         if HOP_BY_HOP.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
             continue;
         }
-        if STRIP_FROM_INBOUND.iter().any(|h| h.eq_ignore_ascii_case(lname)) {
+        if STRIP_FROM_INBOUND
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(lname))
+        {
             continue;
         }
         // reqwest accepts http::HeaderName/HeaderValue directly.
@@ -762,6 +780,18 @@ fn cache_status_from(headers: &HeaderMap) -> Option<CacheStatus> {
         "MISS" | "miss" => Some(CacheStatus::Miss),
         _ => None,
     }
+}
+
+/// `X-Mpp-Stream-Id` names an open stream owned by this user.
+/// Header is absent, unparseable, or the stream is not open → false.
+fn mpp_stream_open(state: &AppState, user_id: &str, headers: &HeaderMap) -> bool {
+    let Some(raw) = headers.get("x-mpp-stream-id").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    let Ok(stream_id) = raw.parse::<u64>() else {
+        return false;
+    };
+    crate::mpp::stream_is_open(&state.open_streams, &state.mpp_db_path, user_id, stream_id)
 }
 
 /// `_x402_body(upstream, resource_url)` — verbatim from server.py:355-375.

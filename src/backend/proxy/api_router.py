@@ -84,6 +84,27 @@ PROVIDERS: dict[str, dict] = {
         "base": os.getenv("KS_VLLM_BASE", "http://127.0.0.1:8000").rstrip("/"),
         "auth": "bearer",
     },
+    # Spec 04 / AGENTS.md: Rust ks-proxy already knows these; the Python
+    # fallthrough must too or `/proxy/0x|titan|pyth` returns unknown provider.
+    "0x": {
+        "base": "https://api.0x.org",
+        "auth": "header",
+        "auth_header": "0x-api-key",
+        "inject_content_type": False,
+    },
+    "titan": {
+        "base": "https://rpc.titanbuilder.xyz",
+        "auth": "bearer",
+        "auth_optional": True,
+        "inject_content_type": False,
+    },
+    "pyth": {
+        "base": "https://hermes.pyth.network",
+        "auth": "query",
+        "auth_param": "api_key",
+        "auth_optional": True,
+        "inject_content_type": False,
+    },
 }
 
 # Test-only knob used by `proxy-rs/tests/oracle_diff/`. When set,
@@ -176,15 +197,20 @@ def _build_url_and_headers(provider_name: str, path: str, api_key: str) -> tuple
     cfg = PROVIDERS[provider_name]
     headers: dict[str, str] = dict(cfg.get("extra_headers", {}))
 
+    optional = bool(cfg.get("auth_optional")) and not api_key
     if cfg["auth"] == "query":
-        sep = "&" if "?" in path else "?"
-        url = f"{path}{sep}{cfg['auth_param']}={api_key}"
+        url = path
+        if not optional:
+            sep = "&" if "?" in path else "?"
+            url = f"{path}{sep}{cfg['auth_param']}={api_key}"
     elif cfg["auth"] == "bearer":
         url = path
-        headers["authorization"] = f"Bearer {api_key}"
+        if not optional:
+            headers["authorization"] = f"Bearer {api_key}"
     elif cfg["auth"] == "header":
         url = path
-        headers[cfg["auth_header"]] = api_key
+        if not optional:
+            headers[cfg["auth_header"]] = api_key
     else:
         url = path
 
@@ -280,7 +306,8 @@ async def call_rest(
     url, headers = _build_url_and_headers(provider_name, path, api_key)
     if extra_headers:
         headers.update(extra_headers)
-    headers["content-type"] = "application/json"
+    if PROVIDERS[provider_name].get("inject_content_type", True):
+        headers["content-type"] = "application/json"
 
     async def _fire(extra: dict[str, str]) -> tuple[int, bytes, dict]:
         resp = await _CLIENTS[provider_name].request(
@@ -335,7 +362,8 @@ async def call_rest_streaming(
     url, headers = _build_url_and_headers(provider_name, path, api_key)
     if extra_headers:
         headers.update(extra_headers)
-    headers["content-type"] = "application/json"
+    if PROVIDERS[provider_name].get("inject_content_type", True):
+        headers["content-type"] = "application/json"
     if interceptor is not None:
         # Payment retry wraps a buffered call. A streamed debit still
         # goes through the same header injection when the interceptor

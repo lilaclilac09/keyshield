@@ -19,6 +19,7 @@
 11. [Running the Trading Bot](#11-running-the-trading-bot)
 12. [RPC Guide — Helius for Solana](#12-rpc-guide)
 13. [Architecture Decision Record](#13-architecture-decisions)
+14. [Cursor Cloud specific instructions](#cursor-cloud-specific-instructions)
 
 ---
 
@@ -893,3 +894,44 @@ This project is indexed by GitNexus as **keyshield** (9484 symbols, 20837 relati
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Cursor Cloud specific instructions
+
+The local product is three processes. Canonical launch: `node dev.cjs`
+(see `DEVELOPMENT.md`).
+
+| Process | Port |
+|---|---|
+| Python control plane | `:8001` |
+| Rust proxy (`ks-proxy`) | `:8000` |
+| Vite dashboard | `:5173` |
+
+These notes are only the gaps on a fresh Cloud Agent VM:
+
+- If `cargo` cannot parse the proxy workspace, install a current stable
+  toolchain (`rustup toolchain install stable && rustup default stable`)
+  before `cargo build --bin ks-proxy --manifest-path src/proxy/Cargo.toml`.
+- `python3-venv` may be missing. `sudo apt-get install -y python3.12-venv`,
+  then `python3 -m venv .venv` and
+  `.venv/bin/pip install -r src/backend/requirements.txt pytest pytest-asyncio`.
+  Put `.venv/bin` first on `PATH`.
+- Root `npm ci` installs workspaces. If `node dev.cjs` cannot find Vite,
+  run `cd src/web && npm install` (or start with
+  `npx vite --host 0.0.0.0 --port 5173` from `src/web`).
+- Manual backend: from the repo root,
+  `python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001`.
+- `ks-proxy` opens `KS_SESSION_DB` read-only and does not create the file.
+  Create `src/backend/sessions.db` with table `sessions`
+  (`token`, `user_id`, `enc_pass`, `expires_at`) before launch. From
+  `src/proxy`, set `KS_BIND=127.0.0.1:8000`,
+  `PYTHON_BACKEND_URL=http://127.0.0.1:8001`,
+  `KS_SESSION_DB=/workspace/src/backend/sessions.db`,
+  `KS_VAULT_DIR=/workspace/src/backend/vault`,
+  `KS_VAULT_DB_PATH=/workspace/src/backend/data/vault_shim.db`,
+  `KS_MPP_DB=/workspace/src/backend/data/mpp.db`.
+- Passkey login in Chrome needs `http://127.0.0.1:5173`, not `localhost`.
+  Wallet login is `GET /auth/wallet-challenge` then
+  `POST /auth/wallet-login` with an ed25519 signature.
+- Backend suite: `pytest src/backend/tests/`. `GET /health` returns
+  `{"status":"ok","version":"2.0"}`.
+

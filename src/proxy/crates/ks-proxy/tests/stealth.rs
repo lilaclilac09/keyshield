@@ -197,11 +197,9 @@ impl Harness {
         Mock::given(method("GET"))
             .and(path_regex(r"/_internal/balance/.*"))
             .and(header("X-Internal-Secret", "test-secret"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "balance_usd": 5.0_f64,
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "balance_usd": 5.0_f64,
+            })))
             .mount(&python_mock)
             .await;
 
@@ -258,6 +256,8 @@ impl Harness {
             stealth: stealth_on,
             vault_db_path,
             helius,
+            mpp_db_path: vault_db_dir.path().join("mpp.db"),
+            open_streams: Arc::new(TtlCache::new()),
         };
         std::mem::forget(vault_db_dir);
 
