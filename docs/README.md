@@ -26,7 +26,7 @@ Operator guides, get-started flows, and architecture notes.
 | [REVIEWER_QUICKSTART.md](REVIEWER_QUICKSTART.md) | Re-run matrix + Stage 4 gate |
 | [EVIDENCE_INDEX.md](EVIDENCE_INDEX.md) | Artifact IDs and verdicts |
 | [PROJECT_RESUME.md](PROJECT_RESUME.md) | Submission summary |
-| [BUILDING_KEYSHIELD.md](BUILDING_KEYSHIELD.md) | Spec-first essay: e2e journey, goal, lessons learnt |
+| [BUILDING_KEYSHIELD.md](BUILDING_KEYSHIELD.md) | Spec-first essay; e2e journey, goal, and lessons at the bottom |
 | [STRESS_TEST_PLAN.md](STRESS_TEST_PLAN.md) / [STRESS_TEST_RESULTS.md](STRESS_TEST_RESULTS.md) | Bounded local stress |
 | [EXTENSION.md](EXTENSION.md) | Browser extension build + install |
 | [OPERATOR.md](OPERATOR.md) | Operator runbook |

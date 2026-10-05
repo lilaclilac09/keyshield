@@ -4,10 +4,7 @@ Companion to [README.md](README.md). This file is the reviewer checklist:
 what is live on Devnet, which failures the program and proxy must refuse,
 and which test file proves each claim. It is **not** a second product
 spec — architecture still lives in [AGENTS.md](AGENTS.md) and
-[docs/architecture/](docs/architecture/). The spec-first essay (journey,
-goal, lessons) is [docs/BUILDING_KEYSHIELD.md](docs/BUILDING_KEYSHIELD.md).
-The Stage 4 script that encodes that journey is
-[`scripts/live_e2e_run.ts`](scripts/live_e2e_run.ts).
+[docs/architecture/](docs/architecture/).
 
 ---
 
@@ -118,30 +115,6 @@ unwind:
 
 ---
 
-## Stage 4 journey and goal
-
-**Goal.** Prove the spec on **Solana Devnet USDC** (not a second chain):
-a session token (never a raw key) hits the proxy, fulfillment yields a
-32-byte artifact, `MppSettle` (ix 26) debits `tokens × price`. A 502 /
-empty / truncated body must not settle. Dry-run is the merge gate.
-`LIVE_E2E=1` spends operator USDC and is opt-in.
-
-**On-chain order.** `CreateUniversalVault` (10) → Session Grant
-`GrantAgentAccess` (20) → `OpenStream` (24) → meter → `MppSettle` (26)
-→ close / withdraw.
-
-**Journey in [`scripts/live_e2e_run.ts`](scripts/live_e2e_run.ts):**
-
-0. Fixtures + TS/Python sha256, HMAC, and settlement-binding parity.
-1. Vault + `PAYMENT_ENABLED` + grant; open a 5 USDC stream (row + ix 24).
-2. Wallet-login → `POST /proxy/<provider>/...` (`Bearer ksv2_…`).
-3. SSE; read `x-ks-mpp-meter` / tokens.
-4. Artifact hash + session HMAC → capture → `mpp_settle`.
-5. Assert `spent_total == tokens_used * price_per_token`.
-6. Close; remaining USDC to the client ATA (or conserved in the stream ATA).
-
-Tempo TIP-1034 vouchers are not this journey.
-
 ## Four-stage test suite
 
 The matrix below is the implementation, not a wishlist. Commands run
@@ -166,41 +139,6 @@ npm run demo:record:fast      # same, CI pace
 
 `npm run test:harness` is the merge gate for Stages 1, 3, and 4
 dry-run. Stage 2 is in `test:invariants` because it is a cargo test.
-
----
-
-## Lessons learnt
-
-1. **Spec is the contract.** Token format, ciphertext-only storage, and
-   immediate revocation live in `SPEC.md`. Features that cannot keep
-   the five invariants do not ship.
-2. **Language follows blast radius.** Rust on inject-once. Python on
-   the SDK and cold control plane. TypeScript on vault UI + Chrome
-   extension.
-3. **Do not publish unmeasured latency.** Two-tier cache and
-   single-flight are real. “50–80ms” is not a product claim until a
-   named environment is measured.
-4. **Read the discriminator.** Explorer captions have labeled OpenStream
-   (24) as MppSettle (26). Confirmation is not the ix.
-5. **No fulfillment, no settle.** Stage 3 exists because 502 / empty /
-   garbage must leave escrow unmutated.
-6. **Solana USDC MPP is core settlement.** Universal Vault, Session
-   Grant, OpenStream, MppSettle. Cross-environment proxy is forwarding.
-   Tempo wallet vouchers are not a live product surface.
-7. **Install hints belong on the front page.** Chrome load-unpacked
-   (`src/extension`) on login and Home, not Docs-only. No Web Store
-   listing yet. Firefox is not preferred.
-8. **Two meters.** Subscription = device seats. PAYG = agent calls.
-9. **Dry-run is the gate.** Live Devnet is a spend. Do not treat a
-   historical signature as a newly completed e2e.
-10. **Stacked drafts look like clones.** GitHub `MERGEABLE` is vs the
-    stacked base, not vs `main`. Land the unique bit once.
-11. **OpenRouter `:free` still needs the user’s `sk-or-` key.** Not a
-    public unauthenticated proxy.
-12. **Inspect before patch.** Smallest diff. Missing a check is
-    reported, not implied.
-
-Full narrative: [docs/BUILDING_KEYSHIELD.md](docs/BUILDING_KEYSHIELD.md).
 
 ---
 
@@ -234,8 +172,79 @@ Record-demo components:
 | [docs/DEVNET.md](docs/DEVNET.md) | Operator deploy / upgrade / e2e |
 | [AGENTS.md](AGENTS.md) | Agent wiring into the proxy |
 | [SPEC.md](SPEC.md) | Protocol primitives |
-| [docs/BUILDING_KEYSHIELD.md](docs/BUILDING_KEYSHIELD.md) | Spec-first essay: e2e journey, goal, lessons |
 | [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md) | Artifact IDs, checksums, verified vs claimed |
 | [docs/REVIEWER_QUICKSTART.md](docs/REVIEWER_QUICKSTART.md) | Re-run commands + Stage 4 approval gate |
 | [docs/STRESS_TEST_PLAN.md](docs/STRESS_TEST_PLAN.md) / [docs/STRESS_TEST_RESULTS.md](docs/STRESS_TEST_RESULTS.md) | Bounded local stress |
 | [docs/PROJECT_RESUME.md](docs/PROJECT_RESUME.md) | Submission summary |
+| [docs/BUILDING_KEYSHIELD.md](docs/BUILDING_KEYSHIELD.md) | Spec-first essay (profile `keyshield.md`) |
+
+---
+
+## E2E test journey and goal
+
+Spec-driven script: [`scripts/live_e2e_run.ts`](scripts/live_e2e_run.ts).
+Default `npm run live:e2e:dry`. Live spend is `LIVE_E2E=1`.
+
+**Goal.** Prove the spec on **Solana Devnet USDC**, not a second chain: a
+session token (never a raw key) reaches the proxy, fulfillment produces a
+**32-byte** artifact, then `MppSettle` (ix 26) debits `tokens × price`.
+A 502, empty 200, or truncated SSE must not settle.
+
+**On-chain order.** `CreateUniversalVault` (ix 10) → Session Grant
+`GrantAgentAccess` (ix 20) → `OpenStream` (ix 24) → meter →
+`MppSettle` (ix 26) → close / withdraw.
+
+**Journey.**
+
+| Stage | Command | What it proves |
+|---|---|---|
+| 1 | `npm run test:bankrun` | Slot warp, clawback 6115, tombstone, no double-claim |
+| 2 | `cargo test -p keyshield --test fuzz_invariants` | Escrow = deposit − spent; spent ≤ cap |
+| 3 | `npm run test:fault` | 502 / empty / garbage → no `mpp_settle` |
+| 4 dry | `npm run live:e2e:dry` | Path + TS/Python sha256, HMAC, binding parity |
+| 4 live | `LIVE_E2E=1 npm run live:e2e` | One inference through the proxy, then OpenStream / MppSettle |
+
+Stage 4 steps in the script:
+
+0. Fixtures + TS/Python crypto parity.
+1. Vault + `PAYMENT_ENABLED` + grant; open a 5 USDC stream (row + ix 24).
+2. Wallet-login → `POST /proxy/<provider>/...` (`Bearer ksv2_…`).
+3. SSE; read `x-ks-mpp-meter` / tokens.
+4. Artifact hash + session HMAC → capture → `mpp_settle`.
+5. Assert `spent_total == tokens_used * price_per_token`.
+6. Close; remaining USDC to the client ATA (or conserved in the stream ATA).
+
+Tempo TIP-1034 wallet vouchers are not this journey. Cross-environment
+proxy (`/proxy`, `/vproxy`) is forwarding, not a second settlement chain.
+
+---
+
+## Lessons learnt
+
+1. **The spec is the contract.** Token format, ciphertext-only storage, and
+   immediate revocation live in `SPEC.md`. Features that cannot keep the
+   five invariants do not ship.
+2. **Language follows blast radius.** Rust on inject-once. Python on the
+   SDK and cold control plane. TypeScript on vault UI + Chrome extension.
+3. **Do not publish unmeasured latency.** Two-tier cache and single-flight
+   are real. “50–80ms” is not a product claim until a named environment
+   is measured.
+4. **Read the discriminator.** Explorer captions have labeled OpenStream
+   (24) as MppSettle (26). Confirmation is not the ix.
+5. **No fulfillment, no settle.** Stage 3 exists because 502 / empty /
+   garbage must leave escrow unmutated.
+6. **Solana USDC MPP is core settlement.** Universal Vault, Session Grant,
+   OpenStream, MppSettle. Tempo wallet vouchers are not a live product
+   surface.
+7. **Install hints belong on the front page.** Chrome load-unpacked
+   (`src/extension`) on login and Home, not Docs-only. No Web Store
+   listing yet. Firefox is not preferred.
+8. **Two meters.** Subscription = device seats. PAYG = agent calls.
+9. **Dry-run is the gate.** Live Devnet is a spend. A historical signature
+   is not a newly completed e2e.
+10. **Stacked drafts look like clones.** GitHub `MERGEABLE` is vs the
+    stacked base, not vs `main`. Land the unique bit once.
+11. **OpenRouter `:free` still needs the user’s `sk-or-` key.** Not a
+    public unauthenticated proxy.
+12. **Inspect before patch.** Smallest diff. Missing a check is reported,
+    not implied.
