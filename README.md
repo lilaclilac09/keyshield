@@ -5,7 +5,11 @@
 <h1 align="center">KeyShield</h1>
 
 <p align="center">
-  <strong>A non-custodial session-key sandbox for agent commerce.</strong><br/>
+  <strong>your API iCloud Keychain</strong><br/>
+  Keep API credentials in your vault and give agents controlled access.<br/>
+  <em>Product analogy — not an Apple product, not iCloud integration, not a claim of Apple hardware.</em>
+</p>
+<p align="center">
   Store keys once. Agents hold a session token, never the raw secret. Calls settle on Solana after fulfillment proves out.
 </p>
 
@@ -27,14 +31,14 @@
 </p>
 
 <p align="center">
-  <code>10x smoother experience</code> · <code>10x more secure self-custody vault</code> · <code>10x faster API calls</code>
+  <code>self-custody vault</code> · <code>session tokens for agents</code> · <code>low latency is a target, not a published SLA</code>
 </p>
 
 ---
 
-You already collect passwords in iCloud Keychain. **What if you could do the same with API keys?** Store them once, securely. Whenever you're building — just plug in our vault. The API calls will be accelerated. That's it.
+KeyShield is **your API iCloud Keychain**: store provider credentials in a vault you control, then give agents a session token instead of the raw `sk-` / `gsk_` key. That is a product analogy. It is not Apple Keychain, not iCloud sync, and not an Apple affiliation.
 
-Dashboard for humans. SDK & CLI for agents. Same vault underneath.
+Dashboard for humans. SDK & CLI for agents. Same vault underneath. Extremely low latency is the engineering target; do not publish “instant”, “under 50ms”, or “50–80ms” until the named environment is measured.
 
 ### Business scope
 
@@ -265,9 +269,9 @@ Full endpoint list: [docs/API.md](docs/API.md). Design notes:
 
 | | What you get |
 |---|---|
-| **10x smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks it up instantly. No more `.env` copy-paste loops. |
-| **10x more secure** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same zero-knowledge model as iCloud Keychain, built for API secrets. |
-| **10x faster calls** | Rust proxy with two-tier cache (memory + disk) and single-flight dedup. 50 identical `getBalance` calls hit the network once. Hot-path Solana RPCs land in the 50–80ms band without changing your client code. |
+| **Smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks up the new ciphertext. No more `.env` copy-paste loops. |
+| **Self-custody** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same *kind* of zero-knowledge storage as a password manager, built for API secrets (analogy, not Apple). |
+| **Faster when cached** | Rust proxy has a two-tier cache (memory + disk) and single-flight dedup: 50 identical `getBalance` calls hit the network once. That is the design. **Latency numbers are an engineering target.** A 2026-10-05 loopback mock audit of Python `/proxy` (0 ms fake upstream, concurrency 1) measured ~13 ms p50 end-to-end including usage logging — not production WAN, not a real model, not the Rust Helius cache. Do not quote 50–80 ms as a product claim until that path is measured in a named environment. |
 
 ### Architecture
 
@@ -276,8 +280,8 @@ The human (or the agent's operator) encrypts provider keys on-device
 (WebAuthn-PRF → HKDF → AES-256-GCM). The Cloudflare sync-worker stores
 ciphertext only. At request time the client decrypts locally, the
 Python proxy injects `X-Upstream-API-Key` once, and the key is never
-persisted. The agent process holds a session token (`ksv2_…`), not
-`sk-` / `gsk_` material.
+persisted. The agent process holds a session token (HMAC `payload.sig`;
+demo/harness tokens may look like `ksv2_…`), not `sk-` / `gsk_` material.
 
 The on-chain program is **pinocchio**, not Anchor. Instruction handlers
 are `no_std`, read `aps_offset` instead of deserializing heap types,
@@ -304,7 +308,7 @@ hash cannot debit the Devnet escrow.
                     └──► Python proxy ──► upstream (OpenRouter / Ollama / vLLM / …)
                             │
                             ├── hold → verify artifact (32-byte sha256) → capture
-                            ├── Rust hot-path cache: 50–80ms Solana RPCs
+                            ├── Rust hot-path cache (Helius TTL; prod latency unmeasured)
                             └── pinocchio mpp_settle on Devnet USDC
 ```
 
@@ -335,7 +339,7 @@ open http://localhost:5173
 # 3. connect wallet → store a provider key → copy Developer token
 
 # 4. call an upstream via the proxy
-export KS_TOKEN="ksv2_..."
+export KS_TOKEN="<paste from Developer>"
 export KS_BASE="http://localhost:8001"
 
 curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
@@ -424,6 +428,17 @@ as instruction 0 so the program does not return 6114.
 | Marketing | https://ks.aileena.xyz |
 | Record-demo harness | [`docs/DEMO_RECORDING_SCRIPT.md`](docs/DEMO_RECORDING_SCRIPT.md) · `npm run demo:record` |
 | YouTube cut | Publish the voiced take from `docs/DEMO_RECORDING_SCRIPT.md` and paste the `youtu.be` URL here — none is checked into the repo yet |
+
+**What is live vs still a draft**
+
+| Surface | Status (2026-10-05) |
+|---|---|
+| App welcome title | Production still says “Zero-Trust API Key Vault”. The Keychain headline is [PR #67](https://github.com/lilaclilac09/keyshield/pull/67) until it is reviewed and deployed. |
+| How-to + agent register | On `main` (PRs #60, #61). |
+| Free / Plugin / Accelerate plans + 3 device levels | On `main` — [PR #66](https://github.com/lilaclilac09/keyshield/pull/66) merged 2026-10-05T14:29:41Z. Railway `GET /billing/plans` returns JSON (`Free` / `Plugin` / `Accelerate`). The Vercel app bundle may lag the API. |
+| Vercel Hobby quota / skip preview builds | Still open — [PR #65](https://github.com/lilaclilac09/keyshield/pull/65). Do not merge until the 24h `api-deployments-free-per-day` window ends (~2026-10-06T12:25:54Z). |
+
+Closed GitHub PRs were not lost work. Stacked drafts #53–#57 look like clones because each PR targeted the previous agent branch, not `main`. GitHub’s green “mergeable” flag is vs that old base. Against current `main`, 21 closed PRs **conflict**, 6 are already on `main` (ancestor or cherry-equivalent), and the 3 unique conflict-free leftovers (#38 ks-agent, #40 Fable5, #41 second brain) should **stay closed** — they are the wrong product surface or an `/agent/execute` executor that is not the current register+proxy model. Do not reopen them to “get the work back.”
 
 ## On-chain verification (Solana Devnet)
 
