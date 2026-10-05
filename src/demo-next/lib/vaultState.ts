@@ -77,6 +77,4 @@ export function chainFeedback(opts: {
   };
 }
 
-export function canRetryUi(state: VaultState, pendingLocked: boolean): boolean {
-  return state === 'FAILED' && !pendingLocked;
-}
+export { canRetryUi } from './errors';

@@ -28,10 +28,22 @@ import {
 } from './fulfillment';
 import { signalPasskeySuccess } from './feedback';
 import { chainFeedback, type ChainFeedback, type VaultState } from './vaultState';
+import { pollSignatureStatus, type SigConfirmation } from './rpc-ping';
+import {
+  emptyBreakpoint,
+  formatBreakpoint,
+  isWalletReject,
+  markBreakpoint,
+  parseChainError,
+  type FailKind,
+  type FlowBreakpoint,
+  type ParsedChainError,
+  type RollbackKind,
+} from './errors';
+import { isMasterWalletMaterial } from './trust';
 
 export type { VaultState } from './vaultState';
-
-export type FailKind = 'local-cancel' | 'local-error' | 'chain-failed' | 'pending' | null;
+export type { FailKind, RollbackKind } from './errors';
 
 export interface KeyShieldSnapshot {
   state: VaultState;
@@ -46,6 +58,11 @@ export interface KeyShieldSnapshot {
   settlement: 'none' | 'local-hold' | 'mpp-demo-meter' | 'aborted' | 'clawback';
   pendingLocked: boolean;
   lastTx: ChainFeedback;
+  rollbackKind: RollbackKind;
+  breakpoint: FlowBreakpoint;
+  breakpointLine: string;
+  confirmation: SigConfirmation | null;
+  chainError: ParsedChainError | null;
 }
 
 const PROXY_GRANT = (upstream: string) => `https://api.ks.local/vproxy/${upstream}/`;
@@ -61,6 +78,10 @@ export function useKeyShield() {
   const [settlement, setSettlement] = useState<KeyShieldSnapshot['settlement']>('none');
   const [pendingLocked, setPendingLocked] = useState(false);
   const [lastTx, setLastTx] = useState<ChainFeedback>(chainFeedback({ note: 'idle', layer: 'none' }));
+  const [rollbackKind, setRollbackKind] = useState<RollbackKind>(null);
+  const [breakpoint, setBreakpoint] = useState<FlowBreakpoint>(emptyBreakpoint());
+  const [confirmation, setConfirmation] = useState<SigConfirmation | null>(null);
+  const [chainError, setChainError] = useState<ParsedChainError | null>(null);
   const sessionKeyRef = useRef<CryptoKey | null>(null);
   const pendingSigRef = useRef<string | null>(null);
   const treeRef = useRef<CredentialMerkleTree>(new CredentialMerkleTree());
@@ -72,11 +93,14 @@ export function useKeyShield() {
   }, []);
 
   const resetPendingUi = useCallback(() => {
-    if (pendingLocked) return;
+    if (pendingLocked || confirmation === 'unknown') return;
     setError(null);
     setFailKind(null);
+    setRollbackKind(null);
+    setChainError(null);
+    setBreakpoint(emptyBreakpoint());
     setState('IDLE');
-  }, [pendingLocked]);
+  }, [pendingLocked, confirmation]);
 
   const decryptCredential = useCallback(
     async (row: { id: string; upstream: string; stored: boolean }, mode: 'human' | 'agent') => {
@@ -93,6 +117,9 @@ export function useKeyShield() {
         if (row.stored) {
           const remote = await decryptManaged(row.id);
           if (remote) plain = remote;
+        }
+        if (isMasterWalletMaterial(plain)) {
+          throw new Error('refusing master wallet material — session keypair only');
         }
         const wrap = new TextEncoder().encode(plain);
         await encryptToStoreBytes(derived.sessionKey, row.id, wrap);
@@ -115,12 +142,16 @@ export function useKeyShield() {
         }
         zeroize(unlocked);
         consumeWitness(derived.witness);
+        setBreakpoint(markBreakpoint(['passkey', 'decrypt'], '', ''));
         setState('IDLE');
       } catch (e) {
-        if (e instanceof PasskeyCancelledError) {
-          fail('local-cancel', 'Passkey cancelled — account unchanged');
+        if (e instanceof PasskeyCancelledError || isWalletReject(e)) {
+          setRollbackKind('local-cancel');
+          setBreakpoint(markBreakpoint([], 'passkey', 'wallet reject / timeout'));
+          fail('local-cancel', 'wallet reject / timeout — account & policy unchanged');
           return;
         }
+        setRollbackKind('local-cancel');
         fail('local-error', e instanceof Error ? e.message : String(e));
       }
     },
@@ -138,7 +169,10 @@ export function useKeyShield() {
       if (pendingLocked) return;
       setError(null);
       setFailKind(null);
+      setRollbackKind(null);
+      setChainError(null);
       setProof(null);
+      setConfirmation(null);
       setState('AWAITING_PASSKEY');
       try {
         const derived = await runClientPrf({ allowDemoSoft: true });
@@ -197,6 +231,7 @@ export function useKeyShield() {
             return;
           }
           setLastTx(chainFeedback({ note: 'force_clawback refund — local, not ix #28', layer: 'local-hold' }));
+          setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold'], '', 'clawback refund'));
           setSettlement('clawback');
           setState('SETTLED');
           return;
@@ -207,27 +242,66 @@ export function useKeyShield() {
           abortHold(hid, verified.reason || 'unverified fulfillment');
           setSettlement('aborted');
           setLastTx(chainFeedback({ note: `${verified.reason} — no debit`, layer: 'none' }));
-          fail('local-error', `${verified.reason || 'unverified fulfillment'} — no debit`);
+          setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold'], 'verify', verified.reason || 'mismatch'));
+          fail('local-error', `${verified.reason || 'unverified fulfillment'} — no debit · not full-flow success`);
           return;
         }
 
         if (opts.streamId) {
           setState('SUBMITTING_DEVNET');
           setPendingLocked(true);
-          pendingSigRef.current = `pending:${hid}`;
           const meter = await tryDemoMeter(opts.streamId);
-          setPendingLocked(false);
-          pendingSigRef.current = null;
           if (!meter.ok) {
             abortHold(hid, meter.detail);
             setSettlement('aborted');
+            setPendingLocked(false);
+            pendingSigRef.current = null;
             setLastTx(chainFeedback({ note: `${meter.detail} — no debit`, layer: 'none' }));
-            fail('chain-failed', `${meter.detail} — no debit`);
+            setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold', 'verify'], 'submit', meter.detail));
+            const parsed = parseChainError(meter.detail);
+            setChainError(parsed);
+            setProof(null);
+            fail('chain-failed', `${parsed.message} — ${meter.detail} — no debit`);
             return;
+          }
+          if (meter.signature) {
+            pendingSigRef.current = meter.signature;
+            setLastTx(chainFeedback({ signature: meter.signature, note: meter.detail, layer: 'devnet' }));
+            setFailKind('pending');
+            setError(`pending ${meter.signature} — retry locked, polling RPC`);
+            setConfirmation('unknown');
+            const st = await pollSignatureStatus(meter.signature);
+            setConfirmation(st);
+            if (st === 'unknown') {
+              setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold', 'verify', 'submit'], 'confirm', 'confirmation unknown'));
+              return;
+            }
+            if (st === 'failed') {
+              setPendingLocked(false);
+              const parsed = parseChainError(meter.detail);
+              setChainError(parsed);
+              setProof(null);
+              setRollbackKind('chain-rollback');
+              setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold', 'verify', 'submit'], 'confirm', parsed.name));
+              fail('chain-failed', parsed.message);
+              return;
+            }
+            setPendingLocked(false);
+            pendingSigRef.current = null;
+          } else {
+            setPendingLocked(false);
+            pendingSigRef.current = null;
           }
           captureHold(hid);
           setSettlement('mpp-demo-meter');
-          setLastTx(chainFeedback({ note: meter.detail, layer: 'mpp-demo-meter' }));
+          setLastTx(
+            chainFeedback({
+              signature: meter.signature,
+              note: meter.detail,
+              layer: meter.signature ? 'devnet' : 'mpp-demo-meter',
+            }),
+          );
+          setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold', 'verify', 'submit'], '', ''));
         } else {
           captureHold(hid);
           setSettlement('local-hold');
@@ -237,16 +311,36 @@ export function useKeyShield() {
               layer: 'local-hold',
             }),
           );
+          setBreakpoint(markBreakpoint(['passkey', 'proof', 'hold', 'verify'], '', 'local capture'));
         }
         setState('SETTLED');
       } catch (e) {
+        if (pendingSigRef.current) {
+          setPendingLocked(true);
+          setConfirmation('unknown');
+          setFailKind('pending');
+          setError(`pending ${pendingSigRef.current} — retry locked`);
+          return;
+        }
         setPendingLocked(false);
-        if (e instanceof PasskeyCancelledError) {
-          fail('local-cancel', 'Passkey cancelled — no proof, no debit');
+        if (e instanceof PasskeyCancelledError || isWalletReject(e)) {
+          setRollbackKind('local-cancel');
+          setBreakpoint(markBreakpoint([], 'passkey', 'wallet reject / timeout'));
+          fail('local-cancel', 'wallet reject / timeout — account & policy unchanged');
           return;
         }
         if (e instanceof CircuitError) {
+          setRollbackKind('local-cancel');
+          setBreakpoint(markBreakpoint(['passkey'], 'proof', e.code));
           fail('local-error', `circuit ${e.code}: ${e.message}`);
+          return;
+        }
+        const parsed = parseChainError(e);
+        if (parsed.code != null) {
+          setChainError(parsed);
+          setProof(null);
+          setRollbackKind('chain-rollback');
+          fail('chain-failed', parsed.message);
           return;
         }
         fail('local-error', e instanceof Error ? e.message : String(e));
@@ -258,6 +352,7 @@ export function useKeyShield() {
   const revoke = useCallback((id?: string) => {
     if (id) revokeGrant(id);
     else revokeAllGrants();
+    setRollbackKind('grant-revoke');
   }, []);
 
   const forceClawback = useCallback(
@@ -294,7 +389,35 @@ export function useKeyShield() {
     settlement,
     pendingLocked,
     lastTx,
+    rollbackKind,
+    breakpoint,
+    breakpointLine: formatBreakpoint(breakpoint),
+    confirmation,
+    chainError,
   };
+
+  const pollPending = useCallback(async () => {
+    const sig = pendingSigRef.current || lastTx.signature;
+    if (!sig || !pendingLocked) return;
+    const st = await pollSignatureStatus(sig);
+    setConfirmation(st);
+    if (st === 'confirmed') {
+      setPendingLocked(false);
+      pendingSigRef.current = null;
+      setFailKind(null);
+      setError(null);
+      setState('SETTLED');
+      return;
+    }
+    if (st === 'failed') {
+      setPendingLocked(false);
+      const parsed = parseChainError('on-chain execution failed');
+      setChainError(parsed);
+      setProof(null);
+      setRollbackKind('chain-rollback');
+      fail('chain-failed', parsed.message);
+    }
+  }, [fail, lastTx.signature, pendingLocked]);
 
   return {
     snapshot,
@@ -303,6 +426,7 @@ export function useKeyShield() {
     revoke,
     forceClawback,
     resetPendingUi,
+    pollPending,
     grantMeta,
   };
 }

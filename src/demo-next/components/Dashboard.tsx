@@ -9,6 +9,8 @@ import { planVerifyExecute } from '@/lib/onchain';
 import { pingDevnetSlot } from '@/lib/rpc-ping';
 import { shortHex } from '@/lib/bytes';
 import { STATE_LABEL, VAULT_STATES, canRetryUi, formatLatencyMs } from '@/lib/vaultState';
+import { ROLLBACK_LABEL } from '@/lib/errors';
+import { TRUST } from '@/lib/trust';
 import {
   demoTopup,
   ensureDemoSession,
@@ -55,6 +57,8 @@ function DashboardInner() {
   const wallet = useWallet();
   const address = wallet.publicKey?.toBase58() || '';
   const ks = useKeyShield();
+  const pollPendingRef = React.useRef(ks.pollPending);
+  pollPendingRef.current = ks.pollPending;
 
   const [home, setHome] = useState<KeychainHome | null>(null);
   const [rpcMs, setRpcMs] = useState<number | null>(null);
@@ -79,6 +83,7 @@ function DashboardInner() {
       setRpcMs(devnet.ms || healthMs);
       setSlot(devnet.slot);
       setRpcOk(true);
+      await pollPendingRef.current();
     } catch {
       setRpcOk(false);
     }
@@ -110,6 +115,10 @@ function DashboardInner() {
     const id = setInterval(() => void ping(), 3000);
     return () => clearInterval(id);
   }, [ping]);
+
+  useEffect(() => {
+    if (ks.snapshot.failKind === 'chain-failed') void reload();
+  }, [ks.snapshot.failKind, ks.snapshot.chainError?.code, reload]);
 
   const creds = useMemo<CredRow[]>(() => {
     const stored = (home?.apis || []).map((a) => ({
@@ -196,13 +205,24 @@ function DashboardInner() {
         <div className="shrink-0 px-6 py-2 text-sm text-red-300 border-b border-red-900/60 bg-red-950/40">
           {ks.snapshot.failKind ? `[${ks.snapshot.failKind}] ` : ''}
           {banner}
-          {canRetryUi(ks.snapshot.state, ks.snapshot.pendingLocked) && (
+          {canRetryUi(ks.snapshot.state, ks.snapshot.pendingLocked, ks.snapshot.confirmation) && (
             <button type="button" className="ml-3 underline" onClick={() => ks.resetPendingUi()}>
               Retry
             </button>
           )}
+          {(ks.snapshot.pendingLocked || ks.snapshot.confirmation === 'unknown') && (
+            <span className="ml-3 text-amber-300">Retry locked · polling {ks.snapshot.lastTx.signature || 'sig'}</span>
+          )}
         </div>
       )}
+
+      <div className="shrink-0 px-6 py-1.5 border-b border-zinc-800 text-[11px] font-mono text-zinc-500 flex flex-wrap gap-x-4 gap-y-1">
+        <span>Passkey: {TRUST.passkeyNote}</span>
+        <span>Proof: {TRUST.proofNote}</span>
+        <span>Keys: {TRUST.apiKeyNote}</span>
+        <span>Wallet: {TRUST.walletNote}</span>
+        {ks.snapshot.rollbackKind && <span className="text-amber-300">rollback: {ROLLBACK_LABEL[ks.snapshot.rollbackKind]}</span>}
+      </div>
 
       <main className="flex-1 min-h-0 overflow-auto p-5 grid grid-cols-12 gap-4 content-start">
         <section className="col-span-12 lg:col-span-5 border border-zinc-800 bg-zinc-950 p-5 flex flex-col">
@@ -417,6 +437,13 @@ function DashboardInner() {
                 planned ixs: {planned.ixs.map((i) => i.name).join(' → ')} · verifier={planned.verifier}
               </div>
             )}
+            <div>breakpoint={ks.snapshot.breakpointLine}</div>
+            {ks.snapshot.chainError && (
+              <div>
+                chain={ks.snapshot.chainError.name}
+                {ks.snapshot.chainError.code != null ? ` ${ks.snapshot.chainError.code}` : ''}
+              </div>
+            )}
             <div>
               tx={lastTx.layer}
               {lastTx.signature ? ` · sig=${lastTx.signature.slice(0, 12)}…` : ' · no-sig'}
@@ -431,6 +458,13 @@ function DashboardInner() {
                 ? ` · grant ${ks.snapshot.grants.map((g) => `${g.upstream}:${Math.ceil(g.ttlMs / 1000)}s`).join(',')}`
                 : ' · grant none'}
             </div>
+            <button
+              type="button"
+              onClick={() => ks.revoke()}
+              className="h-8 px-3 border border-zinc-700 text-[11px] uppercase tracking-wide hover:bg-zinc-900"
+            >
+              Revoke grants (not chain rollback)
+            </button>
             {ks.snapshot.hold?.status === 'in-flight' && (
               <button
                 type="button"

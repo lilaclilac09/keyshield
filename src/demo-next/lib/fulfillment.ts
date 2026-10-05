@@ -226,14 +226,23 @@ export function forceClawbackReady(holdId: string, nowSlot: bigint): boolean {
  * Optional backend hop after local verify. Not live `mpp_settle`.
  * HTTP failure here must abort — no debit.
  */
-export async function tryDemoMeter(streamId: number): Promise<{ ok: boolean; detail: string }> {
+export async function tryDemoMeter(
+  streamId: number,
+): Promise<{ ok: boolean; detail: string; signature?: string }> {
   try {
     const r = await ksFetch(`/mpp/streams/${streamId}/demo-meter`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
     if (!r.ok) return { ok: false, detail: `demo-meter HTTP ${r.status}` };
-    return { ok: true, detail: 'mpp demo-meter accepted (not mpp_settle, not Groth16)' };
+    let signature: string | undefined;
+    try {
+      const body = (await r.json()) as { signature?: string; tx?: string };
+      signature = body.signature || body.tx;
+    } catch {
+      /* body optional */
+    }
+    return { ok: true, detail: 'mpp demo-meter accepted (not mpp_settle, not Groth16)', signature };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
