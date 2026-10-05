@@ -69,7 +69,9 @@ async def keychain_home(request: Request):
                 address = ""
 
     t0 = time.perf_counter()
-    helius_key = os.getenv("KS_HELIUS_API_KEY", "").strip() or demo_mod.lookup_vault_key(user_id, "helius")
+    helius_key = os.getenv("KS_HELIUS_API_KEY", "").strip() or demo_mod.lookup_vault_key(
+        user_id, "helius"
+    )
     wallet = await kc.fetch_wallet_balances(address, helius_key or None)
     wallet_ms = round((time.perf_counter() - t0) * 1000.0, 2)
     apis = kc.list_stored_upstreams(user_id)
@@ -165,7 +167,10 @@ async def keychain_store(request: Request):
         return JSONResponse({"detail": "value is required"}, status_code=400)
     if not upstream:
         return JSONResponse(
-            {"detail": "unrecognized key shape — pick a provider or paste a known prefix", "code": "undetected"},
+            {
+                "detail": "unrecognized key shape — pick a provider or paste a known prefix",
+                "code": "undetected",
+            },
             status_code=422,
         )
     item_id = demo_mod.store_upstream_key(sess["user_id"], str(upstream), extracted)

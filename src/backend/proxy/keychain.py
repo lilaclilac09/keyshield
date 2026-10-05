@@ -79,7 +79,9 @@ def rpc_cache_catalog() -> dict[str, Any]:
     }
 
 
-def probe_for(upstream: str, prompt: str = "KeyShield keychain ping") -> tuple[str, str, bytes | None]:
+def probe_for(
+    upstream: str, prompt: str = "KeyShield keychain ping"
+) -> tuple[str, str, bytes | None]:
     """Return (call_upstream, path, body_or_none)."""
     name = (upstream or "").strip().lower() or "openrouter"
     if name in {"helius", "helius-rpc"}:
@@ -143,9 +145,7 @@ def parse_usdc_micro(rpc_result: Any) -> int | None:
     total = 0
     found = False
     for row in accounts:
-        info = (
-            ((row or {}).get("account") or {}).get("data") or {}
-        )
+        info = ((row or {}).get("account") or {}).get("data") or {}
         parsed = info.get("parsed") if isinstance(info, dict) else None
         token = ((parsed or {}).get("info") or {}).get("tokenAmount") or {}
         raw = token.get("amount")
