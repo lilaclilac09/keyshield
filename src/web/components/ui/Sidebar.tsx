@@ -64,13 +64,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-[13px] font-semibold text-white">{connected ? 'Connected' : 'Disconnected'}</span>
           </div>
           <div className="grid grid-cols-2 gap-2 mb-2">
-            <div className="rounded-lg bg-[#0e1631] px-2 py-1.5">
-              <p className="text-[11px] text-[#8a96c2]">SOL</p>
-              <p className="text-[15px] font-semibold text-white">{fmt(sol)}</p>
+            <div className="rounded-lg bg-[#0e1631] px-2.5 py-2">
+              <p className="text-[12px] text-[#8a96c2]">SOL</p>
+              <p className="text-[22px] font-bold tracking-tight text-white leading-none mt-1">{fmt(sol)}</p>
             </div>
-            <div className="rounded-lg bg-[#0e1631] px-2 py-1.5">
-              <p className="text-[11px] text-[#8a96c2]">USDC</p>
-              <p className="text-[15px] font-semibold text-white">{fmt(usdc)}</p>
+            <div className="rounded-lg bg-[#0e1631] px-2.5 py-2">
+              <p className="text-[12px] text-[#8a96c2]">USDC</p>
+              <p className="text-[22px] font-bold tracking-tight text-white leading-none mt-1">{fmt(usdc)}</p>
             </div>
           </div>
           <button onClick={onCopyAddress} className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg bg-[#0e1631] border border-[#243365] hover:border-zinc-600 transition-colors">

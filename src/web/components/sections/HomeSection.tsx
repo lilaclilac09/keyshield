@@ -32,12 +32,12 @@ function fmt(n: number | null | undefined, digits = 4): string {
 }
 
 const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, label, sub }) => (
-  <div className={`flex-1 min-w-[140px] rounded-2xl border px-4 py-3 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
+  <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
     <div className="flex items-center gap-2">
       <span className={`w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-[#5e6a91]'}`} />
-      <span className="text-[16px] font-semibold text-white">{label}</span>
+      <span className="text-[18px] font-semibold text-white">{label}</span>
     </div>
-    {sub && <p className="text-[13px] text-[#8a96c2] mt-1">{sub}</p>}
+    {sub && <p className="text-[16px] text-[#8a96c2] mt-1.5">{sub}</p>}
   </div>
 );
 
@@ -105,23 +105,23 @@ export const HomeSection: React.FC<Props> = ({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5">
-          <p className="text-[15px] text-[#8a96c2]">SOL</p>
-          <p className="text-[36px] font-bold tracking-tight text-white leading-none mt-2">{fmt(wallet?.sol)}</p>
-          <p className="text-[15px] text-[#5e6a91] mt-2">{walletConnected ? 'Connected wallet' : 'Connect wallet to load'}</p>
+        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
+          <p className="text-[16px] text-[#8a96c2]">SOL</p>
+          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">{fmt(wallet?.sol)}</p>
+          <p className="text-[15px] text-[#5e6a91] mt-3">{walletConnected ? 'Connected wallet' : 'Connect wallet to load'}</p>
           {!walletConnected && onConnectWallet && (
             <button type="button" onClick={onConnectWallet} className="mt-3 h-11 px-4 rounded-xl bg-white text-black text-[16px] font-semibold">Connect wallet</button>
           )}
         </div>
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5">
-          <p className="text-[15px] text-[#8a96c2]">USDC</p>
-          <p className="text-[36px] font-bold tracking-tight text-white leading-none mt-2">{fmt(wallet?.usdc)}</p>
-          <p className="text-[14px] text-[#5e6a91] mt-2">{wallet?.rpc === 'helius-cache' ? `RPC cache ${wallet.cache}` : wallet?.rpc === 'public' ? 'Public RPC' : 'Waiting for address'}</p>
+        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
+          <p className="text-[16px] text-[#8a96c2]">USDC</p>
+          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">{fmt(wallet?.usdc)}</p>
+          <p className="text-[15px] text-[#5e6a91] mt-3">{wallet?.rpc === 'helius-cache' ? `RPC cache ${wallet.cache}` : wallet?.rpc === 'public' ? 'Public RPC' : 'Waiting for address'}</p>
         </div>
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5">
-          <p className="text-[15px] text-[#8a96c2]">Credit</p>
-          <p className="text-[36px] font-bold tracking-tight text-white leading-none mt-2">${fmt(home?.ledger.balance_usd, 2)}</p>
-          <p className="text-[14px] text-[#5e6a91] mt-2">Proxy ledger · free ${fmt(home?.ledger.free_credit_usd, 2)}</p>
+        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
+          <p className="text-[16px] text-[#8a96c2]">Credit</p>
+          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">${fmt(home?.ledger.balance_usd, 2)}</p>
+          <p className="text-[15px] text-[#5e6a91] mt-3">Proxy ledger · free ${fmt(home?.ledger.free_credit_usd, 2)}</p>
         </div>
       </div>
 

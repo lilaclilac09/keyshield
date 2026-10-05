@@ -21,13 +21,13 @@ export const Card: React.FC<CardProps> = ({ title, description, headerRight, chi
 };
 
 export const StatCard: React.FC<{ label: string; value: React.ReactNode; hint?: string; trend?: 'up' | 'down' | 'neutral'; className?: string; }> = ({ label, value, hint, trend, className = '' }) => (
-  <div className={`rounded-xl border border-[#243365]/50 bg-[#131c39] px-4 py-3 ${className}`}>
-    <div className="text-[10px] font-semibold text-[#8a96c2] uppercase tracking-wider">{label}</div>
-    <div className="text-[22px] font-bold text-white tracking-tight mt-0.5">{value}</div>
-    <div className="flex items-center gap-1.5 mt-1">
-      {trend === 'up' && <span className="text-[10px] text-emerald-500">&#x2191;</span>}
-      {trend === 'down' && <span className="text-[10px] text-red-500">&#x2193;</span>}
-      {hint && <span className="text-[10px] text-[#5e6a91]">{hint}</span>}
+  <div className={`rounded-xl border border-[#243365]/50 bg-[#131c39] px-5 py-5 ${className}`}>
+    <div className="text-[13px] font-semibold text-[#8a96c2] uppercase tracking-wider">{label}</div>
+    <div className="text-[40px] font-bold text-white tracking-tight leading-none mt-2">{value}</div>
+    <div className="flex items-center gap-1.5 mt-2">
+      {trend === 'up' && <span className="text-[12px] text-emerald-500">&#x2191;</span>}
+      {trend === 'down' && <span className="text-[12px] text-red-500">&#x2193;</span>}
+      {hint && <span className="text-[12px] text-[#5e6a91]">{hint}</span>}
     </div>
   </div>
 );
