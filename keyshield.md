@@ -28,20 +28,24 @@ Direct Explorer links (`?cluster=devnet` required):
 - [Program account](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet)
 - [ProgramData (last upgrade slot + authority)](https://explorer.solana.com/address/48Ji7Wmwe8DDQxnGpbBRs2ey9oGo2qwdxTEodhwJk2nx?cluster=devnet)
 - [Upgrade authority](https://explorer.solana.com/address/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet)
-- [Universal vault PDA](https://explorer.solana.com/address/9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV?cluster=devnet)
-- [MPP stream PDA](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet)
+- [Upgrade-authority vault `8QBV…`](https://explorer.solana.com/address/8QBVXySkwWJcic2K4b7SAdaG4tQtyA2ekPvaRQLpizmp?cluster=devnet) (`universal_vault` + `74Xuc5…`)
+- [MPP stream `E5sM…`](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) (owner `74Xuc5…`, agent `ExoYHG…`)
 - [Stream USDC ATA](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet)
+- [Local-user vault `9MYS…`](https://explorer.solana.com/address/9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV?cluster=devnet) (`universal_vault` + `DDNp8H…`) — **not** the vault for `E5sM…`
 - [USDC mint](https://explorer.solana.com/address/4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU?cluster=devnet)
+
+Re-verified 2026-10-05T09:53:29Z, commitment `confirmed`, RPC `https://api.devnet.solana.com`. Program → ProgramData pointer matches. Upgrade authority full address (not a prefix): `74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY`. On-chain stream account is **3368** bytes; current HEAD `AgentPaymentStream::SIZE` is **3384** (appended `last_active_slot` + `dispute_timeout_slots`). Do not claim the deployed binary matches this HEAD.
 
 ### Confirmed execution slots
 
-Open the signature, check `err: null`, and read the program logs.
+Open the signature, check `meta.err`, and read the **compiled instruction discriminator**. Confirmation alone is not success; Explorer copy is not the discriminator.
 
-| Signature | Slot | Notes |
+| Signature | Slot | Verified ix |
 |---|---|---|
-| [t6B8V4WgF3DL…gyGVEh](https://explorer.solana.com/tx/t6B8V4WgF3DLWsmWpVaukoogvrsTxY8MtKnLXijYReAmKeoEgaQntoSy9Jd5ZYT8fJJzRzshVSrkHbT5tgyGVEh?cluster=devnet) | 507665661 | Stage 4 live meter + `MppSettle` |
-| [u99eN5uhtTHr…wr9peyi](https://explorer.solana.com/tx/u99eN5uhtTHrLBNiWCUzHLJgvj85cLnJ2Xhnhk57Zg7z7GHLDesyiEpGxKuGzP9RtNUQ9PHg2o7wwXUbwr9peyi?cluster=devnet) | 507665693 | Withdraw after settle |
-| [678bqTSq4gYs…nrT6XTQc](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) | 461386827 | Open MPP stream |
+| [t6B8V4WgF3DL…gyGVEh](https://explorer.solana.com/tx/t6B8V4WgF3DLWsmWpVaukoogvrsTxY8MtKnLXijYReAmKeoEgaQntoSy9Jd5ZYT8fJJzRzshVSrkHbT5tgyGVEh?cluster=devnet) | 507665661 | **24 OpenStream** (user `DDNp8H…`). Program **2126** CUs. Previously supplied as “meter + MppSettle” — that label is **wrong**. |
+| [2CnCiiji…3Qoj](https://explorer.solana.com/tx/2CnCiijiu7UuRQWRJ1XbB7gq86N2YGFZpHxsoCaJtK3RPmJ3MktBruiPHkzxdUV7a5QEbbZdiZseRsvq4CTf3Qoj?cluster=devnet) | 507665666 | **26 MppSettle** (historical; found via `getSignaturesForAddress`, limit 25). Total **2024** CUs. |
+| [u99eN5uhtTHr…wr9peyi](https://explorer.solana.com/tx/u99eN5uhtTHrLBNiWCUzHLJgvj85cLnJ2Xhnhk57Zg7z7GHLDesyiEpGxKuGzP9RtNUQ9PHg2o7wwXUbwr9peyi?cluster=devnet) | 507665693 | **27 WithdrawAgentWallet**. Program **3076** CUs. |
+| [678bqTSq4gYs…nrT6XTQc](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) | 461386827 | **24 OpenStream** for `E5sM…`. |
 
 Live instruction surface on this allocation: vault / grant / revoke /
 config, `OpenStream` (ix 24), `MppSettle` (ix 26), `CloseStream`, and
@@ -168,3 +172,7 @@ Record-demo components:
 | [docs/DEVNET.md](docs/DEVNET.md) | Operator deploy / upgrade / e2e |
 | [AGENTS.md](AGENTS.md) | Agent wiring into the proxy |
 | [SPEC.md](SPEC.md) | Protocol primitives |
+| [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md) | Artifact IDs, checksums, verified vs claimed |
+| [docs/REVIEWER_QUICKSTART.md](docs/REVIEWER_QUICKSTART.md) | Re-run commands + Stage 4 approval gate |
+| [docs/STRESS_TEST_PLAN.md](docs/STRESS_TEST_PLAN.md) / [docs/STRESS_TEST_RESULTS.md](docs/STRESS_TEST_RESULTS.md) | Bounded local stress |
+| [docs/PROJECT_RESUME.md](docs/PROJECT_RESUME.md) | Submission summary |

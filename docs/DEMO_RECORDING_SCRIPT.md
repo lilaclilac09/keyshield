@@ -1,11 +1,22 @@
 # KeyShield — 2-minute record-demo script
 
+This is the voiceover script for `npm run demo:record`. It is **not**
+proof that a take exists. Recordings live outside Git (see
+[EVIDENCE_INDEX.md](EVIDENCE_INDEX.md)). Scene table:
+[DEMO_STORYBOARD.md](DEMO_STORYBOARD.md).
+
+The harness talks to a **local mock upstream**, not
+`https://app.ks.aileena.xyz`. Label every take MOCK. Do not present
+the printed `ksv2_…` token or `.env` fixture as a live WebAuthn PRF
+ceremony.
+
 Run the harness (no prompts):
 
 ```bash
-bash scripts/record_demo.sh          # paced for a ~2 minute take
-bash scripts/record_demo.sh --fast   # CI / verify
-bash scripts/record_demo.sh --split  # also tail mock + ks-proxy in tmux
+bash scripts/record_demo.sh                 # default 2500ms scene gap
+bash scripts/record_demo.sh --fast          # CI / verify
+bash scripts/record_demo.sh --split         # also tail mock + ks-proxy in tmux
+bash scripts/record_demo.sh --split --pace 28000   # ~2 minute server take
 ```
 
 Components:

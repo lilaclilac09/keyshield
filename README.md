@@ -186,18 +186,22 @@ Reviewers can open these Explorer links with `?cluster=devnet` and confirm the p
 | Loader | `BPFLoaderUpgradeab1e11111111111111111111111` · `executable: true` | [loader](https://explorer.solana.com/address/BPFLoaderUpgradeab1e11111111111111111111111?cluster=devnet) |
 | ProgramData | `48Ji7Wmwe8DDQxnGpbBRs2ey9oGo2qwdxTEodhwJk2nx` | [program data](https://explorer.solana.com/address/48Ji7Wmwe8DDQxnGpbBRs2ey9oGo2qwdxTEodhwJk2nx?cluster=devnet) |
 | Upgrade authority | `74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY` | [authority](https://explorer.solana.com/address/74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY?cluster=devnet) |
-| Universal vault PDA | `9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV` | [vault](https://explorer.solana.com/address/9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV?cluster=devnet) |
-| MPP stream PDA | `E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR` | [stream](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
+| Upgrade-authority vault PDA | `8QBVXySkwWJcic2K4b7SAdaG4tQtyA2ekPvaRQLpizmp` (`universal_vault` + `74Xuc5…`) | [vault](https://explorer.solana.com/address/8QBVXySkwWJcic2K4b7SAdaG4tQtyA2ekPvaRQLpizmp?cluster=devnet) |
+| MPP stream PDA (that vault) | `E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR` | [stream](https://explorer.solana.com/address/E5sMx86o3MWV562BxbWk6SxfqTFBWpCitj3AU9i6DgfR?cluster=devnet) |
 | Stream USDC ATA | `6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH` | [token account](https://explorer.solana.com/address/6QtooE6QVFF9pJ9Pa9DgAFAWpEWkB8VtjEytc5FyFtBH?cluster=devnet) |
+| Local-user vault PDA | `9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV` (`universal_vault` + `DDNp8H…`) | [vault](https://explorer.solana.com/address/9MYSdKcRkg1F9hpYmUXsknEyuQ2vzqtW5JDdfsxnTqmV?cluster=devnet) |
 | Devnet USDC mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | [mint](https://explorer.solana.com/address/4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU?cluster=devnet) |
 
-**Confirmed execution slots** (err = none):
+`9MYS…` and `E5sM…` are **not** one owner’s vault/stream pair. Re-verification (2026-10-05, `confirmed`, public Devnet RPC): see [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md).
 
-| Tx | Slot | What |
+**Confirmed execution slots** (`meta.err = null`; discriminator from compiled ix data, not Explorer copy):
+
+| Tx | Slot | Verified ix |
 |---|---|---|
-| [`t6B8V4Wg…GVEh`](https://explorer.solana.com/tx/t6B8V4WgF3DLWsmWpVaukoogvrsTxY8MtKnLXijYReAmKeoEgaQntoSy9Jd5ZYT8fJJzRzshVSrkHbT5tgyGVEh?cluster=devnet) | 507665661 | Stage 4 live meter + settle |
-| [`u99eN5uh…peyi`](https://explorer.solana.com/tx/u99eN5uhtTHrLBNiWCUzHLJgvj85cLnJ2Xhnhk57Zg7z7GHLDesyiEpGxKuGzP9RtNUQ9PHg2o7wwXUbwr9peyi?cluster=devnet) | 507665693 | Withdraw after settle |
-| [`678bqTSq…XTQc`](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) | 461386827 | Open MPP stream |
+| [`t6B8V4Wg…GVEh`](https://explorer.solana.com/tx/t6B8V4WgF3DLWsmWpVaukoogvrsTxY8MtKnLXijYReAmKeoEgaQntoSy9Jd5ZYT8fJJzRzshVSrkHbT5tgyGVEh?cluster=devnet) | 507665661 | **24 OpenStream** for user `DDNp8H…` / vault `9MYS…` / stream `ERTBCQ…`. Program consumed **2126** CUs. Not `MppSettle`. |
+| [`2CnCiiji…3Qoj`](https://explorer.solana.com/tx/2CnCiijiu7UuRQWRJ1XbB7gq86N2YGFZpHxsoCaJtK3RPmJ3MktBruiPHkzxdUV7a5QEbbZdiZseRsvq4CTf3Qoj?cluster=devnet) | 507665666 | **26 MppSettle** (historical; not in the originally supplied two-sig list). Total **2024** CUs. |
+| [`u99eN5uh…peyi`](https://explorer.solana.com/tx/u99eN5uhtTHrLBNiWCUzHLJgvj85cLnJ2Xhnhk57Zg7z7GHLDesyiEpGxKuGzP9RtNUQ9PHg2o7wwXUbwr9peyi?cluster=devnet) | 507665693 | **27 WithdrawAgentWallet**. Program consumed **3076** CUs. |
+| [`678bqTSq…XTQc`](https://explorer.solana.com/tx/678bqTSq4gYspz2TWwdK3wCzZwEHuuDqseDUS2NcEPVQ45472iNPRykVh6K1zGEbq4nPmbLfDKKSiUx2nrT6XTQc?cluster=devnet) | 461386827 | **24 OpenStream** for `E5sM…` / vault `8QBV…`. |
 
 Live payment surface on this program: `CreateUniversalVault`, `GrantAgentAccess`, `RevokeAgentAccess`, `UpdateVaultConfig`, `OpenStream` (ix 24), `MppSettle` (ix 26), `CloseStream`. Source also contains zk-vault ixs 40–43; they are **not** on this Devnet allocation until upgrade authority `74Xuc5…` extends ProgramData and swaps the buffer. Do not treat an `InvalidInstructionData` on ix 40 as a local-logic pass.
 
@@ -224,7 +228,10 @@ Full write-up: [keyshield.md](keyshield.md).
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
 | [keyshield.md](keyshield.md) | On-chain verification, failure boundaries, 4-stage test matrix |
+| [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md) | Artifact IDs, checksums, verified vs claimed |
+| [docs/REVIEWER_QUICKSTART.md](docs/REVIEWER_QUICKSTART.md) | How to re-run the matrix and watch the takes |
 | [docs/DEMO_RECORDING_SCRIPT.md](docs/DEMO_RECORDING_SCRIPT.md) | 2-minute record-demo scenes + voiceover |
+| [docs/DEMO_STORYBOARD.md](docs/DEMO_STORYBOARD.md) | Scene table for the recorded takes |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
 
 ---
