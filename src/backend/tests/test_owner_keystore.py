@@ -65,4 +65,6 @@ def test_load_owner_none_when_file_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("KS_MPP_OWNER_WRAP_FILE", str(tmp_path / "missing.wrap"))
     monkeypatch.delenv("KS_MPP_OWNER_WRAP_KEY", raising=False)
     assert owner_keystore.load_owner() is None
-    assert owner_keystore.try_sign_settlement_binding(bytes([1]) * 32, 1, 1, bytes(range(32))) is None
+    assert (
+        owner_keystore.try_sign_settlement_binding(bytes([1]) * 32, 1, 1, bytes(range(32))) is None
+    )
