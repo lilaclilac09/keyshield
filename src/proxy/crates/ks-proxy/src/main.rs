@@ -12,9 +12,15 @@ use ks_upstream::{UpstreamClients, UpstreamId};
 use ks_vault::VaultPath;
 
 const UPSTREAM_IDS_ALL: [UpstreamId; 10] = [
-    UpstreamId::Helius, UpstreamId::Openai, UpstreamId::Anthropic,
-    UpstreamId::Mistral, UpstreamId::Cohere, UpstreamId::Groq,
-    UpstreamId::ZeroX, UpstreamId::Titan, UpstreamId::Pyth,
+    UpstreamId::Helius,
+    UpstreamId::Openai,
+    UpstreamId::Anthropic,
+    UpstreamId::Mistral,
+    UpstreamId::Cohere,
+    UpstreamId::Groq,
+    UpstreamId::ZeroX,
+    UpstreamId::Titan,
+    UpstreamId::Pyth,
     UpstreamId::Alchemy,
 ];
 
@@ -31,8 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .into();
     let server_secret = std::env::var("SERVER_SECRET")
         .unwrap_or_else(|_| "CHANGE-ME-IN-PROD-32-BYTES-MIN!!".into());
-    let python_url = std::env::var("PYTHON_BACKEND_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8001".into());
+    let python_url =
+        std::env::var("PYTHON_BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8001".into());
     let internal_secret = std::env::var("KS_INTERNAL_SECRET").unwrap_or_default();
 
     let sessions = SessionStore::open(&session_db, &server_secret)?;
@@ -49,7 +55,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .filter(|s| !s.is_empty())
         .map(|base| {
             let mut overrides = HashMap::new();
-            for id in UPSTREAM_IDS_ALL { overrides.insert(id, base.clone()); }
+            for id in UPSTREAM_IDS_ALL {
+                overrides.insert(id, base.clone());
+            }
             UpstreamClients::with_bases_and_cache(overrides, cache.clone())
         })
         .unwrap_or_else(UpstreamClients::new);
@@ -58,14 +66,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // order": KS_STEALTH explicit always wins; otherwise stealth defaults
     // ON for any TLS mode and OFF for plain HTTP.
     let tls_mode = tls::read_tls_mode();
-    let stealth_on =
-        stealth::read_stealth_env_with_default(tls_mode.stealth_default());
+    let stealth_on = stealth::read_stealth_env_with_default(tls_mode.stealth_default());
 
-    tracing::info!(
-        ?tls_mode,
-        stealth_on,
-        "ks-proxy startup config",
-    );
+    tracing::info!(?tls_mode, stealth_on, "ks-proxy startup config",);
     if stealth_on {
         tracing::info!("stealth mode enabled — unauthed requests will see nginx");
     }
@@ -73,9 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let vault_db_path = std::env::var("KS_VAULT_DB_PATH")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/vault_shim.db"));
-    let helius = std::sync::Arc::new(
-        ks_helius::HeliusClient::with_api_key("placeholder", ks_helius::HeliusConfig::default()),
-    );
+    let mpp_db_path = std::env::var("KS_MPP_DB")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("src/backend/data/mpp.db"));
+    let helius = std::sync::Arc::new(ks_helius::HeliusClient::with_api_key(
+        "placeholder",
+        ks_helius::HeliusConfig::default(),
+    ));
 
     let state = AppState {
         vault: VaultPath::new(vault_root),
@@ -87,6 +94,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         stealth: stealth_on,
         vault_db_path,
         helius,
+        mpp_db_path,
+        open_streams: Arc::new(TtlCache::new()),
     };
 
     // Install the global Prometheus recorder once and pass the render
@@ -155,8 +164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tls::install_crypto_provider();
             let challenges = acme::ChallengeStore::new();
             let challenge_app = acme::challenge_router(challenges.clone());
-            let http01_bind = std::env::var("KS_ACME_HTTP01_BIND")
-                .unwrap_or_else(|_| "0.0.0.0:80".into());
+            let http01_bind =
+                std::env::var("KS_ACME_HTTP01_BIND").unwrap_or_else(|_| "0.0.0.0:80".into());
             let http01_addr: std::net::SocketAddr = http01_bind.parse()?;
             tracing::info!("ACME HTTP-01 challenge listener on http://{http01_bind}");
             tokio::spawn(async move {
@@ -240,9 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let tls_bind = tls::read_tls_bind();
             let addr: std::net::SocketAddr = tls_bind.parse()?;
-            tracing::info!(
-                "ks-proxy listening on https://{tls_bind} (ACME / Let's Encrypt)",
-            );
+            tracing::info!("ks-proxy listening on https://{tls_bind} (ACME / Let's Encrypt)",);
             axum_server::bind_rustls(addr, served_config)
                 .serve(app.into_make_service())
                 .await?;

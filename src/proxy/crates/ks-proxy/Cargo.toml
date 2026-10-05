@@ -24,6 +24,7 @@ ks-helius = { path = "../ks-helius" }
 ks-session = { path = "../ks-session" }
 ks-upstream = { path = "../ks-upstream" }
 ks-vault = { path = "../ks-vault" }
+rusqlite = { workspace = true }
 instant-acme = { version = "0.8", features = ["rcgen"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -52,6 +53,8 @@ http-body-util = "0.1"
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+aes-gcm = { workspace = true }
+sha2 = { workspace = true }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 wiremock = { workspace = true }

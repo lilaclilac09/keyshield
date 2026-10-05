@@ -187,11 +187,9 @@ impl Harness {
         Mock::given(method("GET"))
             .and(path_regex(r"/_internal/balance/.*"))
             .and(header("X-Internal-Secret", "test-secret"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "balance_usd": balance_usd,
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "balance_usd": balance_usd,
+            })))
             .mount(&python_mock)
             .await;
 
@@ -251,6 +249,8 @@ impl Harness {
             stealth: false,
             vault_db_path,
             helius,
+            mpp_db_path: vault_db_dir.path().join("mpp.db"),
+            open_streams: Arc::new(TtlCache::new()),
         };
         // Keep tempdir alive via leak — test process exits soon enough.
         std::mem::forget(vault_db_dir);
@@ -271,7 +271,9 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-async fn body_to_string(resp: axum::response::Response) -> (StatusCode, axum::http::HeaderMap, String) {
+async fn body_to_string(
+    resp: axum::response::Response,
+) -> (StatusCode, axum::http::HeaderMap, String) {
     let status = resp.status();
     let headers = resp.headers().clone();
     let bytes = resp
@@ -433,6 +435,162 @@ async fn platform_key_zero_balance_returns_402() {
     assert_eq!(upstream_reqs.len(), 0);
 }
 
+/// Zero balance plus an open MPP stream must not 402. The stream is the
+/// payment, so the proxy forwards on the first request.
+///
+/// Builds its own session row so it does not depend on the v2-mvp seeder.
+#[tokio::test]
+async fn open_mpp_stream_skips_402_round_trip() {
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+    use sha2::{Digest, Sha256};
+
+    let dir = unique_tmp_dir("mpp-pay");
+    let server_secret = "ks-proxy-test-secret-AAAA";
+    let token = "tok-bob-mpp";
+    let session_db = dir.join("sessions.db");
+    let mpp_db = dir.join("mpp.db");
+    let vault_root = dir.join("vault");
+    fs::create_dir_all(&vault_root).unwrap();
+
+    let mut key_bytes = Sha256::new();
+    key_bytes.update(server_secret.as_bytes());
+    let key_bytes: [u8; 32] = key_bytes.finalize().into();
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let nonce = Nonce::from_slice(&[7u8; 12]);
+    let mut enc_pass = nonce.to_vec();
+    enc_pass.extend(cipher.encrypt(nonce, b"pw".as_ref()).unwrap());
+
+    let conn = rusqlite::Connection::open(&session_db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE sessions (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            enc_pass BLOB NOT NULL,
+            expires_at INTEGER NOT NULL
+        );",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?1, 'bob', ?2, strftime('%s','now') + 3600)",
+        rusqlite::params![token, enc_pass],
+    )
+    .unwrap();
+    drop(conn);
+
+    let conn = rusqlite::Connection::open(&mpp_db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE mpp_streams (
+            id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            status TEXT NOT NULL
+        );
+        INSERT INTO mpp_streams (id, user_id, status) VALUES (7, 'bob', 'open');
+        INSERT INTO mpp_streams (id, user_id, status) VALUES (8, 'bob', 'closed');",
+    )
+    .unwrap();
+    drop(conn);
+
+    let upstream_mock = MockServer::start().await;
+    let python_mock = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"id":"x","usage":{"prompt_tokens":3,"completion_tokens":4}}"#),
+        )
+        .mount(&upstream_mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/_internal/balance/.*"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"balance_usd": 0.0})),
+        )
+        .mount(&python_mock)
+        .await;
+    Mock::given(any())
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .mount(&python_mock)
+        .await;
+
+    let mut overrides = HashMap::new();
+    overrides.insert(UpstreamId::Openai, upstream_mock.uri());
+    let bridge = Arc::new(PythonBridge::new(
+        python_mock.uri(),
+        "test-secret".to_string(),
+    ));
+    let (log_buffer, _log_task) = LogBuffer::spawn(bridge.clone());
+    let state = AppState {
+        vault: VaultPath::new(&vault_root),
+        sessions: Arc::new(SessionStore::open(&session_db, server_secret).unwrap()),
+        upstreams: Arc::new(UpstreamClients::with_bases(overrides)),
+        cache: Arc::new(TtlCache::new()),
+        bridge,
+        log_buffer,
+        stealth: false,
+        vault_db_path: dir.join("vault_shim.db"),
+        helius: Arc::new(ks_helius::HeliusClient::with_api_key(
+            "placeholder",
+            ks_helius::HeliusConfig::default(),
+        )),
+        mpp_db_path: mpp_db,
+        open_streams: Arc::new(TtlCache::new()),
+    };
+
+    env::set_var("OPENAI_API_KEY", "platform-test-key");
+    let app = router(state, test_prometheus());
+    let open = Request::builder()
+        .method("POST")
+        .uri("/proxy/openai/v1/chat/completions")
+        .header("authorization", bearer(token))
+        .header("content-type", "application/json")
+        .header("x-mpp-stream-id", "7")
+        .body(Body::from(r#"{"hi":1}"#.to_string()))
+        .unwrap();
+
+    let resp = app.clone().oneshot(open).await.unwrap();
+    let (status, headers, body) = body_to_string(resp).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(
+        headers.get("x-ks-pay").and_then(|v| v.to_str().ok()),
+        Some("mpp")
+    );
+
+    let upstream_reqs = upstream_mock.received_requests().await.unwrap();
+    assert_eq!(
+        upstream_reqs.len(),
+        1,
+        "open stream forwards on the first call"
+    );
+
+    let py_reqs = python_mock.received_requests().await.unwrap();
+    assert!(
+        !py_reqs
+            .iter()
+            .any(|r| r.url.path().contains("/_internal/balance/")),
+        "open stream must not wait on the balance bridge"
+    );
+
+    let closed = Request::builder()
+        .method("POST")
+        .uri("/proxy/openai/v1/chat/completions")
+        .header("authorization", bearer(token))
+        .header("content-type", "application/json")
+        .header("x-mpp-stream-id", "8")
+        .body(Body::from(r#"{"hi":1}"#.to_string()))
+        .unwrap();
+    let resp = app.oneshot(closed).await.unwrap();
+    let (status, headers, body) = body_to_string(resp).await;
+    env::remove_var("OPENAI_API_KEY");
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "body: {body}");
+    assert_eq!(
+        headers
+            .get("x-payment-required")
+            .and_then(|v| v.to_str().ok()),
+        Some("x402")
+    );
+}
+
 #[tokio::test]
 async fn unknown_token_returns_401() {
     let h = Harness::build(UpstreamId::Openai, 0.0).await;
@@ -572,7 +730,11 @@ async fn batch_with_one_unknown_upstream_returns_per_item_error() {
 
     let resp = app.oneshot(req).await.unwrap();
     let (status, _headers, body) = body_to_string(resp).await;
-    assert_eq!(status, StatusCode::OK, "batch should succeed even if one item is bad: {body}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "batch should succeed even if one item is bad: {body}"
+    );
 
     let parsed: Value = serde_json::from_str(&body).unwrap();
     let results = parsed["results"].as_array().unwrap();
@@ -668,8 +830,14 @@ fn retain_end_to_end_headers_drops_hop_by_hop() {
     use ks_proxy::handlers::retain_end_to_end_headers;
 
     let mut src = HeaderMap::new();
-    src.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
-    src.insert(header::TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
+    src.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    src.insert(
+        header::TRANSFER_ENCODING,
+        HeaderValue::from_static("chunked"),
+    );
     src.insert(header::CONNECTION, HeaderValue::from_static("keep-alive"));
     src.insert("x-ks-mock-mode", HeaderValue::from_static("fast"));
     src.insert(header::CONTENT_LENGTH, HeaderValue::from_static("12"));
