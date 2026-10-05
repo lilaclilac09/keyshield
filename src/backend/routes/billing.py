@@ -219,9 +219,7 @@ async def billing_sol_quote(request: Request):
     amount_sol = amount_usd / price
     lamports = int(round(amount_sol * 1_000_000_000))
     sess = _auth(request)
-    memo = (
-        billing_solana.issue_topup_memo(sess["user_id"]) if sess else None
-    )
+    memo = billing_solana.issue_topup_memo(sess["user_id"]) if sess else None
     return JSONResponse(
         {
             "amount_usd": round(amount_usd, 6),
@@ -272,9 +270,7 @@ async def billing_topup_solana(request: Request):
     rpc = _rpc_url()
     commitment = "finalized" if body.get("finalized") else "confirmed"
     try:
-        tx = await billing_solana.get_transaction(
-            rpc, tx_sig, commitment=commitment
-        )
+        tx = await billing_solana.get_transaction(rpc, tx_sig, commitment=commitment)
         lamports = billing_solana.find_sol_transfer(tx, sender, pay_to)
         memo = body.get("memo")
         if memo:
@@ -298,7 +294,9 @@ async def billing_topup_solana(request: Request):
                     status_code=400,
                 )
         if credited_usd > _max_topup_usd():
-            return JSONResponse({"detail": "credited amount exceeds MAX_TOPUP_USD"}, status_code=400)
+            return JSONResponse(
+                {"detail": "credited amount exceeds MAX_TOPUP_USD"}, status_code=400
+            )
         balance = usage_mod.credit_solana_topup(
             sess["user_id"],
             tx_sig,
@@ -352,12 +350,12 @@ async def billing_topup_solana_usdc(request: Request):
     mint = _usdc_mint(rpc if network != "mainnet" else "mainnet")
     try:
         tx = await billing_solana.get_transaction(rpc, tx_sig)
-        atoms = billing_solana.find_usdc_transfer(
-            tx, sender, pay_to, usdc_mint=mint
-        )
+        atoms = billing_solana.find_usdc_transfer(tx, sender, pay_to, usdc_mint=mint)
         credited_usd = atoms / 1_000_000
         if credited_usd > _max_topup_usd():
-            return JSONResponse({"detail": "credited amount exceeds MAX_TOPUP_USD"}, status_code=400)
+            return JSONResponse(
+                {"detail": "credited amount exceeds MAX_TOPUP_USD"}, status_code=400
+            )
         balance = usage_mod.credit_solana_topup(
             sess["user_id"],
             tx_sig,

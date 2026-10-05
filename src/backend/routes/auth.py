@@ -173,9 +173,7 @@ async def demo_upstream_key(request: Request):
     if not sess:
         return JSONResponse({"error": "not authenticated"}, status_code=401)
     body = await request.json()
-    api_key = (
-        body.get("apiKey") or body.get("api_key") or body.get("value") or ""
-    ).strip()
+    api_key = (body.get("apiKey") or body.get("api_key") or body.get("value") or "").strip()
     upstream = (body.get("upstream") or demo_mod.DEMO_UPSTREAM).strip() or demo_mod.DEMO_UPSTREAM
     if not api_key:
         return JSONResponse({"error": "apiKey required"}, status_code=400)

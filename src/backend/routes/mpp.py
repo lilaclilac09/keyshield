@@ -171,9 +171,7 @@ async def mpp_open_stream(request: Request):
     max_total = int(raw_cap) if raw_cap is not None else None
     stream_pda = body.get("streamPda") or body.get("stream_pda")
     stream_usdc_ata = (
-        body.get("streamUsdcAta")
-        or body.get("stream_usdc_ata")
-        or body.get("usdcAta")
+        body.get("streamUsdcAta") or body.get("stream_usdc_ata") or body.get("usdcAta")
     )
 
     from ..mpp import mpp_streams
@@ -1103,10 +1101,7 @@ async def mpp_demo_meter(stream_id: int, request: Request):
         pass
 
     artifact = recorded.get("artifact_hash") or recorded.get("pending_artifact_hash")
-    meter = (
-        f"calls=1 tokens={tokens} hold={hold_id} "
-        f"live={int(live)} source={key_source}"
-    )
+    meter = f"calls=1 tokens={tokens} hold={hold_id} live={int(live)} source={key_source}"
     return JSONResponse(
         {
             "stream": recorded,
@@ -1119,4 +1114,3 @@ async def mpp_demo_meter(stream_id: int, request: Request):
             "meter": meter,
         }
     )
-
