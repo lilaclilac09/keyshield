@@ -5,7 +5,14 @@ import { decryptManaged } from './ks';
 import { encryptToStore, decryptFromStore } from './cipher';
 import { grantMeta, putGrant, revokeAllGrants, revokeGrant } from './grant';
 import { PasskeyCancelledError, runClientPrf, type PublicPrfView } from './prf';
-import { consumeWitness, generateAuthorizationProof, type AuthorizationProof } from './zk';
+import {
+  CircuitError,
+  CredentialMerkleTree,
+  consumeWitness,
+  generateAuthorizationProof,
+  type AuthorizationProof,
+} from './zk';
+import { te } from './bytes';
 import { abortHold, captureHold, openHold, tryDemoMeter, verifyArtifact } from './fulfillment';
 
 export type VaultState =
@@ -45,6 +52,7 @@ export function useKeyShield() {
   const [pendingLocked, setPendingLocked] = useState(false);
   const sessionKeyRef = useRef<CryptoKey | null>(null);
   const pendingSigRef = useRef<string | null>(null);
+  const treeRef = useRef<CredentialMerkleTree>(new CredentialMerkleTree());
 
   const fail = useCallback((kind: FailKind, message: string) => {
     setFailKind(kind);
@@ -121,20 +129,36 @@ export function useKeyShield() {
         setPrf(derived.view);
 
         setState('GENERATING_PROOF');
+        try {
+          await treeRef.current.proveHex(derived.view.prfCommitment);
+        } catch {
+          await treeRef.current.insertHex(derived.view.prfCommitment);
+        }
+        if (treeRef.current.size < 3) {
+          const pad = te(`ks-pad:${treeRef.current.size}:${derived.view.vaultId}`);
+          const digest = await crypto.subtle.digest('SHA-256', pad);
+          treeRef.current.insert(new Uint8Array(digest));
+        }
         const payload = JSON.stringify({
           method: opts.method,
           agentId: opts.agentId,
           spendCap: opts.spendCap.toString(),
         });
+        const cred = te(`ks-session-cred:${derived.view.vaultId}:${opts.agentId}`);
         const nextProof = await generateAuthorizationProof({
-          witness: derived.witness,
+          secret: derived.witness,
           prfCommitment: derived.view.prfCommitment,
+          credentialPlain: cred,
           agentId: opts.agentId,
           actionPayload: payload,
+          amount: opts.spendCap,
           spendCap: opts.spendCap,
+          nowSlot: opts.slot,
           validUntilSlot: opts.slot + 150n,
+          tree: treeRef.current,
         });
         consumeWitness(derived.witness);
+        cred.fill(0);
         setProof(nextProof);
 
         const hid = `hold-${Date.now()}`;
@@ -177,6 +201,10 @@ export function useKeyShield() {
         setPendingLocked(false);
         if (e instanceof PasskeyCancelledError) {
           fail('local-cancel', 'Passkey cancelled — no proof, no debit');
+          return;
+        }
+        if (e instanceof CircuitError) {
+          fail('local-error', `circuit ${e.code}: ${e.message}`);
           return;
         }
         fail('local-error', e instanceof Error ? e.message : String(e));

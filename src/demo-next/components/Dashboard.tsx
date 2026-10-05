@@ -340,9 +340,21 @@ function DashboardInner() {
         {drawer && (
           <div className="max-h-48 overflow-auto border-t border-zinc-800 px-5 py-3 font-mono text-xs text-zinc-400 space-y-2">
             {proof && (
-              <div>
-                proof={proof.kind} (not Groth16) · nullifier={shortHex(proof.publicInputs.nullifier)} ·
-                root={shortHex(proof.publicInputs.merkleRoot)} · cap={proof.publicInputs.spendCap}
+              <div className="space-y-1">
+                <div>
+                  public: agent={proof.publicInputs.agentId} · action={shortHex(proof.publicInputs.actionHash)} ·
+                  cap={proof.publicInputs.spendCap} · until={proof.publicInputs.validUntilSlot}
+                </div>
+                <div>
+                  proof={proof.kind} (not Groth16) · nullifier={shortHex(proof.publicInputs.nullifier)} ·
+                  root={shortHex(proof.publicInputs.merkleRoot)} · cred={shortHex(proof.publicInputs.credentialCommitment)}
+                </div>
+                <div>
+                  constraints: merkle={proof.constraints.merkleMember ? 'ok' : 'fail'} ·
+                  cap={proof.constraints.withinCap ? 'ok' : 'fail'} ·
+                  window={proof.constraints.withinWindow ? 'ok' : 'fail'} ·
+                  nullifier={proof.constraints.nullifierBound ? 'ok' : 'fail'}
+                </div>
               </div>
             )}
             {planned && (

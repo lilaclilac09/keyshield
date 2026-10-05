@@ -13,6 +13,14 @@ export function shortHex(hex: string, n = 12): string {
   return hex.length <= n * 2 ? hex : `${hex.slice(0, n)}…`;
 }
 
+export function fromHex(hex: string): Uint8Array {
+  const clean = hex.trim().replace(/^0x/, '');
+  if (clean.length % 2 !== 0) throw new Error('odd hex');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
 export function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const len = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(len);

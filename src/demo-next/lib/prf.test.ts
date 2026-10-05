@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { deriveFromPrf, deriveSessionKey, deriveWitness, deriveVaultId, demoSoftPrf } from './prf';
-import { consumeWitness, generateAuthorizationProof } from './zk';
+import { CredentialMerkleTree, consumeWitness, generateAuthorizationProof } from './zk';
 import { actionHashOf, deriveNullifier } from './zk';
 import { toHex } from './bytes';
 
@@ -30,17 +30,22 @@ async function main() {
 
   const h1 = await actionHashOf('{"method":"export.session-key"}');
   const h2 = await actionHashOf('{"method":"other"}');
-  const n1 = await deriveNullifier(w1, h1);
-  const n2 = await deriveNullifier(w1, h2);
+  const n1 = await deriveNullifier(w1, h1, 'demo-agent');
+  const n2 = await deriveNullifier(w1, h2, 'demo-agent');
   assert.notEqual(toHex(n1), toHex(n2), 'nullifier binds action');
 
+  const tree = new CredentialMerkleTree();
+  await tree.insertHex(a.view.prfCommitment);
   const proof = await generateAuthorizationProof({
-    witness: w1,
+    secret: w1,
     prfCommitment: a.view.prfCommitment,
     agentId: 'demo-agent',
     actionPayload: '{"method":"export.session-key"}',
+    amount: 5000n,
     spendCap: 5000n,
+    nowSlot: 10n,
     validUntilSlot: 99n,
+    tree,
   });
   assert.equal(proof.kind, 'scaffold-sha256');
   assert.equal(proof.publicInputs.agentId, 'demo-agent');
