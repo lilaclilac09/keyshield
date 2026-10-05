@@ -51,10 +51,19 @@ async def health_mpp():
         mpp_ok = False
         program_id = str(e)
 
+    owner_autosign = {"loaded": False, "pubkey": None}
+    try:
+        from ..mpp import owner_keystore
+
+        owner_autosign = owner_keystore.owner_status()
+    except Exception:
+        owner_autosign = {"loaded": False, "pubkey": None}
+
     return JSONResponse(
         {
             "mpp_config_loaded": mpp_ok,
             "active_program_id": program_id,
+            "owner_autosign": owner_autosign,
             "env_vars": present,
         }
     )

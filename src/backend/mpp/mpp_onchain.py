@@ -625,6 +625,134 @@ class MppSubmitError(Exception):
     interval retries."""
 
 
+def _simple_to_solders(ix: _SimpleInstruction):
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders package not installed — cannot submit a signed transaction",
+        )
+    return SoldersInstruction(  # type: ignore[union-attr]
+        program_id=Pubkey.from_string(ix.program_id),  # type: ignore[union-attr]
+        accounts=[
+            AccountMeta(  # type: ignore[union-attr]
+                pubkey=Pubkey.from_string(a.pubkey),  # type: ignore[union-attr]
+                is_signer=a.is_signer,
+                is_writable=a.is_writable,
+            )
+            for a in ix.accounts
+        ],
+        data=ix.data,
+    )
+
+
+async def submit_signed_instructions(
+    rpc_url: str,
+    fee_payer_secret: bytes,
+    instructions: list[_SimpleInstruction],
+) -> str:
+    """Sign `instructions` with `fee_payer_secret` (64-byte Solana key) and send.
+
+    Returns the base58 signature. Does not log key material.
+    """
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders package not installed — cannot submit a signed transaction",
+        )
+    if not isinstance(fee_payer_secret, (bytes, bytearray)) or len(fee_payer_secret) != 64:
+        raise MppSubmitError("fee payer secret must be 64 bytes")
+    if not instructions:
+        raise MppSubmitError("no instructions to submit")
+    try:
+        import httpx  # type: ignore
+    except ImportError as e:
+        raise MppSubmitError(f"httpx not installed: {e}") from e
+
+    try:
+        kp = Keypair.from_bytes(bytes(fee_payer_secret))  # type: ignore[union-attr]
+        solders_ixs = [_simple_to_solders(ix) for ix in instructions]
+    except MppSubmitError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise MppSubmitError(f"failed to build solders ix: {e}") from e
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "confirmed"}],
+            },
+        )
+        if resp.status_code != 200:
+            raise MppSubmitError(f"getLatestBlockhash returned HTTP {resp.status_code}")
+        bh_body = resp.json()
+        if "error" in bh_body:
+            raise MppSubmitError(f"getLatestBlockhash error: {bh_body['error']}")
+        blockhash_str = (bh_body.get("result") or {}).get("value", {}).get("blockhash")
+        if not blockhash_str:
+            raise MppSubmitError("getLatestBlockhash response missing blockhash")
+        try:
+            blockhash = Hash.from_string(blockhash_str)  # type: ignore[union-attr]
+            msg = Message.new_with_blockhash(  # type: ignore[union-attr]
+                solders_ixs,
+                kp.pubkey(),
+                blockhash,
+            )
+            tx = Transaction([kp], msg, blockhash)  # type: ignore[union-attr]
+        except Exception as e:  # noqa: BLE001
+            raise MppSubmitError(f"failed to build tx: {e}") from e
+
+        import base64
+
+        tx_b64 = base64.b64encode(bytes(tx)).decode("ascii")
+        send_resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "sendTransaction",
+                "params": [
+                    tx_b64,
+                    {"encoding": "base64", "preflightCommitment": "confirmed"},
+                ],
+            },
+        )
+        if send_resp.status_code != 200:
+            raise MppSubmitError(f"sendTransaction returned HTTP {send_resp.status_code}")
+        send_body = send_resp.json()
+        if "error" in send_body:
+            raise MppSubmitError(f"sendTransaction error: {send_body['error']}")
+        sig = send_body.get("result")
+        if not sig:
+            raise MppSubmitError("sendTransaction response missing signature")
+    return str(sig)
+
+
+async def rpc_account_exists(rpc_url: str, pubkey: str) -> bool:
+    """True when `getAccountInfo` returns a non-null account."""
+    try:
+        import httpx  # type: ignore
+    except ImportError as e:
+        raise MppSubmitError(f"httpx not installed: {e}") from e
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getAccountInfo",
+                "params": [pubkey, {"encoding": "base64"}],
+            },
+        )
+        if resp.status_code != 200:
+            raise MppSubmitError(f"getAccountInfo returned HTTP {resp.status_code}")
+        body = resp.json()
+        if "error" in body:
+            raise MppSubmitError(f"getAccountInfo error: {body['error']}")
+        return (body.get("result") or {}).get("value") is not None
+
+
 async def submit_mpp_settle(
     config: MppConfig,
     ix: _SimpleInstruction,

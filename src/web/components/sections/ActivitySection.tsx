@@ -6,7 +6,11 @@ import { DataTable, Column } from '../ui/DataTable';
 import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/PaymentBadge';
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
-import { apiFetch } from '../../lib/auth';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { apiFetch, getToken, proxyFetch } from '../../lib/auth';
+import { autosignOpenStream, autosignWithdrawStream, captureMppStream } from '../../lib/api';
+import { signCaptureMac } from '../../lib/mpp-capture';
+import { openStreamWithWallet } from '../../lib/mpp-wallet-open';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -23,7 +27,15 @@ interface UsageStat {
 }
 
 interface BillingInfo { balance_usd: number; total_spent_usd: number; free_credit_usd: number; }
-interface MppStream { id: number; agent_pubkey: string; agent_name: string; upstream: string; rate_per_call_micro_usdc: number; rate_per_token_micro_usdc: number; settlement_interval_secs: number; status: string; opened_at: number; last_settled_at: number; closed_at: number | null; total_calls: number; total_tokens: number; pending_micro_usdc: number; settled_micro_usdc: number; on_chain_signature: string | null; }
+interface MppStream {
+  id: number; agent_pubkey: string; agent_name: string; upstream: string;
+  rate_per_call_micro_usdc: number; rate_per_token_micro_usdc: number; settlement_interval_secs: number;
+  status: string; opened_at: number; last_settled_at: number; closed_at: number | null;
+  total_calls: number; total_tokens: number; pending_micro_usdc: number; settled_micro_usdc: number;
+  held_micro_usdc?: number; on_chain_signature: string | null;
+  stream_pda?: string | null; stream_usdc_ata?: string | null; pending_artifact_hash?: string | null;
+}
+interface AgentOpt { name: string; pubkey_b58: string }
 interface MppSummary { streams_total: number; streams_open: number; tokens_total: number; calls_total: number; settled_usd: number; pending_usd: number; }
 interface MppEvent { id: number; stream_id: number; kind: string; calls: number; tokens: number; micro_usdc: number; cost_usd: number; ts: number; upstream: string; agent_name: string; agent_pubkey: string; }
 
@@ -38,6 +50,7 @@ const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
 const fmtCost = (c: number) => `$${c.toFixed(4)}`;
 
 export const ActivitySection: React.FC = () => {
+  const { publicKey, sendTransaction, connected } = useWallet();
   const [tab, setTab] = useState<Tab>('usage');
   const [history, setHistory] = useState<UsageEntry[]>([]);
   const [stats, setStats] = useState<UsageStat[]>([]);
@@ -50,22 +63,41 @@ export const ActivitySection: React.FC = () => {
   const [topupMsg, setTopupMsg] = useState('');
   const [topupOk, setTopupOk] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [autosignPubkey, setAutosignPubkey] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState('');
+  const [openUpstream, setOpenUpstream] = useState('openai');
+  const [openCap, setOpenCap] = useState('0.01');
+  const [openBusy, setOpenBusy] = useState(false);
+  const [openMsg, setOpenMsg] = useState('');
+  const [openOk, setOpenOk] = useState(false);
+  const [withdrawBusy, setWithdrawBusy] = useState<number | null>(null);
+  const [agents, setAgents] = useState<AgentOpt[]>([]);
+  const [programId, setProgramId] = useState('');
+  const [openStep, setOpenStep] = useState('');
+  const [meterBusy, setMeterBusy] = useState<number | null>(null);
+  const [captureBusy, setCaptureBusy] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [hRes, sRes, bRes, mRes, mEvRes] = await Promise.all([
+      const [hRes, sRes, bRes, mRes, mEvRes, aRes, agRes, hpRes] = await Promise.all([
         apiFetch('/usage/history?limit=30'),
         apiFetch('/usage/stats'),
         apiFetch('/billing/balance'),
         apiFetch('/mpp/streams'),
         apiFetch('/mpp/events?limit=20'),
+        apiFetch('/mpp/autosign/status'),
+        apiFetch('/agents/list'),
+        apiFetch('/health/mpp'),
       ]);
       if (hRes.ok) { const d = await hRes.json(); setHistory(d.history ?? []); }
-      if (sRes.ok) { const d = await sRes.json(); setStats(d.stats ?? []); }
+      if (sRes.ok) { const d = await sRes.json(); setStats(Array.isArray(d.stats) ? d.stats : []); }
       if (bRes.ok) { setBilling(await bRes.json()); }
       if (mRes.ok) { const d = await mRes.json(); setMppStreams(d.streams ?? []); setMppSummary(d.summary ?? null); }
       if (mEvRes.ok) { const d = await mEvRes.json(); setMppEvents(d.events ?? []); }
+      if (aRes.ok) { const d = await aRes.json(); setAutosignPubkey(d.loaded ? d.pubkey : null); }
+      if (agRes.ok) { const d = await agRes.json(); setAgents(d.agents ?? []); }
+      if (hpRes.ok) { const d = await hpRes.json(); if (d.active_program_id) setProgramId(d.active_program_id); }
     } catch {}
     finally { setLoading(false); }
   }, []);
@@ -86,6 +118,104 @@ export const ActivitySection: React.FC = () => {
       if (bRes.ok) setBilling(await bRes.json());
     } catch (e) { setTopupMsg(e instanceof Error ? e.message : 'Network error'); }
     finally { setTopupBusy(false); }
+  };
+
+  const handleOpenStream = async (mode: 'autosign' | 'wallet') => {
+    const cap = parseFloat(openCap);
+    if (!openAgent.trim() || !cap || cap <= 0) return;
+    setOpenBusy(true); setOpenMsg(''); setOpenOk(false); setOpenStep('');
+    const maxTotal = Math.round(cap * 1_000_000);
+    try {
+      if (mode === 'autosign') {
+        setOpenStep('autosign: vault → grant → open');
+        const d = await autosignOpenStream({
+          agentPubkey: openAgent.trim(),
+          agentName: openAgent.trim().slice(0, 8),
+          upstream: openUpstream.trim() || 'openai',
+          maxTotalMicroUsdc: maxTotal,
+          ratePerTokenMicroUsdc: 1,
+          ratePerCallMicroUsdc: 0,
+        });
+        setOpenOk(true);
+        setOpenMsg(`Opened stream ${String((d.stream as { id?: number } | undefined)?.id ?? '')} — ${(d.txSignature as string | undefined)?.slice(0, 8) ?? ''}…`);
+      } else {
+        if (!publicKey || !programId) throw new Error('Connect the wallet and wait for /health/mpp program id');
+        const d = await openStreamWithWallet({
+          ownerPubkey: publicKey.toBase58(),
+          programId,
+          agentPubkey: openAgent.trim(),
+          agentName: openAgent.trim().slice(0, 8),
+          upstream: openUpstream.trim() || 'openai',
+          maxTotalMicroUsdc: maxTotal,
+          sendTransaction,
+          onStep: setOpenStep,
+        });
+        setOpenOk(true);
+        setOpenMsg(`Wallet signed stream ${d.streamId} — PDA ${d.streamPda.slice(0, 8)}…`);
+      }
+      setOpenAgent('');
+      await refresh();
+    } catch (e) {
+      setOpenMsg(e instanceof Error ? e.message : 'Open failed');
+    } finally {
+      setOpenBusy(false);
+      setOpenStep('');
+    }
+  };
+
+  const handleWithdraw = async (streamId: number) => {
+    setWithdrawBusy(streamId);
+    try {
+      await autosignWithdrawStream(streamId);
+      await refresh();
+    } catch (e) {
+      setOpenMsg(e instanceof Error ? e.message : 'Withdraw failed');
+    } finally {
+      setWithdrawBusy(null);
+    }
+  };
+
+  const handleMeter = async (stream: MppStream) => {
+    setMeterBusy(stream.id);
+    try {
+      const res = await proxyFetch(stream.upstream, 'v1/chat/completions', {
+        method: 'POST',
+        headers: { 'X-Mpp-Stream-Id': String(stream.id) },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 8,
+          messages: [{ role: 'user', content: 'ping' }],
+        }),
+      });
+      const meter = res.headers.get('x-ks-mpp-meter');
+      setOpenOk(res.ok);
+      setOpenMsg(meter ? `Proxy ${stream.upstream}: ${meter}` : `Proxy HTTP ${res.status}`);
+      await refresh();
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'Proxy meter failed');
+    } finally {
+      setMeterBusy(null);
+    }
+  };
+
+  const handleCapture = async (stream: MppStream) => {
+    const token = getToken();
+    const artifact = stream.pending_artifact_hash;
+    if (!token || !artifact) return;
+    setCaptureBusy(stream.id);
+    try {
+      const mac = await signCaptureMac(token, artifact);
+      await captureMppStream(stream.id, artifact, mac);
+      setOpenOk(true);
+      setOpenMsg(`Captured stream ${stream.id} — on-chain settle submitted`);
+      await refresh();
+    } catch (e) {
+      setOpenOk(false);
+      setOpenMsg(e instanceof Error ? e.message : 'Capture failed');
+    } finally {
+      setCaptureBusy(null);
+    }
   };
 
   const TABS: { id: Tab; label: string }[] = [
@@ -172,6 +302,19 @@ export const ActivitySection: React.FC = () => {
         </div>
       )}
 
+      {tab === 'topup' && (
+        <Card title="Top Up" description="Add prepaid credit. This is the Activity ledger, not an on-chain transfer.">
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
+              <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+            </div>
+            <Button variant="primary" size="md" onClick={handleTopup} disabled={topupBusy || !topupAmt} loading={topupBusy}>Top Up</Button>
+          </div>
+          {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
+        </Card>
+      )}
+
       {/* MPP Streams */}
       {tab === 'mpp' && (
         <div className="space-y-4">
@@ -183,6 +326,42 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
+          <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet.">
+            <p className="text-[11px] text-[#8a96c2] mb-3">
+              {autosignPubkey ? `Auto-sign ${autosignPubkey.slice(0, 4)}…${autosignPubkey.slice(-4)}` : 'Auto-sign off'}
+              {' · '}
+              {connected && publicKey ? `Wallet ${publicKey.toBase58().slice(0, 4)}…${publicKey.toBase58().slice(-4)}` : 'Wallet disconnected'}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Agent</label>
+                {agents.length > 0 ? (
+                  <select value={openAgent} onChange={e => setOpenAgent(e.target.value)} className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white">
+                    <option value="">Select agent</option>
+                    {agents.map(a => (
+                      <option key={a.pubkey_b58} value={a.pubkey_b58}>{a.name || a.pubkey_b58.slice(0, 8)} · {a.pubkey_b58.slice(0, 8)}…</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={openAgent} onChange={e => setOpenAgent(e.target.value)} placeholder="base58 pubkey" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+                )}
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Upstream</label>
+                <input value={openUpstream} onChange={e => setOpenUpstream(e.target.value)} placeholder="openai" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Cap (USDC)</label>
+                <input type="number" min="0.000001" step="0.01" value={openCap} onChange={e => setOpenCap(e.target.value)} className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-white/10" />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
+              <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
+            </div>
+            {openStep && <p className="text-[11px] text-[#8a96c2] mt-2">Step: {openStep}</p>}
+            {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
+          </Card>
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (
@@ -190,8 +369,18 @@ export const ActivitySection: React.FC = () => {
                   <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><span className="text-[11px] font-mono text-white">M</span></div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2"><span className="text-[13px] text-white font-medium">{s.agent_name || s.agent_pubkey.slice(0, 8)}</span><Badge variant={s.status === 'open' ? 'success' : 'neutral'}>{s.status}</Badge></div>
-                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} \xb7 {s.total_calls} calls \xb7 settled {fmtCost(s.settled_micro_usdc / 1_000_000)}</div>
+                    <div className="text-[11px] text-[#5e6a91] mt-0.5">{s.upstream} · {s.total_calls} calls · settled {fmtCost(s.settled_micro_usdc / 1_000_000)} · pending {fmtCost((s.pending_micro_usdc || 0) / 1_000_000)}</div>
+                    {s.stream_pda && <div className="text-[10px] font-mono text-[#3e4a72] mt-0.5">PDA {s.stream_pda.slice(0, 8)}…{s.stream_pda.slice(-4)}</div>}
                   </div>
+                  {s.status === 'open' && (
+                    <Button variant="secondary" size="sm" loading={meterBusy === s.id} disabled={meterBusy !== null} onClick={() => handleMeter(s)}>Meter</Button>
+                  )}
+                  {s.status === 'open' && s.pending_artifact_hash && (
+                    <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapture(s)}>Capture</Button>
+                  )}
+                  {s.status === 'open' && autosignPubkey && (
+                    <Button variant="destructive" size="sm" loading={withdrawBusy === s.id} disabled={withdrawBusy !== null} onClick={() => handleWithdraw(s.id)}>Withdraw</Button>
+                  )}
                   {s.on_chain_signature && <a href={`https://explorer.solana.com/tx/${s.on_chain_signature}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-[11px] text-white hover:underline">View TX</a>}
                 </div>
               ))
