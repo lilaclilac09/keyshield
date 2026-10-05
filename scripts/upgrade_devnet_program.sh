@@ -31,11 +31,17 @@ AUTHORITY_KEY="${KS_UPGRADE_AUTHORITY_KEYPAIR:-}"
 PROGRAM_DIR="$REPO_ROOT/src/programs/keyshield"
 SO="$REPO_ROOT/target/deploy/keyshield.so"
 ARTIFACT_DIR="${KS_UPGRADE_ARTIFACT_DIR:-/opt/cursor/artifacts}"
+BUFFER_CACHE="${KS_UPGRADE_BUFFER_CACHE:-$REPO_ROOT/.keyshield-devnet/upgrade-buffer.txt}"
 BUILD_ONLY=0
+EXISTING_BUFFER="${KS_UPGRADE_BUFFER:-}"
+if [[ -z "$EXISTING_BUFFER" && -s "$BUFFER_CACHE" ]]; then
+  EXISTING_BUFFER="$(tr -d '[:space:]' < "$BUFFER_CACHE")"
+fi
 
 for arg in "$@"; do
   case "$arg" in
     --build-only) BUILD_ONLY=1 ;;
+    --buffer=*) EXISTING_BUFFER="${arg#--buffer=}" ;;
     -h|--help)
       sed -n '2,24p' "$0" | sed 's/^# \?//'
       exit 0
@@ -170,17 +176,32 @@ if [[ -n "$ONCHAIN_LEN" && "$SO_BYTES" -gt "$ONCHAIN_LEN" && -z "$AUTH_FILE" ]];
   log "on-chain program data ($ONCHAIN_LEN) is smaller than new .so ($SO_BYTES); extend needs +${NEED} bytes from authority"
 fi
 
-log "writing upgrade buffer from $SO (payer=$PAYER_PUB)"
-BUFFER_OUT="$(solana program write-buffer "$SO" --url "$RPC" --keypair "$PAYER" 2>&1)" || {
-  log "$BUFFER_OUT"
-  OUT="$(write_report "buffer-failed" "solana program write-buffer failed" "" "")"
-  log "wrote $OUT"
-  exit 1
+parse_buffer() {
+  awk '
+    /Buffer Address:/ { print $3; exit }
+    /^Buffer:/ { print $2; exit }
+  '
 }
-printf '%s\n' "$BUFFER_OUT" >&2
-BUFFER="$(printf '%s\n' "$BUFFER_OUT" | awk '/Buffer Address:/ {print $3; exit}')"
-[[ -n "$BUFFER" ]] || die "write-buffer succeeded but no Buffer Address parsed"
+
+BUFFER=""
+if [[ -n "$EXISTING_BUFFER" ]]; then
+  BUFFER="$EXISTING_BUFFER"
+  log "reusing buffer $BUFFER"
+else
+  log "writing upgrade buffer from $SO (payer=$PAYER_PUB)"
+  BUFFER_OUT="$(solana program write-buffer "$SO" --url "$RPC" --keypair "$PAYER" 2>&1)" || {
+    log "$BUFFER_OUT"
+    OUT="$(write_report "buffer-failed" "solana program write-buffer failed" "" "")"
+    log "wrote $OUT"
+    exit 1
+  }
+  printf '%s\n' "$BUFFER_OUT" >&2
+  BUFFER="$(printf '%s\n' "$BUFFER_OUT" | parse_buffer)"
+  [[ -n "$BUFFER" ]] || die "write-buffer succeeded but no Buffer/Buffer Address parsed"
+fi
 log "buffer=$BUFFER"
+mkdir -p "$(dirname "$BUFFER_CACHE")"
+printf '%s\n' "$BUFFER" > "$BUFFER_CACHE"
 
 if [[ -z "$AUTH_FILE" ]]; then
   NOTE="Live program $PROGRAM_ID authority is ${ONCHAIN_AUTH:-unknown}. Buffer $BUFFER is ready. Set KS_UPGRADE_AUTHORITY_KEYPAIR to that keypair and re-run to finish the upgrade. Not claiming ixs 40–43 are live."

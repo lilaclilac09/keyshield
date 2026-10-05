@@ -155,8 +155,12 @@ To flush-upgrade that live id with a `.so` that includes ixs 40–43:
 # current upgrade authority keypair is in KS_UPGRADE_AUTHORITY_KEYPAIR
 # (or ~/.config/solana/id.json / .keyshield-devnet/upgrade-authority.json)
 npm run live:program:upgrade
+# If the CLI already wrote a buffer, reuse it:
+#   bash scripts/upgrade_devnet_program.sh --buffer=<Buffer>
 npm run live:zk-vault          # strict; exits 2 if disc 40 still rejected
 ```
+
+The live upgrade authority is currently `74Xuc5BC5uttSiHj598sJJj3rgEUsfYF7xVs69tWLwDY`. A matching keypair is required to `extend` (new `.so` is larger than the 99728-byte allocation) and to swap in the buffer. Without it the runner stops at `buffer-ready-authority-missing` and does not claim ixs 40–43 are live.
 
 ---
 
