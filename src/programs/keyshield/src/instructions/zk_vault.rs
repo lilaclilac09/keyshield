@@ -9,12 +9,12 @@ use pinocchio::{
     account_info::AccountInfo,
     instruction::Signer,
     program_error::ProgramError,
-    pubkey::Pubkey,
+    pubkey::{create_program_address, pubkey_eq, Pubkey},
     seeds,
     sysvars::{clock::Clock, rent::Rent, Sysvar},
     ProgramResult,
 };
-use pinocchio_system::instructions::{Allocate, Assign, CreateAccount};
+use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
 use pinocchio_token::instructions::TransferChecked;
 
 use crate::error::KeyShieldError;
@@ -100,10 +100,38 @@ fn write_u64(buf: &mut [u8], off: usize, v: u64) -> Result<(), ProgramError> {
     Ok(())
 }
 
-/// `init_vault` — disc 40.
+fn assert_zk_pda(
+    program_id: &Pubkey,
+    account: &Pubkey,
+    seeds_list: &[&[u8]],
+) -> Result<(), ProgramError> {
+    let derived =
+        create_program_address(seeds_list, program_id).map_err(|_| KeyShieldError::InvalidPda)?;
+    if !pubkey_eq(&derived, account) {
+        return Err(KeyShieldError::InvalidPda.into());
+    }
+    Ok(())
+}
+
+/// Remaining lamports above rent-exempt. Used by the SOL payout path
+/// and the host-oracle matrix — does not touch USDC ATAs.
+pub fn assert_zk_sol_available(
+    amount: u64,
+    vault_lamports: u64,
+    rent_exempt: u64,
+) -> Result<(), ProgramError> {
+    let available = vault_lamports.saturating_sub(rent_exempt);
+    if amount > available {
+        return Err(KeyShieldError::InsufficientBalance.into());
+    }
+    Ok(())
+}
+
+/// `initialize_vault` — disc 40.
 ///
-/// Data: spend_cap u64 | merkle_root [32] | bump u8
+/// Data: spend_cap u64 | merkle_root [32] | bump u8 | [deposit_lamports u64]
 /// Accounts: owner signer, vault writable, system
+/// Optional trailing `deposit_lamports` locks SOL in the vault PDA (plus rent).
 pub fn process_init_zk_vault(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -129,6 +157,15 @@ pub fn process_init_zk_vault(
     let mut root = [0u8; 32];
     root.copy_from_slice(&data[8..40]);
     let bump = data[40];
+    let deposit_lamports = if data.len() >= 49 {
+        u64::from_le_bytes(
+            data[41..49]
+                .try_into()
+                .map_err(|_| KeyShieldError::InvalidKeyData)?,
+        )
+    } else {
+        0
+    };
 
     let exists = vault.is_owned_by(program_id) && vault.data_len() >= ZK_VAULT_SIZE;
     if exists {
@@ -166,7 +203,16 @@ pub fn process_init_zk_vault(
             account: vault,
             owner: program_id,
         }
-        .invoke_signed(&[vault_signer])?;
+        .invoke_signed(&[vault_signer.clone()])?;
+    }
+
+    if deposit_lamports > 0 {
+        Transfer {
+            from: owner,
+            to: vault,
+            lamports: deposit_lamports,
+        }
+        .invoke()?;
     }
 
     let mut buf = vault.try_borrow_mut_data()?;
@@ -183,14 +229,14 @@ pub fn process_init_zk_vault(
     Ok(())
 }
 
-/// `update_policy` — disc 41. Owner only.
-/// Data: spend_cap u64 | merkle_root [32]
+/// `register_root` / `update_policy` — disc 41. Owner only.
+/// Data: merkle_root [32]  OR  spend_cap u64 | merkle_root [32]
 pub fn process_update_zk_policy(
     _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
-    if data.len() < 8 + 32 {
+    if data.len() != 32 && data.len() < 8 + 32 {
         return Err(KeyShieldError::InvalidKeyData.into());
     }
     let mut iter = accounts.iter();
@@ -211,36 +257,64 @@ pub fn process_update_zk_policy(
     if buf[off::REVOKED] != 0 {
         return Err(KeyShieldError::ZkVaultRevoked.into());
     }
-    let spend_cap = u64::from_le_bytes(
-        data[0..8]
-            .try_into()
-            .map_err(|_| KeyShieldError::InvalidKeyData)?,
-    );
-    write_u64(&mut buf, off::SPEND_CAP, spend_cap)?;
-    buf[off::ROOT..off::ROOT + 32].copy_from_slice(&data[8..40]);
+    if data.len() == 32 {
+        buf[off::ROOT..off::ROOT + 32].copy_from_slice(&data[0..32]);
+    } else {
+        let spend_cap = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .map_err(|_| KeyShieldError::InvalidKeyData)?,
+        );
+        write_u64(&mut buf, off::SPEND_CAP, spend_cap)?;
+        buf[off::ROOT..off::ROOT + 32].copy_from_slice(&data[8..40]);
+    }
     Ok(())
 }
 
-/// `execute_action` — disc 42.
+/// `verify_and_execute` — disc 42.
 ///
-/// Data: nullifier[32] | action_hash[32] | amount u64 | valid_until_slot u64 | proof…
-/// Accounts: payer signer, vault, nullifier, vault_ata, dest_ata, mint, token program
+/// Data: nullifier[32] | action_hash[32] | amount u64 | valid_until_slot u64
+///       | nullifier_bump u8 | proof…
+///
+/// Accounts — SOL path (5, fastest landable):
+///   payer signer, vault, nullifier, destination, system
+/// Accounts — USDC path (7):
+///   payer signer, vault, nullifier, vault_ata, dest_ata, mint, token
+///
+/// Proof check is a non-empty-bytes scaffold. Not alt_bn128 / Groth16.
 pub fn process_execute_zk_action(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
-    if data.len() < 32 + 32 + 8 + 8 {
+    if data.len() < 32 + 32 + 8 + 8 + 1 {
         return Err(KeyShieldError::InvalidKeyData.into());
     }
+    let usdc_path = accounts.len() >= 7;
+    if !usdc_path && accounts.len() < 5 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+
     let mut iter = accounts.iter();
-    let _payer = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let payer = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let vault = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
     let nullifier_acc = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let vault_ata = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let dest_ata = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let mint = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let _token = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let dest_or_vault_ata = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let system_or_dest_ata = iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let mint = if usdc_path {
+        Some(iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?)
+    } else {
+        None
+    };
+    let _token = if usdc_path {
+        Some(iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?)
+    } else {
+        None
+    };
+
+    if !payer.is_signer() {
+        return Err(KeyShieldError::NotOwner.into());
+    }
 
     let mut nullifier = [0u8; 32];
     nullifier.copy_from_slice(&data[0..32]);
@@ -254,7 +328,8 @@ pub fn process_execute_zk_action(
             .try_into()
             .map_err(|_| KeyShieldError::InvalidKeyData)?,
     );
-    let proof = &data[80..];
+    let n_bump = data[80];
+    let proof = &data[81..];
 
     let now_slot = Clock::get()?.slot;
 
@@ -272,6 +347,19 @@ pub fn process_execute_zk_action(
         (cap, bump, owner, buf[off::REVOKED] != 0)
     };
 
+    let vault_bump_seed = [bump];
+    assert_zk_pda(
+        program_id,
+        vault.key(),
+        &[ZK_VAULT_SEED, &owner_bytes, &vault_bump_seed],
+    )?;
+    let n_bump_seed = [n_bump];
+    assert_zk_pda(
+        program_id,
+        nullifier_acc.key(),
+        &[ZK_NULLIFIER_SEED, &nullifier, &n_bump_seed],
+    )?;
+
     let nullifier_used =
         nullifier_acc.is_owned_by(program_id) && nullifier_acc.data_len() >= ZK_NULLIFIER_SIZE && {
             let nbuf = nullifier_acc.try_borrow_data()?;
@@ -288,21 +376,36 @@ pub fn process_execute_zk_action(
         nullifier_used,
     )?;
 
-    {
-        let mint_data = mint.try_borrow_data()?;
-        guards::assert_canonical_usdc_mint(mint.key(), mint.owner(), &mint_data)?;
-    }
-    {
-        let ata = vault_ata.try_borrow_data()?;
-        guards::assert_escrow_token_account(&ata, vault_ata.owner(), mint.key(), vault.key())?;
-    }
-    {
-        let dest = dest_ata.try_borrow_data()?;
-        guards::assert_destination_mint(&dest, dest_ata.owner(), mint.key())?;
+    if usdc_path {
+        let vault_ata = dest_or_vault_ata;
+        let dest_ata = system_or_dest_ata;
+        let mint = mint.ok_or(ProgramError::NotEnoughAccountKeys)?;
+        {
+            let mint_data = mint.try_borrow_data()?;
+            guards::assert_canonical_usdc_mint(mint.key(), mint.owner(), &mint_data)?;
+        }
+        {
+            let ata = vault_ata.try_borrow_data()?;
+            guards::assert_escrow_token_account(&ata, vault_ata.owner(), mint.key(), vault.key())?;
+        }
+        {
+            let dest = dest_ata.try_borrow_data()?;
+            guards::assert_destination_mint(&dest, dest_ata.owner(), mint.key())?;
+        }
+    } else {
+        let destination = dest_or_vault_ata;
+        if pubkey_eq(destination.key(), vault.key()) {
+            return Err(KeyShieldError::InvalidPaymentAmount.into());
+        }
+        let rent = Rent::get()?;
+        assert_zk_sol_available(
+            amount,
+            vault.lamports(),
+            rent.minimum_balance(ZK_VAULT_SIZE),
+        )?;
     }
 
     if !nullifier_acc.is_owned_by(program_id) || nullifier_acc.data_len() < ZK_NULLIFIER_SIZE {
-        let n_bump = 255u8;
         let n_bump_ref = &[n_bump];
         let n_seeds = seeds!(ZK_NULLIFIER_SEED, &nullifier, n_bump_ref);
         let n_signer = Signer::from(&n_seeds);
@@ -310,10 +413,31 @@ pub fn process_execute_zk_action(
         let min = rent.minimum_balance(ZK_NULLIFIER_SIZE);
         if nullifier_acc.lamports() == 0 && nullifier_acc.data_is_empty() {
             CreateAccount {
-                from: _payer,
+                from: payer,
                 to: nullifier_acc,
                 lamports: min,
                 space: ZK_NULLIFIER_SIZE as u64,
+                owner: program_id,
+            }
+            .invoke_signed(&[n_signer])?;
+        } else if !nullifier_acc.is_owned_by(program_id) {
+            if nullifier_acc.lamports() < min {
+                Transfer {
+                    from: payer,
+                    to: nullifier_acc,
+                    lamports: min.saturating_sub(nullifier_acc.lamports()),
+                }
+                .invoke()?;
+            }
+            if nullifier_acc.data_len() < ZK_NULLIFIER_SIZE {
+                Allocate {
+                    account: nullifier_acc,
+                    space: ZK_NULLIFIER_SIZE as u64,
+                }
+                .invoke_signed(&[n_signer.clone()])?;
+            }
+            Assign {
+                account: nullifier_acc,
                 owner: program_id,
             }
             .invoke_signed(&[n_signer])?;
@@ -345,18 +469,33 @@ pub fn process_execute_zk_action(
     }
 
     if amount > 0 {
-        let bump_arr = [bump];
-        let vault_seeds = seeds!(ZK_VAULT_SEED, &owner_bytes, &bump_arr);
-        let pda_signer = Signer::from(&vault_seeds);
-        TransferChecked {
-            from: vault_ata,
-            mint,
-            to: dest_ata,
-            authority: vault,
-            amount,
-            decimals: 6,
+        if usdc_path {
+            let vault_ata = dest_or_vault_ata;
+            let dest_ata = system_or_dest_ata;
+            let mint = mint.ok_or(ProgramError::NotEnoughAccountKeys)?;
+            let bump_arr = [bump];
+            let vault_seeds = seeds!(ZK_VAULT_SEED, &owner_bytes, &bump_arr);
+            let pda_signer = Signer::from(&vault_seeds);
+            TransferChecked {
+                from: vault_ata,
+                mint,
+                to: dest_ata,
+                authority: vault,
+                amount,
+                decimals: 6,
+            }
+            .invoke_signed(&[pda_signer])?;
+        } else {
+            let destination = dest_or_vault_ata;
+            let mut from_l = vault.try_borrow_mut_lamports()?;
+            let mut to_l = destination.try_borrow_mut_lamports()?;
+            *from_l = from_l
+                .checked_sub(amount)
+                .ok_or(KeyShieldError::ArithmeticOverflow)?;
+            *to_l = to_l
+                .checked_add(amount)
+                .ok_or(KeyShieldError::ArithmeticOverflow)?;
         }
-        .invoke_signed(&[pda_signer])?;
     }
 
     Ok(())
@@ -389,7 +528,9 @@ pub fn process_revoke_zk_grant(
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_zk_execute, assert_zk_init_fresh, assert_zk_owner};
+    use super::{
+        assert_zk_execute, assert_zk_init_fresh, assert_zk_owner, assert_zk_sol_available,
+    };
     use crate::error::KeyShieldError;
     use pinocchio::program_error::ProgramError;
 
@@ -440,5 +581,12 @@ mod tests {
     #[test]
     fn happy_path_passes() {
         assert_zk_execute(5, 10, false, 5, 10, &[1, 2, 3], false).unwrap();
+    }
+
+    #[test]
+    fn sol_payout_keeps_rent() {
+        assert_zk_sol_available(5, 20, 10).unwrap();
+        let err = assert_zk_sol_available(11, 20, 10).unwrap_err();
+        assert_eq!(code(err), KeyShieldError::InsufficientBalance as u32);
     }
 }

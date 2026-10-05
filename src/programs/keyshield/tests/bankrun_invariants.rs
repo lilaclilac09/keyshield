@@ -142,7 +142,7 @@ fn concurrency_and_underflow_defense() {
 #[test]
 fn zk_vault_policy_and_replay_matrix() {
     use keyshield::instructions::zk_vault::{
-        assert_zk_execute, assert_zk_init_fresh, assert_zk_owner,
+        assert_zk_execute, assert_zk_init_fresh, assert_zk_owner, assert_zk_sol_available,
     };
 
     assert_zk_init_fresh(false).unwrap();
@@ -163,4 +163,9 @@ fn zk_vault_policy_and_replay_matrix() {
         KeyShieldError::CapExceeded as u32
     );
     assert_zk_execute(5, 10, false, 5, 10, &[1, 2], false).unwrap();
+    assert_zk_sol_available(5, 20, 10).unwrap();
+    assert_eq!(
+        code(assert_zk_sol_available(11, 20, 10).unwrap_err()),
+        KeyShieldError::InsufficientBalance as u32
+    );
 }

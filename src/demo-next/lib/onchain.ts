@@ -1,15 +1,21 @@
 /**
- * Intended 3-ix Devnet surface (not shipped on 41P2wHK… yet):
- *   initialize_vault / register_root / verify_and_execute
+ * Pinocchio zk-vault surface on 41P2wHK… — ixs 40 / 41 / 42.
  *
- * Existing pinocchio program has UniversalVault + MPP settle, not Groth16.
- * This module only builds the *public* payload. Proof verification on-chain
- * is labeled `not-shipped` — do not treat as alt_bn128 pairing.
+ * Proof verification on-chain is `scaffold-sha256` (non-empty bytes).
+ * This is not alt_bn128 pairing and not Groth16. Passkey verify stays
+ * client-layer (WebAuthn PRF).
  */
-
+import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js';
+import { fromHex } from './bytes';
 import type { AuthorizationProof } from './zk';
 
-export const ONCHAIN_VERIFIER = 'not-shipped' as const;
+export const ONCHAIN_VERIFIER = 'scaffold-sha256' as const;
+export const PROGRAM_ID_DEFAULT = '41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j';
+export const ZK_VAULT_SEED = new TextEncoder().encode('keyshield');
+export const ZK_NULLIFIER_SEED = new TextEncoder().encode('nullifier');
+export const IX_INIT_ZK_VAULT = 40;
+export const IX_REGISTER_ROOT = 41;
+export const IX_VERIFY_AND_EXECUTE = 42;
 
 export interface PlannedIxs {
   verifier: typeof ONCHAIN_VERIFIER;
@@ -20,19 +26,142 @@ export interface PlannedIxs {
   }[];
 }
 
+function u64le(n: bigint | number | string): Uint8Array {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setBigUint64(0, BigInt(n), true);
+  return b;
+}
+
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
+
+function b32(hex: string): Uint8Array {
+  const u = fromHex(hex);
+  if (u.length !== 32) throw new Error(`expected 32-byte hex, got ${u.length}`);
+  return u;
+}
+
+export function programId(): PublicKey {
+  return new PublicKey(PROGRAM_ID_DEFAULT);
+}
+
+export function deriveZkVaultPda(owner: PublicKey, pid = programId()): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ZK_VAULT_SEED), owner.toBuffer()], pid);
+}
+
+export function deriveZkNullifierPda(
+  nullifierHex: string,
+  pid = programId(),
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ZK_NULLIFIER_SEED), Buffer.from(b32(nullifierHex))], pid);
+}
+
+export function buildInitializeVaultIx(args: {
+  owner: PublicKey;
+  spendCap: bigint | number | string;
+  merkleRootHex: string;
+  depositLamports?: bigint | number;
+  pid?: PublicKey;
+}): TransactionInstruction {
+  const pid = args.pid ?? programId();
+  const [vault, bump] = deriveZkVaultPda(args.owner, pid);
+  return new TransactionInstruction({
+    programId: pid,
+    keys: [
+      { pubkey: args.owner, isSigner: true, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(
+      concat(
+        new Uint8Array([IX_INIT_ZK_VAULT]),
+        u64le(args.spendCap),
+        b32(args.merkleRootHex),
+        new Uint8Array([bump]),
+        u64le(args.depositLamports ?? 0),
+      ),
+    ),
+  });
+}
+
+export function buildRegisterRootIx(args: {
+  owner: PublicKey;
+  merkleRootHex: string;
+  pid?: PublicKey;
+}): TransactionInstruction {
+  const pid = args.pid ?? programId();
+  const [vault] = deriveZkVaultPda(args.owner, pid);
+  return new TransactionInstruction({
+    programId: pid,
+    keys: [
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: vault, isSigner: false, isWritable: true },
+    ],
+    data: Buffer.from(concat(new Uint8Array([IX_REGISTER_ROOT]), b32(args.merkleRootHex))),
+  });
+}
+
+export function buildVerifyAndExecuteIx(args: {
+  payer: PublicKey;
+  destination: PublicKey;
+  nullifierHex: string;
+  actionHashHex: string;
+  amount: bigint | number | string;
+  validUntilSlot: bigint | number | string;
+  proof: Uint8Array;
+  pid?: PublicKey;
+}): TransactionInstruction {
+  if (args.proof.length === 0) throw new Error('scaffold proof must be non-empty');
+  const pid = args.pid ?? programId();
+  const [vault] = deriveZkVaultPda(args.payer, pid);
+  const [nullifierPda, nBump] = deriveZkNullifierPda(args.nullifierHex, pid);
+  return new TransactionInstruction({
+    programId: pid,
+    keys: [
+      { pubkey: args.payer, isSigner: true, isWritable: true },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: nullifierPda, isSigner: false, isWritable: true },
+      { pubkey: args.destination, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(
+      concat(
+        new Uint8Array([IX_VERIFY_AND_EXECUTE]),
+        b32(args.nullifierHex),
+        b32(args.actionHashHex),
+        u64le(args.amount),
+        u64le(args.validUntilSlot),
+        new Uint8Array([nBump]),
+        args.proof,
+      ),
+    ),
+  });
+}
+
 export function planVerifyExecute(proof: AuthorizationProof, amount: string): PlannedIxs {
   return {
     verifier: ONCHAIN_VERIFIER,
     programNote:
-      'Pinocchio ixs 40–43 exist (init/update/execute/revoke). Proof check is scaffold (non-empty bytes), not Groth16 pairing. Passkey verify stays client-layer.',
+      'Pinocchio ixs 40–43 (init/register_root/execute/revoke). SOL path is 5 accounts. Proof check is scaffold-sha256 (non-empty bytes), not Groth16 pairing. Passkey verify stays client-layer. Live 41P2wHK… must be upgraded before these ixs land.',
     ixs: [
       {
         name: 'initialize_vault',
-        args: { spend_cap: proof.publicInputs.spendCap, merkle_root: proof.publicInputs.merkleRoot },
+        args: {
+          spend_cap: proof.publicInputs.spendCap,
+          merkle_root: proof.publicInputs.merkleRoot,
+          disc: String(IX_INIT_ZK_VAULT),
+        },
       },
       {
         name: 'register_root',
-        args: { merkle_root: proof.publicInputs.merkleRoot },
+        args: { merkle_root: proof.publicInputs.merkleRoot, disc: String(IX_REGISTER_ROOT) },
       },
       {
         name: 'verify_and_execute',
@@ -42,6 +171,7 @@ export function planVerifyExecute(proof: AuthorizationProof, amount: string): Pl
           amount,
           proof_kind: proof.kind,
           proof: proof.proofHex,
+          disc: String(IX_VERIFY_AND_EXECUTE),
         },
       },
     ],
