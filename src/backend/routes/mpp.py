@@ -171,9 +171,7 @@ async def mpp_open_stream(request: Request):
     max_total = int(raw_cap) if raw_cap is not None else None
     stream_pda = body.get("streamPda") or body.get("stream_pda")
     stream_usdc_ata = (
-        body.get("streamUsdcAta")
-        or body.get("stream_usdc_ata")
-        or body.get("usdcAta")
+        body.get("streamUsdcAta") or body.get("stream_usdc_ata") or body.get("usdcAta")
     )
 
     from ..mpp import mpp_streams
@@ -863,4 +861,3 @@ async def mpp_submit_withdraw_tx(stream_id: int, request: Request):
     except Exception as exc:  # noqa: BLE001
         return _autosign_error(exc)
     return JSONResponse(result)
-
