@@ -199,7 +199,7 @@ async def demo_openrouter_status(request: Request):
     return JSONResponse(demo_mod.openrouter_status(str(uid) if uid else None))
 
 
-@router.post("/auth/agent-challenge")
+@router.api_route("/auth/agent-challenge", methods=["GET", "POST"])
 async def agent_challenge():
     nonce = secrets.token_hex(32)
     sess_mod._record_nonce(nonce)
@@ -211,7 +211,8 @@ async def agent_login(request: Request):
     body = await request.json()
     from ..agents import agents as agents_mod
 
-    pubkey_b58 = body.get("pubkeyB58", "")
+    # Dashboard + curl use pubkeyB58; Python SDK / CLI send agentPubkey.
+    pubkey_b58 = body.get("pubkeyB58") or body.get("agentPubkey") or body.get("agent_pubkey") or ""
     challenge = body.get("challenge", "")
     signature_b64 = body.get("signature", "")
     nonce = str(body.get("nonce", challenge))
