@@ -92,6 +92,24 @@ pub enum KeyShieldError {
     DisputeWindowActive = 6115,
     /// The session bit in the owner's revocation bitmap is set.
     SessionRevoked = 6116,
+    /// Same Passkey/ZK nullifier consumed twice.
+    NullifierUsed = 6117,
+    /// Execute amount exceeds remaining spend_cap.
+    CapExceeded = 6118,
+    /// Clock slot is past valid_until_slot.
+    ProofExpired = 6119,
+    /// `[b"keyshield", owner]` PDA already initialized.
+    ZkVaultAlreadyExists = 6120,
+    /// Owner revoked the zk escrow grant.
+    ZkVaultRevoked = 6121,
+    /// Zk escrow account missing or wrong discriminator.
+    ZkVaultNotFound = 6122,
+    /// Groth16 tag used but no verification key is installed.
+    Groth16VkMissing = 6123,
+    /// `sol_alt_bn128_group_op` pairing product was not 1.
+    PairingCheckFailed = 6124,
+    /// Scaffold proof digest does not bind the public inputs.
+    ScaffoldTranscriptMismatch = 6125,
 }
 
 impl From<KeyShieldError> for ProgramError {

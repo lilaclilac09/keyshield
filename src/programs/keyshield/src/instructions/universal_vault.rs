@@ -8,7 +8,7 @@ use pinocchio::{
     program_error::ProgramError,
     pubkey::Pubkey,
     seeds,
-    sysvars::{rent::Rent, clock::Clock},
+    sysvars::{clock::Clock, rent::Rent},
     sysvars::Sysvar,
     ProgramResult,
 };
@@ -17,15 +17,14 @@ use pinocchio_system::instructions::{Allocate, Assign, CreateAccount, Transfer};
 
 use crate::{
     error::KeyShieldError,
-    state::{UniversalVault, vault_flags, MAX_KEY_GROUPS},
+    state::{UniversalVault, MAX_KEY_GROUPS},
 };
 
 const VAULT_SEED: &[u8] = b"universal_vault";
 
-// Clock account data offset
-const CLOCK_OFFSET: usize = 0;
-
-/// Get current timestamp from clock sysvar
+fn unix_now() -> Result<u64, ProgramError> {
+    Ok(Clock::get()?.unix_timestamp as u64)
+}
 
 /// Process CreateUniversalVault instruction
 ///
@@ -121,8 +120,7 @@ pub fn process_create_universal_vault(
         }
     }
 
-    // Get current timestamp (placeholder - in production use clock sysvar)
-    let timestamp = 0;
+    let timestamp = unix_now()?;
 
     // Initialize new vault
     let vault_state = UniversalVault::new(*owner.key(), timestamp);
@@ -148,7 +146,7 @@ pub fn process_create_universal_vault(
 /// - update_type (1 byte) - Type of update (0 = set_flags, 1 = add_policy_rule, 2 = remove_policy_rule)
 /// - policy_rule (variable, for add/remove) - Policy rule data
 pub fn process_update_universal_policy(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -192,9 +190,7 @@ pub fn process_update_universal_policy(
         return Err(KeyShieldError::InvalidVaultOwner.into());
     }
 
-    // Get current timestamp
-    let timestamp = 0u64;
-    let timestamp = 0 as u64;
+    let timestamp = unix_now()?;
 
     match update_type {
         // Set flags
@@ -273,7 +269,7 @@ pub fn process_update_universal_policy(
 /// - key_hash (32 bytes)
 /// - key_group (1 byte)
 pub fn process_add_key_to_group(
-    program_id: &Pubkey,
+    _program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
@@ -343,8 +339,8 @@ pub fn process_add_key_to_group(
                 vault_data[offset + 3] = 0; // reserved
                 // key_hashes at offset + 4 (32 bytes)
                 // created_at at offset + 40 (8 bytes)
-                let timestamp = 0u64;
-                // timestamp placeholder
+                let created_at = unix_now()?;
+                vault_data[offset + 40..offset + 48].copy_from_slice(&created_at.to_le_bytes());
 
                 vault_data[60] = key_group_count + 1;
                 group_idx = Some(i);
@@ -369,9 +365,8 @@ pub fn process_add_key_to_group(
 
     vault_data[group_offset + 2] = key_count + 1;
 
-    // Update updated_at
-    let timestamp = 0u64;
-    // timestamp placeholder
+    let updated_at = unix_now()?;
+    vault_data[48..56].copy_from_slice(&updated_at.to_le_bytes());
 
     Ok(())
 }

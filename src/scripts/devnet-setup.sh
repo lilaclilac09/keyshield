@@ -59,7 +59,7 @@ mkdir -p "$CACHE_DIR"
 DEFAULT_SETTLER_KEYPAIR="$CACHE_DIR/mpp-settler-devnet.json"
 SETTLER_KEYPAIR_PATH="${KS_DEVNET_KEYPAIR_PATH:-$DEFAULT_SETTLER_KEYPAIR}"
 
-PROGRAM_DIR="$REPO_ROOT/programs/keyshield"
+PROGRAM_DIR="$REPO_ROOT/src/programs/keyshield"
 PROGRAM_KEYPAIR="$REPO_ROOT/target/deploy/keyshield-keypair.json"
 PROGRAM_SO="$REPO_ROOT/target/deploy/keyshield.so"
 PROGRAM_ID_CACHE="$CACHE_DIR/program-id.txt"
@@ -71,11 +71,13 @@ DEVNET_USDC_MINT="${KS_USDC_MINT:-4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU}"
 QUIET=0
 REFRESH_KEYPAIR=0
 SKIP_DEPLOY=0
+FORCE_UPGRADE=0
 for arg in "$@"; do
   case "$arg" in
     --quiet)            QUIET=1 ;;
     --refresh-keypair)  REFRESH_KEYPAIR=1 ;;
     --skip-deploy)      SKIP_DEPLOY=1 ;;
+    --force-upgrade)    FORCE_UPGRADE=1 ;;
     -h|--help)
       sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//' | head -n 50
       exit 0
@@ -157,6 +159,8 @@ if (( SKIP_DEPLOY )); then
   else
     die "--skip-deploy passed but $PROGRAM_ID_CACHE is empty; run a full deploy first"
   fi
+elif (( FORCE_UPGRADE )); then
+  log "--force-upgrade: rebuild and skip cached program-id"
 elif [[ -s "$PROGRAM_ID_CACHE" ]] && [[ -f "$PROGRAM_KEYPAIR" ]]; then
   CACHED_ID="$(cat "$PROGRAM_ID_CACHE")"
   # Confirm the on-chain program account exists at this id; if not, redeploy.

@@ -27,8 +27,8 @@ export const HealthBadge: React.FC = () => {
   const color = state === 'ok' ? 'bg-emerald-400' : state === 'slow' ? 'bg-amber-400' : state === 'down' ? 'bg-red-500' : 'bg-zinc-600';
 
   return (
-    <div className="flex items-center gap-2 h-10 px-3 rounded-lg border border-[#243365] text-[10px] text-[#8a96c2] uppercase tracking-wider" title={state === 'ok' ? `Backend healthy \xb7 ${latency}ms` : 'Backend status unknown'}>
-      <span className={`w-1.5 h-1.5 rounded-full ${color} ${state === 'ok' ? 'animate-pulse' : ''}`} />
+    <div className="flex items-center gap-2 h-11 px-4 rounded-lg border border-[#243365] text-[13px] text-[#8a96c2] uppercase tracking-wider" title={state === 'ok' ? `Backend healthy \xb7 ${latency}ms` : 'Backend status unknown'}>
+      <span className={`w-2 h-2 rounded-full ${color} ${state === 'ok' ? 'animate-pulse' : ''}`} />
       <span className="hidden sm:inline">{state === 'unknown' ? 'Checking…' : state === 'down' ? `Offline · ${latency}ms` : state === 'slow' ? `Slow · ${latency}ms` : `Online · ${latency}ms`}</span>
     </div>
   );

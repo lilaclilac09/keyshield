@@ -49,13 +49,13 @@
     ]
   },
   "capabilities": [
-    "✓ 创建本地钱包",
-    "✓ 签名交易",
-    "✓ 发送和确认交易",
-    "✓ 查询余额和历史",
-    "✓ 与 Solana 程序交互",
-    "✓ 加密数据存储",
-    "✓ 访问控制管理",
-    "✓ 审计日志跟踪"
+    "Create a local wallet",
+    "Sign a transaction",
+    "Send and confirm a transaction",
+    "Query balance and history",
+    "Call a Solana program",
+    "Store encrypted data",
+    "Manage access control",
+    "Track an audit log"
   ]
 }
