@@ -7,6 +7,7 @@ import { Input } from '../ui/Input';
 import { apiFetch } from '../../lib/auth';
 import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
+import type { PlanSnapshot } from '../PlanCatalog';
 
 interface AgentEntry { id: number; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null; }
 
@@ -33,8 +34,16 @@ export const AgentsSection: React.FC = () => {
   const [registering, setRegistering] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
 
-  const load = useCallback(async () => { try { const r = await apiFetch('/agents/list'); if (r.ok) { const d = await r.json(); setAgentList(d.agents ?? []); } } catch {} finally { setLoading(false); } }, []);
+  const load = useCallback(async () => {
+    try {
+      const [r, p] = await Promise.all([apiFetch('/agents/list'), apiFetch('/billing/plan')]);
+      if (r.ok) { const d = await r.json(); setAgentList(d.agents ?? []); }
+      if (p.ok) setPlanSnap(await p.json());
+    } catch {}
+    finally { setLoading(false); }
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   // Generate keypair and register in one click
@@ -50,7 +59,7 @@ export const AgentsSection: React.FC = () => {
       const pubB58 = _b58Encode(pubRaw);
       const r = await apiFetch('/agents/register', { method: 'POST', body: JSON.stringify({ pubkeyB58: pubB58, name: newName.trim(), scopes: '*' }) });
       const d = await r.json();
-      if (!r.ok) { setErr(d.detail ?? 'Registration failed'); return; }
+      if (!r.ok) { setErr(d.detail ?? d.error ?? 'Registration failed'); return; }
       setNewPubkey(pubB58);
       const seedB64 = _toB64(seed);
       setNewPrivkey(seedB64);
@@ -78,7 +87,7 @@ export const AgentsSection: React.FC = () => {
     try {
       const r = await apiFetch('/agents/register', { method: 'POST', body: JSON.stringify({ pubkeyB58: newPubkey.trim(), name: newName.trim(), scopes: '*' }) });
       const d = await r.json();
-      if (!r.ok) { setErr(d.detail ?? 'Failed'); return; }
+      if (!r.ok) { setErr(d.detail ?? d.error ?? 'Failed'); return; }
       setOk(`Agent "${d.name}" registered`);
       setNewName(''); setNewPubkey('');
       load();
@@ -106,6 +115,12 @@ export const AgentsSection: React.FC = () => {
       </Card>
 
       <Card title="Registered Agents" headerRight={<button onClick={load} className="text-[#8a96c2] hover:text-white transition-colors"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>}>
+        {planSnap && (
+          <p className="text-[12px] text-[#8a96c2] mb-3">
+            Runtime seats on {planSnap.plan.name}: {planSnap.used.runtime}/{planSnap.plan.devices.runtime}
+            {' '}({planSnap.remaining.runtime} left). Agents are the runtime device level — extra calls still settle PAYG / MPP.
+          </p>
+        )}
         {agentList.length === 0 && !loading && <p className="text-[12px] text-[#5e6a91] text-center py-4">No agents registered yet</p>}
         {agentList.map(a => (
           <div key={a.id} className="flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0">

@@ -36,7 +36,7 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
-**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -105,6 +105,48 @@ npm run live:e2e:dry
 
 Do not run a live Devnet settle unless you intend to spend operator
 USDC. Stage 4 live stays opt-in (`LIVE_E2E=1`).
+
+### 4. Plans — business scope
+
+KeyShield sells **two different things**, so it uses **two meters**.
+
+| You are buying | Meter | Why |
+|---|---|---|
+| Trusted devices + control plane (vault, plugins, latency) | **Subscription** (monthly) | Humans have calendars. A laptop, a phone, and a runtime host are seats you keep all month. Latency SLAs are monthly too. |
+| Agent API calls (inference, RPC, streams) | **Pay-as-you-go** (ledger / MPP / x402) | Agents are bursty. A runaway bot must not become an unlimited monthly liability. Each call debits the ledger or settles on-chain after fulfillment. |
+
+That is why we go with **subscription and pay-as-you-go together**. Subscription without PAYG would let one agent print an unbounded bill inside a flat month. PAYG without subscription would charge you per Face ID and per laptop — seats are not calls.
+
+#### Three subscription layers
+
+| Layer | Plan id | What you get | Devices |
+|---|---|---|---|
+| **Free** | `starter` · $0 | Passkey **auto-collection** and **save in the vault**. Path A: WebAuthn-PRF → HKDF → AES-GCM. Server stores ciphertext only. | 1 personal · 0 companion · 1 runtime |
+| **Plugin** (paid 1) | `pro` · $12/mo | **Auto plugins** (SDK/CLI inject `X-Upstream-API-Key`) and **biometric ZK verify** (passkey PRF proves the device; server never sees the raw key). $20 included proxy budget, then PAYG. | 1 personal · 1 companion · 1 runtime |
+| **Accelerate** (paid 2) | `accelerate` · $49/mo | **Acceleration** and **extreme low latency**: Helius RPC cache, batch RPC, parallel quote + analyze, Groq urgent path. $100 included, then PAYG. Fleet seats. | 3 personal · 3 companion · 10 runtime |
+
+Open **Payments → Plans** (or **Settings**). Switching is `POST /billing/plan` `{ "plan_id": "pro" }`. Catalog is public: `GET /billing/plans`.
+
+#### Three device levels (jobs, not copies)
+
+Not three copies of the same laptop — three different jobs:
+
+| Level | What it is | What it may hold |
+|---|---|---|
+| Personal workstation | Laptop / desktop with Path A vault | Decrypts keys via WebAuthn-PRF |
+| Companion | Phone / tablet passkey | Biometric sign-in and unlock; not the vault source of truth |
+| Runtime / agent host | CI box, bot, headless agent | Session token only — never `sk-` / `gsk_` |
+
+Seats are plan-gated (`402 plan_limit` when a level is full). Extra proxy calls still use `POST /billing/topup` and MPP — they do not consume a device seat. Downgrade is blocked (`409`) while you hold more seats than the cheaper plan allows.
+
+```
+Free          collect passkeys + save vault
+              └── PAYG for every agent call
+Plugin        + auto-plugin + biometric ZK
+              └── $20 included, then PAYG
+Accelerate    + cache / batch / low latency
+              └── $100 included, then PAYG
+```
 
 ---
 

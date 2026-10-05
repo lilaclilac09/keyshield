@@ -186,10 +186,18 @@ DELETE /sharing/{share_id}           legacy alias
 GET  /billing/balance                { balance: number }
 GET  /billing/usage                  { totalCalls, totalCost, ... }
 GET  /billing                        combined snapshot
-POST /billing/topup                  body: { amount_usd } — Solana on-chain top-up
+GET  /billing/plans                  public catalog: Free / Plugin / Accelerate + 3 device levels
+GET  /billing/plan                   current plan, seats used/remaining, features
+POST /billing/plan                   body: { plan_id } — switch (401 without session)
+GET  /billing/devices                claimed device seats
+POST /billing/devices                body: { level, name, ref_id, kind? }
+DELETE /billing/devices/{ref_id}
+POST /billing/topup                  body: { amount_usd } — ledger PAYG credit
 GET  /usage/stats                    aggregated stats
 GET  /usage/history?limit=30         per-call history
 ```
+
+Plans: **Free** (`starter`) passkey collect + vault save; **Plugin** (`pro`) auto-plugin + biometric ZK; **Accelerate** (`accelerate`) cache + extreme low latency. Subscription is seats + included budget. PAYG (top-up / MPP / x402) meters agent calls. `402 plan_limit` when a device level is full. `409 plan_downgrade_blocked` if in-use seats exceed a cheaper plan.
 
 ---
 

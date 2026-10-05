@@ -45,6 +45,16 @@ export interface KeychainHome {
     error: string | null;
   };
   ledger: { balance_usd: number; free_credit_usd: number };
+  plan?: {
+    id: string;
+    name: string;
+    tier: string;
+    features: string[];
+    accelerated: boolean;
+    auto_plugin: boolean;
+    biometric_zk: boolean;
+    low_latency: boolean;
+  };
   apis: KeychainStoredApi[];
   connection: {
     api: boolean;
@@ -55,7 +65,7 @@ export interface KeychainHome {
     lowest_ttl_sec: number | null;
     demo: boolean;
   };
-  rpc_cache: { lowest_ttl_sec: number | null; writes_bypass: string[] };
+  rpc_cache: { lowest_ttl_sec: number | null; writes_bypass: string[]; accelerated?: boolean };
   latency?: { wallet_ms: number; online: boolean };
 }
 
