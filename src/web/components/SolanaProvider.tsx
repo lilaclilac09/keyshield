@@ -9,7 +9,9 @@ import '@solana/wallet-adapter-react-ui/styles.css';
 interface Props { children: React.ReactNode; }
 
 export const SolanaProvider: React.FC<Props> = ({ children }) => {
-  const network = WalletAdapterNetwork.Mainnet;
+  // MPP, USDC mint, explorer links, and wallet-sign txs are Devnet.
+  // Solflare/Phantom must be asked for Devnet or they refuse / mis-route the tx.
+  const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter({ network })],

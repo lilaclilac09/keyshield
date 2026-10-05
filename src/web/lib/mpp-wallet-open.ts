@@ -7,8 +7,8 @@ import { Connection, PublicKey, clusterApiUrl, type Transaction } from '@solana/
 import {
   buildOpenStreamTx,
   buildVaultCreateTx,
-  buildVaultEnablePaymentsTx,
-  buildVaultGrantTx,
+  buildVaultEnablePaymentsTxForVault,
+  buildVaultGrantTxForVault,
   buildWithdrawTx,
   openMppStreamRow,
   recordMppTxSignature,
@@ -65,14 +65,24 @@ export async function openStreamWithWallet(opts: {
   const program = new PublicKey(opts.programId);
   const [streamPda, bump] = deriveStreamPda(agent, owner, program);
   const ownerAta = deriveAta(owner, getUsdcMint());
+  const streamUsdcAta = deriveAta(streamPda, getUsdcMint()).toBase58();
 
   opts.onStep?.('vault');
-  await sendVaultIx(await buildVaultCreateTx(opts.ownerPubkey), connection, opts.sendTransaction);
+  const vaultCreate = await buildVaultCreateTx(opts.ownerPubkey);
+  const vaultPda = String(vaultCreate.vaultPda || '').trim();
+  if (!vaultPda) {
+    throw new Error('build-create-tx missing vaultPda');
+  }
+  await sendVaultIx(vaultCreate, connection, opts.sendTransaction);
   opts.onStep?.('enable-payments');
-  await sendVaultIx(await buildVaultEnablePaymentsTx(opts.ownerPubkey), connection, opts.sendTransaction);
+  await sendVaultIx(
+    await buildVaultEnablePaymentsTxForVault(opts.ownerPubkey, vaultPda),
+    connection,
+    opts.sendTransaction,
+  );
   opts.onStep?.('grant');
   await sendVaultIx(
-    await buildVaultGrantTx(opts.ownerPubkey, opts.agentPubkey, opts.maxTotalMicroUsdc),
+    await buildVaultGrantTxForVault(opts.ownerPubkey, opts.agentPubkey, opts.maxTotalMicroUsdc, vaultPda),
     connection,
     opts.sendTransaction,
   );
@@ -85,6 +95,8 @@ export async function openStreamWithWallet(opts: {
     maxTotalMicroUsdc: opts.maxTotalMicroUsdc,
     ratePerTokenMicroUsdc: 1,
     ratePerCallMicroUsdc: 0,
+    streamPda: streamPda.toBase58(),
+    streamUsdcAta,
   });
   const streamId = opened.stream.id;
 
@@ -97,20 +109,20 @@ export async function openStreamWithWallet(opts: {
     maxTotalMicroUsdc: opts.maxTotalMicroUsdc,
   });
   const openTx = assembleOpenStreamTx(built);
-  const streamUsdcAta = built.streamUsdcAta ?? deriveAta(streamPda, getUsdcMint()).toBase58();
+  const streamUsdcAtaForRecord = built.streamUsdcAta ?? streamUsdcAta;
   const sig = await sendBuilt(openTx, connection, opts.sendTransaction);
   if (!sig) throw new Error('open_payment_stream was not submitted');
 
   opts.onStep?.('record-tx');
   await recordMppTxSignature(streamId, sig, {
     streamPda: streamPda.toBase58(),
-    streamUsdcAta,
+    streamUsdcAta: streamUsdcAtaForRecord,
   });
   return {
     streamId,
     txSignature: sig,
     streamPda: streamPda.toBase58(),
-    streamUsdcAta,
+    streamUsdcAta: streamUsdcAtaForRecord,
   };
 }
 

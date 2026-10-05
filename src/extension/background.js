@@ -58,6 +58,7 @@ async function _getVaultKeyBytes() {
 // Used by GET_KEYS_FOR_DOMAIN to resolve which vault items belong to a page.
 const DOMAIN_TO_UPSTREAM = {
   'openrouter.ai':         'openrouter',
+  'scvd.store':            'openrouter',
   'platform.openai.com':   'openai',
   'openai.com':            'openai',
   'console.anthropic.com': 'anthropic',
@@ -78,19 +79,22 @@ const DOMAIN_TO_UPSTREAM = {
   'alchemy.com':           'alchemy',
 };
 
+function _normalizeHostname(input) {
+  const raw = String(input || '').trim().toLowerCase();
+  if (!raw) return '';
+  return raw.replace(/\.+$/, '');
+}
+
 function _upstreamForDomain(domain) {
-  if (!domain) return null;
-  if (DOMAIN_TO_UPSTREAM[domain]) return DOMAIN_TO_UPSTREAM[domain];
+  const normalized = _normalizeHostname(domain);
+  if (!normalized) return null;
+  if (DOMAIN_TO_UPSTREAM[normalized]) return DOMAIN_TO_UPSTREAM[normalized];
   // suffix match (e.g. foo.openai.com → openai)
   for (const d of Object.keys(DOMAIN_TO_UPSTREAM)) {
-    if (domain === d || domain.endsWith('.' + d)) return DOMAIN_TO_UPSTREAM[d];
+    if (normalized === d || normalized.endsWith('.' + d)) return DOMAIN_TO_UPSTREAM[d];
   }
   return null;
 }
-
-// In-memory decryption cache: id → { value, expires }
-const _decryptCache = new Map();
-const _DECRYPT_TTL_MS = 30_000;
 
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
   const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
@@ -132,21 +136,14 @@ async function getKeysForDomain(domain) {
   );
   if (matched.length === 0) return { ok: false, reason: 'no-keys' };
 
-  const now = Date.now();
   const out = [];
   for (const it of matched) {
     let value;
-    const cached = _decryptCache.get(it.id);
-    if (cached && cached.expires > now) {
-      value = cached.value;
-    } else {
-      try {
-        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
-        _decryptCache.set(it.id, { value, expires: now + _DECRYPT_TTL_MS });
-      } catch (e) {
-        // skip items we can't decrypt (key mismatch, corrupt cipher, etc.)
-        continue;
-      }
+    try {
+      value = await _decryptCipher(keyBytes, it.cipher, it.iv);
+    } catch (e) {
+      // skip items we can't decrypt (key mismatch, corrupt cipher, etc.)
+      continue;
     }
     out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
   }
@@ -439,6 +436,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, detail: String(e) });
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'TRIGGER_QUICK_AUTH') {
+    (async () => {
+      try {
+        const payload = {
+          hostname: _normalizeHostname(message.hostname || ''),
+          reason: String(message.reason || '401'),
+          initiated_at: Date.now(),
+        };
+        await chrome.storage.session.set({ ks_quick_auth_pending: payload });
+        try {
+          await chrome.action.openPopup();
+          sendResponse({ initiated: true, mode: 'popup' });
+          return;
+        } catch {
+          // Popup can fail in some contexts; fall through to dashboard tab.
+        }
+        const stored = await chrome.storage.local.get(['ks_dashboard_url', PIN_PREF_KEY]);
+        let dashboardUrl = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
+        const pinned = !!stored[PIN_PREF_KEY];
+        const looksLegacyDash = !pinned && LEGACY_DASHBOARD_URLS.some(
+          (u) => dashboardUrl === u || dashboardUrl.startsWith(`${u}/`),
+        );
+        if (!dashboardUrl || looksLegacyDash) dashboardUrl = DEFAULT_DASHBOARD_URL;
+        chrome.tabs.create({ url: dashboardUrl });
+        sendResponse({ initiated: true, mode: 'dashboard-tab' });
+      } catch (e) {
+        sendResponse({ initiated: false, detail: String(e) });
       }
     })();
     return true;

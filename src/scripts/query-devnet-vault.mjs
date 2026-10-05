@@ -108,7 +108,7 @@ if (fs.existsSync(localVaultPath)) {
   
   const vaultData = JSON.parse(fs.readFileSync(localVaultPath, 'utf-8'));
   
-  console.log('   📋 Vault info：');
+  console.log('   📋 Vault info:');
   console.log(`   ├─ Owner: ${vaultData.owner}`);
   console.log(`   ├─ Created: ${new Date(vaultData.createdAt * 1000).toISOString()}`);
   console.log(`   ├─ Encrypted: ${vaultData.keyMetadata.encrypted}`);

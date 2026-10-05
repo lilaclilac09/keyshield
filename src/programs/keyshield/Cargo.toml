@@ -12,6 +12,11 @@ crate-type = ["cdylib", "lib"]
 default = []
 std = []
 
+# Host `cargo test` / rustc do not know `target_os = "solana"`. Tell check-cfg
+# so pinocchio macros and zk_verify do not emit unexpected_cfgs noise.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
 [dependencies]
 pinocchio = { workspace = true }
 pinocchio-token = { workspace = true }

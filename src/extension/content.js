@@ -146,6 +146,10 @@ const detectedKeys   = new Map();   // key -> { provider, onDomain, saved }
 let   panelEl        = null;        // the multi-key floating panel (null when hidden)
 let   domainDismissed = false;      // set asynchronously below
 const HOST = window.location.hostname;
+const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
+const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store'];
+let lastQuickAuthPromptAt = 0;
+const QUICK_AUTH_COOLDOWN_MS = 5000;
 
 // UUIDs that appear in the page URL itself are routing IDs (e.g. the
 // /<account-uuid>/api-keys path on dashboard.helius.dev), NOT credentials.
@@ -185,6 +189,12 @@ function dismissThisDomain() {
 // we treat its keys as high-confidence)
 function isOnDomain(provider) {
   return provider.domains.some(d => HOST === d || HOST.endsWith('.' + d));
+}
+
+function ksHostMatches(hostname, allowList) {
+  const host = String(hostname || '').toLowerCase();
+  if (!host) return false;
+  return allowList.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
 }
 
 // ── Scanner ─────────────────────────────────────────────────────────────────
@@ -429,8 +439,6 @@ function showNotification(_key, _provider, _onDomain) { renderPanel(); }
 
 const KS_FILL_ATTACHED = '__ksFillAttached';   // marker on inputs we've decorated
 let   ksFillEnabled    = null;                 // null=unknown, true=have keys, false=skip
-let   ksCachedKeys     = null;                 // { keys: [...], fetchedAt: ms }
-const KS_KEYS_TTL_MS   = 30_000;
 
 function ksIsFillableInput(el) {
   if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
@@ -475,15 +483,10 @@ function ksSetValue(el, value) {
 }
 
 function ksRequestKeys() {
-  const now = Date.now();
-  if (ksCachedKeys && (now - ksCachedKeys.fetchedAt) < KS_KEYS_TTL_MS) {
-    return Promise.resolve({ ok: true, keys: ksCachedKeys.keys });
-  }
   return sendToBackground({ type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
     }
-    ksCachedKeys = { keys: response.keys, fetchedAt: Date.now() };
     return { ok: true, keys: response.keys };
   });
 }
@@ -530,6 +533,7 @@ function ksShowDropdown(anchor, input, keys) {
     `;
     row.onclick = () => {
       ksSetValue(input, k.value);
+      k.value = '';
       menu.remove();
     };
     menu.appendChild(row);
@@ -612,6 +616,7 @@ function ksAttachFillButton(input) {
     }
     if (resp.keys.length === 1) {
       ksSetValue(input, resp.keys[0].value);
+      resp.keys[0].value = '';
     } else {
       ksShowDropdown(btn, input, resp.keys);
     }
@@ -690,6 +695,84 @@ document.addEventListener('copy', () => setTimeout(scan, 300));
 // User typed/pasted in a field — likely revealing a key.
 document.addEventListener('input', () => setTimeout(scan, 300), { capture: true });
 
+function ksExtractRequestUrl(args) {
+  const first = args?.[0];
+  if (!first) return '';
+  if (typeof first === 'string') return first;
+  if (first instanceof URL) return first.toString();
+  if (typeof Request !== 'undefined' && first instanceof Request) return first.url || '';
+  if (typeof first.url === 'string') return first.url;
+  return '';
+}
+
+function ksExtractRequestHeaders(args) {
+  const first = args?.[0];
+  const second = args?.[1];
+  const sources = [];
+  if (first && typeof first === 'object' && first.headers) sources.push(first.headers);
+  if (second && typeof second === 'object' && second.headers) sources.push(second.headers);
+  const out = new Headers();
+  for (const src of sources) {
+    try {
+      const h = new Headers(src);
+      h.forEach((value, key) => out.set(key, value));
+    } catch {
+      // ignore malformed header containers
+    }
+  }
+  return out;
+}
+
+function ksPromptQuickAuth(hostname, reason) {
+  const now = Date.now();
+  if (now - lastQuickAuthPromptAt < QUICK_AUTH_COOLDOWN_MS) return;
+  lastQuickAuthPromptAt = now;
+  injectStyleOnce();
+  const toast = document.createElement('div');
+  toast.id = 'keyshield-401-notice';
+  Object.assign(toast.style, {
+    position: 'fixed',
+    top: '20px',
+    right: '20px',
+    zIndex: '999999',
+    backgroundColor: '#0a0d1a',
+    border: '1px solid #1c2238',
+    borderRadius: '12px',
+    padding: '16px',
+    width: '320px',
+    boxShadow: '0 20px 40px -10px rgba(0,0,0,0.6)',
+    color: '#e4e4e7',
+    fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  });
+  toast.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="background:#0e1430;padding:6px 8px;border-radius:6px;font-size:10px;font-weight:700;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.05em">401</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">Credential required for ${hostname}</div>
+        <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${reason}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="ks-401-auth" class="ks-btn ks-btn-primary" style="flex:1">Authorize now</button>
+      <button id="ks-401-dismiss" class="ks-btn ks-btn-ghost">Dismiss</button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+  toast.querySelector('#ks-401-auth').onclick = () => {
+    sendToBackground({
+      type: 'TRIGGER_QUICK_AUTH',
+      hostname,
+      reason,
+    });
+    toast.remove();
+  };
+  toast.querySelector('#ks-401-dismiss').onclick = () => toast.remove();
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 20000);
+}
+
 // ── x402 payment interceptor ────────────────────────────────────────────────
 // Wraps window.fetch to detect 402 + x402 headers and show a payment prompt.
 // Does NOT interfere with any other fetch — only intercepts 402 responses that
@@ -699,11 +782,26 @@ document.addEventListener('input', () => setTimeout(scan, 300), { capture: true 
   const _origFetch = window.fetch.bind(window);
 
   window.fetch = async function (...args) {
+    const requestUrl = ksExtractRequestUrl(args);
+    let requestHost = '';
+    try { requestHost = requestUrl ? new URL(requestUrl, location.href).hostname.toLowerCase() : ''; } catch { /* noop */ }
+    const requestHeaders = ksExtractRequestHeaders(args);
+    const hasAuthorization = requestHeaders.has('authorization');
     const response = await _origFetch(...args);
 
     if (
+      response.status === 401 &&
+      !hasAuthorization &&
+      ksHostMatches(requestHost || location.hostname, QUICK_AUTH_TARGETS)
+    ) {
+      const sourceHost = requestHost || location.hostname;
+      ksPromptQuickAuth(sourceHost, 'No bearer credential detected, KeyShield quick auth is available.');
+    }
+
+    if (
       response.status === 402 &&
-      response.headers.get('X-Payment-Required') === 'x402'
+      response.headers.get('X-Payment-Required') === 'x402' &&
+      ksHostMatches(requestHost || location.hostname, PAYMENT_INTERCEPT_TARGETS)
     ) {
       // Clone so the caller still gets the original 402 body
       const clone = response.clone();
@@ -726,7 +824,7 @@ document.addEventListener('input', () => setTimeout(scan, 300), { capture: true 
           // malformed body — still show a prompt with $0.00
         }
 
-        const hostname = location.hostname;
+        const hostname = (requestHost || location.hostname).toLowerCase();
 
         // Ask background if this domain is trusted + below threshold
         let autoPayApproved = false;

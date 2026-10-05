@@ -138,6 +138,8 @@ export async function openMppStreamRow(body: {
   ratePerTokenMicroUsdc?: number;
   ratePerCallMicroUsdc?: number;
   settlementIntervalSecs?: number;
+  streamPda?: string;
+  streamUsdcAta?: string;
 }): Promise<{ stream: { id: number } }> {
   const r = await apiFetch('/mpp/streams', {
     method: 'POST',
@@ -174,16 +176,41 @@ export async function buildVaultEnablePaymentsTx(ownerPubkey: string): Promise<B
   return r.json();
 }
 
+export async function buildVaultEnablePaymentsTxForVault(
+  ownerPubkey: string,
+  vaultPda: string,
+): Promise<BuildTxResponse> {
+  const r = await apiFetch('/mpp/vault/build-enable-payments-tx', {
+    method: 'POST',
+    body: JSON.stringify({ ownerPubkey, vaultPda }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'build-enable-payments-tx failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'build-enable-payments-tx failed');
+  }
+  return r.json();
+}
+
 export async function buildVaultGrantTx(
   ownerPubkey: string,
   agentPubkey: string,
   maxSpendMicroUsdc: number,
+): Promise<BuildTxResponse> {
+  return buildVaultGrantTxForVault(ownerPubkey, agentPubkey, maxSpendMicroUsdc);
+}
+
+export async function buildVaultGrantTxForVault(
+  ownerPubkey: string,
+  agentPubkey: string,
+  maxSpendMicroUsdc: number,
+  vaultPda?: string,
 ): Promise<BuildTxResponse> {
   const r = await apiFetch('/mpp/vault/build-grant-tx', {
     method: 'POST',
     body: JSON.stringify({
       ownerPubkey,
       agentPubkey,
+      vaultPda,
       paymentStreamEnabled: true,
       maxSpendMicroUsdc,
     }),
