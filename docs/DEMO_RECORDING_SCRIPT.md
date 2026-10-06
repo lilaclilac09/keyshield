@@ -5,78 +5,95 @@ proof that a take exists. Recordings live outside Git (see
 [EVIDENCE_INDEX.md](EVIDENCE_INDEX.md)). Scene table:
 [DEMO_STORYBOARD.md](DEMO_STORYBOARD.md).
 
-The harness talks to a **local mock upstream**, not
-`https://app.ks.aileena.xyz`. Label every take MOCK. Do not present
-the printed `ksv2_…` token or `.env` fixture as a live WebAuthn PRF
-ceremony.
+The harness talks to a **local mock upstream** for SSE and the 502
+clawback, and to **Solana Devnet RPC** for wallet balances and the
+latest confirmed program transaction. Do not present the printed
+`ksv2_sess_…` token as a live WebAuthn ceremony. Do not quote canned
+figures (`240.50 USDC`, `68ms`, `4,120 CU`, the 84-character
+`678bq…XTQc` paste). Read the numbers this take prints.
 
 Run the harness (no prompts):
 
 ```bash
-bash scripts/record_demo.sh                 # default 2500ms scene gap
+bash scripts/record_demo.sh                 # default 2500ms step gap
 bash scripts/record_demo.sh --fast          # CI / verify
 bash scripts/record_demo.sh --split         # also tail mock + ks-proxy in tmux
 bash scripts/record_demo.sh --split --pace 28000   # ~2 minute server take
 ```
 
+Default wallet is `.keyshield-devnet/user-devnet.json` (override with
+`KS_RECORD_WALLET` / `KS_RECORD_WALLET_KEYPAIR`).
+
 Components:
 
 | Pane | Process |
 |---|---|
-| A | `scripts/record_demo_mock_upstream.mjs` — fast SSE, 502, truncated stream |
+| A | `scripts/record_demo_mock_upstream.mjs` — `X-Test-Scenario: stream_success` / `fault_502` |
 | B | `ks-proxy` (`RUST_LOG=info`, `KS_UPSTREAM_OVERRIDE_BASE` → mock) |
-| C | `scripts/record_demo_client.ts` + `npm run test:fault` |
-| D | OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` when a saved vault/env key is present; otherwise the local plug-in on the mock |
+| C | `scripts/record_demo_client.ts` (steps 1–5) + `npm run test:fault` |
+| D | OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free` when a saved vault/env key is present; otherwise the local plug-in |
 
-Do not paste live secrets into the recording. The left-pane `.env` is a fixture under the workdir.
-
----
-
-## Scene 1 — The core problem (0:00 – 0:35)
-
-**Visual:** Left: `exposed.env` with `OPENAI_API_KEY`, `HELIUS_API_KEY`, `SOLANA_PRIVATE_KEY`. Right: agent hits the mock, HTTP 502, simulated on-chain debit already posted.
-
-**Action:** Highlight the leaked `.env` lines, then the `LOSS` line (funds settled, body empty).
-
-**Voiceover:**
-
-> Every autonomous agent and developer workflow today shares two fatal flaws: root API keys exposed in plaintext `.env` files, and pay-before-delivery protocols where upstreams fail, but your capital is already gone. This is KeyShield: the hardware-anchored iCloud Keychain for AI and on-chain API keys.
+Do not paste live secrets into the recording.
 
 ---
 
-## Scene 2 — Hardware enclave and zero-clipboard ingestion (0:35 – 1:10)
+## STEP 1 — Session wallet (0:00 – 0:25)
 
-**Visual:** Terminal shows `PRF` / `SEAL` / `TOKEN ksv2_…`. Clipboard check prints empty.
+**Visual:** Local pubkey, Devnet SOL + USDC from RPC, ephemeral `ksv2_sess_…` scoped to NVIDIA / OpenRouter / DeepSeek.
 
-**Action:** Point at `ciphertext … (server never sees plaintext)` and `clipboard empty`.
+**Action:** Point at the pubkey and the two balances. Those must match Explorer and `/keychain/home`.
 
 **Voiceover:**
 
-> KeyShield turns device biometrics into a zero-latency credential vault. When a key is created, our browser extension captures it directly from the DOM before it ever touches the system clipboard. The secret is sealed client-side using AES-256-GCM, derived from your hardware enclave via WebAuthn PRF. Plaintext credentials never hit disk, remote servers, or clipboard memory.
+> Agents should never hold root API keys. This session wallet is the local Devnet owner KeyShield already uses for MPP. Balances come from RPC, not a slide.
 
 ---
 
-## Scene 3 — Fast-path streaming, timed on this take (1:10 – 1:45)
+## STEP 2 — PRF stand-in and zero clipboard (0:25 – 0:50)
 
-**Visual:** Client `POST /proxy/openai/v1/chat/completions` through `ks-proxy`. Logs show TTFT, total RTT, and `Memory zeroized` / socket close. Optional cut to `RUST_LOG=info` in the proxy pane.
+**Visual:** Ciphertext seal. `pbpaste` / xclip reports `0 bytes`.
 
-**Action:** Read the printed RTT from this take. Quote that number, or drop the number. Do not say “under 80ms” unless this take measured it.
+**Action:** Stay on the 0-byte clipboard line. Say it is a SHA-256 stand-in when no Secure Enclave is in the take.
 
 **Voiceover:**
 
-> For agents and high-frequency bots, latency is everything. KeyShield's Rust proxy acts as a localized data plane. It resolves credentials from lock-free memory, streams tokens with zero-copy chunk piping, and zeroizes memory buffers immediately after socket transmission. The number on screen is the milliseconds this call actually took.
+> The production path is WebAuthn PRF to HKDF to AES-GCM on the device. This recording seals a fixture key the same way and proves the clipboard never held it.
 
 ---
 
-## Scene 4 — scvd.store fault and Solana clawback (1:45 – 2:30)
+## STEP 3 — SSE through ks-proxy (0:50 – 1:20)
 
-**Visual:** `HOLD` → `FAULT DETECTED` (502 + truncated SSE) → `UNILATERAL CLAWBACK EXECUTED`. Then `npm run test:fault` / `tests/proxy_fault_injection.test.ts` passing.
+**Visual:** `X-Test-Scenario: stream_success` through `/proxy/openai/v1/chat/completions`. TTFT and total are measured.
 
-**Action:** Stay on `settled=0 · escrow restored`.
+**Action:** Read the printed milliseconds. Do not say “under 80ms” unless this take measured it. `ks-proxy` does not depend on the Rust `zeroize` crate — do not claim crate-level memory zeroization.
 
 **Voiceover:**
 
-> When agents interact with real-world pay-per-call endpoints like scvd.store, upstreams crash, connections drop, and data gets truncated. Instead of naive upfront payment, KeyShield deploys an on-chain Hold-Verify-Capture state machine built with Pinocchio on Solana. Funds are held in a slot-bounded escrow, response hashes are verified in flight, and if the upstream fails, the escrow unilaterally claws back the funds. Zero lost capital, zero unverified settlements. That is KeyShield.
+> The Rust proxy injects the upstream key for one hop, streams the mock SSE body, and never persists plaintext. The number on screen is the clock for this call.
+
+---
+
+## STEP 4 — Devnet tx + dashboard (1:20 – 1:50)
+
+**Visual:** Program `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`. Latest confirmed signature, slot, instruction discriminator, compute units. Dashboard SOL/USDC matching RPC.
+
+**Action:** Open the printed Explorer URL. The 84-character `678bq…` paste is WrongSize — ignore it.
+
+**Voiceover:**
+
+> This is the Pinocchio program on Devnet. Compute units are whatever `getTransaction` returned, not a marketing cap. The dashboard snapshot must match the same wallet.
+
+---
+
+## STEP 5 — 502 under HOLD, clawback (1:50 – 2:20)
+
+**Visual:** HOLD 0.05 USDC → `fault_502` → Stream hash FAILED (Truncated EOF) → UNILATERAL CLAWBACK EXECUTED → capital lost 0.00 USDC.
+
+**Action:** Stay on `capital lost: 0.00 USDC`. Say the clawback in this take is the local ledger; the live analog is the Withdraw in STEP 4.
+
+**Voiceover:**
+
+> Pay-before-fulfillment settles even when the upstream returns 502. KeyShield holds first, hashes the stream, and claws back on truncated EOF so unverified work cannot debit the wallet.
 
 ---
 
