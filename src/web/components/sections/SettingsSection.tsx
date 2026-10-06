@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Key, Fingerprint, RefreshCw, Trash2, Shield, Bell, BellOff } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -28,6 +28,7 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
   const [planMsg, setPlanMsg] = useState('');
   const [planOk, setPlanOk] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const registeringRef = useRef(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deviceTrusted, setDeviceTrusted] = useState(() => !!getPasskeyTrust());
   const [prefs, setPrefsState] = useState<VaultPreferences>(() => getPrefs());
@@ -57,6 +58,8 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
   const updatePref = <K extends keyof VaultPreferences>(k: K, v: VaultPreferences[K]) => { setPrefsState(setPrefs({ [k]: v } as Partial<VaultPreferences>)); };
 
   const handleRegister = async () => {
+    if (registeringRef.current) return;
+    registeringRef.current = true;
     setRegistering(true); setPkError(''); setPkSuccess('');
     try {
       const enrolled = await registerPasskey(newPkName, deviceLevel);
@@ -70,7 +73,10 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
       await loadPasskeys();
     } catch (e) {
       setPkError(e instanceof Error ? e.message : 'Registration failed');
-    } finally { setRegistering(false); }
+    } finally {
+      registeringRef.current = false;
+      setRegistering(false);
+    }
   };
   const handleDelete = async (id: string) => { setDeletingId(id); try { await deletePasskey(id); setPasskeys(prev => prev.filter(p => p.id !== id)); } catch { setPkError('Failed to remove passkey'); } finally { setDeletingId(null); } };
   const handleForgetDevice = () => { clearPasskeyTrust(); setDeviceTrusted(false); setPkSuccess('Device trust cleared on this browser.'); };
