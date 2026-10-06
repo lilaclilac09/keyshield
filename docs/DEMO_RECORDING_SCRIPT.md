@@ -61,27 +61,15 @@ Do not paste live secrets into the recording.
 
 ---
 
-<<<<<<< HEAD
-## Scene 3 — Fast-path streaming under 80ms (1:10 – 1:45)
-=======
 ## STEP 3 — SSE through ks-proxy (0:50 – 1:20)
->>>>>>> 5de092eb4 (Record-demo: five-step harness with live Devnet wallet.)
 
 **Visual:** `X-Test-Scenario: stream_success` through `/proxy/openai/v1/chat/completions`. TTFT and total are measured.
 
-<<<<<<< HEAD
-**Action:** Highlight `overhead Nms < 80ms` (or the WARN if the box is slow).
-
-**Voiceover:**
-
-> For agents and high-frequency bots, latency is everything. KeyShield's Rust proxy acts as a localized data plane. It resolves credentials from lock-free memory in microseconds, streams tokens with zero-copy chunk piping, and zeroizes memory buffers immediately after socket transmission. Full security with less than 80 milliseconds of total overhead.
-=======
 **Action:** Read the printed milliseconds. Do not say “under 80ms” unless this take measured it. `ks-proxy` does not depend on the Rust `zeroize` crate — do not claim crate-level memory zeroization.
 
 **Voiceover:**
 
 > The Rust proxy injects the upstream key for one hop, streams the mock SSE body, and never persists plaintext. The number on screen is the clock for this call.
->>>>>>> 5de092eb4 (Record-demo: five-step harness with live Devnet wallet.)
 
 ---
 
