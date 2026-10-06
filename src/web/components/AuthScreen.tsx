@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
+import { ExtensionInstallHint } from './ExtensionInstallHint';
 import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, getPasskeyTrust, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 
 interface Props { onAuthenticated: () => void; }
@@ -57,8 +58,8 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const showPasskeyPanel = (trust || hasPasskeyDevice) && !useWallet;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6">
-      <div className="w-full max-w-md flex flex-col items-center text-center">
+    <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6 py-12">
+      <div className="w-full max-w-lg flex flex-col items-center text-center">
         <div className="w-20 h-20 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-8">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="white" strokeWidth="1.5" fill="none" /><circle cx="11.5" cy="11" r="2" stroke="currentColor" strokeWidth="1.2" fill="none" className="text-[#a8b3d8]" /><line x1="13" y1="12.5" x2="16" y2="15.5" stroke="currentColor" strokeWidth="1.2" className="text-[#a8b3d8]" /></svg>
         </div>
@@ -95,6 +96,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
             </>
           )}
         </div>
+        <ExtensionInstallHint variant="auth" />
         <p className="mt-8 text-[11px] leading-relaxed text-[#3e4a72] max-w-sm">AES-256-GCM \xb7 ed25519 wallet signatures \xb7 server never sees your key material</p>
       </div>
     </div>

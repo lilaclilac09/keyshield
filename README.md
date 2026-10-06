@@ -77,11 +77,18 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 1. Open the vault UI and connect a Solana wallet (Phantom / Solflare).
 2. Unlock the Device Vault (passkey / WebAuthn-PRF). Encryption stays
    on this device; the server stores ciphertext only.
-3. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
-   OpenRouter, Groq, …).
-4. **Developer** — copy the session token. That is the Bearer you put
+3. **Chrome extension (preferred)** — the vault UI front page shows
+   these steps. Open `chrome://extensions` → Developer mode →
+   **Load unpacked** → select `src/extension` (`manifest.json` inside).
+   Pin the icon, then sign in so the popup gets a session. No Chrome
+   Web Store listing yet. Firefox is supported as a temporary add-on
+   only (`manifest.firefox.json`).
+4. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
+   OpenRouter, Groq, …), or let the Chrome extension save one from
+   the provider page.
+5. **Developer** — copy the session token. That is the Bearer you put
    in `KS_TOKEN`. Demo / harness tokens may look like `ksv2_…`.
-5. Call any upstream through the proxy. The client decrypts locally and
+6. Call any upstream through the proxy. The client decrypts locally and
    sends the key once in `X-Upstream-API-Key`. The proxy does not persist it.
 
 ```bash

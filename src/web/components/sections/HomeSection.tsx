@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
+import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { getPasskeyTrust } from '../../lib/auth';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
@@ -104,6 +105,8 @@ export const HomeSection: React.FC<Props> = ({
         <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Keychain</h2>
       </div>
 
+      <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
           <p className="text-[16px] text-[#8a96c2]">SOL</p>
@@ -131,7 +134,7 @@ export const HomeSection: React.FC<Props> = ({
           <button type="button" onClick={() => onGo('vault')} className="text-[15px] text-[#93b4ff] hover:underline">Vault →</button>
         </div>
         {apis.length === 0 ? (
-          <p className="text-[16px] text-[#8a96c2]">None yet. Paste a key below or let the extension save one from a provider page.</p>
+          <p className="text-[16px] text-[#8a96c2]">None yet. Paste a key below, or install the Chrome extension (above) and save one from a provider page.</p>
         ) : (
           <div className="flex flex-wrap gap-3">
             {apis.map((api) => (
