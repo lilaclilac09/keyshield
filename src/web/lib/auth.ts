@@ -409,7 +409,7 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
 export async function registerPasskey(
   name: string,
   deviceLevel: 'personal' | 'companion' | 'runtime' = 'personal',
-): Promise<{ credentialId: string; name: string }> {
+): Promise<{ credentialId: string; name: string; vaultEnrolled?: boolean; vaultWarning?: string }> {
   const optsRes = await apiFetch(
     `/auth/passkey/register-options?device_level=${encodeURIComponent(deviceLevel)}`,
   );
@@ -475,36 +475,41 @@ export async function registerPasskey(
   }
   const result = await verRes.json();
 
-  // Path A dual-register: tell the CF Worker about this credential so
-  // subsequent unlocks can issue a vault JWT. PRF output is in extensions
-  // results — without it we can't derive the vault id at all, which makes
-  // the whole Path A vault unusable, so we fail loudly instead of pretending
-  // enrollment succeeded.
+  // Identity passkey is stored on the Python control plane at this point.
+  // Path A Device Vault still needs PRF + the Cloudflare worker. Do not fail
+  // the identity ceremony if the authenticator has no PRF (virtual
+  // authenticators, some hardware keys) or the worker is unreachable —
+  // Settings can show Face ID success; Device Vault enroll retries later.
   const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const prfOutput = ext?.prf?.results?.first;
   if (!prfOutput) {
-    throw new Error(
-      'Passkey created without PRF extension — this browser/authenticator ' +
-      'does not support the vault crypto KeyShield needs. Try Chrome/Safari ' +
-      'on a recent OS with platform authenticator support.',
-    );
+    return {
+      ...result,
+      vaultEnrolled: false,
+      vaultWarning:
+        'Passkey saved for sign-in. Device Vault needs a PRF-capable authenticator (Chrome/Safari platform passkey).',
+    };
   }
-  // Surface CF Worker failures: previously this was swallowed by console.warn,
-  // which made the UI report success even though the vault was never registered.
-  // That caused a "passkey cannot be saved" error because subsequent unlock had no row to
-  // find on the worker side.
-  await enrollVault(prfOutput, {
-    id: credential.id,
-    rawId: _bufferToB64url(credential.rawId),
-    type: credential.type,
-    response: {
-      attestationObject: _bufferToB64url(response.attestationObject),
-      clientDataJSON: _bufferToB64url(response.clientDataJSON),
-    },
-    clientExtensionResults: { prf: { enabled: true } },
-  }, challengeB64url);
-
-  return result;
+  try {
+    await enrollVault(prfOutput, {
+      id: credential.id,
+      rawId: _bufferToB64url(credential.rawId),
+      type: credential.type,
+      response: {
+        attestationObject: _bufferToB64url(response.attestationObject),
+        clientDataJSON: _bufferToB64url(response.clientDataJSON),
+      },
+      clientExtensionResults: { prf: { enabled: true } },
+    }, challengeB64url);
+    return { ...result, vaultEnrolled: true };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : 'vault enroll failed';
+    return {
+      ...result,
+      vaultEnrolled: false,
+      vaultWarning: `Passkey saved for sign-in. Device Vault enroll deferred: ${detail}`,
+    };
+  }
 }
 
 /**

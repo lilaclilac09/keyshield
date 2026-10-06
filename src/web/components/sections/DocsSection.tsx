@@ -85,12 +85,12 @@ export const DocsSection: React.FC = () => {
 
       {/* Performance */}
       <Card variant="bordered">
-        <div className="flex items-center gap-2 mb-2"><Zap size={14} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Lower latency \u2014 up to 10x faster than direct API calls</span></div>
-        <p className="text-[12px] text-[#a8b3d8] leading-relaxed">Going through KeyShield is <strong className="text-white">faster</strong>, not slower. Three reasons:</p>
+        <div className="flex items-center gap-2 mb-2"><Zap size={14} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Call path — pool, cache, MPP skip</span></div>
+        <p className="text-[12px] text-[#a8b3d8] leading-relaxed">Home → Call prints the milliseconds <strong className="text-white">that request actually timed</strong>. Do not quote a marketing band. Three reasons the proxy can be cheaper than a cold direct hop:</p>
         <ul className="space-y-1.5 mt-3">
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Warm HTTP/2 connection pool</strong> \u2014 KeyShield keeps persistent sessions to every upstream. Your call skips DNS + TLS handshake (~150\u2013300ms saved on cold starts).</span></li>
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Concurrent batch fan-out</strong> \u2014 <code className="text-white">batch(requests)</code> dispatches up to 20 calls in parallel via <code className="text-white">asyncio.gather</code>. A 20-prompt workload returns in the latency of one call.</span></li>
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">MPP skips x402 round-trips</strong> \u2014 once a stream is open, calls go straight upstream with no per-call 402 negotiation. Saves ~200ms.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Warm HTTP/2 connection pool</strong> \u2014 KeyShield keeps persistent sessions to every upstream, so a later call can skip a fresh DNS + TLS handshake.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Concurrent batch fan-out</strong> \u2014 <code className="text-white">batch(requests)</code> dispatches up to 20 calls in parallel via <code className="text-white">asyncio.gather</code>.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">MPP skips x402 round-trips</strong> \u2014 once a stream is open, calls go straight upstream with no per-call 402 negotiation.</span></li>
         </ul>
       </Card>
 

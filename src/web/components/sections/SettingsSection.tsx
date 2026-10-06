@@ -59,10 +59,13 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
   const handleRegister = async () => {
     setRegistering(true); setPkError(''); setPkSuccess('');
     try {
-      await registerPasskey(newPkName, deviceLevel);
+      const enrolled = await registerPasskey(newPkName, deviceLevel);
       if (addr) setPasskeyTrust(addr, '');
       setDeviceTrusted(true);
-      setPkSuccess(`Passkey added as ${deviceLevel}. Next time, sign in with Face ID.`);
+      const vaultNote = enrolled && 'vaultWarning' in enrolled && enrolled.vaultWarning
+        ? ` ${enrolled.vaultWarning}`
+        : '';
+      setPkSuccess(`Passkey added as ${deviceLevel}. Next time, sign in with Face ID.${vaultNote}`);
       setNewPkName('My passkey');
       await loadPasskeys();
     } catch (e) {
@@ -112,7 +115,7 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
             <option value="companion">Companion (phone)</option>
             <option value="runtime">Runtime host</option>
           </select>
-          <Button variant="primary" size="md" onClick={handleRegister} disabled={registering || !newPkName.trim()} loading={registering}>Add Passkey</Button>
+          <Button data-testid="add-passkey" variant="primary" size="md" onClick={handleRegister} disabled={registering || !newPkName.trim()} loading={registering}>Add Passkey</Button>
         </div>
         {planSnap && (
           <p className="text-[11px] text-[#5e6a91] mt-2">
