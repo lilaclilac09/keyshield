@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # KeyShield record-demo harness (~2 minutes, zero prompts).
 #
-#   A  mock upstream (SSE / 502 / drop)
+#   A  mock upstream (X-Test-Scenario: stream_success | fault_502)
 #   B  ks-proxy / proxy-helius (RUST_LOG=info) pointed at the mock
-#   C  timed client — scenes 1–4
+#   C  timed client — steps 1–5 (local wallet, measured SSE, Devnet tx, 502 clawback)
 #   D  OpenRouter Nemotron plug-in (saved vault/env key, else mock)
 #
 #   bash scripts/record_demo.sh
@@ -53,10 +53,36 @@ if [[ ! -x "$KS_PROXY_BIN" ]]; then
   KS_PROXY_BIN="$ROOT/src/proxy/target/debug/ks-proxy"
 fi
 
-TS() { date -u +"%H:%M:%S"; }
+TS() { date -u +"%H:%M:%S.%6N"; }
 say() { printf '\033[2m%s\033[0m \033[36m%-6s\033[0m %s\n' "$(TS)" "$1" "$2"; }
 ok()  { printf '\033[2m%s\033[0m \033[32m%-6s\033[0m %s\n' "$(TS)" "OK" "$1"; }
 err() { printf '\033[2m%s\033[0m \033[31m%-6s\033[0m %s\n' "$(TS)" "FAIL" "$1"; }
+
+KEYPAIR="${KS_RECORD_WALLET_KEYPAIR:-$ROOT/.keyshield-devnet/user-devnet.json}"
+PUBFILE="${KS_RECORD_WALLET_PUB:-$ROOT/.keyshield-devnet/user-devnet.pub}"
+if [[ -z "${KS_RECORD_WALLET:-}" ]]; then
+  if command -v solana-keygen >/dev/null 2>&1 && [[ -f "$KEYPAIR" ]]; then
+    KS_RECORD_WALLET="$(solana-keygen pubkey "$KEYPAIR")"
+  elif [[ -f "$PUBFILE" ]]; then
+    KS_RECORD_WALLET="$(tr -d '[:space:]' < "$PUBFILE")"
+  else
+    err "no local wallet (set KS_RECORD_WALLET or $KEYPAIR)"
+    exit 1
+  fi
+fi
+export KS_RECORD_WALLET
+export KS_RECORD_RPC="${KS_RECORD_RPC:-https://api.devnet.solana.com}"
+export KS_RECORD_PROGRAM_ID="${KS_RECORD_PROGRAM_ID:-41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j}"
+export KS_RECORD_USDC_MINT="${KS_RECORD_USDC_MINT:-4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU}"
+export KS_RECORD_API="${KS_RECORD_API:-http://127.0.0.1:8000}"
+if [[ -z "${KS_RECORD_SSE_INTERVAL_MS:-}" ]]; then
+  if [[ "$PACE_MS" -le 200 ]]; then
+    KS_RECORD_SSE_INTERVAL_MS=4
+  else
+    KS_RECORD_SSE_INTERVAL_MS=40
+  fi
+fi
+export KS_RECORD_SSE_INTERVAL_MS
 
 MOCK_PID=""
 PROXY_PID=""
@@ -75,11 +101,13 @@ trap cleanup EXIT INT TERM
 echo
 printf '\033[1mKeyShield record-demo harness\033[0m\n'
 say "INIT" "workdir $WORKDIR"
-say "INIT" "pace ${PACE_MS}ms  split=$SPLIT"
+say "INIT" "pace ${PACE_MS}ms  split=$SPLIT  sse_interval=${KS_RECORD_SSE_INTERVAL_MS}ms"
+say "INIT" "wallet $KS_RECORD_WALLET"
 
 # ── Component A ──────────────────────────────────────────────────────────────
 say "A" "starting mock upstream on :${MOCK_PORT}"
-KS_RECORD_MOCK_PORT="$MOCK_PORT" node "$ROOT/scripts/record_demo_mock_upstream.mjs" \
+KS_RECORD_MOCK_PORT="$MOCK_PORT" KS_RECORD_SSE_INTERVAL_MS="$KS_RECORD_SSE_INTERVAL_MS" \
+  node "$ROOT/scripts/record_demo_mock_upstream.mjs" \
   >"$LOG_DIR/mock.log" 2>&1 &
 MOCK_PID=$!
 for i in $(seq 1 40); do
@@ -166,7 +194,7 @@ if [[ "$SPLIT" -eq 1 ]] && command -v tmux >/dev/null 2>&1; then
 fi
 
 # ── Components C + D ─────────────────────────────────────────────────────────
-say "C" "running timed client (scenes 1–4 + OpenRouter plug-in)"
+say "C" "running timed client (steps 1–5 + OpenRouter plug-in)"
 export KS_RECORD_MOCK_URL="$MOCK_URL"
 export KS_RECORD_PROXY_URL="$PROXY_URL"
 export KS_RECORD_WORKDIR="$WORKDIR"
