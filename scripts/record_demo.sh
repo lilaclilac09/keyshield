@@ -199,7 +199,13 @@ export KS_RECORD_MOCK_URL="$MOCK_URL"
 export KS_RECORD_PROXY_URL="$PROXY_URL"
 export KS_RECORD_WORKDIR="$WORKDIR"
 export KS_RECORD_PACE_MS="$PACE_MS"
-export KS_RECORD_CLIPBOARD="${KS_RECORD_CLIPBOARD:-}"
+# Empty export would force the client onto the env clipboard path.
+# Leave it unset so xclip / pbpaste can run.
+if [[ -n "${KS_RECORD_CLIPBOARD:-}" ]]; then
+  export KS_RECORD_CLIPBOARD
+else
+  unset KS_RECORD_CLIPBOARD
+fi
 export KS_VAULT_DB_PATH="${KS_VAULT_DB_PATH:-$ROOT/src/backend/data/vault_shim.db}"
 npx --yes tsx "$ROOT/scripts/record_demo_client.ts"
 
