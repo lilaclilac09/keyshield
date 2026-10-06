@@ -491,16 +491,21 @@ export async function registerPasskey(
     };
   }
   try {
-    await enrollVault(prfOutput, {
-      id: credential.id,
-      rawId: _bufferToB64url(credential.rawId),
-      type: credential.type,
-      response: {
-        attestationObject: _bufferToB64url(response.attestationObject),
-        clientDataJSON: _bufferToB64url(response.clientDataJSON),
-      },
-      clientExtensionResults: { prf: { enabled: true } },
-    }, challengeB64url);
+    await Promise.race([
+      enrollVault(prfOutput, {
+        id: credential.id,
+        rawId: _bufferToB64url(credential.rawId),
+        type: credential.type,
+        response: {
+          attestationObject: _bufferToB64url(response.attestationObject),
+          clientDataJSON: _bufferToB64url(response.clientDataJSON),
+        },
+        clientExtensionResults: { prf: { enabled: true } },
+      }, challengeB64url),
+      new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error('Device Vault enroll timed out')), 2500);
+      }),
+    ]);
     return { ...result, vaultEnrolled: true };
   } catch (e) {
     const detail = e instanceof Error ? e.message : 'vault enroll failed';
