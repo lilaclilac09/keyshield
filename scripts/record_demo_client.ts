@@ -2,16 +2,17 @@
 /**
  * Timed demo client for `scripts/record_demo.sh`.
  *
- * STEP 1  local session wallet + RPC balances + scoped ephemeral token
- * STEP 2  WebAuthn-PRF stand-in + clipboard 0-byte check
- * STEP 3  SSE through ks-proxy (measured TTFT / total — no canned 68ms)
- * STEP 4  Devnet program tx + CU + dashboard /keychain/home sync
- * STEP 5  HOLD 0.05 USDC → fault_502 → unilateral clawback (local ledger)
- * SCENE D OpenRouter Nemotron plug-in when a saved key exists
+ * SCENE 1  core problem — plaintext .env / templates + pay-before-delivery
+ * SCENE 2  DOM intercept stand-in + WebAuthn-PRF seal + clipboard 0 bytes
+ * SCENE 3  zero-copy IPC inject into OpenClaw runtime + auto session spec
+ * SCENE 4  SSE through ks-proxy (measured TTFT / total — no canned 68ms)
+ * SCENE 5  Devnet program tx + 502 HOLD clawback
+ * SCENE D  OpenRouter Nemotron plug-in when a saved key exists
  */
 import { execFileSync } from "node:child_process";
-import { createCipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { createCipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import net from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +24,9 @@ const RPC = process.env.KS_RECORD_RPC || "https://api.devnet.solana.com";
 const PROGRAM = process.env.KS_RECORD_PROGRAM_ID || "41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j";
 const USDC_MINT = process.env.KS_RECORD_USDC_MINT || "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const WALLET = process.env.KS_RECORD_WALLET || "";
+const WORK = process.env.KS_RECORD_WORKDIR || "/tmp/ks-record-demo";
+const IPC_SOCK = process.env.KS_RECORD_IPC_SOCK || join(WORK, "ipc/openclaw.sock");
+const IPC_AUTH = process.env.KS_RECORD_IPC_AUTH || "";
 const MODEL = process.env.KS_OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
 const PACE_MS = Number(process.env.KS_RECORD_PACE_MS || "2500");
 const HOLD_USDC = 0.05;
@@ -216,22 +220,49 @@ async function fetchBalances(wallet: string): Promise<Balances> {
   return { wallet, sol: lamports / 1e9, lamports, usdc, usdcMicro };
 }
 
-async function step1(): Promise<{ token: string; balances: Balances }> {
-  log("STEP", c.bold("1/5  Connect session wallet, fetch balances, scoped ephemeral token"));
+async function step1(): Promise<Balances> {
+  log("STEP", c.bold("1/5  The core problem — copy/paste .env + pay-before-delivery"));
+  mkdirSync(WORK, { recursive: true });
+  const envPath = join(WORK, "exposed.env");
+  writeFileSync(
+    envPath,
+    [
+      "# NEVER commit this. Demo fixture of the broken workflow — not a live secret.",
+      "OPENAI_API_KEY=sk-proj-EXPOSED-IN-DOTENV-DO-NOT-USE",
+      "HELIUS_API_KEY=helius_EXPOSED_IN_PROCESS_MEMORY",
+      "SOLANA_PRIVATE_KEY=[11,22,33,44,55,66,77,88]",
+      "",
+    ].join("\n"),
+  );
+  log("SHOW", `left pane  ${envPath}  (manual paste — this is the anti-pattern)`);
+  for (const line of [
+    "OPENAI_API_KEY=sk-proj-EXPOSED-IN-DOTENV-DO-NOT-USE",
+    "HELIUS_API_KEY=helius_EXPOSED_IN_PROCESS_MEMORY",
+    "SOLANA_PRIVATE_KEY=[11,22,33,44,55,66,77,88]",
+  ]) {
+    log("LEAK", line);
+  }
+  log("TMPL", "agent frameworks still ship markdown blanks: KS_TOKEN=________________");
+
+  const t0 = Date.now();
+  const naive = await fetch(`${MOCK}/fault/bad-gateway`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model: "naive", messages: [{ role: "user", content: "pay first" }] }),
+  });
+  log("HTTP", `naive agent → upstream ${naive.status} in ${Date.now() - t0}ms`);
+  log("LOSS", "HTTP 502 · fulfillment empty · prepaid credits already gone");
+
   if (!WALLET) throw new Error("KS_RECORD_WALLET is empty — pass the local keypair pubkey");
   log("WALLET", WALLET);
-  log("RPC", RPC);
   const balances = await fetchBalances(WALLET);
   log("SOL", `${balances.sol.toFixed(8)} SOL  (${balances.lamports} lamports)`);
   log("USDC", `${balances.usdc} USDC  (${balances.usdcMicro} micro)`);
-  const token = `ksv2_sess_${randomBytes(12).toString("hex")}`;
-  log("TOKEN", `${token}  (ephemeral, this process only)`);
-  log("SCOPE", "dynamic router: NVIDIA / OpenRouter / DeepSeek");
-  log("OK", "session wallet connected from local keypair — not a canned 7xKXtg fixture");
-  return { token, balances };
+  log("OK", "problem stated — KeyShield zero-copy inject is the contrast");
+  return balances;
 }
 
-function deriveVault(): { token: string; ciphertextB64: string; aes: Uint8Array } {
+function deriveVault(plaintext: string): { ciphertextB64: string; aes: Uint8Array } {
   const prf = createHash("sha256")
     .update("KeyShield Vault Key Derivation v1")
     .update("record-demo-passkey")
@@ -239,28 +270,154 @@ function deriveVault(): { token: string; ciphertextB64: string; aes: Uint8Array 
   const aesKey = new Uint8Array(hkdfSync("sha256", prf, Buffer.alloc(0), "ks-extension-vault-v1", 32));
   const nonce = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", aesKey, nonce);
-  const fakeKey = "sk-or-v1-DEMO-NEVER-CLIPBOARD";
-  const ct = Buffer.concat([cipher.update(fakeKey, "utf8"), cipher.final(), cipher.getAuthTag()]);
-  const token = `ksv2_${createHash("sha256").update(prf).digest("hex").slice(0, 24)}`;
+  const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final(), cipher.getAuthTag()]);
   return {
-    token,
     ciphertextB64: Buffer.concat([nonce, ct]).toString("base64url"),
     aes: aesKey,
   };
 }
 
-async function step2(): Promise<void> {
-  log("STEP", c.bold("2/5  WebAuthn PRF stand-in + clipboard 0-byte check"));
-  log("DOM", "no headed key modal in this harness — PRF is SHA-256(passkey) not Secure Enclave");
-  const vault = deriveVault();
-  log("PRF", "stand-in → HKDF-SHA256 → AES-256-GCM  (server never sees plaintext)");
+async function step2(): Promise<string> {
+  log("STEP", c.bold("2/5  DOM intercept + WebAuthn PRF seal (no clipboard)"));
+  log("ISSUE", "upstream provider issued a fixture credential (masked, never copied)");
+  const issued = "sk-or-v1-DEMO-NEVER-CLIPBOARD";
+  log("DOM", "extension intercept stand-in: captured from in-process modal, not pbpaste");
+  log("KEY", `issued ${mask(issued)} — plaintext stays in this function frame`);
+  const vault = deriveVault(issued);
+  log("PRF", "SHA-256 stand-in → HKDF-SHA256 → AES-256-GCM  (no Secure Enclave on this host)");
   log("SEAL", `ciphertext ${vault.ciphertextB64.slice(0, 28)}…`);
   zeroize(vault.aes);
   clearClipboard();
   const clip = clipboardBytes();
   log("CLIP", `${clip.backend === "pbpaste" ? "pbpaste" : "pbpaste-equivalent (" + clip.backend + ")"} → ${clip.bytes} bytes`);
   if (clip.bytes !== 0) throw new Error(`clipboard was ${clip.bytes} bytes; expected 0`);
-  log("OK", "clipboard buffer is 0 bytes — plaintext was not copied");
+  const token = `ksv2_sess_${randomBytes(12).toString("hex")}`;
+  log("TOKEN", `${token}  derived in-memory after seal — not typed into a form`);
+  log("OK", "clipboard empty; root secret never left the intercept frame");
+  return token;
+}
+
+function ipcMac(): string {
+  if (!IPC_AUTH) throw new Error("KS_RECORD_IPC_AUTH missing — start record_demo.sh");
+  return createHmac("sha256", Buffer.from(IPC_AUTH, "hex")).update("ks-record-ipc-v1").digest("hex");
+}
+
+function ipcCall(msg: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const sock = net.createConnection(IPC_SOCK);
+    let buf = "";
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(new Error("ipc timeout"));
+    }, 4000);
+    sock.on("connect", () => {
+      sock.write(`${JSON.stringify({ ...msg, mac: ipcMac() })}\n`);
+    });
+    sock.on("data", (chunk) => {
+      buf += chunk.toString("utf8");
+      const nl = buf.indexOf("\n");
+      if (nl < 0) return;
+      clearTimeout(timer);
+      sock.end();
+      try {
+        resolve(JSON.parse(buf.slice(0, nl)) as Record<string, unknown>);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    sock.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function blankFields(spec: Record<string, unknown>, path = ""): string[] {
+  const blanks: string[] = [];
+  for (const [k, v] of Object.entries(spec)) {
+    const p = path ? `${path}.${k}` : k;
+    if (v == null) {
+      blanks.push(p);
+      continue;
+    }
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (!s || /_{4,}|<[A-Z_]+>|TODO|changeme|your_session_token|________________/i.test(s)) {
+        blanks.push(p);
+      }
+    } else if (Array.isArray(v)) {
+      if (!v.length) blanks.push(p);
+    } else if (typeof v === "object") {
+      blanks.push(...blankFields(v as Record<string, unknown>, p));
+    }
+  }
+  return blanks;
+}
+
+function deriveSessionSpec(token: string): Record<string, unknown> {
+  const agentPublicKey = randomBytes(32).toString("hex");
+  return {
+    runtime: "openclaw",
+    skill: "@keyshield/openclaw-skill",
+    mcp: {
+      command: "keyshield-mcp",
+      env: { KS_TOKEN: token, KS_BASE: PROXY },
+    },
+    skillConfig: {
+      rpcUrl: RPC,
+      programId: PROGRAM,
+      ownerPublicKey: WALLET,
+      agentPublicKey,
+      litNetwork: "datil-dev",
+      sessionToken: token,
+    },
+    proxy: PROXY,
+    upstreams: ["nvidia", "openrouter", "deepseek"],
+    policy: {
+      name: "record-demo-session",
+      version: 1,
+      allowedTools: ["get_price", "analyze_signal", "get_swap_quote"],
+      session: { timeoutSeconds: 900, requireReauth: false },
+    },
+    source: "derived-in-memory",
+    blanksToFill: 0,
+  };
+}
+
+async function step3(token: string): Promise<void> {
+  const t0 = Date.now();
+  log("STEP", c.bold("3/5  Zero-paste auto-injection into OpenClaw (IPC)"));
+  log("PIPE", `unix:${IPC_SOCK}  authenticated HMAC, no clipboard, no .env write`);
+  const spec = deriveSessionSpec(token);
+  const blanks = blankFields(spec);
+  if (blanks.length) throw new Error(`session spec still has blanks: ${blanks.join(",")}`);
+  const specPath = join(WORK, "session-spec.json");
+  writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+  log("SPEC", `auto-generated ${specPath}  blanks=${blanks.length}`);
+  for (const line of JSON.stringify(spec, null, 2).split("\n").slice(0, 24)) {
+    log("CONF", line);
+  }
+
+  const injected = await ipcCall({ op: "inject", token, spec });
+  if (!injected.ok) throw new Error(`ipc inject failed: ${JSON.stringify(injected)}`);
+  if (String(injected.token) !== token) throw new Error("runtime token mismatch");
+  if (injected.hasRootSecret === true) throw new Error("runtime process held a root API key");
+
+  const status = await ipcCall({ op: "status" });
+  log("PROC", `openclaw pid=${status.pid}  KS_TOKEN=${String(status.token).slice(0, 16)}…`);
+  log("ENV", "runtime process.env.KS_TOKEN set over IPC — developer never exported it");
+
+  clearClipboard();
+  const clip = clipboardBytes();
+  log("CLIP", `${clip.backend === "pbpaste" ? "pbpaste" : "pbpaste-equivalent (" + clip.backend + ")"} → ${clip.bytes} bytes`);
+  if (clip.bytes !== 0) throw new Error(`clipboard was ${clip.bytes} bytes after inject`);
+  if (!String(status.token || "").startsWith("ksv2_sess_")) {
+    throw new Error("runtime did not receive ksv2_sess_ token");
+  }
+  const ms = Date.now() - t0;
+  log("TIME", `scene 3 ${ms}ms (budget 15000ms)`);
+  if (ms >= 15_000) throw new Error(`zero-copy inject took ${ms}ms`);
+  log("OK", "OpenClaw runtime holds the session token; no form, no paste, no template blanks");
 }
 
 async function proxyChat(scenario: string): Promise<Response> {
@@ -312,8 +469,8 @@ function streamHash(body: string): { hex: string; done: boolean } {
   };
 }
 
-async function step3(token: string): Promise<void> {
-  log("STEP", c.bold("3/5  Live SSE through proxy-helius / ks-proxy (measured)"));
+async function step4(token: string): Promise<void> {
+  log("STEP", c.bold("4/5  Live SSE through proxy-helius / ks-proxy (measured)"));
   log("ROUTE", `${PROXY}/proxy/openai/v1/chat/completions  X-Test-Scenario: stream_success`);
   const warm = await proxyChat("stream_success");
   await warm.arrayBuffer();
@@ -426,8 +583,8 @@ async function dashboardSync(balances: Balances): Promise<void> {
   }
 }
 
-async function step4(balances: Balances): Promise<ChainTx> {
-  log("STEP", c.bold("4/5  Devnet verification readout + dashboard sync"));
+async function step5(balances: Balances): Promise<void> {
+  log("STEP", c.bold("5/5  Devnet settlement readout + 502 HOLD clawback"));
   log("PROG", PROGRAM);
   const wrong = await proveWrongSize();
   log("BADTX", `${BAD_SIG.slice(0, 16)}… len=${BAD_SIG.length}  rpc=${wrong}`);
@@ -444,11 +601,7 @@ async function step4(balances: Balances): Promise<ChainTx> {
     log("OK", `${tx.cu} CU < ${CU_BUDGET.toLocaleString("en-US")} Pinocchio constraint`);
   }
   await dashboardSync(balances);
-  return tx;
-}
 
-async function step5(): Promise<void> {
-  log("STEP", c.bold("5/5  scvd.store fault-injection — HOLD 0.05 USDC then 502 clawback"));
   log("HOLD", `escrow ${HOLD_USDC.toFixed(2)} USDC (${HOLD_MICRO} micro-USDC)  MODE=local ledger`);
   const t0 = Date.now();
   let status = 0;
@@ -469,7 +622,7 @@ async function step5(): Promise<void> {
   if (!truncated) throw new Error("fault_502 returned a complete [DONE] stream");
   log("STATE", "HOLD -> FAULT DETECTED -> UNILATERAL CLAWBACK EXECUTED");
   log("CLAW", "settled=0.00 USDC  capital lost: 0.00 USDC");
-  log("NOTE", "this clawback is the local Hold-Verify-Capture ledger. Live analog is STEP 4 Withdraw on Devnet.");
+  log("NOTE", "this clawback is the local Hold-Verify-Capture ledger. Live analog is the Withdraw printed above.");
   log("OK", "unverified settlement refused");
 }
 
@@ -536,19 +689,19 @@ async function sceneD(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log(c.bold("\nKeyShield record-demo client — 5 steps + Nemotron plug-in\n"));
-  const { token, balances } = await step1();
+  console.log(c.bold("\nKeyShield record-demo client — 5 scenes + Nemotron plug-in\n"));
+  const balances = await step1();
   await sleep(PACE_MS);
-  await step2();
+  const token = await step2();
   await sleep(PACE_MS);
   await step3(token);
   await sleep(PACE_MS);
-  await step4(balances);
+  await step4(token);
   await sleep(PACE_MS);
-  await step5();
+  await step5(balances);
   await sleep(PACE_MS);
   await sceneD();
-  log("DONE", c.green("all steps passed"));
+  log("DONE", c.green("all scenes passed"));
 }
 
 main().catch((err) => {

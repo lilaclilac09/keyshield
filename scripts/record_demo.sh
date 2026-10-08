@@ -3,8 +3,9 @@
 #
 #   A  mock upstream (X-Test-Scenario: stream_success | fault_502)
 #   B  ks-proxy / proxy-helius (RUST_LOG=info) pointed at the mock
-#   C  timed client — steps 1–5 (local wallet, measured SSE, Devnet tx, 502 clawback)
+#   C  timed client — scenes 1–5 (problem, PRF, IPC inject, measured SSE, Devnet/502)
 #   D  OpenRouter Nemotron plug-in (saved vault/env key, else mock)
+#   E  OpenClaw runtime stand-in (Unix socket IPC — no clipboard / no .env)
 #
 #   bash scripts/record_demo.sh
 #   bash scripts/record_demo.sh --fast
@@ -46,7 +47,7 @@ PROXY_PORT="${KS_RECORD_PROXY_PORT:-18000}"
 MOCK_URL="http://127.0.0.1:${MOCK_PORT}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 LOG_DIR="$WORKDIR/logs"
-mkdir -p "$LOG_DIR" "$WORKDIR/vault/dev-bypass" "$WORKDIR/sessions"
+mkdir -p "$LOG_DIR" "$WORKDIR/vault/dev-bypass" "$WORKDIR/sessions" "$WORKDIR/ipc"
 
 KS_PROXY_BIN="${KS_PROXY_BIN:-$ROOT/src/proxy/target/debug/ks-proxy}"
 if [[ ! -x "$KS_PROXY_BIN" ]]; then
@@ -86,15 +87,21 @@ export KS_RECORD_SSE_INTERVAL_MS
 
 MOCK_PID=""
 PROXY_PID=""
+RUNTIME_PID=""
 cleanup() {
   if [[ -n "${PROXY_PID}" ]] && kill -0 "$PROXY_PID" 2>/dev/null; then
     kill "$PROXY_PID" 2>/dev/null || true
     wait "$PROXY_PID" 2>/dev/null || true
   fi
+  if [[ -n "${RUNTIME_PID}" ]] && kill -0 "$RUNTIME_PID" 2>/dev/null; then
+    kill "$RUNTIME_PID" 2>/dev/null || true
+    wait "$RUNTIME_PID" 2>/dev/null || true
+  fi
   if [[ -n "${MOCK_PID}" ]] && kill -0 "$MOCK_PID" 2>/dev/null; then
     kill "$MOCK_PID" 2>/dev/null || true
     wait "$MOCK_PID" 2>/dev/null || true
   fi
+  rm -f "${KS_RECORD_IPC_SOCK:-}" "${KS_RECORD_IPC_READY:-}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -183,6 +190,41 @@ for i in $(seq 1 50); do
   sleep 0.15
 done
 
+# ── Component E ──────────────────────────────────────────────────────────────
+export KS_RECORD_IPC_SOCK="$WORKDIR/ipc/openclaw.sock"
+export KS_RECORD_IPC_READY="$WORKDIR/ipc/ready"
+export KS_RECORD_IPC_AUTH="${KS_RECORD_IPC_AUTH:-$(openssl rand -hex 32)}"
+rm -f "$KS_RECORD_IPC_SOCK" "$KS_RECORD_IPC_READY"
+say "E" "starting OpenClaw runtime stand-in (unix socket IPC)"
+env \
+  -u OPENAI_API_KEY \
+  -u OPENROUTER_API_KEY \
+  -u ANTHROPIC_API_KEY \
+  -u HELIUS_API_KEY \
+  KS_RECORD_IPC_SOCK="$KS_RECORD_IPC_SOCK" \
+  KS_RECORD_IPC_AUTH="$KS_RECORD_IPC_AUTH" \
+  KS_RECORD_IPC_READY="$KS_RECORD_IPC_READY" \
+  node "$ROOT/scripts/record_demo_openclaw_runtime.mjs" \
+  >"$LOG_DIR/openclaw.log" 2>&1 &
+RUNTIME_PID=$!
+for i in $(seq 1 40); do
+  if [[ -S "$KS_RECORD_IPC_SOCK" && -f "$KS_RECORD_IPC_READY" ]]; then
+    ok "openclaw runtime ready  pid=$RUNTIME_PID  sock=$KS_RECORD_IPC_SOCK"
+    break
+  fi
+  if ! kill -0 "$RUNTIME_PID" 2>/dev/null; then
+    err "openclaw runtime exited"
+    cat "$LOG_DIR/openclaw.log" || true
+    exit 1
+  fi
+  if [[ "$i" -eq 40 ]]; then
+    err "openclaw runtime did not become ready"
+    cat "$LOG_DIR/openclaw.log" || true
+    exit 1
+  fi
+  sleep 0.1
+done
+
 if [[ "$SPLIT" -eq 1 ]] && command -v tmux >/dev/null 2>&1; then
   say "UI" "tmux session ks-record-demo (logs only — client stays in this pane)"
   tmux -f /exec-daemon/tmux.portal.conf has-session -t "=ks-record-demo" 2>/dev/null \
@@ -194,7 +236,7 @@ if [[ "$SPLIT" -eq 1 ]] && command -v tmux >/dev/null 2>&1; then
 fi
 
 # ── Components C + D ─────────────────────────────────────────────────────────
-say "C" "running timed client (steps 1–5 + OpenRouter plug-in)"
+say "C" "running timed client (scenes 1–5 + OpenRouter plug-in)"
 export KS_RECORD_MOCK_URL="$MOCK_URL"
 export KS_RECORD_PROXY_URL="$PROXY_URL"
 export KS_RECORD_WORKDIR="$WORKDIR"
@@ -216,5 +258,7 @@ npm run test:fault
 ok "record-demo complete"
 say "LOGS" "mock     $LOG_DIR/mock.log"
 say "LOGS" "ks-proxy $LOG_DIR/ks-proxy.log"
+say "LOGS" "openclaw $LOG_DIR/openclaw.log"
+say "SPEC" "session  $WORKDIR/session-spec.json"
 say "ENV"  "bad.env  $WORKDIR/exposed.env"
 echo
