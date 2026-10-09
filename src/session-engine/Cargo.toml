@@ -1,0 +1,25 @@
+[package]
+name = "ks-session-engine"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Host/WASM Hold-Verify-Capture engine: session-key lifecycle, SHA-256 context anchors, atomic quota rollback"
+publish = false
+# Standalone package (excluded from the root Pinocchio workspace).
+# cargo test --manifest-path src/session-engine/Cargo.toml
+
+[lib]
+name = "ks_session_engine"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+digest = "0.10.7"
+hmac = "0.12.1"
+secrecy = "0.8.0"
+sha2 = "0.10.8"
+subtle = "2.6.1"
+zeroize = { version = "1.8.1", features = ["derive"] }
+
+[dev-dependencies]
+hex = "0.4.3"
