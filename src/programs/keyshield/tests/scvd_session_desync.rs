@@ -8,8 +8,10 @@ use keyshield::instructions::mpp_settle::{
 };
 use keyshield::session_guard::{
     assert_account_metas, assert_initialized_pda, assert_instruction_envelope,
-    assert_no_passthrough_cpi, context_anchor, settle_with_cu_budget, CuMeter, StreamSnap,
-    MAX_COMPUTE_UNITS, MPP_SETTLE_IX_LEN, MPP_SETTLE_MIN_ACCOUNTS, OPEN_STREAM_IX_LEN,
+    assert_no_passthrough_cpi, context_anchor, parse_mpp_settle_layout, parse_open_stream_layout,
+    settle_with_cu_budget, CuMeter, StreamSnap, CU_ED25519, CU_PARSE, CU_PDA, CU_TRANSFER,
+    HONEST_SETTLE_CU, MAX_COMPUTE_UNITS, MPP_SETTLE_IX_LEN, MPP_SETTLE_MIN_ACCOUNTS,
+    OPEN_STREAM_IX_LEN,
 };
 use pinocchio::program_error::ProgramError;
 
@@ -102,9 +104,33 @@ fn honest_settle_stays_under_five_thousand_cu() {
         escrow: 500,
     };
     let after = settle_with_cu_budget(&mut meter, before, 25, 0).unwrap();
+    assert_eq!(
+        CU_PARSE + CU_PDA + CU_ED25519 + CU_TRANSFER,
+        HONEST_SETTLE_CU
+    );
+    assert_eq!(meter.used, 4_500);
     assert!(meter.used < MAX_COMPUTE_UNITS);
     assert_eq!(after.spent, 25);
     assert_eq!(after.escrow, 475);
+}
+
+#[test]
+fn packed_layouts_reject_padding_and_wrong_disc() {
+    let mut open = [0u8; OPEN_STREAM_IX_LEN];
+    open[0] = 24;
+    open[1] = 255;
+    open[2..10].copy_from_slice(&1_000u64.to_le_bytes());
+    let view = parse_open_stream_layout(&open).unwrap();
+    assert_eq!(view.bump, 255);
+    assert_eq!(view.max_total_micro_usdc, 1_000);
+    assert!(parse_open_stream_layout(&[25u8; OPEN_STREAM_IX_LEN]).is_err());
+
+    let body = mpp_settle_body();
+    let settle = parse_mpp_settle_layout(&body).unwrap();
+    assert_eq!(settle.units_consumed, 5);
+    assert_eq!(settle.settlement_seq, 1);
+    assert_eq!(settle.artifact_root[0], 0x11);
+    assert!(parse_mpp_settle_layout(&[24u8; MPP_SETTLE_IX_LEN]).is_err());
 }
 
 #[test]

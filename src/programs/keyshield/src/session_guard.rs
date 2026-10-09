@@ -22,11 +22,17 @@ pub const CU_TRANSFER: u64 = 1_500;
 pub const CU_ED25519: u64 = 2_000;
 
 /// OpenPaymentStream ix data including discriminator.
+/// Layout: disc(1) bump(1) max_total(8) cost_per_unit(8) rate_bits(8) interval(4).
 pub const OPEN_STREAM_IX_LEN: usize = 30;
+pub const OPEN_STREAM_DISC: u8 = 24;
 /// MppSettle ix data including discriminator.
+/// Layout: disc(1) units(8) root(32) seq(8) capture_mac(32) request_hash(32).
 pub const MPP_SETTLE_IX_LEN: usize = 113;
+pub const MPP_SETTLE_DISC: u8 = 26;
 /// Minimum accounts for `mpp_settle` (settler … token program).
 pub const MPP_SETTLE_MIN_ACCOUNTS: usize = 7;
+/// Host-metered honest path: parse + PDA + Ed25519 + TransferChecked.
+pub const HONEST_SETTLE_CU: u64 = CU_PARSE + CU_PDA + CU_ED25519 + CU_TRANSFER;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StreamSnap {
@@ -126,6 +132,80 @@ pub fn context_anchor(program_id: &[u8; 32], ix_data: &[u8]) -> [u8; 32] {
     hash
 }
 
+/// Strict OpenPaymentStream memory view. No padding; every field is
+/// little-endian at a fixed offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpenStreamView {
+    pub bump: u8,
+    pub max_total_micro_usdc: u64,
+    pub cost_per_unit_micro_usdc: u64,
+    pub max_rate_usd_per_min_bits: u64,
+    pub settlement_interval_secs: u32,
+}
+
+/// Strict MppSettle memory view. Session signing is only legal after
+/// this parse succeeds: the wire bytes are a complete payment, not a
+/// receipt-without-order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MppSettleView {
+    pub units_consumed: u64,
+    pub artifact_root: [u8; 32],
+    pub settlement_seq: u64,
+    pub capture_signature: [u8; 32],
+    pub request_hash: [u8; 32],
+}
+
+fn le_u32(bytes: &[u8]) -> Result<u32, ProgramError> {
+    let arr: [u8; 4] = bytes
+        .try_into()
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    Ok(u32::from_le_bytes(arr))
+}
+
+fn le_u64(bytes: &[u8]) -> Result<u64, ProgramError> {
+    let arr: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| ProgramError::InvalidInstructionData)?;
+    Ok(u64::from_le_bytes(arr))
+}
+
+fn copy32(bytes: &[u8]) -> Result<[u8; 32], ProgramError> {
+    bytes
+        .try_into()
+        .map_err(|_| ProgramError::InvalidInstructionData)
+}
+
+/// Decode OpenPaymentStream at the canonical offsets. Length and
+/// discriminator are checked; semantic budget rules stay in the handler.
+pub fn parse_open_stream_layout(ix: &[u8]) -> Result<OpenStreamView, ProgramError> {
+    if ix.len() < OPEN_STREAM_IX_LEN || ix[0] != OPEN_STREAM_DISC {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    Ok(OpenStreamView {
+        bump: ix[1],
+        max_total_micro_usdc: le_u64(&ix[2..10])?,
+        cost_per_unit_micro_usdc: le_u64(&ix[10..18])?,
+        max_rate_usd_per_min_bits: le_u64(&ix[18..26])?,
+        settlement_interval_secs: le_u32(&ix[26..30])?,
+    })
+}
+
+/// Decode MppSettle at the canonical offsets. Structural only — a
+/// zero root is still a well-formed envelope so the handler can return
+/// `UnverifiedFulfillment` instead of a generic decode error.
+pub fn parse_mpp_settle_layout(ix: &[u8]) -> Result<MppSettleView, ProgramError> {
+    if ix.len() < MPP_SETTLE_IX_LEN || ix[0] != MPP_SETTLE_DISC {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    Ok(MppSettleView {
+        units_consumed: le_u64(&ix[1..9])?,
+        artifact_root: copy32(&ix[9..41])?,
+        settlement_seq: le_u64(&ix[41..49])?,
+        capture_signature: copy32(&ix[49..81])?,
+        request_hash: copy32(&ix[81..113])?,
+    })
+}
+
 /// Honest settle path: parse → PDA → Ed25519 → transfer. Stays < 5,000 CU.
 /// A CU trip restores `before`.
 pub fn settle_with_cu_budget(
@@ -180,6 +260,8 @@ mod tests {
             escrow: 1_000,
         };
         let after = settle_with_cu_budget(&mut meter, before, 100, 0).unwrap();
+        assert_eq!(HONEST_SETTLE_CU, 4_500);
+        assert_eq!(meter.used, HONEST_SETTLE_CU);
         assert!(meter.used < MAX_COMPUTE_UNITS);
         assert_eq!(after.spent, 100);
         assert_eq!(after.escrow, 900);
