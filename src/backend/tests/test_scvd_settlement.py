@@ -114,9 +114,7 @@ def test_hard_failure_still_blocks_identical_retry_window(db, monkeypatch):
 
 def test_hold_verify_capture_does_not_debit_on_timeout_then_captures_once(db, monkeypatch):
     stream = _open()
-    recorded = mpp_streams.record_usage(
-        "alice", stream["id"], 1, 0, status_code=200, body=CHAT
-    )
+    recorded = mpp_streams.record_usage("alice", stream["id"], 1, 0, status_code=200, body=CHAT)
     digest = recorded["artifact_hash"]
     assert recorded["pending_micro_usdc"] == 800
     assert recorded["held_micro_usdc"] == 800
@@ -159,12 +157,8 @@ def test_hold_verify_capture_does_not_debit_on_timeout_then_captures_once(db, mo
 
 def test_identical_meter_payload_is_idempotent_not_a_new_purchase(db):
     stream = _open()
-    first = mpp_streams.record_usage(
-        "alice", stream["id"], 1, 0, status_code=200, body=CHAT
-    )
-    replay = mpp_streams.record_usage(
-        "alice", stream["id"], 1, 0, status_code=200, body=CHAT
-    )
+    first = mpp_streams.record_usage("alice", stream["id"], 1, 0, status_code=200, body=CHAT)
+    replay = mpp_streams.record_usage("alice", stream["id"], 1, 0, status_code=200, body=CHAT)
     assert replay.get("idempotent_replay") is True
     assert replay["pending_micro_usdc"] == first["pending_micro_usdc"]
     assert replay["settled_micro_usdc"] == 0
