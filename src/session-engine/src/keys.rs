@@ -66,9 +66,9 @@ impl SessionKey {
         out
     }
 
-    /// HMAC-SHA256 over the SHA-256 context anchor (session guard).
-    pub fn sign_anchor(&self, anchor: &[u8; 32]) -> [u8; 32] {
-        self.sign_artifact(anchor)
+    /// HMAC-SHA256 over the SHA-256 context digest (session guard).
+    pub fn sign_digest(&self, digest: &[u8; 32]) -> [u8; 32] {
+        self.sign_artifact(digest)
     }
 
     pub fn verify_artifact(&self, artifact_hash: &[u8; 32], presented: &[u8]) -> bool {

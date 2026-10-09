@@ -113,10 +113,10 @@ pub fn assert_no_passthrough_cpi(
     Ok(())
 }
 
-/// Domain-separated context hash bound into the session guard.
+/// Domain-separated context digest bound into the session guard.
 /// Portable FNV-1a over program id + discriminator + payload so the
-/// host tests do not need `sol_sha256`.
-pub fn context_anchor(program_id: &[u8; 32], ix_data: &[u8]) -> [u8; 32] {
+/// host tests do not need `sol_sha256`. Not an Anchor framework type.
+pub fn context_digest(program_id: &[u8; 32], ix_data: &[u8]) -> [u8; 32] {
     let mut hash = [0u8; 32];
     let mut state: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in program_id.iter().chain(ix_data.iter()) {

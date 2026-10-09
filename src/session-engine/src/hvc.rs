@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::anchor::context_anchor;
+use crate::context::context_digest;
 use crate::error::EngineError;
 use crate::keys::SessionKey;
 use crate::layout::assert_instruction_envelope;
@@ -42,7 +42,7 @@ pub struct HoldTicket {
     pub stream_id: u64,
     pub micro_usdc: u64,
     pub artifact_hash: [u8; 32],
-    pub anchor: [u8; 32],
+    pub digest: [u8; 32],
     pub phase: Phase,
 }
 
@@ -50,7 +50,7 @@ pub struct HoldTicket {
 pub struct Receipt {
     pub ticket_id: u64,
     pub micro_usdc: u64,
-    pub anchor: [u8; 32],
+    pub digest: [u8; 32],
 }
 
 struct LiveHold {
@@ -62,7 +62,7 @@ pub struct Engine {
     quota: QuotaLedger,
     next_id: u64,
     live: HashMap<u64, LiveHold>,
-    consumed_anchors: HashSet<[u8; 32]>,
+    consumed_digests: HashSet<[u8; 32]>,
 }
 
 impl Engine {
@@ -71,7 +71,7 @@ impl Engine {
             quota: QuotaLedger::new(endowment),
             next_id: 1,
             live: HashMap::new(),
-            consumed_anchors: HashSet::new(),
+            consumed_digests: HashSet::new(),
         }
     }
 
@@ -84,25 +84,25 @@ impl Engine {
     }
 
     pub fn consumed_guards(&self) -> usize {
-        self.consumed_anchors.len()
+        self.consumed_digests.len()
     }
 
-    /// Reserve quota and bind a unique SHA-256 context guard.
+    /// Reserve quota and bind a unique SHA-256 context digest.
     /// Signing happens later; this step does not debit settled.
     pub fn hold(&mut self, req: HoldRequest<'_>) -> Result<HoldTicket, EngineError> {
         assert_instruction_envelope(req.ix_data)?;
         if req.micro_usdc == 0 {
             return Err(EngineError::ZeroAmount);
         }
-        let anchor = context_anchor(
+        let digest = context_digest(
             req.program_id,
             req.ix_data,
             req.stream_id,
             &req.artifact_hash,
             req.nonce,
         );
-        if self.consumed_anchors.contains(&anchor)
-            || self.live.values().any(|h| h.ticket.anchor == anchor)
+        if self.consumed_digests.contains(&digest)
+            || self.live.values().any(|h| h.ticket.digest == digest)
         {
             return Err(EngineError::Replay);
         }
@@ -114,7 +114,7 @@ impl Engine {
             stream_id: req.stream_id,
             micro_usdc: req.micro_usdc,
             artifact_hash: req.artifact_hash,
-            anchor,
+            digest,
             phase: Phase::Held,
         };
         self.live.insert(id, LiveHold { ticket });
@@ -140,7 +140,7 @@ impl Engine {
         }
         let artifact = hold.ticket.artifact_hash;
         let amount = hold.ticket.micro_usdc;
-        let anchor = hold.ticket.anchor;
+        let digest = hold.ticket.digest;
         if !key.verify_artifact(&artifact, signature) {
             return Err(EngineError::InvalidSignature);
         }
@@ -152,7 +152,7 @@ impl Engine {
                     h.ticket.phase = Phase::RolledBack;
                 }
                 self.live.remove(&ticket_id);
-                self.consumed_anchors.insert(anchor);
+                self.consumed_digests.insert(digest);
                 self.quota.assert_conserved()?;
                 Err(EngineError::SettlementFailed)
             }
@@ -162,12 +162,12 @@ impl Engine {
                     h.ticket.phase = Phase::Captured;
                 }
                 self.live.remove(&ticket_id);
-                self.consumed_anchors.insert(anchor);
+                self.consumed_digests.insert(digest);
                 self.quota.assert_conserved()?;
                 Ok(Receipt {
                     ticket_id,
                     micro_usdc: amount,
-                    anchor,
+                    digest,
                 })
             }
         }
@@ -180,10 +180,10 @@ impl Engine {
             return Err(EngineError::NotHeld);
         }
         let amount = hold.ticket.micro_usdc;
-        let anchor = hold.ticket.anchor;
+        let digest = hold.ticket.digest;
         self.quota.rollback(amount)?;
         self.live.remove(&ticket_id);
-        self.consumed_anchors.insert(anchor);
+        self.consumed_digests.insert(digest);
         self.quota.assert_conserved()
     }
 }

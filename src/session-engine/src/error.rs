@@ -21,7 +21,7 @@ impl core::fmt::Display for EngineError {
             Self::InvalidEnvelope => "invalid instruction envelope",
             Self::InvalidKey => "invalid session key",
             Self::InvalidSignature => "invalid capture signature",
-            Self::Replay => "context anchor reused",
+            Self::Replay => "context digest reused",
             Self::QuotaExceeded => "quota exceeded",
             Self::HoldNotFound => "hold not found",
             Self::NotHeld => "ticket is not in Held",

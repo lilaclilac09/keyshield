@@ -2,7 +2,7 @@
 //!
 //! Critical safety lives here, not in TypeScript:
 //! - `keys`: `secrecy` + `zeroize` session HMAC lifecycle
-//! - `anchor`: SHA-256 context guard over the full payment payload
+//! - `context`: SHA-256 context digest over the full payment payload
 //! - `hvc`: Hold-Verify-Capture — a session signature never decrements
 //!   settled quota unless RPC is `Confirmed` or explicit `Stub`
 //!
@@ -11,14 +11,14 @@
 
 #![forbid(unsafe_code)]
 
-pub mod anchor;
+pub mod context;
 pub mod error;
 pub mod hvc;
 pub mod keys;
 pub mod layout;
 pub mod quota;
 
-pub use anchor::context_anchor;
+pub use context::context_digest;
 pub use error::EngineError;
 pub use hvc::{Engine, HoldRequest, HoldTicket, Phase, Receipt, RpcOutcome};
 pub use keys::SessionKey;

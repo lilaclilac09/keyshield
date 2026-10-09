@@ -13,7 +13,9 @@ is limited to DOM event listeners (`src/extension/dom-intent.js`).
 program stays `no_std` and does not take those crates either. The
 host/WASM engine is `ks-session-engine`.
 
-The host SHA-256 context anchor is **not** WebAuthn-PRF.
+The host SHA-256 context digest is **not** WebAuthn-PRF and is **not**
+the Solana Anchor framework. The on-chain program is Pinocchio only
+(`pinocchio` / `pinocchio-token` / `pinocchio-system`).
 
 ---
 
@@ -227,16 +229,16 @@ via `capture` after a verified hold. `Engine::verify` maps:
 
 - `RpcOutcome::Indeterminate` → `EngineError::Indeterminate`, hold
   remains, settled unchanged
-- `RpcOutcome::Failed` → rollback + consume anchor
-- `RpcOutcome::Confirmed | Stub` → capture + consume anchor
+- `RpcOutcome::Failed` → rollback + consume digest
+- `RpcOutcome::Confirmed | Stub` → capture + consume digest
 
 Source: `src/session-engine/src/{keys,quota,hvc}.rs`.
 
-### 3.3 Idempotency — SHA-256 context anchor
+### 3.3 Idempotency — SHA-256 context digest
 
 ```
 SHA-256(
-  "ks.hvc.anchor.v1" || 0x00 ||
+  "ks.hvc.ctx.v1" || 0x00 ||
   program_id ||
   u32_le(len(ix)) || ix ||
   u64_le(stream_id) ||
@@ -246,22 +248,23 @@ SHA-256(
 ```
 
 The on-chain program keeps portable **FNV-1a** in
-`session_guard::context_anchor` so host tests do not need
+`session_guard::context_digest` so host tests do not need
 `sol_sha256`. The host engine uses SHA-256. They are different
-functions on purpose; do not mix them.
+functions on purpose; do not mix them. Neither is the Anchor
+framework.
 
-A consumed or still-live anchor cannot `hold` again (`EngineError::Replay`).
+A consumed or still-live digest cannot `hold` again (`EngineError::Replay`).
 That is the session guard: the complete payload + context, not the
 signature alone.
 
-Source: `src/session-engine/src/anchor.rs`.
+Source: `src/session-engine/src/context.rs`.
 
 ### 3.4 TypeScript (DOM only)
 
 `src/extension/dom-intent.js` refuses untrusted events, prototype
 keys, and non-integer micro-USDC, then compares DOM program id /
 units to compiled KeyShield ix 24/25/26. It does not implement HMAC,
-quota, or anchors.
+quota, or context digests.
 
 ---
 

@@ -6,7 +6,7 @@ Fail-to-pass harnesses live in `tests/scvd_*.test.ts`,
 `src/session-engine/tests/invariants.rs`.
 
 The four-section systems report is `docs/security/SCVD_SYSTEMS_REPORT.md`.
-Host/WASM Hold-Verify-Capture (secrecy + zeroize + SHA-256 anchors)
+Host/WASM Hold-Verify-Capture (secrecy + zeroize + SHA-256 context digests)
 is `ks-session-engine` (`src/session-engine/`). `ks-proxy` still has
 no those crates.
 

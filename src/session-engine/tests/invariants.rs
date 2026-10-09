@@ -4,7 +4,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use ks_session_engine::{
-    context_anchor, Engine, EngineError, HoldRequest, RpcOutcome, SessionKey, HONEST_SETTLE_CU,
+    context_digest, Engine, EngineError, HoldRequest, RpcOutcome, SessionKey, HONEST_SETTLE_CU,
     MAX_COMPUTE_UNITS,
 };
 
@@ -69,7 +69,7 @@ fn after_timeout_then_confirm_is_fail_to_pass() {
 }
 
 #[test]
-fn hard_fail_rolls_back_and_consumes_anchor() {
+fn hard_fail_rolls_back_and_consumes_digest() {
     let ix = settle_ix();
     let artifact = [0xCD; 32];
     let key = SessionKey::from_utf8("ks-session-consumer").unwrap();
@@ -90,10 +90,10 @@ fn hard_fail_rolls_back_and_consumes_anchor() {
 }
 
 #[test]
-fn sha256_anchor_is_session_guard() {
+fn sha256_digest_is_session_guard() {
     let ix = settle_ix();
-    let a = context_anchor(&[1u8; 32], &ix, 1, &[2u8; 32], 0);
-    let b = context_anchor(&[1u8; 32], &ix, 1, &[2u8; 32], 1);
+    let a = context_digest(&[1u8; 32], &ix, 1, &[2u8; 32], 0);
+    let b = context_digest(&[1u8; 32], &ix, 1, &[2u8; 32], 1);
     assert_ne!(a, b);
     assert_eq!(a.len(), 32);
 }

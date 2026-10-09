@@ -8,7 +8,7 @@ use keyshield::instructions::mpp_settle::{
 };
 use keyshield::session_guard::{
     assert_account_metas, assert_initialized_pda, assert_instruction_envelope,
-    assert_no_passthrough_cpi, context_anchor, parse_mpp_settle_layout, parse_open_stream_layout,
+    assert_no_passthrough_cpi, context_digest, parse_mpp_settle_layout, parse_open_stream_layout,
     settle_with_cu_budget, CuMeter, StreamSnap, CU_ED25519, CU_PARSE, CU_PDA, CU_TRANSFER,
     HONEST_SETTLE_CU, MAX_COMPUTE_UNITS, MPP_SETTLE_IX_LEN, MPP_SETTLE_MIN_ACCOUNTS,
     OPEN_STREAM_IX_LEN,
@@ -149,12 +149,12 @@ fn boundary_length_settlement_bytes_fail_closed() {
 }
 
 #[test]
-fn context_anchor_binds_program_and_payload() {
+fn context_digest_binds_program_and_payload() {
     let program = [7u8; 32];
-    let a = context_anchor(&program, &[26, 1, 2, 3]);
-    let b = context_anchor(&program, &[26, 1, 2, 4]);
-    let c = context_anchor(&[8u8; 32], &[26, 1, 2, 3]);
+    let a = context_digest(&program, &[26, 1, 2, 3]);
+    let b = context_digest(&program, &[26, 1, 2, 4]);
+    let c = context_digest(&[8u8; 32], &[26, 1, 2, 3]);
     assert_ne!(a, b);
     assert_ne!(a, c);
-    assert_eq!(a, context_anchor(&program, &[26, 1, 2, 3]));
+    assert_eq!(a, context_digest(&program, &[26, 1, 2, 3]));
 }
