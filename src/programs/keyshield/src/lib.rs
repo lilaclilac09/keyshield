@@ -41,6 +41,7 @@ pub mod error;
 pub mod guards;
 pub mod instructions;
 pub mod pda;
+pub mod session_guard;
 pub mod state;
 
 use instructions::{
@@ -77,7 +78,6 @@ use pinocchio::{
     default_allocator,
     nostd_panic_handler,
     program_entrypoint,
-    program_error::ProgramError,
     pubkey::Pubkey,
     ProgramResult,
 };
@@ -99,14 +99,8 @@ fn process_instruction(
     accounts: &[AccountInfo],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    // Instruction data must have at least 1 byte for discriminator
-    if instruction_data.is_empty() {
-        return Err(ProgramError::InvalidInstructionData);
-    }
-
-    // Parse instruction discriminator (first byte)
-    let instruction = Instruction::try_from_u8(instruction_data[0])
-        .ok_or(ProgramError::InvalidInstructionData)?;
+    // Empty, unknown, or truncated payment payloads never reach a handler.
+    let instruction = crate::session_guard::assert_instruction_envelope(instruction_data)?;
 
     // Route to instruction handler (skip discriminator byte)
     let data = &instruction_data[1..];
