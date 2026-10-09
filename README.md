@@ -116,7 +116,13 @@ KeyShield shopping is not Amazon. You are buying a **delivered API / agent resul
 6. Watch the three phases: **hold** (reserve) → **verify** (2xx, non-empty body, artifact hash) → **capture** (HMAC over that hash, then `mpp_settle` ix 26). Empty / 5xx / timeout → **no debit**.
 7. Confirm the settle on [Devnet explorer](https://explorer.solana.com/?cluster=devnet) against program [`41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet).
 
-Operator script: [docs/DEVNET.md](docs/DEVNET.md) (`KS_MPP_SETTLER_KEY`, `KS_PLATFORM_USDC_ATA`, `KS_KEYSHIELD_PROGRAM_ID`). If any of those is missing, capture stays stub — the chain does not move.
+No `.keyshield-devnet/` (gitignored) → stub, on-chain 0. Generate without `solana-cli`:
+
+```bash
+eval "$(python3 src/scripts/devnet-keys.py)"
+```
+
+That writes the settler JSON + `env.sh`. `KS_MPP_SETTLER_KEY` must be the **base58 64-byte secret** or the JSON path — a bare path used to be rejected as invalid base58. Agent pay / x402 vs Cloudflare vs MPP / **SCVD**: [docs/AGENT-PAY.md](docs/AGENT-PAY.md). Full operator: [docs/DEVNET.md](docs/DEVNET.md).
 
 ### 2. Mainnet (real USDC)
 
@@ -135,7 +141,7 @@ Cap every stream (`max_total_micro_usdc`). Start with a few dollars. One artifac
 ```bash
 # Agent: session token only — never the provider key, never the settler key
 export KS_TOKEN="ksv2_..."
-export KS_BASE="https://app.ks.aileena.xyz"   # or http://127.0.0.1:8001
+export KS_BASE="http://127.0.0.1:8001"        # production: your control-plane URL
 
 curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
   -H "Authorization: Bearer $KS_TOKEN" \
@@ -220,6 +226,7 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Local dev setup |
 | [DEPLOY.md](DEPLOY.md) | Production deployment |
 | [AGENTS.md](AGENTS.md) | Agent integration design |
+| [docs/AGENT-PAY.md](docs/AGENT-PAY.md) | x402 vs Cloudflare vs MPP, SCVD, Devnet keys |
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
