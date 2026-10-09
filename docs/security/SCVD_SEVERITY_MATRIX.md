@@ -1,8 +1,14 @@
 # SCVD-style session desync — severity matrix
 
 Fail-to-pass harnesses live in `tests/scvd_*.test.ts`,
-`src/backend/tests/test_scvd_settlement.py`, and
-`src/programs/keyshield/tests/scvd_session_desync.rs`.
+`src/backend/tests/test_scvd_settlement.py`,
+`src/programs/keyshield/tests/scvd_session_desync.rs`, and
+`src/session-engine/tests/invariants.rs`.
+
+The four-section systems report is `docs/security/SCVD_SYSTEMS_REPORT.md`.
+Host/WASM Hold-Verify-Capture (secrecy + zeroize + SHA-256 anchors)
+is `ks-session-engine` (`src/session-engine/`). `ks-proxy` still has
+no those crates.
 
 | Sev | Vector (SCVD analog) | Failure mode | Affected files | Minimal architectural fix |
 |-----|----------------------|--------------|----------------|---------------------------|
