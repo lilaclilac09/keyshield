@@ -320,6 +320,8 @@ class SettleOutcome:
     verified artifacts locally. `mode="submitted"` means the chain
     accepted the debit (or an identical root was already consumed).
     `mode="failed"` leaves pending usage in place for a later retry.
+    `mode="indeterminate"` is an RPC timeout or drop: the ledger does
+    not debit, and the attempt cache must not block a retry.
     """
 
     debited_micro_usdc: int
@@ -523,6 +525,27 @@ def _is_sequence_replay(error: str) -> bool:
     return "settlementreplay" in text or "0x17df" in text or "custom program error: 6111" in text
 
 
+_INDETERMINATE_PREFIX = "indeterminate:"
+_INDETERMINATE_MARKERS = (
+    "timeout",
+    "timed out",
+    "did not finish",
+    "temporarily unavailable",
+    "connection reset",
+    "429",
+    "503",
+    "504",
+)
+
+
+def _is_indeterminate_submit(error: str) -> bool:
+    """True when the RPC outcome is unknown — do not cache as a hard fail."""
+    text = (error or "").lower()
+    return text.startswith(_INDETERMINATE_PREFIX) or any(
+        marker in text for marker in _INDETERMINATE_MARKERS
+    )
+
+
 def _stub_ledger() -> bool:
     """The DB is the settlement ledger when no chain settler is configured."""
     return not (
@@ -645,13 +668,18 @@ def settle_on_chain(
             _PDA_MISSING_WARNED[stream_id] = True
         return SettleOutcome(0, "stub")
 
-    # Idempotency check.
+    # Idempotency check. A confirmed success is a cache hit. A timeout
+    # or other indeterminate error is not — the first submit may still
+    # land, so a retry must be allowed to reconcile (replay = success).
     now_ts = int(time.time())
     prior = _find_recent_attempt(stream_id, micro_usdc, now_ts)
     if prior is not None:
         if prior.get("success"):
             return SettleOutcome(int(prior.get("debited_micro_usdc") or 0), "submitted")
-        return SettleOutcome(0, "failed")
+        if _is_indeterminate_submit(str(prior.get("error") or "")):
+            prior = None
+        else:
+            return SettleOutcome(0, "failed")
 
     try:
         ix = mpp_onchain.build_mpp_settle_ix(
@@ -701,17 +729,20 @@ def settle_on_chain(
         replayed = _is_artifact_replay(str(e)) or (
             _is_sequence_replay(str(e)) and _root_already_submitted(stream_id, root_hex)
         )
+        indeterminate = not replayed and _is_indeterminate_submit(str(e))
         _record_settle_attempt(
             stream_id,
             micro_usdc,
             now_ts,
             success=replayed,
             debited=int(micro_usdc) if replayed else 0,
-            error=str(e),
+            error=(_INDETERMINATE_PREFIX + str(e)) if indeterminate else str(e),
             artifact_root=root_hex,
         )
         if replayed:
             return SettleOutcome(int(micro_usdc), "submitted")
+        if indeterminate:
+            return SettleOutcome(0, "indeterminate")
         return SettleOutcome(0, "failed")
 
     _record_settle_attempt(
@@ -1813,6 +1844,9 @@ def _capture_locked(
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
     outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig, request_hash)
+    if outcome.mode == "indeterminate":
+        _rollback(conn)
+        raise CaptureRejected("settlement indeterminate")
     if outcome.mode == "failed" or (
         outcome.mode == "submitted" and outcome.debited_micro_usdc <= 0
     ):
