@@ -162,3 +162,20 @@ def test_identical_meter_payload_is_idempotent_not_a_new_purchase(db):
     assert replay.get("idempotent_replay") is True
     assert replay["pending_micro_usdc"] == first["pending_micro_usdc"]
     assert replay["settled_micro_usdc"] == 0
+
+
+def test_settler_key_json_path_does_not_force_stub(tmp_path, monkeypatch):
+    """devnet-setup used to export a file path; that must load, not stub."""
+    from solders.keypair import Keypair
+
+    kp = Keypair()
+    path = tmp_path / "mpp-settler-devnet.json"
+    path.write_text(json.dumps(list(bytes(kp))))
+    ata = mpp_onchain._b58encode_pure(bytes([0x22]) * 32)
+    monkeypatch.setenv("KS_MPP_SETTLER_KEY", str(path))
+    monkeypatch.setenv("KS_PLATFORM_USDC_ATA", ata)
+    monkeypatch.setenv("KS_KEYSHIELD_PROGRAM_ID", "11111111111111111111111111111111")
+    monkeypatch.delenv("KS_VAULT_PDA", raising=False)
+    cfg = mpp_onchain.load_mpp_config()
+    assert cfg is not None
+    assert cfg.secret_key == bytes(kp)

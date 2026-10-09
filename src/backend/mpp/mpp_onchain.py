@@ -57,10 +57,12 @@ hash itself and is stored in the stream's reserved root slot.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -170,12 +172,31 @@ class MppConfig:
 _WARNED_ENV_MISSING = False
 
 
+def _settler_secret_from_env(raw: str) -> bytes:
+    """Accept base58-64 or a Solana keypair JSON path.
+
+    `devnet-setup.sh` historically exported the JSON path. Python
+    treated that string as base58, failed closed, and settled as stub
+    (on-chain 0). A 64-byte JSON array is the same material.
+    """
+    path = Path(raw).expanduser()
+    if path.is_file():
+        data = json.loads(path.read_text())
+        if not isinstance(data, list) or len(data) != 64:
+            raise ValueError(f"keypair JSON must be a 64-byte array: {path}")
+        return bytes(int(b) & 0xFF for b in data)
+    return _b58decode(raw)
+
+
 def load_mpp_config() -> Optional[MppConfig]:
     """Load the mpp_settle config from env. Returns None if any
     required var is missing — caller treats this as the stub path.
 
     Required:
-      KS_MPP_SETTLER_KEY        (base58 64-byte ed25519 secret key)
+      KS_MPP_SETTLER_KEY        (base58 64-byte ed25519 secret key,
+                                 OR a Solana keypair JSON path — the
+                                 setup script used to export a path
+                                 and that used to force stub-fallback)
       KS_PLATFORM_USDC_ATA      (base58 pubkey)
       KS_KEYSHIELD_PROGRAM_ID   (base58 program ID)
 
@@ -213,9 +234,13 @@ def load_mpp_config() -> Optional[MppConfig]:
         return None
 
     try:
-        secret_key = _b58decode(settler_key_b58)
+        secret_key = _settler_secret_from_env(settler_key_b58)
     except Exception as e:
-        logger.error("mpp_onchain: KS_MPP_SETTLER_KEY is not valid base58: %s", e)
+        logger.error(
+            "mpp_onchain: KS_MPP_SETTLER_KEY is not a 64-byte base58 key "
+            "or a Solana keypair JSON: %s",
+            e,
+        )
         return None
     if len(secret_key) != 64:
         logger.error(
