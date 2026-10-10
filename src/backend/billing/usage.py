@@ -45,6 +45,8 @@ FLAT_COST_PER_CALL: dict[str, float] = {
 # Free credit for new users
 FREE_CREDIT_USD = 0.10
 
+SETTLE_MODES = frozenset({"stub", "held", "captured", "submitted", "failed"})
+
 
 # ── DB setup ──────────────────────────────────────────────────────────────────
 
@@ -87,8 +89,28 @@ def _db() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_topup_user
             ON topup_tx (user_id, credited_at DESC);
     """)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(usage_log)")}
+    if "settle_mode" not in cols:
+        conn.execute("ALTER TABLE usage_log ADD COLUMN settle_mode TEXT")
     conn.commit()
     return conn
+
+
+def normalize_settle_mode(
+    *,
+    settle_mode: str | None = None,
+    status_code: int = 0,
+    cost_usd: float = 0.0,
+) -> str:
+    """Server-side badge. Never map cost_usd > 0 to submitted/paid."""
+    raw = str(settle_mode or "").strip().lower()
+    if raw in SETTLE_MODES:
+        return raw
+    if int(status_code or 0) >= 400:
+        return "failed"
+    if float(cost_usd or 0) > 0:
+        return "stub"
+    return "held"
 
 
 # ── Token extraction ──────────────────────────────────────────────────────────
@@ -141,16 +163,21 @@ def log_call(
     cost_usd: float = 0.0,
     latency_ms: float = 0.0,
     status_code: int = 0,
+    settle_mode: str | None = None,
 ) -> None:
     """Record one proxy call. Also deducts from balance when platform key is used."""
+    mode = normalize_settle_mode(
+        settle_mode=settle_mode, status_code=status_code, cost_usd=cost_usd
+    )
     conn = _db()
     try:
         conn.execute(
             """
             INSERT INTO usage_log
               (user_id, upstream, key_type, method, path,
-               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts,
+               settle_mode)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """,
             (
                 user_id,
@@ -164,6 +191,7 @@ def log_call(
                 latency_ms,
                 status_code,
                 int(time.time()),
+                mode,
             ),
         )
         conn.commit()
@@ -234,7 +262,8 @@ def get_history(user_id: str, limit: int = 50) -> list[dict]:
         rows = conn.execute(
             """
             SELECT id, upstream, key_type, method, path,
-                   tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts
+                   tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts,
+                   settle_mode
             FROM usage_log
             WHERE user_id = ?
             ORDER BY ts DESC
@@ -256,6 +285,11 @@ def get_history(user_id: str, limit: int = 50) -> list[dict]:
                 "latency_ms": round(r[8], 1),
                 "status_code": r[9],
                 "ts": r[10],
+                "settle_mode": normalize_settle_mode(
+                    settle_mode=r[11] if len(r) > 11 else None,
+                    status_code=r[9],
+                    cost_usd=r[7] or 0,
+                ),
             }
             for r in rows
         ]

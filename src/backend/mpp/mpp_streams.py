@@ -45,7 +45,7 @@ import logging
 import os
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .capture import verify_artifact_signature
@@ -578,6 +578,7 @@ def settle_on_chain(
     settlement_seq: int = 1,
     capture_signature: bytes | None = None,
     request_hash: bytes | None = None,
+    db_conn: sqlite3.Connection | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
@@ -653,6 +654,33 @@ def settle_on_chain(
         # fall through to stub.
         return SettleOutcome(0, "stub")
 
+    # Env `KS_VAULT_PDA` is the settler vault from setup. Settle must
+    # use the stream owner's UniversalVault or ix 26 hits 6010.
+    conn = _db()
+    try:
+        owner_row = conn.execute(
+            "SELECT user_id FROM mpp_streams WHERE id = ?",
+            (stream_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    owner_id = None if owner_row is None else owner_row[0]
+    if owner_id:
+        try:
+            owner_vault, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_id,
+                config.keyshield_program_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "mpp_settle stream %s: cannot derive owner vault from %s: %s",
+                stream_id,
+                owner_id,
+                exc,
+            )
+        else:
+            config = replace(config, vault_pda=owner_vault)
+
     # PDA + ATA are not stored in the mpp_streams schema today
     # (open_stream is still DB-only). Without them we can't build
     # the ix — return 0 with a one-line warning so operators see why
@@ -709,6 +737,7 @@ def settle_on_chain(
             debited=0,
             error=str(e),
             artifact_root=root_hex,
+            conn=db_conn,
         )
         return SettleOutcome(0, "failed")
 
@@ -743,6 +772,7 @@ def settle_on_chain(
             debited=int(micro_usdc) if replayed else 0,
             error=(_INDETERMINATE_PREFIX + str(e)) if indeterminate else str(e),
             artifact_root=root_hex,
+            conn=db_conn,
         )
         if replayed:
             return SettleOutcome(int(micro_usdc), "submitted")
@@ -759,6 +789,7 @@ def settle_on_chain(
         error=None,
         tx_signature=tx_sig,
         artifact_root=root_hex,
+        conn=db_conn,
     )
     return SettleOutcome(int(debited), "submitted")
 
@@ -833,11 +864,14 @@ def _record_settle_attempt(
     error: str | None = None,
     tx_signature: str | None = None,
     artifact_root: str | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> None:
     """Insert a row in `mpp_settle_attempts`. UNIQUE constraint on
     (stream_id, requested_micro_usdc, ts) means duplicate inserts at
     the same exact second are silently absorbed."""
-    conn = _db()
+    own = conn is None
+    if conn is None:
+        conn = _db()
     try:
         try:
             conn.execute(
@@ -858,13 +892,20 @@ def _record_settle_attempt(
                     artifact_root,
                 ),
             )
-            conn.commit()
+            if own:
+                conn.commit()
         except sqlite3.IntegrityError:
             # Duplicate (same stream/amount/ts) — fine, the prior
             # row is the source of truth.
             pass
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                logger.warning("mpp_settle_attempts locked: %s", exc)
+                return
+            raise
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
 def _run_async_in_thread(coro):
@@ -1848,7 +1889,15 @@ def _capture_locked(
     next_seq = last_seq + 1
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
-    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig, request_hash)
+    outcome = settle_on_chain(
+        int(stream_id),
+        cost,
+        root,
+        next_seq,
+        sig,
+        request_hash,
+        db_conn=conn,
+    )
     if outcome.mode == "indeterminate":
         _rollback(conn)
         raise CaptureRejected("settlement indeterminate")
@@ -1943,6 +1992,7 @@ def _capture_locked(
     stream["sequence_number"] = (
         next_seq if advance_seq else int(stream.get("last_settled_seq") or 0)
     )
+    stream["settle_mode"] = outcome.mode
     return stream
 
 
@@ -2093,6 +2143,103 @@ def list_streams(user_id: str) -> dict:
         return {"streams": streams, "summary": summary}
     finally:
         conn.close()
+
+
+def last_receipt(user_id: str) -> dict | None:
+    """Newest hold/capture for the status strip. Hash prefix + settle_mode."""
+    conn = _db()
+    try:
+        row = conn.execute(
+            """
+            SELECT h.artifact_hash, h.status, h.micro_usdc, s.id, s.tx_signature,
+                   s.settled_micro_usdc
+              FROM mpp_holds h
+              JOIN mpp_streams s ON s.id = h.stream_id
+             WHERE s.user_id = ? AND h.artifact_hash IS NOT NULL
+             ORDER BY h.id DESC
+             LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        digest, hold_status, micro, stream_id, open_sig, settled = row
+        attempt = conn.execute(
+            """
+            SELECT tx_signature, success, error
+              FROM mpp_settle_attempts
+             WHERE stream_id = ?
+             ORDER BY ts DESC, id DESC
+             LIMIT 1
+            """,
+            (int(stream_id),),
+        ).fetchone()
+        mode = "stub"
+        sig = open_sig
+        if hold_status == "held":
+            mode = "held"
+        elif hold_status == "captured" and attempt and int(attempt[1]) == 1:
+            mode = "submitted"
+            sig = attempt[0] or open_sig
+        elif hold_status == "captured" and attempt and int(attempt[1]) == 0:
+            mode = "failed"
+            sig = attempt[0] or open_sig
+        elif hold_status == "captured" and int(settled or 0) > 0:
+            mode = "stub"
+        elif hold_status in ("released", "expired"):
+            mode = "failed"
+        digest = str(digest)
+        return {
+            "hash": digest,
+            "hash8": digest[:8],
+            "mode": mode,
+            "signature": sig,
+            "stream_id": int(stream_id),
+            "micro_usdc": int(micro or 0),
+        }
+    finally:
+        conn.close()
+
+
+def status_strip(user_id: str, *, fetch_balances=None) -> dict:
+    """Coinbase-style top bar: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Wallet balances come from one server-side getMultipleAccounts so the
+    dashboard does not depend on the browser reaching public Devnet RPC.
+    """
+    listed = list_streams(user_id)
+    open_streams = [s for s in listed["streams"] if s.get("status") == "open"]
+    remaining = None
+    if open_streams:
+        remaining = sum(
+            int(s["escrow_micro_usdc"])
+            for s in open_streams
+            if s.get("escrow_micro_usdc") is not None
+        )
+    out = {
+        "stream_remaining_micro_usdc": remaining,
+        "streams_open": listed["summary"]["streams_open"],
+        "last_receipt": last_receipt(user_id),
+        "wallet": None,
+        "sol_lamports": None,
+        "usdc_micro": None,
+        "rpc_ms": None,
+        "cached": False,
+    }
+    try:
+        from ..billing.wallet_balances import fetch_wallet_balances, looks_like_pubkey
+
+        if looks_like_pubkey(user_id):
+            fn = fetch_balances or fetch_wallet_balances
+            bal = fn(user_id)
+            out["wallet"] = bal.get("wallet") or user_id
+            out["sol_lamports"] = bal.get("sol_lamports")
+            out["usdc_micro"] = bal.get("usdc_micro")
+            out["rpc_ms"] = bal.get("rpc_ms")
+            out["cached"] = bool(bal.get("cached"))
+    except Exception:
+        out["wallet"] = user_id
+    return out
 
 
 def list_events(user_id: str, limit: int = 20) -> dict:

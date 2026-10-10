@@ -23,9 +23,11 @@ export function getUsdcMint(): PublicKey {
   return new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 }
 
+export const DEVNET_PROGRAM_ID = '41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j';
+
 export function getKeyshieldProgramId(): PublicKey | null {
   const raw = (typeof process !== 'undefined'
-    && (process.env as Record<string, string>)?.['KEYSHIELD_PROGRAM_ID']) || '';
+    && (process.env as Record<string, string>)?.['KEYSHIELD_PROGRAM_ID']) || DEVNET_PROGRAM_ID;
   if (!raw) return null;
   try { return new PublicKey(raw); } catch { return null; }
 }
@@ -40,10 +42,12 @@ export interface BuildTxResponse {
   programId: string;
   keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   data: string;
+  prereqIxs?: BuildTxResponse[];
+  streamUsdcAta?: string;
 }
 
-export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
-  const ix = new TransactionInstruction({
+export function instructionFromResponse(resp: BuildTxResponse): TransactionInstruction {
+  return new TransactionInstruction({
     programId: new PublicKey(resp.programId),
     keys: resp.keys.map(k => ({
       pubkey: new PublicKey(k.pubkey),
@@ -56,7 +60,20 @@ export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
     // wallet-adapter-base), and matches the runtime shape Solana expects.
     data: Buffer.from(b64decode(resp.data)),
   });
-  return new Transaction().add(ix);
+}
+
+export function buildTxFromResponse(resp: BuildTxResponse): Transaction {
+  return new Transaction().add(instructionFromResponse(resp));
+}
+
+/** Wallet must prepend ATA-create + fund before ix 24, else later settle hits OwnerMismatch. */
+export function assembleOpenStreamTx(resp: BuildTxResponse): Transaction {
+  const tx = new Transaction();
+  for (const ix of resp.prereqIxs ?? []) {
+    tx.add(instructionFromResponse(ix));
+  }
+  tx.add(instructionFromResponse(resp));
+  return tx;
 }
 
 export async function signAndConfirmTx(

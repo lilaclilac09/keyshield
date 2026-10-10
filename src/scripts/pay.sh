@@ -29,6 +29,8 @@
 #   bash scripts/pay.sh --build-tx-only       # just print the build-tx
 #                                             # JSON payloads (for frontend
 #                                             # wallet-adapter wiring)
+#   bash src/scripts/pay.sh --details --max-amount 1000
+#   bash src/scripts/pay.sh --max-amount 1000
 #
 # Exit codes: 0 success, 1 setup error, 2 endpoint failure.
 
@@ -43,14 +45,25 @@ DEMO_AGENT_NAME="${KS_DEMO_AGENT_NAME:-trading-bot-demo}"
 DEMO_UPSTREAM="${KS_DEMO_UPSTREAM:-anthropic}"
 
 BUILD_TX_ONLY=0
-for arg in "$@"; do
-  case "$arg" in
-    --build-tx-only) BUILD_TX_ONLY=1 ;;
+DETAILS_ONLY=0
+MAX_AMOUNT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --build-tx-only) BUILD_TX_ONLY=1; shift ;;
+    --details) DETAILS_ONLY=1; shift ;;
+    --max-amount)
+      MAX_AMOUNT="${2:-}"
+      shift 2
+      ;;
+    --max-amount=*)
+      MAX_AMOUNT="${1#*=}"
+      shift
+      ;;
     -h|--help)
       sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
-    *) echo "unknown flag: $arg"; exit 1 ;;
+    *) echo "unknown flag: $1"; exit 1 ;;
   esac
 done
 
@@ -95,13 +108,27 @@ ok "stack is up"
 section "1. wallet-login (ed25519 challenge)"
 KS_PY="${KS_PYTHON:-$REPO_ROOT/.venv/bin/python3}"
 [[ -x "$KS_PY" ]] || KS_PY="python3"
-WALLET_LOGIN=$("$KS_PY" - "$API_BASE" <<'PY'
+SETTLER_KP="${KS_MPP_SETTLER_KEYPAIR:-$REPO_ROOT/.keyshield-devnet/mpp-settler-devnet.json}"
+OWNER_KP="${KS_USER_WALLET:-$REPO_ROOT/.keyshield-devnet/user-devnet.json}"
+LOGIN_KP="$OWNER_KP"
+if [[ ! -f "$LOGIN_KP" ]]; then
+  LOGIN_KP="$SETTLER_KP"
+fi
+WALLET_LOGIN=$("$KS_PY" - "$API_BASE" "$LOGIN_KP" <<'PY'
 import base64, json, sys, urllib.request
+from pathlib import Path
 from nacl.signing import SigningKey
 import base58
 
 base = sys.argv[1]
-sk = SigningKey.generate()
+kp_path = Path(sys.argv[2])
+if kp_path.is_file():
+    raw = json.loads(kp_path.read_text())
+    if not isinstance(raw, list) or len(raw) != 64:
+        raise SystemExit("settler keypair JSON must be 64 bytes")
+    sk = SigningKey(bytes(int(b) & 0xFF for b in raw[:32]))
+else:
+    sk = SigningKey.generate()
 wallet = base58.b58encode(bytes(sk.verify_key)).decode()
 
 def http(method, path, body=None):
@@ -143,6 +170,32 @@ fi
 ok "wallet $WALLET  token ${TOKEN:0:12}…"
 
 AUTH=(-H "authorization: Bearer $TOKEN")
+
+BUY_MICRO="${KS_BUY_MICRO_USDC:-1000000}"
+if [[ -n "$MAX_AMOUNT" ]]; then
+  if ! [[ "$MAX_AMOUNT" =~ ^[0-9]+$ ]]; then
+    die "--max-amount must be a canonical integer (micro-USDC)"
+  fi
+  if (( BUY_MICRO > MAX_AMOUNT )); then
+    die "buy ${BUY_MICRO} exceeds --max-amount ${MAX_AMOUNT}"
+  fi
+fi
+
+# ── 1b. 402 details (awal: details before pay) ──────────────────────────────
+
+section "1b. 402 preview"
+PREVIEW=$(curl -sf "$API_BASE/billing/402-preview?amount=${BUY_MICRO}&max_amount=${MAX_AMOUNT:-0}" "${AUTH[@]}" \
+  || curl -sf "$API_BASE/billing/402-preview?amount=${BUY_MICRO}&max_amount=${MAX_AMOUNT:-0}")
+echo "$PREVIEW" | jpp
+OVER=$(echo "$PREVIEW" | jget over_cap)
+if [[ "$OVER" == "true" ]]; then
+  die "402 preview over_cap — raise --max-amount or lower KS_BUY_MICRO_USDC"
+fi
+ok "402 details amount=$BUY_MICRO max=${MAX_AMOUNT:-0}"
+if (( DETAILS_ONLY == 1 )); then
+  ok "details-only; not paying"
+  exit 0
+fi
 
 # ── 2. x402 topup demo ──────────────────────────────────────────────────────
 
@@ -245,7 +298,19 @@ if [[ -z "$ARTIFACT" ]]; then
 fi
 ok "artifact $ARTIFACT"
 
-info "3c. capture with session HMAC (not a bare /settle)"
+info "3c. submit-open-tx (settler-as-owner signs vault/grant/open)"
+HTTP_STATUS=$(curl -s -o /tmp/mpp-submit-open.json -w '%{http_code}' \
+  -X POST "$API_BASE/mpp/streams/$STREAM_ID/submit-open-tx" "${AUTH[@]}" \
+  -H 'content-type: application/json' \
+  -d "{\"maxTotalMicroUsdc\": $BUY_MICRO}")
+cat /tmp/mpp-submit-open.json | jpp
+if [[ "$HTTP_STATUS" == "200" ]]; then
+  ok "on-chain open $HTTP_STATUS"
+else
+  warn "submit-open-tx HTTP $HTTP_STATUS — capture will stay fail-closed until vault/USDC/SOL exist"
+fi
+
+info "3d. capture with session HMAC (not a bare /settle)"
 CAPTURE_BODY=$(python3 - "$TOKEN" "$ARTIFACT" <<'PY'
 import hashlib, hmac, json, sys
 token, artifact = sys.argv[1], sys.argv[2]
@@ -265,7 +330,7 @@ else
   warn "capture HTTP $HTTP_STATUS — if settler env is loaded, the stream PDA must be wallet-signed on-chain first"
 fi
 
-info "3d. close stream"
+info "3e. close stream"
 CLOSE=$(curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/close" "${AUTH[@]}")
 echo "$CLOSE" | jpp
 ok "stream closed"
