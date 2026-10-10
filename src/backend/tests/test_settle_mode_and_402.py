@@ -169,7 +169,9 @@ def test_wallet_balances_parses_get_multiple_accounts():
     wallet_balances.clear_balance_cache()
     owner = "GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq"
     mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-    ata = __import__("src.backend.mpp.mpp_onchain", fromlist=["derive_associated_token_address"]).derive_associated_token_address(owner, mint)
+    ata = __import__(
+        "src.backend.mpp.mpp_onchain", fromlist=["derive_associated_token_address"]
+    ).derive_associated_token_address(owner, mint)
     token_data = bytearray(165)
     token_data[64:72] = (1_000_000).to_bytes(8, "little")
     import base64
@@ -181,7 +183,10 @@ def test_wallet_balances_parses_get_multiple_accounts():
             "result": {
                 "value": [
                     {"lamports": 3_100_000_000},
-                    {"lamports": 2_039_280, "data": [base64.b64encode(token_data).decode(), "base64"]},
+                    {
+                        "lamports": 2_039_280,
+                        "data": [base64.b64encode(token_data).decode(), "base64"],
+                    },
                 ]
             }
         }
@@ -190,7 +195,9 @@ def test_wallet_balances_parses_get_multiple_accounts():
     assert first["sol_lamports"] == 3_100_000_000
     assert first["usdc_micro"] == 1_000_000
     assert first["cached"] is False
-    second = wallet_balances.fetch_wallet_balances(owner, fetch_impl=lambda *_: (_ for _ in ()).throw(RuntimeError("no rpc")))
+    second = wallet_balances.fetch_wallet_balances(
+        owner, fetch_impl=lambda *_: (_ for _ in ()).throw(RuntimeError("no rpc"))
+    )
     assert second["cached"] is True
     assert second["sol_lamports"] == 3_100_000_000
     assert second["rpc_ms"] is not None

@@ -26,6 +26,7 @@ import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StatusStrip } from './components/StatusStrip';
 import { DemoWizard, isDemoPath } from './components/DemoWizard';
+import { TalkThread, isTalkPath } from './components/TalkThread';
 
 type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
@@ -85,6 +86,10 @@ const MainContent: React.FC = () => {
   }, []);
 
   const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
+
+  if (isTalkPath()) {
+    return <TalkThread onExit={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }} />;
+  }
 
   if (isDemoPath()) {
     return <DemoWizard onExit={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }} />;
