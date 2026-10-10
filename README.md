@@ -492,6 +492,8 @@ mirrors the implementations exactly. Run them from the repo root.
 | 3 | Upstream mock: 502/504, dropped TCP, empty 200, truncated JSON — no fulfillment proof, no `mpp_settle`, escrow unmutated | `npm run test:fault` | `tests/proxy_fault_injection.test.ts`, `tests/proxy_fault_injection_driver.py` |
 | 4 | Devnet e2e: WebAuthn-PRF session token → proxy data plane → confirmed `OpenStream` / `MppSettle` (dry-run default; `LIVE_E2E=1` for real OpenRouter/Ollama) | `npm run live:e2e:dry` | `scripts/live_e2e_run.ts`, `scripts/fixtures/devnet-wallets.json` |
 
+Spec-first essay (journey, goal, lessons): [docs/BUILDING_KEYSHIELD.md](docs/BUILDING_KEYSHIELD.md). Reviewer checklist: [keyshield.md](keyshield.md).
+
 ```bash
 npm run test:harness          # Stages 1 + 3 + 4 dry-run
 npm run test:fault            # Stage 3 only

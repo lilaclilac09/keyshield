@@ -1,18 +1,36 @@
 #!/usr/bin/env npx tsx
 /**
- * Stage 4 — live RPC / Devnet load test with real inference.
+ * Stage 4 — spec-driven e2e (this script).
  *
- * Connects one LLM call through KeyShield's Python proxy to a Solana
- * Devnet AgentPaymentStream:
+ * GOAL
+ * Prove the spec on Solana Devnet USDC, not a second chain: a session
+ * token (never a raw key) reaches the proxy, fulfillment produces a
+ * 32-byte artifact, then `MppSettle` (ix 26) debit matches
+ * tokens × price. A 502 / empty / truncated body must not settle.
+ * Dry-run is the merge gate. Live spend is opt-in (`LIVE_E2E=1`).
  *
- *   0. Create Universal Vault (ix 10) + PAYMENT_ENABLED + GrantAgentAccess
- *   1. Open a 5 USDC stream (off-chain row + on-chain open_payment_stream)
- *   2. Client agent calls /proxy/<provider>/... with a session token
- *   3. Stream via SSE; proxy meters tokens (x-ks-mpp-meter / tokens)
- *   4. sha256(artifact) + session HMAC → POST capture → mpp_settle
- *   5. Assert spent == tokens_used * price_per_token
- *   6. Close; remaining USDC returns to the client wallet (withdraw)
- *      or stays in the client-owned stream ATA (conservation)
+ * Core settlement order (Universal Vault + Session Grant + stream):
+ *   CreateUniversalVault (ix 10)
+ *     → PAYMENT_ENABLED (0x08)
+ *     → GrantAgentAccess (ix 20)
+ *     → OpenPaymentStream / OpenStream (ix 24)
+ *     → meter SSE
+ *     → capture MAC + owner Ed25519
+ *     → MppSettle (ix 26)
+ *     → close / withdraw
+ *
+ * JOURNEY (four-stage harness, then this file)
+ *   Stage 1  npm run test:bankrun     slot warp, clawback, tombstone
+ *   Stage 2  cargo test -p keyshield --test fuzz_invariants
+ *   Stage 3  npm run test:fault       502 / empty / garbage → no settle
+ *   Stage 4  this script
+ *     0. fixtures + TS/Python sha256 + HMAC + binding parity
+ *     1. vault + grant + open 5 USDC stream (off-chain row + ix 24)
+ *     2. wallet-login → POST /proxy/<provider>/... (Bearer ksv2_…)
+ *     3. SSE; read x-ks-mpp-meter / tokens
+ *     4. sha256(artifact) + session HMAC → POST capture → mpp_settle
+ *     5. assert spent_total == tokens_used * price_per_token
+ *     6. close; remaining USDC to the client ATA (or conserved in stream ATA)
  *
  * Default is dry-run (exit 0). Live:
  *
@@ -23,6 +41,7 @@
  * and an upstream key (OPENROUTER_API_KEY / KS_UPSTREAM_API_KEY).
  *
  * `/auth/login` is 403. This script uses wallet-login.
+ * Tempo TIP-1034 session vouchers are not part of this journey.
  */
 
 import { createHash, createHmac, createPrivateKey, sign as ed25519Sign } from "node:crypto";
@@ -651,7 +670,9 @@ async function walletLogin(cfg: LiveConfig, user: Keypair): Promise<string> {
 async function dryRun(cfg: LiveConfig): Promise<number> {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║  Stage 4 live e2e — DRY RUN (set LIVE_E2E=1 to hit Devnet)  ║
+║  Stage 4 spec e2e — DRY RUN (LIVE_E2E=1 to hit Devnet)      ║
+║  Goal: session token → proxy → 32-byte artifact → MppSettle ║
+║  Chain: Solana Devnet USDC (Vault → Grant → OpenStream)     ║
 ╚══════════════════════════════════════════════════════════════╝`);
 
   banner("0. fixtures + crypto parity");
