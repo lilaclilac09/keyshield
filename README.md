@@ -76,6 +76,84 @@ client = ks.openai_client()   # zero raw keys
 
 ---
 
+## What is actually best here
+
+Other vaults store a key. Other 402 clients sign a payment. KeyShield
+refuses to treat those as the same event.
+
+| Everywhere else | Here |
+|---|---|
+| Session signature spends the balance | Signature only **authorizes**. `settled` moves after fulfillment |
+| Timeout cached as “failed” / “paid” | Timeout is `indeterminate` — hold stays, no debit, retry can reconcile |
+| `parseFloat` on a 402 body | Integer micro-USDC, and the DOM amount must equal the compiled Pinocchio ix |
+| Anchor-style account macros | Pinocchio program: envelope, PDA, CU snapshot. No `anchor-lang` |
+
+The rule: **a session-key signature never decrements balance unless the downstream state change is verified** (artifact hash + consumer HMAC, then `Confirmed` / stub-ledger `Stub` — never a dropped RPC).
+
+That is Hold-Verify-Capture. It is why a blank upstream body, a 5xx, or a hung Solana submit cannot become a USDC transfer. Details: [docs/PAYMENT-FLOWS.md](docs/PAYMENT-FLOWS.md), [docs/security/SCVD_SYSTEMS_REPORT.md](docs/security/SCVD_SYSTEMS_REPORT.md).
+
+Honest limits: `ks-proxy` does not use `secrecy`/`zeroize` (those live in `ks-session-engine`). Host SHA-256 context digests are not WebAuthn-PRF. CI locks the honest Pinocchio path at **4,500 CU** under a **5,000** budget — not a 4,120 marketing figure.
+
+---
+
+## Real-world shopping
+
+KeyShield shopping is not Amazon. You are buying a **delivered API / agent result**, priced in USDC (6 decimals, integer micro-USDC). Three ways to pay:
+
+| Path | When | Real money today |
+|---|---|---|
+| **A. Prepaid** | Human tops up, then agents spend | Dashboard wallet transfer (SOL/USDC) → balance. Best first purchase. |
+| **B. MPP stream** | Long job, no per-call 402 | Real debit only after wallet `OpenPaymentStream` + settler env + capture MAC. Otherwise the DB is a **stub ledger**. |
+| **C. x402** | Pay-as-you-go agent | 402 body + extension prompt work. **On-chain proof verify is not finished** — do not treat a random `X-Payment-Proof` as paid in production. |
+
+### 1. Practice on Devnet (no mainnet USDC)
+
+1. Phantom (or any Solana wallet) on **Devnet**. Airdrop SOL. Get Devnet USDC from [faucet.circle.com](https://faucet.circle.com/) (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`).
+2. `node dev.cjs` — API `:8001`, proxy `:8000`, UI `:5173` (use `http://127.0.0.1:5173` for passkeys).
+3. Sign in → Vault → store the provider key **or** plan to pay KeyShield to use a platform key.
+4. Activity → **Top Up** for Path A, or MPP tab → `POST /mpp/streams` then wallet-sign `POST /mpp/streams/{id}/build-open-tx` for Path B.
+5. Call through the proxy with your session token. For MPP, send `X-Mpp-Stream-Id`.
+6. Watch the three phases: **hold** (reserve) → **verify** (2xx, non-empty body, artifact hash) → **capture** (HMAC over that hash, then `mpp_settle` ix 26). Empty / 5xx / timeout → **no debit**.
+7. Confirm the settle on [Devnet explorer](https://explorer.solana.com/?cluster=devnet) against program [`41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j`](https://explorer.solana.com/address/41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j?cluster=devnet).
+
+No `.keyshield-devnet/` (gitignored) → stub, on-chain 0. Generate without `solana-cli`:
+
+```bash
+eval "$(python3 src/scripts/devnet-keys.py)"
+```
+
+That writes the settler JSON + `env.sh`. `KS_MPP_SETTLER_KEY` must be the **base58 64-byte secret** or the JSON path — a bare path used to be rejected as invalid base58. Agent pay / x402 vs Cloudflare vs MPP / **SCVD**: [docs/AGENT-PAY.md](docs/AGENT-PAY.md). Full operator: [docs/DEVNET.md](docs/DEVNET.md).
+
+### 2. Mainnet (real USDC)
+
+Do not flip `KS_SOLANA_RPC_URL` to mainnet until all of this is true:
+
+1. Pinocchio program **deployed on mainnet** (the address above is Devnet).
+2. Escrow ATA is **mainnet USDC** `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`.
+3. Settler key in a KMS / signing service — not a laptop JSON keypair.
+4. Stream opened **on-chain** (wallet signed `open_payment_stream`). A DB-only `POST /mpp/streams` is not a shop.
+5. Capture only on `SettleOutcome.mode=submitted`. Treat `indeterminate` as “check the explorer, then retry” — never as paid, never as a hard fail.
+6. Extension 402: amount and program id must match the compiled ix or it will not sign (`src/extension/dom-intent.js`).
+7. Leave Path C (x402 proof verify) off until Base USDC receipts are checked on-chain.
+
+Cap every stream (`max_total_micro_usdc`). Start with a few dollars. One artifact hash = one capture. Replay is `NonceReused`, not a second purchase.
+
+```bash
+# Agent: session token only — never the provider key, never the settler key
+export KS_TOKEN="ksv2_..."
+export KS_BASE="http://127.0.0.1:8001"        # production: your control-plane URL
+
+curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "X-Mpp-Stream-Id: $STREAM_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
+```
+
+You paid only if: upstream delivered a real body, the consumer MAC matched, and the chain (or an explicit stub ledger) captured. A hung RPC is not a receipt.
+
+---
+
 ## Quickstart
 
 ```bash
@@ -148,6 +226,7 @@ curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Local dev setup |
 | [DEPLOY.md](DEPLOY.md) | Production deployment |
 | [AGENTS.md](AGENTS.md) | Agent integration design |
+| [docs/AGENT-PAY.md](docs/AGENT-PAY.md) | x402 vs Cloudflare vs MPP, SCVD, Devnet keys |
 | [docs/API.md](docs/API.md) | Endpoint reference + curl examples |
 | [docs/architecture/](docs/architecture/) | System design |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |

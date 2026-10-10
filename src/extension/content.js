@@ -706,14 +706,19 @@ document.addEventListener('input', () => setTimeout(scan, 300), { capture: true 
 
         try {
           const body = await clone.json();
-          const first = body?.accepts?.[0] ?? {};
-          const raw   = parseFloat(first.maxAmountRequired ?? '0');
-          amount_usd  = raw / 1_000_000;   // USDC 6 decimals → USD
-          payTo       = first.payTo    ?? '';
-          network     = first.network  ?? '';
-          resource    = first.resource ?? (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
+          const parsed = (typeof KeyShieldDomIntent !== 'undefined'
+            ? KeyShieldDomIntent.parseX402Body(body)
+            : null);
+          if (!parsed) {
+            throw new Error('dom-intent unavailable');
+          }
+          amount_usd  = parsed.amountUsd;
+          payTo       = parsed.payTo;
+          network     = parsed.network;
+          resource    = parsed.resource || (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
         } catch {
-          // malformed body — still show a prompt with $0.00
+          // malformed / polluted body — do not auto-pay a guessed amount
+          return;
         }
 
         const hostname = location.hostname;

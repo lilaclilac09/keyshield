@@ -74,7 +74,8 @@ async def usage_stats(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     stats = usage_mod.get_stats(user_id)
-    return JSONResponse({"stats": stats})
+    rows = stats.get("stats", stats) if isinstance(stats, dict) else stats
+    return JSONResponse({"stats": rows})
 
 
 @router.get("/usage/history")
@@ -119,15 +120,109 @@ async def billing_topup(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     amount_usd = float(body.get("amount_usd", 0))
+    proof = str(body.get("payment_proof") or "").strip()
+    verified_mode = None
+    if proof:
+        from ..proxy import x402_verify
+
+        if x402_verify.has_claim(proof):
+            return JSONResponse(
+                {"detail": "payment_proof already claimed", "code": "duplicate_claim"},
+                status_code=409,
+            )
+        try:
+            ok, verified_mode = await x402_verify.verify_on_chain(
+                x402_verify.load_x402_config(),
+                proof,
+                amount_usd,
+            )
+        except x402_verify.VerifyError as e:
+            return JSONResponse({"detail": str(e), "code": "verify_failed"}, status_code=400)
+        if not ok:
+            return JSONResponse(
+                {"detail": "payment_proof did not verify", "code": "verify_failed"},
+                status_code=400,
+            )
+        try:
+            x402_verify.record_claim(proof, user_id, amount_usd, verified_mode)
+        except x402_verify.DuplicateClaim:
+            return JSONResponse(
+                {"detail": "payment_proof already claimed", "code": "duplicate_claim"},
+                status_code=409,
+            )
     new_balance = usage_mod.topup(user_id, amount_usd)
     new_balance_float = (
         float(new_balance)
         if not isinstance(new_balance, dict)
         else float(new_balance.get("balance_usd", new_balance.get("usd_balance", 0)))
     )
+    payload = {
+        "credited_usd": round(amount_usd, 6),
+        "balance_usd": round(new_balance_float, 6),
+    }
+    if verified_mode is not None:
+        payload["verified_mode"] = verified_mode
+    return JSONResponse(payload)
+
+
+@router.get("/billing/402-preview")
+async def billing_402_preview(request: Request):
+    """details — Coinbase 402 body, no debit."""
+    from ..billing import x402_preview
+
+    params = request.query_params
+    try:
+        body = x402_preview.parse_preview_query(
+            params.get("amount"),
+            params.get("max_amount"),
+            params.get("resource"),
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e), "code": "invalid_amount"}, status_code=400)
+    return JSONResponse(body)
+
+
+@router.post("/billing/402-pay")
+async def billing_402_pay(request: Request):
+    """Pay after details. Refuses when amount > --max-amount. Does not fake submitted."""
+    from ..billing import usage as usage_mod
+    from ..billing import x402_preview
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    body = await request.json()
+    try:
+        amount = x402_preview.canonical_micro(body.get("amount_micro_usdc", body.get("amount", 1)))
+        cap = x402_preview.canonical_micro(
+            body.get("max_amount_micro_usdc", body.get("max_amount", 0))
+        )
+        x402_preview.assert_under_cap(amount, cap)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e), "code": "over_cap"}, status_code=400)
+
+    preview = x402_preview.build_preview(
+        amount_micro_usdc=amount,
+        max_amount_micro_usdc=cap,
+        resource=str(body.get("resource") or "/demo"),
+    )
+    usage_mod.log_call(
+        user_id=user_id,
+        upstream="x402",
+        key_type="mpp",
+        method="PAY",
+        path="/billing/402-pay",
+        cost_usd=round(amount / 1_000_000, 6),
+        status_code=200,
+        settle_mode="stub",
+    )
     return JSONResponse(
         {
-            "credited_usd": round(amount_usd, 6),
-            "balance_usd": round(new_balance_float, 6),
+            "ok": True,
+            "settle_mode": "stub",
+            "amount_micro_usdc": amount,
+            "max_amount_micro_usdc": cap,
+            "preview": preview,
+            "stream_id": body.get("stream_id"),
+            "detail": "preview accepted; capture still needs a stream MAC for on-chain submitted",
         }
     )

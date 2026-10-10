@@ -57,10 +57,12 @@ hash itself and is stored in the stream's reserved root slot.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -170,12 +172,31 @@ class MppConfig:
 _WARNED_ENV_MISSING = False
 
 
+def _settler_secret_from_env(raw: str) -> bytes:
+    """Accept base58-64 or a Solana keypair JSON path.
+
+    `devnet-setup.sh` historically exported the JSON path. Python
+    treated that string as base58, failed closed, and settled as stub
+    (on-chain 0). A 64-byte JSON array is the same material.
+    """
+    path = Path(raw).expanduser()
+    if path.is_file():
+        data = json.loads(path.read_text())
+        if not isinstance(data, list) or len(data) != 64:
+            raise ValueError(f"keypair JSON must be a 64-byte array: {path}")
+        return bytes(int(b) & 0xFF for b in data)
+    return _b58decode(raw)
+
+
 def load_mpp_config() -> Optional[MppConfig]:
     """Load the mpp_settle config from env. Returns None if any
     required var is missing — caller treats this as the stub path.
 
     Required:
-      KS_MPP_SETTLER_KEY        (base58 64-byte ed25519 secret key)
+      KS_MPP_SETTLER_KEY        (base58 64-byte ed25519 secret key,
+                                 OR a Solana keypair JSON path — the
+                                 setup script used to export a path
+                                 and that used to force stub-fallback)
       KS_PLATFORM_USDC_ATA      (base58 pubkey)
       KS_KEYSHIELD_PROGRAM_ID   (base58 program ID)
 
@@ -213,9 +234,13 @@ def load_mpp_config() -> Optional[MppConfig]:
         return None
 
     try:
-        secret_key = _b58decode(settler_key_b58)
+        secret_key = _settler_secret_from_env(settler_key_b58)
     except Exception as e:
-        logger.error("mpp_onchain: KS_MPP_SETTLER_KEY is not valid base58: %s", e)
+        logger.error(
+            "mpp_onchain: KS_MPP_SETTLER_KEY is not a 64-byte base58 key "
+            "or a Solana keypair JSON: %s",
+            e,
+        )
         return None
     if len(secret_key) != 64:
         logger.error(
@@ -1028,4 +1053,300 @@ def build_withdraw_agent_wallet_ix(
         program_id=config.keyshield_program_id,
         accounts=accounts,
         data=build_withdraw_agent_wallet_ix_data(withdraw_amount_micro_usdc),
+    )
+
+
+# ─── Spec 10 owner-signed vault / grant / multi-ix submit ────────────────
+#
+# OpenPaymentStream requires an existing UniversalVault + active agent
+# grant. Those ixs are owner-signed. On the Devnet self-contained path
+# the settler keypair IS the owner, so the server can sign them with
+# KS_MPP_SETTLER_KEY. Phantom / wallet-adapter remains the path when
+# the owner is a different key.
+
+CREATE_UNIVERSAL_VAULT_DISCRIMINATOR = 10
+UPDATE_UNIVERSAL_POLICY_DISCRIMINATOR = 11
+GRANT_AGENT_ACCESS_DISCRIMINATOR = 20
+PAYMENT_ENABLED_FLAG = 0x08
+VAULT_SEED = b"universal_vault"
+
+
+def coerce_pubkey32(value: bytes | str) -> bytes:
+    """Accept a 32-byte pubkey or a base58 string and return 32 bytes."""
+    raw = _b58decode(value) if isinstance(value, str) else bytes(value)
+    if len(raw) != 32:
+        raise ValueError(f"pubkey must be 32 bytes, got {len(raw)}")
+    return raw
+
+
+def _simple_to_solders(ix: _SimpleInstruction):
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders package not installed — cannot submit a signed transaction",
+        )
+    return SoldersInstruction(  # type: ignore[union-attr]
+        program_id=Pubkey.from_string(ix.program_id),  # type: ignore[union-attr]
+        accounts=[
+            AccountMeta(  # type: ignore[union-attr]
+                pubkey=Pubkey.from_string(a.pubkey),  # type: ignore[union-attr]
+                is_signer=a.is_signer,
+                is_writable=a.is_writable,
+            )
+            for a in ix.accounts
+        ],
+        data=ix.data,
+    )
+
+
+async def submit_signed_instructions(
+    rpc_url: str,
+    fee_payer_secret: bytes,
+    instructions: list[_SimpleInstruction],
+) -> str:
+    """Sign `instructions` with a 64-byte Solana secret and send.
+
+    Returns the base58 signature. Does not log key material.
+    """
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders package not installed — cannot submit a signed transaction",
+        )
+    if not isinstance(fee_payer_secret, (bytes, bytearray)) or len(fee_payer_secret) != 64:
+        raise MppSubmitError("fee payer secret must be 64 bytes")
+    if not instructions:
+        raise MppSubmitError("no instructions to submit")
+    try:
+        import httpx  # type: ignore
+    except ImportError as e:
+        raise MppSubmitError(f"httpx not installed: {e}") from e
+
+    try:
+        kp = Keypair.from_bytes(bytes(fee_payer_secret))  # type: ignore[union-attr]
+        solders_ixs = [_simple_to_solders(ix) for ix in instructions]
+    except MppSubmitError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise MppSubmitError(f"failed to build solders ix: {e}") from e
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "confirmed"}],
+            },
+        )
+        if resp.status_code != 200:
+            raise MppSubmitError(f"getLatestBlockhash returned HTTP {resp.status_code}")
+        bh_body = resp.json()
+        if "error" in bh_body:
+            raise MppSubmitError(f"getLatestBlockhash error: {bh_body['error']}")
+        blockhash_str = (bh_body.get("result") or {}).get("value", {}).get("blockhash")
+        if not blockhash_str:
+            raise MppSubmitError("getLatestBlockhash response missing blockhash")
+        try:
+            blockhash = Hash.from_string(blockhash_str)  # type: ignore[union-attr]
+            msg = Message.new_with_blockhash(  # type: ignore[union-attr]
+                solders_ixs,
+                kp.pubkey(),
+                blockhash,
+            )
+            tx = Transaction([kp], msg, blockhash)  # type: ignore[union-attr]
+        except Exception as e:  # noqa: BLE001
+            raise MppSubmitError(f"failed to build tx: {e}") from e
+
+        import base64
+
+        tx_b64 = base64.b64encode(bytes(tx)).decode("ascii")
+        send_resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "sendTransaction",
+                "params": [
+                    tx_b64,
+                    {"encoding": "base64", "preflightCommitment": "confirmed"},
+                ],
+            },
+        )
+        if send_resp.status_code != 200:
+            raise MppSubmitError(f"sendTransaction returned HTTP {send_resp.status_code}")
+        send_body = send_resp.json()
+        if "error" in send_body:
+            raise MppSubmitError(f"sendTransaction error: {send_body['error']}")
+        sig = send_body.get("result")
+        if not sig:
+            raise MppSubmitError("sendTransaction response missing signature")
+    return str(sig)
+
+
+async def rpc_account_exists(rpc_url: str, pubkey: str) -> bool:
+    """True when `getAccountInfo` returns a non-null account."""
+    try:
+        import httpx  # type: ignore
+    except ImportError as e:
+        raise MppSubmitError(f"httpx not installed: {e}") from e
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            rpc_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getAccountInfo",
+                "params": [pubkey, {"encoding": "base64"}],
+            },
+        )
+        if resp.status_code != 200:
+            raise MppSubmitError(f"getAccountInfo returned HTTP {resp.status_code}")
+        body = resp.json()
+        if "error" in body:
+            raise MppSubmitError(f"getAccountInfo error: {body['error']}")
+        return (body.get("result") or {}).get("value") is not None
+
+
+def derive_universal_vault_pda(
+    owner_pubkey: str,
+    program_id: str,
+) -> tuple[str, int]:
+    """Derive the UniversalVault PDA. Seeds: [\"universal_vault\", owner]."""
+    if not _HAS_SOLDERS:
+        raise MppSubmitError(
+            "solders not installed — cannot derive vault PDA. Install via `pip install solders`.",
+        )
+    try:
+        owner_pk = Pubkey.from_string(owner_pubkey)  # type: ignore[union-attr]
+        program_pk = Pubkey.from_string(program_id)  # type: ignore[union-attr]
+    except Exception as e:  # noqa: BLE001
+        raise MppSubmitError(f"invalid pubkey for vault PDA derivation: {e}") from e
+
+    pda, bump = Pubkey.find_program_address(  # type: ignore[union-attr]
+        [VAULT_SEED, bytes(owner_pk)],
+        program_pk,
+    )
+    return (str(pda), bump)
+
+
+def build_create_universal_vault_ix_data(bump: int) -> bytes:
+    """Wire: [0]=10 CreateUniversalVault, [1]=vault_bump."""
+    if not 0 <= bump <= 0xFF:
+        raise ValueError("bump must fit u8 (0..=255)")
+    return bytes([CREATE_UNIVERSAL_VAULT_DISCRIMINATOR, bump])
+
+
+def build_create_universal_vault_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    bump: int,
+) -> _SimpleInstruction:
+    """Accounts match universal_vault.rs:35-38."""
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+        _SimpleAccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_create_universal_vault_ix_data(bump),
+    )
+
+
+def build_update_universal_policy_flags_ix_data(flags: int) -> bytes:
+    """Wire: [0]=11, [1..5]=flags u32 LE, [5]=update_type 0 (set_flags)."""
+    if flags < 0 or flags > 0xFFFFFFFF:
+        raise ValueError("flags must fit u32")
+    return (
+        bytes([UPDATE_UNIVERSAL_POLICY_DISCRIMINATOR])
+        + int(flags).to_bytes(4, "little")
+        + bytes([0])
+    )
+
+
+def build_update_universal_policy_flags_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    flags: int = PAYMENT_ENABLED_FLAG,
+) -> _SimpleInstruction:
+    """Accounts match universal_vault.rs:142-144."""
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=False),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_update_universal_policy_flags_ix_data(flags),
+    )
+
+
+def build_grant_agent_access_ix_data(
+    agent_pubkey: bytes | str,
+    *,
+    key_group: int = 255,
+    rate_limit_calls: int = 0,
+    rate_limit_tokens: int = 0,
+    session_timeout: int = 0,
+    max_spend_micro_usdc: int = 0,
+    payment_stream_enabled: bool = False,
+) -> bytes:
+    """Wire matches agent_access.rs:37-46. 61 bytes including discriminator."""
+    agent = coerce_pubkey32(agent_pubkey)
+    if not 0 <= key_group <= 0xFF:
+        raise ValueError("key_group must fit u8")
+    for name, val, width in (
+        ("rate_limit_calls", rate_limit_calls, 0xFFFFFFFF),
+        ("rate_limit_tokens", rate_limit_tokens, 0xFFFFFFFF),
+        ("session_timeout", session_timeout, 0xFFFFFFFFFFFFFFFF),
+        ("max_spend_micro_usdc", max_spend_micro_usdc, 0xFFFFFFFFFFFFFFFF),
+    ):
+        if val < 0 or val > width:
+            raise ValueError(f"{name}={val} out of range")
+    return (
+        bytes([GRANT_AGENT_ACCESS_DISCRIMINATOR])
+        + agent
+        + bytes([key_group])
+        + int(rate_limit_calls).to_bytes(4, "little")
+        + int(rate_limit_tokens).to_bytes(4, "little")
+        + int(session_timeout).to_bytes(8, "little")
+        + int(max_spend_micro_usdc).to_bytes(8, "little")
+        + bytes([1 if payment_stream_enabled else 0])
+        + (0).to_bytes(2, "little")
+    )
+
+
+def build_grant_agent_access_ix(
+    program_id: str,
+    owner_pubkey: str,
+    vault_pda: str,
+    agent_pubkey: bytes | str,
+    *,
+    key_group: int = 255,
+    rate_limit_calls: int = 0,
+    rate_limit_tokens: int = 0,
+    session_timeout: int = 0,
+    max_spend_micro_usdc: int = 0,
+    payment_stream_enabled: bool = False,
+) -> _SimpleInstruction:
+    """Accounts match agent_access.rs:33-35."""
+    accounts = (
+        _SimpleAccountMeta(pubkey=owner_pubkey, is_signer=True, is_writable=True),
+        _SimpleAccountMeta(pubkey=vault_pda, is_signer=False, is_writable=True),
+    )
+    return _SimpleInstruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=build_grant_agent_access_ix_data(
+            agent_pubkey,
+            key_group=key_group,
+            rate_limit_calls=rate_limit_calls,
+            rate_limit_tokens=rate_limit_tokens,
+            session_timeout=session_timeout,
+            max_spend_micro_usdc=max_spend_micro_usdc,
+            payment_stream_enabled=payment_stream_enabled,
+        ),
     )

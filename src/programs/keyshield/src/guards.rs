@@ -1,7 +1,6 @@
 //! Account, clock, and settlement guards shared by the payment ixs.
 //!
-//! The program is pinocchio, not Anchor. These functions are the
-//! constraints an Anchor `#[account(...)]` block would have expressed:
+//! Pinocchio (not the Anchor framework). Explicit checks for:
 //! canonical mint, token-account binding, closed-account tombstone,
 //! canonical PDA bump, bounded clock leeway, and a monotonic
 //! settlement sequence plus a small root fingerprint ring.

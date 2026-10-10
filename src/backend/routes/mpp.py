@@ -131,6 +131,21 @@ async def mpp_list_events(request: Request, limit: int = 20):
     return JSONResponse(mpp_streams.list_events(sess["user_id"], limit))
 
 
+@router.get("/mpp/status")
+async def mpp_status_strip(request: Request):
+    """Top-bar snapshot: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Balances are fetched server-side (getMultipleAccounts) so the UI
+    does not depend on the browser reaching public Devnet RPC.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import mpp_streams
+
+    return JSONResponse(mpp_streams.status_strip(sess["user_id"]))
+
+
 # ─── 3. POST /mpp/streams (open new) ──────────────────────────────────────
 
 
@@ -364,6 +379,21 @@ async def mpp_capture(stream_id: int, request: Request):
             {"detail": str(e), "code": "unverified_fulfillment"},
             status_code=400,
         )
+    try:
+        from ..billing import usage as usage_mod
+
+        usage_mod.log_call(
+            user_id=sess["user_id"],
+            upstream=str(stream.get("upstream") or "mpp"),
+            key_type="mpp",
+            method="CAPTURE",
+            path=f"/mpp/streams/{stream_id}/capture",
+            cost_usd=round(int(stream.get("just_settled_micro_usdc") or 0) / 1_000_000, 6),
+            status_code=200,
+            settle_mode=str(stream.get("settle_mode") or "captured"),
+        )
+    except Exception:
+        logger.exception("usage log after capture failed")
     return JSONResponse({"stream": stream})
 
 
@@ -604,3 +634,81 @@ async def mpp_record_tx(stream_id: int, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"stream": stream})
+
+
+def _autosign_error(exc: Exception) -> JSONResponse:
+    from ..mpp.owner_keystore import OwnerKeystoreError
+    from ..mpp.owner_submit import OwnerSubmitError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    if isinstance(exc, OwnerKeystoreError):
+        return JSONResponse({"detail": "owner autosign unavailable"}, status_code=503)
+    if isinstance(exc, OwnerSubmitError):
+        detail = str(exc)
+        if "not loaded" in detail:
+            return JSONResponse({"detail": "owner autosign unavailable"}, status_code=503)
+        return JSONResponse({"detail": detail}, status_code=400)
+    if isinstance(exc, MppSubmitError):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    logger.exception("mpp autosign failed")
+    return JSONResponse({"detail": "autosign failed"}, status_code=500)
+
+
+@router.get("/mpp/autosign/status")
+async def mpp_autosign_status(request: Request):
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import owner_submit
+
+    return JSONResponse(owner_submit.owner_status())
+
+
+@router.post("/mpp/autosign/open")
+async def mpp_autosign_open(request: Request):
+    """Vault + grant + open + record-tx, owner-signed from the keystore."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit
+    from ..mpp.owner_keystore import OwnerKeystoreError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    try:
+        result = await owner_submit.submit_full_open(sess["user_id"], body)
+    except (owner_submit.OwnerSubmitError, OwnerKeystoreError, MppSubmitError) as exc:
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-open-tx")
+async def mpp_submit_open_tx(stream_id: int, request: Request):
+    """Sign and send open_payment_stream with the owner keystore."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit, mpp_streams
+    from ..mpp.owner_keystore import OwnerKeystoreError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    raw_cap = body.get("maxTotalMicroUsdc", body.get("max_total_micro_usdc"))
+    if raw_cap is None:
+        try:
+            row = _fetch_owned_stream(sess["user_id"], stream_id)
+            raw_cap = row.get("max_total_micro_usdc") or 1_000_000
+        except mpp_streams.StreamNotFound:
+            return JSONResponse({"detail": "stream not found"}, status_code=404)
+    try:
+        result = await owner_submit.submit_open_for_stream(
+            sess["user_id"],
+            stream_id,
+            int(raw_cap),
+            owner_usdc_ata=body.get("usdcAta") or body.get("ownerUsdcAta"),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except (owner_submit.OwnerSubmitError, OwnerKeystoreError, MppSubmitError) as exc:
+        return _autosign_error(exc)
+    return JSONResponse(result)

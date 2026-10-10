@@ -6,7 +6,10 @@ resolver = "2"
 # the "multiple workspace roots" error from cargo metadata / cargo
 # build-sbf. To run proxy tests: `cargo test --manifest-path src/proxy/Cargo.toml`.
 members = ["src/programs/keyshield"]
-exclude = ["src/proxy"]
+# Host/WASM HVC engine has its own lockfile so `secrecy`/`zeroize`
+# do not unify with solana-sdk's `curve25519-dalek` (zeroize <1.4).
+# Run: cargo test --manifest-path src/session-engine/Cargo.toml
+exclude = ["src/proxy", "src/session-engine"]
 
 [workspace.dependencies]
 pinocchio = "0.9"

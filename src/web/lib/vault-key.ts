@@ -44,18 +44,28 @@ export async function deriveVaultPassphrase(sigBytes: Uint8Array): Promise<strin
 }
 
 export async function deriveExtensionVaultKey(sigBytes: Uint8Array): Promise<string> {
-  const ikm = await crypto.subtle.importKey('raw', sigBytes, 'HKDF', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: new Uint8Array(0),
-      info: new TextEncoder().encode(EXTENSION_VAULT_INFO),
-    },
-    ikm,
-    256,
-  );
-  return _b64uEnc(new Uint8Array(bits));
+  const { wipeBytes } = await import('./prf-wipe');
+  try {
+    const ikm = await crypto.subtle.importKey('raw', sigBytes, 'HKDF', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new Uint8Array(0),
+        info: new TextEncoder().encode(EXTENSION_VAULT_INFO),
+      },
+      ikm,
+      256,
+    );
+    const view = new Uint8Array(bits);
+    try {
+      return _b64uEnc(view);
+    } finally {
+      wipeBytes(view);
+    }
+  } finally {
+    wipeBytes(sigBytes);
+  }
 }
 
 export async function registerExtensionVaultKey(sigBytes: Uint8Array): Promise<void> {
@@ -64,7 +74,7 @@ export async function registerExtensionVaultKey(sigBytes: Uint8Array): Promise<v
     try { sessionStorage.setItem(EXTENSION_VAULT_KEY_STORAGE, keyB64); } catch { /* ignore */ }
     _pushToExtension({ type: 'KS_VAULT_KEY_REGISTER', keyB64 });
   } catch {
-    // If the browser doesn't support HKDF or storage is unavailable, do nothing.
+    clearExtensionVaultKey();
   }
 }
 

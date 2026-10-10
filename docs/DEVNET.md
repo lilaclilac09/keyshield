@@ -34,8 +34,16 @@ You will also need:
 ## First-time setup
 
 ```bash
-bash scripts/devnet-setup.sh
+# No solana-cli: generate gitignored keypair + env (does not airdrop/deploy)
+eval "$(python3 src/scripts/devnet-keys.py)"
+
+# Full bootstrap (needs solana-cli): airdrop, optional deploy, ATA create
+bash src/scripts/devnet-setup.sh
 ```
+
+`KS_MPP_SETTLER_KEY` must be the **base58 64-byte secret** or the
+keypair JSON path. A path that is not read as JSON used to force
+`settle_on_chain` into stub (on-chain 0). See [AGENT-PAY.md](AGENT-PAY.md).
 
 That single command:
 

@@ -63,7 +63,12 @@ export async function deriveMasterKey(prfOutput: ArrayBuffer): Promise<CryptoKey
     ikm,
     KEY_BYTES * 8,
   );
-  return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  const view = new Uint8Array(bits);
+  try {
+    return await crypto.subtle.importKey('raw', view, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  } finally {
+    view.fill(0);
+  }
 }
 
 export async function deriveVaultId(prfOutput: ArrayBuffer): Promise<string> {

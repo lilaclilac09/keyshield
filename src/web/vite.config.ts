@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
-      port: 3000,
+      port: 5173,
       host: '0.0.0.0',
     },
     plugins: [react()],
@@ -17,7 +17,10 @@ export default defineConfig(({ mode }) => {
         env.KEYSHIELD_PUBLIC_API_BASE ?? 'https://keyshield-production.up.railway.app',
       ),
       'process.env.KEYSHIELD_PUBLIC_SYNC_URL': JSON.stringify(env.KEYSHIELD_PUBLIC_SYNC_URL ?? ''),
-      'process.env.KEYSHIELD_PROGRAM_ID': JSON.stringify(env.KEYSHIELD_PROGRAM_ID ?? ''),
+      'process.env.KEYSHIELD_PROGRAM_ID': JSON.stringify(
+        env.KEYSHIELD_PROGRAM_ID ?? '41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j',
+      ),
+      'process.env.SOLANA_RPC_URL': JSON.stringify(env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'),
     },
     resolve: {
       alias: {

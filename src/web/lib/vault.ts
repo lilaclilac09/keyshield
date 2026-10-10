@@ -56,7 +56,8 @@ export async function deriveMasterKey(prfOutput: ArrayBuffer): Promise<CryptoKey
     ikm,
     KEY_BYTES * 8,
   );
-  return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  const { importAesGcmAndWipe } = await import('./prf-wipe');
+  return importAesGcmAndWipe(bits);
 }
 
 export async function deriveVaultId(prfOutput: ArrayBuffer): Promise<string> {
@@ -72,13 +73,17 @@ export async function deriveVaultId(prfOutput: ArrayBuffer): Promise<string> {
 export async function encryptVault(key: CryptoKey, plaintext: VaultPlaintext): Promise<VaultCipher> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const data = new TextEncoder().encode(JSON.stringify(plaintext));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-  return {
-    version: VAULT_VERSION,
-    iv: bytesToB64url(iv),
-    ciphertext: bytesToB64url(new Uint8Array(ct)),
-    updatedAt: plaintext.updatedAt,
-  };
+  try {
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+    return {
+      version: VAULT_VERSION,
+      iv: bytesToB64url(iv),
+      ciphertext: bytesToB64url(new Uint8Array(ct)),
+      updatedAt: plaintext.updatedAt,
+    };
+  } finally {
+    data.fill(0);
+  }
 }
 
 export async function decryptVault(key: CryptoKey, cipher: VaultCipher): Promise<VaultPlaintext> {

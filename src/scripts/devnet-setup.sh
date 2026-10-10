@@ -274,15 +274,34 @@ fi
 
 # ─── 6. emit env block ───────────────────────────────────────────────────────
 
-# We pass the keypair PATH (not raw base58) for KS_MPP_SETTLER_KEY because
-# downstream Python code (anchorpy / solana-py) typically loads keys via
-# `Keypair.from_json(open(path).read())`. If you really need the base58
-# representation, run:
-#   python -c 'import json,base58; k=json.load(open("'"$SETTLER_KEYPAIR_PATH"'")); print(base58.b58encode(bytes(k[:32])).decode())'
+# Python `load_mpp_config` wants the 64-byte secret as base58, and also
+# accepts the JSON path. Export both so a sourced env never stubs.
+SETTLER_B58=""
+if command -v python3 >/dev/null 2>&1; then
+  SETTLER_B58="$(python3 - <<PY
+import json, pathlib
+raw = json.loads(pathlib.Path(r"$SETTLER_KEYPAIR_PATH").read_text())
+b = bytes(raw)
+ALPH = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = int.from_bytes(b, "big")
+out = bytearray()
+while n:
+    n, r = divmod(n, 58)
+    out.append(ALPH[r])
+pad = 0
+for byte in b:
+    if byte:
+        break
+    pad += 1
+print((ALPH[0:1] * pad + bytes(reversed(out))).decode())
+PY
+)"
+fi
 
 cat <<EOF
 # ── KeyShield devnet env (eval this in your shell) ──────────────────────────
-export KS_MPP_SETTLER_KEY="$SETTLER_KEYPAIR_PATH"
+export KS_MPP_SETTLER_KEY="${SETTLER_B58:-$SETTLER_KEYPAIR_PATH}"
+export KS_MPP_SETTLER_KEYPAIR="$SETTLER_KEYPAIR_PATH"
 export KS_MPP_SETTLER_PUBKEY="$SETTLER_PUBKEY"
 export KS_PLATFORM_USDC_ATA="${PLATFORM_ATA:-}"
 export KS_KEYSHIELD_PROGRAM_ID="$PROGRAM_ID"
