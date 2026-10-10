@@ -17,6 +17,7 @@
     "dev:api": "python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001 --log-level info",
     "build:web": "cd src/web && npm run build",
     "demo": "bash src/scripts/demo.sh",
+    "gitnexus": "node src/scripts/gitnexus.cjs",
     "demo:record": "bash scripts/record_demo.sh",
     "demo:record:fast": "bash scripts/record_demo.sh --fast",
     "docs:pitch-pdf": "marp docs/pitch/PITCH_DECK.md --allow-local-files -o docs/pitch/PITCH_DECK.pdf",
