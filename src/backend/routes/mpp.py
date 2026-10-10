@@ -607,9 +607,12 @@ async def mpp_record_tx(stream_id: int, request: Request):
 
 
 def _autosign_error(exc: Exception) -> JSONResponse:
+    from ..mpp.owner_keystore import OwnerKeystoreError
     from ..mpp.owner_submit import OwnerSubmitError
     from ..mpp.mpp_onchain import MppSubmitError
 
+    if isinstance(exc, OwnerKeystoreError):
+        return JSONResponse({"detail": "owner autosign unavailable"}, status_code=503)
     if isinstance(exc, OwnerSubmitError):
         detail = str(exc)
         if "not loaded" in detail:
@@ -633,29 +636,31 @@ async def mpp_autosign_status(request: Request):
 
 @router.post("/mpp/autosign/open")
 async def mpp_autosign_open(request: Request):
-    """Vault + grant + open + record-tx, owner-signed with the settler key."""
+    """Vault + grant + open + record-tx, owner-signed from the keystore."""
     sess, err = _require_auth(request)
     if err:
         return err
     body = await request.json()
     from ..mpp import owner_submit
+    from ..mpp.owner_keystore import OwnerKeystoreError
     from ..mpp.mpp_onchain import MppSubmitError
 
     try:
         result = await owner_submit.submit_full_open(sess["user_id"], body)
-    except (owner_submit.OwnerSubmitError, MppSubmitError) as exc:
+    except (owner_submit.OwnerSubmitError, OwnerKeystoreError, MppSubmitError) as exc:
         return _autosign_error(exc)
     return JSONResponse(result)
 
 
 @router.post("/mpp/streams/{stream_id}/submit-open-tx")
 async def mpp_submit_open_tx(stream_id: int, request: Request):
-    """Sign and send open_payment_stream with the settler-as-owner key."""
+    """Sign and send open_payment_stream with the owner keystore."""
     sess, err = _require_auth(request)
     if err:
         return err
     body = await request.json()
     from ..mpp import owner_submit, mpp_streams
+    from ..mpp.owner_keystore import OwnerKeystoreError
     from ..mpp.mpp_onchain import MppSubmitError
 
     raw_cap = body.get("maxTotalMicroUsdc", body.get("max_total_micro_usdc"))
@@ -674,6 +679,6 @@ async def mpp_submit_open_tx(stream_id: int, request: Request):
         )
     except mpp_streams.StreamNotFound:
         return JSONResponse({"detail": "stream not found"}, status_code=404)
-    except (owner_submit.OwnerSubmitError, MppSubmitError) as exc:
+    except (owner_submit.OwnerSubmitError, OwnerKeystoreError, MppSubmitError) as exc:
         return _autosign_error(exc)
     return JSONResponse(result)

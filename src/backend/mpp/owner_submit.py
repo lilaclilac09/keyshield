@@ -1,9 +1,11 @@
-"""Owner-signed MPP submissions using the Devnet settler key as owner.
+"""Owner-signed MPP submissions using the encrypted owner keystore.
 
-Vault / grant / open / withdraw are owner-signed. On the self-contained
-Devnet path the settler keypair *is* the owner (`KS_MPP_SETTLER_KEY`),
-so the API can sign and send instead of returning an unsigned ix for
-Phantom. A different owner wallet still uses `build-open-tx`.
+Vault / grant / open / withdraw are owner-signed. When the keystore
+(or a gitignored `user-devnet.json`) is loaded, the API signs and
+sends instead of returning an unsigned ix for Phantom.
+
+The session wallet must equal the owner pubkey. A leftover empty
+settler key is not a substitute for a funded owner.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 
-from . import mpp_onchain, mpp_streams
+from . import mpp_onchain, mpp_streams, owner_keystore
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,13 @@ def _already_on_chain(msg: str) -> bool:
     )
 
 
+def _require_owner() -> owner_keystore.OwnerKey:
+    owner = owner_keystore.load_owner()
+    if owner is None:
+        raise owner_keystore.OwnerKeystoreError("owner keystore is empty")
+    return owner
+
+
 def _require_config() -> mpp_onchain.MppConfig:
     config = mpp_onchain.load_mpp_config()
     if config is None:
@@ -44,34 +53,51 @@ def _config_with_vault(config: mpp_onchain.MppConfig, vault_pda: str) -> mpp_onc
     return replace(config, vault_pda=vault_pda)
 
 
+def _assert_session_owner(user_id: str, owner: owner_keystore.OwnerKey) -> None:
+    if user_id != owner.pubkey_b58:
+        raise OwnerSubmitError("autosign open requires the session wallet to be the owner")
+
+
 def owner_status() -> dict:
-    """Public autosign status — pubkey only, never the secret."""
+    """Public autosign status — pubkeys only, never the secret."""
+    keystore = owner_keystore.owner_status()
     config = mpp_onchain.load_mpp_config()
+    if keystore.get("loaded"):
+        return {
+            "loaded": True,
+            "mode": "owner-keystore",
+            "pubkey": keystore["pubkey"],
+            "settlerPubkey": None if config is None else config.settler_pubkey,
+            "rpc": None if config is None else config.rpc_url,
+            "programId": None if config is None else config.keyshield_program_id,
+            "usdcMint": None if config is None else config.usdc_mint,
+        }
     if config is None:
-        return {"loaded": False, "mode": "settler-as-owner", "pubkey": None}
+        return {"loaded": False, "mode": "owner-keystore", "pubkey": None}
     return {
-        "loaded": True,
-        "mode": "settler-as-owner",
-        "pubkey": config.settler_pubkey,
+        "loaded": False,
+        "mode": "owner-keystore",
+        "pubkey": None,
+        "settlerPubkey": config.settler_pubkey,
         "rpc": config.rpc_url,
         "programId": config.keyshield_program_id,
         "usdcMint": config.usdc_mint,
     }
 
 
-async def _send(config: mpp_onchain.MppConfig, ixs) -> str:
+async def _send(config: mpp_onchain.MppConfig, owner: owner_keystore.OwnerKey, ixs) -> str:
     return await mpp_onchain.submit_signed_instructions(
         config.rpc_url,
-        config.secret_key,
+        owner.secret_64,
         list(ixs),
     )
 
 
 async def ensure_vault_and_payments() -> dict:
+    owner = _require_owner()
     config = _require_config()
-    owner = config.settler_pubkey
     vault_pda, bump = mpp_onchain.derive_universal_vault_pda(
-        owner,
+        owner.pubkey_b58,
         config.keyshield_program_id,
     )
     created = False
@@ -79,21 +105,21 @@ async def ensure_vault_and_payments() -> dict:
     if not await mpp_onchain.rpc_account_exists(config.rpc_url, vault_pda):
         ix = mpp_onchain.build_create_universal_vault_ix(
             program_id=config.keyshield_program_id,
-            owner_pubkey=owner,
+            owner_pubkey=owner.pubkey_b58,
             vault_pda=vault_pda,
             bump=bump,
         )
-        sig = await _send(config, [ix])
+        sig = await _send(config, owner, [ix])
         created = True
         logger.info("autosign created vault %s tx=%s", vault_pda, sig)
     enable_ix = mpp_onchain.build_update_universal_policy_flags_ix(
         program_id=config.keyshield_program_id,
-        owner_pubkey=owner,
+        owner_pubkey=owner.pubkey_b58,
         vault_pda=vault_pda,
         flags=mpp_onchain.PAYMENT_ENABLED_FLAG,
     )
     try:
-        sig = await _send(config, [enable_ix])
+        sig = await _send(config, owner, [enable_ix])
         enabled = True
         logger.info("autosign enabled payments vault=%s tx=%s", vault_pda, sig)
     except mpp_onchain.MppSubmitError as exc:
@@ -103,24 +129,24 @@ async def ensure_vault_and_payments() -> dict:
         "bump": bump,
         "created": created,
         "paymentsEnabled": enabled,
-        "ownerPubkey": owner,
+        "ownerPubkey": owner.pubkey_b58,
     }
 
 
 async def submit_grant(agent_pubkey: str, max_spend_micro_usdc: int = 0) -> dict:
-    config = _require_config()
+    owner = _require_owner()
     vault = await ensure_vault_and_payments()
     vault_pda = vault["vaultPda"]
     ix = mpp_onchain.build_grant_agent_access_ix(
-        program_id=config.keyshield_program_id,
-        owner_pubkey=config.settler_pubkey,
+        program_id=_require_config().keyshield_program_id,
+        owner_pubkey=owner.pubkey_b58,
         vault_pda=vault_pda,
         agent_pubkey=agent_pubkey,
         payment_stream_enabled=True,
         max_spend_micro_usdc=max_spend_micro_usdc,
     )
     try:
-        sig = await _send(config, [ix])
+        sig = await _send(_require_config(), owner, [ix])
     except mpp_onchain.MppSubmitError as exc:
         msg = str(exc)
         if _already_on_chain(msg):
@@ -129,14 +155,14 @@ async def submit_grant(agent_pubkey: str, max_spend_micro_usdc: int = 0) -> dict
                 "vaultPda": vault_pda,
                 "agentPubkey": agent_pubkey,
                 "skipped": True,
-                "ownerPubkey": config.settler_pubkey,
+                "ownerPubkey": owner.pubkey_b58,
             }
         raise OwnerSubmitError(f"grant failed: {exc}") from exc
     return {
         "vaultPda": vault_pda,
         "agentPubkey": agent_pubkey,
         "txSignature": sig,
-        "ownerPubkey": config.settler_pubkey,
+        "ownerPubkey": owner.pubkey_b58,
     }
 
 
@@ -146,10 +172,9 @@ async def submit_open_for_stream(
     max_total_micro_usdc: int,
     owner_usdc_ata: str | None = None,
 ) -> dict:
+    owner = _require_owner()
+    _assert_session_owner(user_id, owner)
     config = _require_config()
-    owner = config.settler_pubkey
-    if user_id != owner:
-        raise OwnerSubmitError("autosign open requires the session wallet to be the settler owner")
     conn = mpp_streams._db()  # noqa: SLF001
     try:
         row = mpp_streams._get_owned_stream(conn, user_id, stream_id)  # noqa: SLF001
@@ -161,7 +186,7 @@ async def submit_open_for_stream(
     config = _config_with_vault(config, vault["vaultPda"])
     stream_pda, bump = mpp_onchain.derive_agent_payment_stream_pda(
         row["agent_pubkey"],
-        owner,
+        owner.pubkey_b58,
         config.keyshield_program_id,
     )
     stream_usdc_ata = mpp_onchain.derive_associated_token_address(
@@ -169,17 +194,17 @@ async def submit_open_for_stream(
         mint_pubkey=config.usdc_mint,
     )
     source_ata = owner_usdc_ata or mpp_onchain.derive_associated_token_address(
-        owner_pubkey=owner,
+        owner_pubkey=owner.pubkey_b58,
         mint_pubkey=config.usdc_mint,
     )
     create_owner_ata = mpp_onchain.build_create_ata_idempotent_ix(
-        payer_pubkey=owner,
+        payer_pubkey=owner.pubkey_b58,
         ata_pubkey=source_ata,
-        owner_pubkey=owner,
+        owner_pubkey=owner.pubkey_b58,
         mint_pubkey=config.usdc_mint,
     )
     create_ata = mpp_onchain.build_create_ata_idempotent_ix(
-        payer_pubkey=owner,
+        payer_pubkey=owner.pubkey_b58,
         ata_pubkey=stream_usdc_ata,
         owner_pubkey=stream_pda,
         mint_pubkey=config.usdc_mint,
@@ -188,12 +213,12 @@ async def submit_open_for_stream(
         source_ata=source_ata,
         dest_ata=stream_usdc_ata,
         mint_pubkey=config.usdc_mint,
-        authority_pubkey=owner,
+        authority_pubkey=owner.pubkey_b58,
         amount_micro_usdc=max_total_micro_usdc,
     )
     open_ix = mpp_onchain.build_open_payment_stream_ix(
         config=config,
-        owner_pubkey=owner,
+        owner_pubkey=owner.pubkey_b58,
         agent_pubkey=row["agent_pubkey"],
         stream_pda=stream_pda,
         usdc_ata=stream_usdc_ata,
@@ -203,7 +228,7 @@ async def submit_open_for_stream(
         max_rate_usd_per_min_bits=0,
         settlement_interval_secs=int(row["settlement_interval_secs"] or 60),
     )
-    sig = await _send(config, [create_owner_ata, create_ata, fund, open_ix])
+    sig = await _send(config, owner, [create_owner_ata, create_ata, fund, open_ix])
     recorded = mpp_streams.record_tx_signature(
         user_id,
         stream_id,
@@ -215,7 +240,7 @@ async def submit_open_for_stream(
         "txSignature": sig,
         "streamPda": stream_pda,
         "streamUsdcAta": stream_usdc_ata,
-        "ownerPubkey": owner,
+        "ownerPubkey": owner.pubkey_b58,
         "vaultPda": vault["vaultPda"],
         "stream": recorded,
     }
@@ -223,9 +248,8 @@ async def submit_open_for_stream(
 
 async def submit_full_open(user_id: str, body: dict) -> dict:
     """Create the off-chain row, grant the agent, fund and open on-chain."""
-    config = _require_config()
-    if user_id != config.settler_pubkey:
-        raise OwnerSubmitError("autosign open requires the session wallet to be the settler owner")
+    owner = _require_owner()
+    _assert_session_owner(user_id, owner)
     agent_pubkey = str(body.get("agentPubkey") or body.get("agent_pubkey") or "").strip()
     if not agent_pubkey:
         raise OwnerSubmitError("agentPubkey is required")

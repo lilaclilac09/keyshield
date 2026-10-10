@@ -96,7 +96,12 @@ section "1. wallet-login (ed25519 challenge)"
 KS_PY="${KS_PYTHON:-$REPO_ROOT/.venv/bin/python3}"
 [[ -x "$KS_PY" ]] || KS_PY="python3"
 SETTLER_KP="${KS_MPP_SETTLER_KEYPAIR:-$REPO_ROOT/.keyshield-devnet/mpp-settler-devnet.json}"
-WALLET_LOGIN=$("$KS_PY" - "$API_BASE" "$SETTLER_KP" <<'PY'
+OWNER_KP="${KS_USER_WALLET:-$REPO_ROOT/.keyshield-devnet/user-devnet.json}"
+LOGIN_KP="$OWNER_KP"
+if [[ ! -f "$LOGIN_KP" ]]; then
+  LOGIN_KP="$SETTLER_KP"
+fi
+WALLET_LOGIN=$("$KS_PY" - "$API_BASE" "$LOGIN_KP" <<'PY'
 import base64, json, sys, urllib.request
 from pathlib import Path
 from nacl.signing import SigningKey
