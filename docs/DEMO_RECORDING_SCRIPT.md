@@ -1,8 +1,11 @@
 # KeyShield — 2-minute record-demo script
 
-This is the voiceover script for `npm run demo:record`. It is **not**
-proof that a take exists. Recordings live outside Git (see
-[EVIDENCE_INDEX.md](EVIDENCE_INDEX.md)). Scene table:
+**Cursor / Screen Studio shot list (English, live wallet + OpenRouter +
+OpenClaw):** [CURSOR_LIVE_STORYBOARD.md](CURSOR_LIVE_STORYBOARD.md).
+
+This file is the voiceover for `npm run demo:record` (terminal harness
+only). It is **not** proof that a take exists. Recordings live outside
+Git (see [EVIDENCE_INDEX.md](EVIDENCE_INDEX.md)). Scene table:
 [DEMO_STORYBOARD.md](DEMO_STORYBOARD.md).
 
 The harness talks to a **local mock upstream** for SSE and the 502
