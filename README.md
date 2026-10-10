@@ -42,7 +42,7 @@ Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 |---|---|
 | **10x smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks it up instantly. No more `.env` copy-paste loops. |
 | **10x more secure** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same zero-knowledge model as iCloud Keychain, built for API secrets. |
-| **10x faster calls** | Rust proxy with two-tier cache (memory + disk) and single-flight dedup. 50 identical `getBalance` calls hit the network once. Hot-path Solana RPCs land in the 50–80ms band without changing your client code. |
+| **10x faster calls** | Rust `ks-helius`: **moka memory TTL** + **single-flight** (DashMap + `Shared<Future>`) + **HTTP/2 pool**. 50 concurrent `getBalance` → **1** upstream fire. After the handshake, repeats are memory hits (µs–ms), not a new TLS. **redb disk is Phase 2 — not open.** LaserStream / Yellowstone still live in the Python skill crate, not this hot path. |
 
 ### How it flows
 
@@ -57,8 +57,9 @@ Dashboard for humans. SDK & CLI for agents. Same vault underneath.
                     └──► Rust proxy ──► upstream provider
                             │
                             ├── raw key injected once, discarded immediately
-                            ├── response cache: 50–80ms hot path
-                            └── USDC micropayment settled on Solana
+                            ├── handshake: 1× getMultipleAccounts / getBalance (WAN RTT)
+                            ├── stampede: single-flight → 1 HTTP/2 fire
+                            └── memory hit: µs–ms (redb disk not open yet)
 ```
 
 ### Same vault. Two interfaces.
@@ -93,6 +94,29 @@ The rule: **a session-key signature never decrements balance unless the downstre
 That is Hold-Verify-Capture. It is why a blank upstream body, a 5xx, or a hung Solana submit cannot become a USDC transfer. Details: [docs/PAYMENT-FLOWS.md](docs/PAYMENT-FLOWS.md), [docs/security/SCVD_SYSTEMS_REPORT.md](docs/security/SCVD_SYSTEMS_REPORT.md).
 
 Honest limits: `ks-proxy` does not use `secrecy`/`zeroize` (those live in `ks-session-engine`). Host SHA-256 context digests are not WebAuthn-PRF. CI locks the honest Pinocchio path at **4,500 CU** under a **5,000** budget — not a 4,120 marketing figure.
+
+### Hot path — what is actually live
+
+Millisecond wallet reads are not a faster public RPC. They are fewer round-trips.
+
+| Layer | Where | Live? | What it does |
+|---|---|---|---|
+| Memory TTL (moka) | `src/proxy/crates/ks-helius` | **yes** | `getBalance` / `getAccountInfo` / `getMultipleAccounts` default 5s. Hit = 0 WAN RTT. |
+| Single-flight | same crate, `inflight: DashMap` | **yes** | 50 concurrent same `CacheKey` → 1 `fire`. Test: `hotpath_prints_miss_single_flight_then_moka_hit`. |
+| HTTP/2 pool | `reqwest` in `HeliusClient::with_api_key` | **yes** | Idle pool 20 / host. A later *miss* skips 20–60ms TLS. |
+| Dashboard handshake | `GET /mpp/status` → `wallet_balances.py` | **yes** | One `getMultipleAccounts([wallet, USDC ATA])`. Measured: miss ~213ms, next read **0.003ms** cached (20s dict). |
+| redb disk | `HeliusConfig.disk_cache_path` | **no** | Path reserved. Phase 1 comment: memory write only. |
+| LaserStream / gRPC WS | Python `helius_laserstream` | **no** | Skill / experiment. Not on the Rust proxy hot path. |
+
+Prove it locally (mock, no Helius key):
+
+```bash
+cargo test -p ks-helius hotpath_prints_miss_single_flight_then_moka_hit --manifest-path src/proxy/Cargo.toml -- --nocapture
+```
+
+First line is `MISS -> mock RTT`. The other 19 are `JOIN [Single-Flight Dedup]`. Then `HIT [moka memory]` under 5ms. `upstream_fires=1`.
+
+Screen Studio: terminal on the cargo test, browser on `/talk` (RPC thread) or `/demo` status strip. Do **not** voice-over “two-tier disk cache” until Phase 2 opens `helius.redb`.
 
 ---
 
