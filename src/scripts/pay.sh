@@ -5,12 +5,12 @@
 # Walks through every payment-related path the product exposes, against a
 # locally running stack (`bash scripts/dev.sh` first):
 #
-#   1. Login (passphrase auth) → bearer token
+#   1. Wallet-login (ed25519 challenge — /auth/login is 403)
 #   2. x402 proof topup → /billing/topup with tx_hash; second-claim 409
 #   3. MPP stream lifecycle:
 #        a. POST /mpp/streams (open)
-#        b. POST /mpp/streams/{id}/record (log usage; auto-settle)
-#        c. POST /mpp/streams/{id}/settle (manual settle)
+#        b. POST /mpp/streams/{id}/record (fulfillment body required)
+#        c. POST /mpp/streams/{id}/capture (session HMAC)
 #        d. (optional) POST /mpp/streams/{id}/build-open-tx
 #                       → demonstrates the wallet-sign payload shape
 #        e. POST /mpp/streams/{id}/close
@@ -34,6 +34,7 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 API_BASE="${KS_API_BASE:-http://127.0.0.1:8000}"
 DEMO_USER="${KS_DEMO_USER:-alice}"
 DEMO_PW="${KS_DEMO_PW:-pw}"
@@ -89,17 +90,57 @@ if ! curl -sf "$API_BASE/health" >/dev/null 2>&1; then
 fi
 ok "stack is up"
 
-# ── 1. login ────────────────────────────────────────────────────────────────
+# ── 1. wallet-login (POST /auth/login is 403 — passphrase shim is off) ──
 
-section "1. login as $DEMO_USER"
-LOGIN_BODY=$(curl -sf -X POST "$API_BASE/auth/login" \
-  -H 'content-type: application/json' \
-  -d "{\"userId\":\"$DEMO_USER\",\"password\":\"$DEMO_PW\"}")
-TOKEN=$(echo "$LOGIN_BODY" | jget token)
+section "1. wallet-login (ed25519 challenge)"
+KS_PY="${KS_PYTHON:-$REPO_ROOT/.venv/bin/python3}"
+[[ -x "$KS_PY" ]] || KS_PY="python3"
+WALLET_LOGIN=$("$KS_PY" - "$API_BASE" <<'PY'
+import base64, json, sys, urllib.request
+from nacl.signing import SigningKey
+import base58
+
+base = sys.argv[1]
+sk = SigningKey.generate()
+wallet = base58.b58encode(bytes(sk.verify_key)).decode()
+
+def http(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(
+        base + path,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+ch = http("GET", "/auth/wallet-challenge")
+challenge = ch["challenge"]
+sig = base64.b64encode(sk.sign(challenge.encode()).signature).decode()
+login = http(
+    "POST",
+    "/auth/wallet-login",
+    {
+        "walletAddress": wallet,
+        "challenge": challenge,
+        "nonce": ch.get("nonce", challenge),
+        "signature": sig,
+        "passphrase": "pay-sh",
+    },
+)
+print(json.dumps({"wallet": wallet, "token": login.get("token", "")}))
+PY
+) || die "wallet-login helper failed (need python3 + nacl + base58)"
+TOKEN=$(echo "$WALLET_LOGIN" | jget token)
+WALLET=$(echo "$WALLET_LOGIN" | jget wallet)
 if [[ -z "$TOKEN" ]]; then
-  die "login returned no token; body was: $LOGIN_BODY"
+  die "wallet-login returned no token; body was: $WALLET_LOGIN"
 fi
-ok "got bearer token (${TOKEN:0:12}…)"
+if [[ -n "$WALLET" ]]; then
+  DEMO_AGENT_PUBKEY="$WALLET"
+fi
+ok "wallet $WALLET  token ${TOKEN:0:12}…"
 
 AUTH=(-H "authorization: Bearer $TOKEN")
 
@@ -193,18 +234,36 @@ EOF
   exit 0
 fi
 
-info "3b. record 100 calls × 5000 tokens"
+info "3b. record fulfillment artifact (empty body is not billable)"
 RECORD=$(curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/record" "${AUTH[@]}" \
   -H 'content-type: application/json' \
-  -d '{"tokens": 5000, "calls": 100}')
+  -d '{"tokens":10,"calls":1,"status_code":200,"body":{"choices":[{"message":{"content":"hello"}}],"usage":{"total_tokens":10}}}')
 echo "$RECORD" | jpp
-ok "usage recorded"
+ARTIFACT=$(echo "$RECORD" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("stream",{}).get("artifact_hash",""))')
+if [[ -z "$ARTIFACT" ]]; then
+  die "record returned no artifact_hash; body: $RECORD"
+fi
+ok "artifact $ARTIFACT"
 
-info "3c. manual settle"
-SETTLE=$(curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/settle" "${AUTH[@]}")
-echo "$SETTLE" | jpp
-SETTLED=$(echo "$SETTLE" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("stream",{}).get("settled_micro_usdc",0))' 2>/dev/null || echo 0)
-ok "settled_micro_usdc = $SETTLED (stub-fallback shows DB-only debit)"
+info "3c. capture with session HMAC (not a bare /settle)"
+CAPTURE_BODY=$(python3 - "$TOKEN" "$ARTIFACT" <<'PY'
+import hashlib, hmac, json, sys
+token, artifact = sys.argv[1], sys.argv[2]
+mac = hmac.new(token.encode(), bytes.fromhex(artifact), hashlib.sha256).hexdigest()
+print(json.dumps({"artifactHash": artifact, "signature": mac}))
+PY
+)
+HTTP_STATUS=$(curl -s -o /tmp/mpp-capture.json -w '%{http_code}' \
+  -X POST "$API_BASE/mpp/streams/$STREAM_ID/capture" "${AUTH[@]}" \
+  -H 'content-type: application/json' \
+  -d "$CAPTURE_BODY")
+cat /tmp/mpp-capture.json | jpp
+if [[ "$HTTP_STATUS" == "200" ]]; then
+  SETTLED=$(python3 -c 'import json;print(json.load(open("/tmp/mpp-capture.json")).get("stream",{}).get("settled_micro_usdc",0))')
+  ok "captured settled_micro_usdc=$SETTLED"
+else
+  warn "capture HTTP $HTTP_STATUS — if settler env is loaded, the stream PDA must be wallet-signed on-chain first"
+fi
 
 info "3d. close stream"
 CLOSE=$(curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/close" "${AUTH[@]}")

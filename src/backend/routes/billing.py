@@ -119,15 +119,46 @@ async def billing_topup(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     amount_usd = float(body.get("amount_usd", 0))
+    proof = str(body.get("payment_proof") or "").strip()
+    verified_mode = None
+    if proof:
+        from ..proxy import x402_verify
+
+        if x402_verify.has_claim(proof):
+            return JSONResponse(
+                {"detail": "payment_proof already claimed", "code": "duplicate_claim"},
+                status_code=409,
+            )
+        try:
+            ok, verified_mode = await x402_verify.verify_on_chain(
+                x402_verify.load_x402_config(),
+                proof,
+                amount_usd,
+            )
+        except x402_verify.VerifyError as e:
+            return JSONResponse({"detail": str(e), "code": "verify_failed"}, status_code=400)
+        if not ok:
+            return JSONResponse(
+                {"detail": "payment_proof did not verify", "code": "verify_failed"},
+                status_code=400,
+            )
+        try:
+            x402_verify.record_claim(proof, user_id, amount_usd, verified_mode)
+        except x402_verify.DuplicateClaim:
+            return JSONResponse(
+                {"detail": "payment_proof already claimed", "code": "duplicate_claim"},
+                status_code=409,
+            )
     new_balance = usage_mod.topup(user_id, amount_usd)
     new_balance_float = (
         float(new_balance)
         if not isinstance(new_balance, dict)
         else float(new_balance.get("balance_usd", new_balance.get("usd_balance", 0)))
     )
-    return JSONResponse(
-        {
-            "credited_usd": round(amount_usd, 6),
-            "balance_usd": round(new_balance_float, 6),
-        }
-    )
+    payload = {
+        "credited_usd": round(amount_usd, 6),
+        "balance_usd": round(new_balance_float, 6),
+    }
+    if verified_mode is not None:
+        payload["verified_mode"] = verified_mode
+    return JSONResponse(payload)

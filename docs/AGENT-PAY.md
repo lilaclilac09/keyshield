@@ -87,3 +87,66 @@ checkout: receipt without goods.
 
 Invariant: a session HMAC never increments `settled` unless verify
 returns `submitted` (or explicit stub-ledger `stub`). Timeout ≠ paid.
+If settler env is loaded but the stream PDA was never wallet-signed,
+capture now **fails closed** (`settlement failed`) instead of writing a
+DB receipt with `on_chain_signature: null`.
+
+## What is actually on Solana Devnet
+
+Probed `https://api.devnet.solana.com` (public RTT ~200 ms, not a cache
+HIT):
+
+| Account | Address | State |
+|---|---|---|
+| Pinocchio program | `41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j` | Exists (upgradeable BPF) |
+| Circle Devnet USDC mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | Exists |
+| Settler / test wallet | `Fx3db1bLEgMqEPQmroXj4VBA1mhCpNtJEKTmbbhiSyHR` | **0 SOL**, account missing |
+| UniversalVault PDA | `GMAeyy5xkDjcue1aUktx2VGCQSSpBcvFRGjGrJsVjn5u` | Missing |
+| Platform USDC ATA | `9fWke5xK7dMXbQGvEYkiESdBNSQ5zJ6SfGiLNAvmLf3N` | Missing |
+
+There is **no shop catalog** on Devnet. “Buy” means: pay for an API
+call (MPP tab or x402 402), not a Jupiter swap.
+
+Public `requestAirdrop` returns `Internal error` / 429. Official
+`faucet.solana.com` tells agents to use CLI / PoW / local validator.
+Circle USDC is `faucet.circle.com` (browser + captcha). Until those
+land: wallet-login + MPP hold/record work; capture is stub-ledger only
+when settler env is **unset**.
+
+## How to buy (working local path)
+
+```bash
+# 1. Wallet login — /auth/login is 403
+#    GET /auth/wallet-challenge → ed25519 sign UTF-8(challenge)
+#    POST /auth/wallet-login {walletAddress, challenge, nonce, signature}
+
+# 2. x402 prepaid (Base USDC in prod; stub if KS_X402_BASE_RPC_URL unset)
+curl -X POST "$KS_BASE/billing/topup" \
+  -H "Authorization: Bearer $KS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_usd":0.02,"payment_proof":"0x<unique>"}'
+# Same proof again → 409. Dashboard topup without proof is still a
+# free-credit shim (ActivitySection).
+
+# 3. MPP tab
+curl -X POST "$KS_BASE/mpp/streams" ...
+curl -X POST "$KS_BASE/mpp/streams/$ID/record" \
+  -d '{"tokens":10,"calls":1,"status_code":200,"body":{"choices":[{"message":{"content":"hello"}}]}}'
+# Capture MAC = HMAC-SHA256(session_token_utf8, artifact_hash)
+curl -X POST "$KS_BASE/mpp/streams/$ID/capture" \
+  -d '{"artifactHash":"<hex>","signature":"<hmac-hex>"}'
+
+# 4. On-chain (only after SOL + Devnet USDC + vault + grant)
+#    POST /mpp/streams/$ID/build-open-tx → wallet signs prereqIxs + ix 24
+#    POST the confirmed sig back so stream_pda is stored
+#    Then capture may submit ix 26 TransferChecked
+```
+
+`bash src/scripts/pay.sh` now uses wallet-login + fulfillment + capture.
+A configured settler without a signed PDA prints a warning instead of a
+fake on-chain receipt.
+
+x402 **proxy** 402 is not issued by KeyShield when the vault key is
+missing — that path returns `401 missing X-Upstream-API-Key`. A 402
+appears only when the **upstream** (or a configured interceptor) returns
+one. `KS_X402_ENABLED` is unset on this control plane.
