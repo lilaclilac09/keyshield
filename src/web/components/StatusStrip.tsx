@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { fetchMppStatus, type MppStatusStrip } from '../lib/api';
-import { deriveAta, getUsdcMint } from '../lib/solana';
 import { SETTLE_LABEL, normalizeSettleMode } from '../lib/payment-status';
 
-function fmtSol(lamports: number | null): string {
+function fmtSol(lamports: number | null | undefined): string {
   if (lamports == null) return '—';
   return (lamports / 1_000_000_000).toFixed(3);
 }
 
-function fmtUsdc(micro: number | null): string {
+function fmtUsdc(micro: number | null | undefined): string {
   if (micro == null) return '—';
   return (micro / 1_000_000).toFixed(6);
 }
@@ -17,42 +15,11 @@ function fmtUsdc(micro: number | null): string {
 const pill = 'flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-[#243365] bg-[#0b1226] text-[10px] uppercase tracking-wider';
 
 export const StatusStrip: React.FC = () => {
-  const { connection } = useConnection();
-  const { publicKey } = useWallet();
-  const [solLamports, setSolLamports] = useState<number | null>(null);
-  const [usdcMicro, setUsdcMicro] = useState<number | null>(null);
   const [mpp, setMpp] = useState<MppStatusStrip | null>(null);
 
   const refresh = useCallback(async () => {
-    const jobs: Promise<void>[] = [];
-    if (publicKey) {
-      const ata = deriveAta(publicKey, getUsdcMint());
-      jobs.push((async () => {
-        try {
-          const infos = await connection.getMultipleAccountsInfo([publicKey, ata], { commitment: 'confirmed' });
-          setSolLamports(infos[0]?.lamports ?? 0);
-          const data = infos[1]?.data;
-          if (data && data.length >= 72) {
-            const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-            const amount = Number(view.getBigUint64(64, true));
-            setUsdcMicro(amount);
-          } else {
-            setUsdcMicro(0);
-          }
-        } catch {
-          setSolLamports(null);
-          setUsdcMicro(null);
-        }
-      })());
-    } else {
-      setSolLamports(null);
-      setUsdcMicro(null);
-    }
-    jobs.push((async () => {
-      try { setMpp(await fetchMppStatus()); } catch { setMpp(null); }
-    })());
-    await Promise.all(jobs);
-  }, [connection, publicKey]);
+    try { setMpp(await fetchMppStatus()); } catch { setMpp(null); }
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -64,17 +31,24 @@ export const StatusStrip: React.FC = () => {
 
   const receipt = mpp?.last_receipt;
   const mode = receipt ? normalizeSettleMode({ settle_mode: receipt.mode }) : null;
+  const rpcHint = mpp?.rpc_ms == null
+    ? ''
+    : mpp.cached
+      ? 'cache'
+      : `${Math.round(mpp.rpc_ms)}ms`;
 
   return (
     <div className="h-10 border-b border-[#243365]/60 bg-[#0e1631] px-6 flex items-center gap-2 overflow-x-auto shrink-0">
-      <span className="text-[9px] text-[#5e6a91] uppercase tracking-widest mr-1">Devnet</span>
-      <div className={pill} title={publicKey ? publicKey.toBase58() : 'wallet not connected'}>
+      <span className="text-[9px] text-[#5e6a91] uppercase tracking-widest mr-1" title={mpp?.wallet || 'session wallet'}>
+        Devnet{rpcHint ? ` · ${rpcHint}` : ''}
+      </span>
+      <div className={pill} title={mpp?.wallet || 'wallet not in session'}>
         <span className="text-[#5e6a91]">SOL</span>
-        <span className="text-white font-mono">{fmtSol(solLamports)}</span>
+        <span className="text-white font-mono">{fmtSol(mpp?.sol_lamports)}</span>
       </div>
       <div className={pill} title="Circle Devnet USDC">
         <span className="text-[#5e6a91]">USDC</span>
-        <span className="text-white font-mono">{fmtUsdc(usdcMicro)}</span>
+        <span className="text-white font-mono">{fmtUsdc(mpp?.usdc_micro)}</span>
       </div>
       <div className={pill}>
         <span className="text-[#5e6a91]">Stream</span>

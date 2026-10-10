@@ -135,3 +135,61 @@ def test_mpp_status_route(tmp_path, monkeypatch):
     body = res.json()
     assert "last_receipt" in body
     assert "stream_remaining_micro_usdc" in body
+    assert "sol_lamports" in body
+    assert "usdc_micro" in body
+    assert body["sol_lamports"] is None
+    assert body["usdc_micro"] is None
+
+
+def test_status_strip_uses_server_balances(monkeypatch):
+    from src.backend.billing import wallet_balances
+
+    def fake_fetch(owner):
+        return {
+            "wallet": owner,
+            "sol_lamports": 2_500_000_000,
+            "usdc_micro": 1_250_000,
+            "rpc_ms": 12.4,
+            "cached": False,
+        }
+
+    owner = "GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq"
+    strip = mpp_streams.status_strip(owner, fetch_balances=fake_fetch)
+    assert strip["sol_lamports"] == 2_500_000_000
+    assert strip["usdc_micro"] == 1_250_000
+    assert strip["rpc_ms"] == 12.4
+    assert strip["wallet"] == owner
+    assert wallet_balances.looks_like_pubkey(owner)
+    assert not wallet_balances.looks_like_pubkey("alice")
+
+
+def test_wallet_balances_parses_get_multiple_accounts():
+    from src.backend.billing import wallet_balances
+
+    wallet_balances.clear_balance_cache()
+    owner = "GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq"
+    mint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+    ata = __import__("src.backend.mpp.mpp_onchain", fromlist=["derive_associated_token_address"]).derive_associated_token_address(owner, mint)
+    token_data = bytearray(165)
+    token_data[64:72] = (1_000_000).to_bytes(8, "little")
+    import base64
+
+    def fake_rpc(_url, payload):
+        assert payload["method"] == "getMultipleAccounts"
+        assert payload["params"][0] == [owner, ata]
+        return {
+            "result": {
+                "value": [
+                    {"lamports": 3_100_000_000},
+                    {"lamports": 2_039_280, "data": [base64.b64encode(token_data).decode(), "base64"]},
+                ]
+            }
+        }
+
+    first = wallet_balances.fetch_wallet_balances(owner, fetch_impl=fake_rpc)
+    assert first["sol_lamports"] == 3_100_000_000
+    assert first["usdc_micro"] == 1_000_000
+    assert first["cached"] is False
+    second = wallet_balances.fetch_wallet_balances(owner, fetch_impl=lambda *_: (_ for _ in ()).throw(RuntimeError("no rpc")))
+    assert second["cached"] is True
+    assert second["sol_lamports"] == 3_100_000_000

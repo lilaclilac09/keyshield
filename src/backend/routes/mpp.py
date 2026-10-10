@@ -133,7 +133,11 @@ async def mpp_list_events(request: Request, limit: int = 20):
 
 @router.get("/mpp/status")
 async def mpp_status_strip(request: Request):
-    """Top-bar snapshot: open-stream remaining + last receipt hash/mode."""
+    """Top-bar snapshot: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Balances are fetched server-side (getMultipleAccounts) so the UI
+    does not depend on the browser reaching public Devnet RPC.
+    """
     sess, err = _require_auth(request)
     if err:
         return err

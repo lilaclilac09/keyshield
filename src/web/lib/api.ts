@@ -205,6 +205,11 @@ export interface MppStatusStrip {
     stream_id: number;
     micro_usdc: number;
   } | null;
+  wallet?: string | null;
+  sol_lamports?: number | null;
+  usdc_micro?: number | null;
+  rpc_ms?: number | null;
+  cached?: boolean;
 }
 
 export async function fetchMppStatus(): Promise<MppStatusStrip> {

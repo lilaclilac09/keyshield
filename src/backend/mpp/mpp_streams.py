@@ -2201,8 +2201,12 @@ def last_receipt(user_id: str) -> dict | None:
         conn.close()
 
 
-def status_strip(user_id: str) -> dict:
-    """Coinbase-style top bar: stream remaining + last receipt."""
+def status_strip(user_id: str, *, fetch_balances=None) -> dict:
+    """Coinbase-style top bar: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Wallet balances come from one server-side getMultipleAccounts so the
+    dashboard does not depend on the browser reaching public Devnet RPC.
+    """
     listed = list_streams(user_id)
     open_streams = [s for s in listed["streams"] if s.get("status") == "open"]
     remaining = None
@@ -2212,11 +2216,30 @@ def status_strip(user_id: str) -> dict:
             for s in open_streams
             if s.get("escrow_micro_usdc") is not None
         )
-    return {
+    out = {
         "stream_remaining_micro_usdc": remaining,
         "streams_open": listed["summary"]["streams_open"],
         "last_receipt": last_receipt(user_id),
+        "wallet": None,
+        "sol_lamports": None,
+        "usdc_micro": None,
+        "rpc_ms": None,
+        "cached": False,
     }
+    try:
+        from ..billing.wallet_balances import fetch_wallet_balances, looks_like_pubkey
+
+        if looks_like_pubkey(user_id):
+            fn = fetch_balances or fetch_wallet_balances
+            bal = fn(user_id)
+            out["wallet"] = bal.get("wallet") or user_id
+            out["sol_lamports"] = bal.get("sol_lamports")
+            out["usdc_micro"] = bal.get("usdc_micro")
+            out["rpc_ms"] = bal.get("rpc_ms")
+            out["cached"] = bool(bal.get("cached"))
+    except Exception:
+        out["wallet"] = user_id
+    return out
 
 
 def list_events(user_id: str, limit: int = 20) -> dict:

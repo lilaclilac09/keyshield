@@ -3,6 +3,7 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Button } from './ui/Button';
 import { fetchAutosignStatus } from '../lib/api';
+import { getWalletAddress } from '../lib/auth';
 import { DEFAULT_TAB_CAP_MICRO, openStreamTabAutosign, openStreamTabWallet, type OpenTabStep } from '../lib/wallet-mpp';
 
 const STEPS: OpenTabStep[] = ['open', 'build', 'sign', 'record', 'done'];
@@ -36,16 +37,18 @@ export const OpenStreamTab: React.FC<Props> = ({ onOpened }) => {
   const run = async (mode: 'wallet' | 'autosign') => {
     setBusy(true); setMsg(''); setOk(false); setExplorer(''); setStep('open');
     try {
+      const sessionWallet = getWalletAddress() || undefined;
+      const owner = publicKey?.toBase58() || sessionWallet;
       const result = mode === 'autosign'
         ? await openStreamTabAutosign({
-            ownerPubkey: publicKey?.toBase58(),
-            agentPubkey: publicKey?.toBase58(),
+            ownerPubkey: owner,
+            agentPubkey: owner,
             maxTotalMicroUsdc: DEFAULT_TAB_CAP_MICRO,
             onProgress: (s) => setStep(s),
           })
         : await openStreamTabWallet({
-            ownerPubkey: publicKey!.toBase58(),
-            agentPubkey: publicKey!.toBase58(),
+            ownerPubkey: owner!,
+            agentPubkey: owner!,
             maxTotalMicroUsdc: DEFAULT_TAB_CAP_MICRO,
             connection,
             sendTransaction,

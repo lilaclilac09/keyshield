@@ -60,7 +60,9 @@ Capture MAC:
 mac = HMAC-SHA256(session_token_utf8, bytes.fromhex(artifact_hash))
 ```
 
-UI: `/demo` is the 3-step wizard (connect → open tab → 402 details/Pay). Activity has the same CTAs. Top bar shows SOL, Devnet USDC, stream remaining, last receipt (`hash[:8]` + mode).
+UI: `/demo` is the 3-step wizard (connect → open tab → 402 details/Pay). Activity has the same CTAs. Top bar reads `GET /mpp/status` (one `getMultipleAccounts` for SOL + Circle USDC ATA, 2s cache) plus stream remaining and last receipt (`hash[:8]` + mode).
+
+GitNexus (no global binary): `node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream`
 
 ## Caps and refusals
 
