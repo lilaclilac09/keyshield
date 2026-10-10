@@ -603,6 +603,7 @@ npm run gitnexus -- detect-changes --scope all
 | [keyshield.md](keyshield.md) | On-chain verification, failure boundaries, 4-stage test matrix |
 | [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md) | Artifact IDs, checksums, verified vs claimed |
 | [docs/REVIEWER_QUICKSTART.md](docs/REVIEWER_QUICKSTART.md) | How to re-run the matrix and watch the takes |
+| [docs/CURSOR_LIVE_STORYBOARD.md](docs/CURSOR_LIVE_STORYBOARD.md) | English Cursor / Screen Studio shot list (OpenRouter scan, OpenClaw, live 1µ USDC, RPC) |
 | [docs/DEMO_RECORDING_SCRIPT.md](docs/DEMO_RECORDING_SCRIPT.md) | 2-minute record-demo scenes + voiceover |
 | [docs/DEMO_STORYBOARD.md](docs/DEMO_STORYBOARD.md) | Scene table for the recorded takes |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
