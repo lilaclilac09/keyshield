@@ -33,7 +33,7 @@ def test_spec04_providers_build_auth() -> None:
 
 
 def test_existing_inference_providers_stay() -> None:
-    for name in ("openrouter", "ollama", "vllm", "openai", "helius-rpc"):
+    for name in ("openrouter", "ollama", "vllm", "openai", "helius-rpc", "vercel", "github"):
         assert name in api_router.PROVIDERS
 
 

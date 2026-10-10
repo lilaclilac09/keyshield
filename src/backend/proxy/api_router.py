@@ -105,6 +105,14 @@ PROVIDERS: dict[str, dict] = {
         "auth_optional": True,
         "inject_content_type": False,
     },
+    "vercel": {
+        "base": "https://api.vercel.com",
+        "auth": "bearer",
+    },
+    "github": {
+        "base": "https://api.github.com",
+        "auth": "bearer",
+    },
 }
 
 # Test-only knob used by `proxy-rs/tests/oracle_diff/`. When set,

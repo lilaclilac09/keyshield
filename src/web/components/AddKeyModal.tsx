@@ -14,6 +14,8 @@ const PROVIDERS = [
   { id: 'mistral', name: 'Mistral AI', tag: 'ai', domain: 'mistral.ai', placeholder: 'xxxxxxxxxxxxxxxx' },
   { id: 'cohere', name: 'Cohere', tag: 'ai', domain: 'cohere.ai', placeholder: 'xxxxxxxxxxxxxxxx' },
   { id: 'groq', name: 'Groq', tag: 'ai', domain: 'groq.com', placeholder: 'gsk_\u2026' },
+  { id: 'vercel', name: 'Vercel', tag: 'deploy', domain: 'vercel.com', placeholder: 'vercel_\u2026' },
+  { id: 'github', name: 'GitHub', tag: 'git', domain: 'github.com', placeholder: 'ghp_ / github_pat_\u2026' },
 ];
 
 const TYPE_TABS: { id: VaultItemType; label: string; icon: React.ReactNode; sub: string }[] = [
