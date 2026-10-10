@@ -165,5 +165,97 @@ export async function recordMppTxSignature(streamId: number, txSignature: string
   }
 }
 
+export interface OpenStreamBody {
+  agentPubkey: string;
+  agentName?: string;
+  upstream?: string;
+  ratePerTokenMicroUsdc?: number;
+  ratePerCallMicroUsdc?: number;
+  settlementIntervalSecs?: number;
+  maxTotalMicroUsdc?: number;
+}
+
+export async function openMppStream(body: OpenStreamBody): Promise<{
+  id: number;
+  agent_pubkey: string;
+  max_total_micro_usdc: number | null;
+  on_chain_signature: string | null;
+  escrow_micro_usdc: number | null;
+}> {
+  const r = await apiFetch('/mpp/streams', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'open stream failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'open stream failed');
+  }
+  const data = await r.json();
+  return data.stream;
+}
+
+export interface MppStatusStrip {
+  stream_remaining_micro_usdc: number | null;
+  streams_open: number;
+  last_receipt: {
+    hash: string;
+    hash8: string;
+    mode: string;
+    signature: string | null;
+    stream_id: number;
+    micro_usdc: number;
+  } | null;
+}
+
+export async function fetchMppStatus(): Promise<MppStatusStrip> {
+  const r = await apiFetch('/mpp/status');
+  if (!r.ok) {
+    return { stream_remaining_micro_usdc: null, streams_open: 0, last_receipt: null };
+  }
+  return r.json();
+}
+
+export async function fetchAutosignStatus(): Promise<{ loaded: boolean; owner?: string; mode?: string }> {
+  const r = await apiFetch('/mpp/autosign/status');
+  if (!r.ok) return { loaded: false };
+  return r.json();
+}
+
+export async function submitAutosignOpen(body: Record<string, unknown>): Promise<Record<string, any>> {
+  const r = await apiFetch('/mpp/autosign/open', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'autosign open failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'autosign open failed');
+  }
+  return r.json();
+}
+
+export async function recordMppUsage(streamId: number, body: Record<string, unknown>): Promise<{ stream: { artifact_hash?: string; id?: number } }> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/record`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: 'record failed' }));
+    throw new Error((err as { detail: string }).detail ?? 'record failed');
+  }
+  return r.json();
+}
+
+export async function captureMppStream(streamId: number, artifactHash: string, signature: string): Promise<{ stream: { settle_mode?: string; on_chain_signature?: string | null } }> {
+  const r = await apiFetch(`/mpp/streams/${streamId}/capture`, {
+    method: 'POST',
+    body: JSON.stringify({ artifactHash, signature }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error((data as { detail?: string }).detail ?? 'capture failed');
+  }
+  return data;
+}
+
 // Re-export
 export { API_BASE, getToken, apiFetch } from './auth';
