@@ -855,12 +855,12 @@ Don't use it when:
 
 This project is indexed by GitNexus as **keyshield** (9484 symbols, 20837 relationships, 566 execution flows).
 
-> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
+> Index stale? From the **repo root** (not `~`): `node src/scripts/gitnexus.cjs analyze --index-only`. `.gitnexus/run.cjs` is gitignored. There is no global `gitnexus` on macOS PATH. Do not paste `<符号>`.
 
 ## Always Do
 
-- **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`; report callers, processes, and risk. Never substitute grep for graph analysis.
-- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "main" --repo .`.
+- **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream`; report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node src/scripts/gitnexus.cjs detect-changes --scope all` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node src/scripts/gitnexus.cjs detect-changes --scope compare --base-ref main`.
 - MUST warn on HIGH/CRITICAL `risk` pre-edit; never use `riskSharedAxes` to waive a HIGH/CRITICAL `risk` warning. Compare File/symbol: MCP File omits axes; Graph-RAG expands File.
 - **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
 - **MUST use `query({search_query: "concept"})` for concepts/flows, `context({name: "symbolName"})` for a named symbol, or `impact` for blast radius, on read-only callers, dependencies, imports, or execution flow.** Graph first; text search only for empty/`UNKNOWN`/literals.
@@ -883,6 +883,18 @@ This project is indexed by GitNexus as **keyshield** (9484 symbols, 20837 relati
 | `gitnexus://repo/keyshield/process/{name}` | Step-by-step execution trace |
 
 ## CLI
+
+`gitnexus` is **not** on macOS PATH. Do not run it from `~`.
+`.gitnexus/run.cjs` is gitignored — use the wrapper:
+
+```
+cd /path/to/keyshield
+node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
+node src/scripts/gitnexus.cjs detect-changes --scope all
+npm run gitnexus -- impact status_strip --direction upstream
+```
+
+Never paste `<符号>`. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws MODULE_NOT_FOUND.
 
 | Task | Read this skill file |
 | --- | --- |

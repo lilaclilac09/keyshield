@@ -576,6 +576,20 @@ Full write-up: [keyshield.md](keyshield.md).
 
 ---
 
+## GitNexus CLI (macOS)
+
+`gitnexus` is **not** on PATH. Do not run it from `~`.
+
+```bash
+cd /path/to/keyshield
+node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
+npm run gitnexus -- detect-changes --scope all
+```
+
+`<符号>` is a placeholder — use a real name. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws `MODULE_NOT_FOUND`.
+
+---
+
 ## Read more
 
 | Doc | Purpose |
