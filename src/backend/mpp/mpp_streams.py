@@ -45,7 +45,7 @@ import logging
 import os
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .capture import verify_artifact_signature
@@ -652,6 +652,33 @@ def settle_on_chain(
         # load_mpp_config() already logged the warning once; just
         # fall through to stub.
         return SettleOutcome(0, "stub")
+
+    # Env `KS_VAULT_PDA` is the settler vault from setup. Settle must
+    # use the stream owner's UniversalVault or ix 26 hits 6010.
+    conn = _db()
+    try:
+        owner_row = conn.execute(
+            "SELECT user_id FROM mpp_streams WHERE id = ?",
+            (stream_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    owner_id = None if owner_row is None else owner_row[0]
+    if owner_id:
+        try:
+            owner_vault, _bump = mpp_onchain.derive_universal_vault_pda(
+                owner_id,
+                config.keyshield_program_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "mpp_settle stream %s: cannot derive owner vault from %s: %s",
+                stream_id,
+                owner_id,
+                exc,
+            )
+        else:
+            config = replace(config, vault_pda=owner_vault)
 
     # PDA + ATA are not stored in the mpp_streams schema today
     # (open_stream is still DB-only). Without them we can't build

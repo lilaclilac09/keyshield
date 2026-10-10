@@ -10,6 +10,7 @@ settler key is not a substitute for a funded owner.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import replace
 
@@ -48,8 +49,12 @@ def _require_config() -> mpp_onchain.MppConfig:
 
 
 def _config_with_vault(config: mpp_onchain.MppConfig, vault_pda: str) -> mpp_onchain.MppConfig:
-    if config.vault_pda:
-        return config
+    """Always bind open/withdraw to the session owner's vault.
+
+    `KS_VAULT_PDA` is the settler vault from `devnet-setup.sh`. Using
+    that PDA when the owner is a different funded wallet makes
+    `open_payment_stream` fail with UniversalVaultNotFound (6010).
+    """
     return replace(config, vault_pda=vault_pda)
 
 
@@ -112,6 +117,12 @@ async def ensure_vault_and_payments() -> dict:
         sig = await _send(config, owner, [ix])
         created = True
         logger.info("autosign created vault %s tx=%s", vault_pda, sig)
+        # Devnet RPC can still return AccountNotFound for a few hundred ms
+        # after sendTransaction; wait until the vault account is visible.
+        for _ in range(8):
+            if await mpp_onchain.rpc_account_exists(config.rpc_url, vault_pda):
+                break
+            await asyncio.sleep(0.4)
     enable_ix = mpp_onchain.build_update_universal_policy_flags_ix(
         program_id=config.keyshield_program_id,
         owner_pubkey=owner.pubkey_b58,

@@ -90,6 +90,27 @@ def test_autosign_open_rejects_session_mismatch(tmp_path, monkeypatch):
     assert "session wallet" in res.json()["detail"]
 
 
+def test_config_with_vault_overrides_env_pda():
+    from dataclasses import replace
+
+    from src.backend.mpp import owner_submit
+
+    cfg = mpp_onchain.MppConfig(
+        secret_key=b"\x00" * 64,
+        settler_pubkey="Settler111111111111111111111111111111111",
+        platform_usdc_ata="Ata1111111111111111111111111111111111111",
+        keyshield_program_id="41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j",
+        usdc_mint="4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+        vault_pda="SettlerVault11111111111111111111111111111",
+        rpc_url="https://api.devnet.solana.com",
+    )
+    owner_vault = "OwnerVault1111111111111111111111111111111"
+    bound = owner_submit._config_with_vault(cfg, owner_vault)
+    assert bound.vault_pda == owner_vault
+    assert cfg.vault_pda != bound.vault_pda
+    assert replace(cfg, vault_pda=owner_vault).vault_pda == owner_vault
+
+
 def test_vault_and_grant_ix_layouts():
     bump = 254
     vault = mpp_onchain.build_create_universal_vault_ix_data(bump)
