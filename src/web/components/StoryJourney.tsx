@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch, getToken } from '../lib/auth';
 import { detectUpstream } from '../lib/keychain';
-import {
-  captureMppStream,
-  demoMeterStream,
-  fetchCapturePrep,
-} from '../lib/api';
+import { captureMppStream } from '../lib/api';
 import { signCaptureMac } from '../lib/mpp-capture';
 
 /** Fixture prefixes only — never a live secret. Long enough for the real detectors. */
@@ -85,17 +81,42 @@ export const StoryJourney: React.FC = () => {
       const listed = await apiFetch('/mpp/streams');
       if (!listed.ok) throw new Error(`streams HTTP ${listed.status}`);
       const body = await listed.json();
-      const streams = (body.streams || []) as Array<{ id: number; status?: string }>;
+      const streams = (body.streams || []) as Array<{ id: number; status?: string; upstream?: string }>;
       const open = streams.find((s) => s.status === 'open');
       if (!open) throw new Error('no open stream — wallet is funded, open one from Payments first');
-      setBuyLog(`hold + record on stream ${open.id}`);
-      await demoMeterStream(open.id, 'story-journey ping');
-      const prep = await fetchCapturePrep(open.id);
       const token = getToken();
       if (!token) throw new Error('no KS_TOKEN — wallet-login first');
-      const mac = await signCaptureMac(token, prep.artifactHash);
+      const upstream = open.upstream || 'anthropic';
+      setBuyLog(`HOLD stream ${open.id} · ${upstream}`);
+      const hold = await apiFetch(`/mpp/streams/${open.id}/hold`, {
+        method: 'POST',
+        body: JSON.stringify({ estimateMicroUsdc: 1, upstream }),
+      });
+      if (!hold.ok && hold.status !== 409) {
+        const err = await hold.json().catch(() => ({ detail: `hold HTTP ${hold.status}` }));
+        throw new Error((err as { detail?: string }).detail || `hold HTTP ${hold.status}`);
+      }
+      setBuyLog('RECORD artifact');
+      const recorded = await apiFetch(`/mpp/streams/${open.id}/record`, {
+        method: 'POST',
+        body: JSON.stringify({
+          calls: 1,
+          tokens: 1,
+          status_code: 200,
+          body: {
+            id: `chatcmpl-story-${Date.now()}`,
+            choices: [{ message: { role: 'assistant', content: 'story-journey' } }],
+            usage: { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 },
+          },
+        }),
+      });
+      if (!recorded.ok) throw new Error(`record HTTP ${recorded.status}`);
+      const recBody = await recorded.json() as { stream?: { artifact_hash?: string }; artifact_hash?: string };
+      const artifact = recBody.stream?.artifact_hash || recBody.artifact_hash;
+      if (!artifact) throw new Error('record returned no artifact_hash');
+      const mac = await signCaptureMac(token, artifact);
       setBuyLog('CAPTURE HMAC → mpp_settle ix 26');
-      const cap = await captureMppStream(open.id, prep.artifactHash, mac);
+      const cap = await captureMppStream(open.id, artifact, mac);
       const after = await loadStatus();
       setStatus(after);
       const receipt = after?.last_receipt;
