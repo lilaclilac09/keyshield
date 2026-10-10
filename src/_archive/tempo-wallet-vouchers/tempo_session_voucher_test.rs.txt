@@ -1,0 +1,131 @@
+/// forwards. A call without one still 402s and advertises the v2 challenge.
+#[tokio::test]
+async fn tempo_session_voucher_skips_402_round_trip() {
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+    use sha2::{Digest, Sha256};
+
+    let dir = unique_tmp_dir("tempo-pay");
+    let server_secret = "ks-proxy-test-secret-AAAA";
+    let token = "tok-bob-tempo";
+    let session_db = dir.join("sessions.db");
+    let vault_root = dir.join("vault");
+    fs::create_dir_all(&vault_root).unwrap();
+
+    let mut key_bytes = Sha256::new();
+    key_bytes.update(server_secret.as_bytes());
+    let key_bytes: [u8; 32] = key_bytes.finalize().into();
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let nonce = Nonce::from_slice(&[7u8; 12]);
+    let mut enc_pass = nonce.to_vec();
+    enc_pass.extend(cipher.encrypt(nonce, b"pw".as_ref()).unwrap());
+
+    let conn = rusqlite::Connection::open(&session_db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE sessions (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            enc_pass BLOB NOT NULL,
+            expires_at INTEGER NOT NULL
+        );",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, enc_pass, expires_at) VALUES (?1, 'bob', ?2, strftime('%s','now') + 3600)",
+        rusqlite::params![token, enc_pass],
+    )
+    .unwrap();
+    drop(conn);
+
+    let upstream_mock = MockServer::start().await;
+    let python_mock = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/json")
+                .set_body_string(r#"{"id":"x","usage":{"prompt_tokens":1,"completion_tokens":1}}"#),
+        )
+        .mount(&upstream_mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/_internal/balance/.*"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"balance_usd": 0.0})))
+        .mount(&python_mock)
+        .await;
+
+    let mut overrides = HashMap::new();
+    overrides.insert(UpstreamId::Openai, upstream_mock.uri());
+    let bridge = Arc::new(PythonBridge::new(python_mock.uri(), "test-secret".to_string()));
+    let (log_buffer, _log_task) = LogBuffer::spawn(bridge.clone());
+    let state = AppState {
+        vault: VaultPath::new(&vault_root),
+        sessions: Arc::new(SessionStore::open(&session_db, server_secret).unwrap()),
+        upstreams: Arc::new(UpstreamClients::with_bases(overrides)),
+        cache: Arc::new(TtlCache::new()),
+        bridge,
+        log_buffer,
+        stealth: false,
+        vault_db_path: dir.join("vault_shim.db"),
+        helius: Arc::new(ks_helius::HeliusClient::with_api_key(
+            "placeholder",
+            ks_helius::HeliusConfig::default(),
+        )),
+        mpp_db_path: dir.join("mpp-missing.db"),
+        open_streams: Arc::new(TtlCache::new()),
+        tempo_vouchers: Arc::new(ks_proxy::tempo::VoucherBook::new(dir.join("tempo_vouchers.db"))),
+    };
+
+    let (voucher, lane) = ks_proxy::tempo::dev_session_voucher(250_000);
+    let _platform_key = platform_key_env();
+    env::set_var("KS_TEMPO_PAYEE", &lane.payee);
+    env::set_var("KS_TEMPO_ESCROW", &lane.escrow);
+    env::set_var("KS_TEMPO_CURRENCY", &lane.currency);
+    env::set_var("KS_TEMPO_CHAIN_ID", lane.chain_id.to_string());
+
+    let app = router(state, test_prometheus());
+    let paid = Request::builder()
+        .method("POST")
+        .uri("/proxy/openai/v1/chat/completions")
+        .header("authorization", bearer(token))
+        .header("content-type", "application/json")
+        .header("payment-authorization", voucher)
+        .body(Body::from(r#"{"hi":1}"#.to_string()))
+        .unwrap();
+    let resp = app.clone().oneshot(paid).await.unwrap();
+    let (status, headers, body) = body_to_string(resp).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(
+        headers.get("x-ks-pay").and_then(|v| v.to_str().ok()),
+        Some("tempo")
+    );
+    let upstream_reqs = upstream_mock.received_requests().await.unwrap();
+    assert_eq!(upstream_reqs.len(), 1, "tempo voucher forwards on the first call");
+    let py_reqs = python_mock.received_requests().await.unwrap();
+    assert!(
+        !py_reqs.iter().any(|r| r.url.path().contains("/_internal/balance/")),
+        "tempo voucher must not wait on the balance bridge"
+    );
+
+    let unpaid = Request::builder()
+        .method("POST")
+        .uri("/proxy/openai/v1/chat/completions")
+        .header("authorization", bearer(token))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"hi":1}"#.to_string()))
+        .unwrap();
+    let resp = app.oneshot(unpaid).await.unwrap();
+    let (status, headers, body) = body_to_string(resp).await;
+    env::remove_var("OPENAI_API_KEY");
+    env::remove_var("KS_TEMPO_PAYEE");
+    env::remove_var("KS_TEMPO_ESCROW");
+    env::remove_var("KS_TEMPO_CURRENCY");
+    env::remove_var("KS_TEMPO_CHAIN_ID");
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "body: {body}");
+    let challenge = headers
+        .get("www-authenticate")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(challenge.contains("method=\"tempo\""));
+    assert!(challenge.contains("header=\"Payment-Authorization\""));
+    assert!(challenge.contains("intent=\"session\""));
+}

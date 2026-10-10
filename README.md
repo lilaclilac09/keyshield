@@ -121,8 +121,11 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 On **Payments** (Activity): connect / paste an OpenRouter key once, then
 open a stream. After Face ID / passkey unlock, that same key is what
 [free Nemotron in any agent framework](#use-case-free-nemotron-in-any-agent-framework)
-uses. On-chain order is Universal Vault → agent grant →
-`OpenStream` (ix 24) → meter → `MppSettle` (ix 26). Dry-run:
+uses. Solana is the core settlement layer. On-chain order is
+Universal Vault → Session Grant (`GrantAgentAccess`) → `OpenStream`
+(ix 24) → meter → `MppSettle` (ix 26). The proxy can forward across
+environments; that is not a second chain. Tempo wallet vouchers are
+**not** a live product surface (source archived, not compiled). Dry-run:
 
 ```bash
 npm run live:e2e:dry
