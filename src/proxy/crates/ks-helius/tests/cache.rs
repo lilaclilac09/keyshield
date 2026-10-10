@@ -378,6 +378,102 @@ async fn single_flight_dedups_concurrent_callers() {
     );
 }
 
+/// Screen-studio log: one MISS, N-1 single-flight joins, then moka HIT.
+/// This is the physical hot path — memory + DashMap share. redb is not open.
+#[tokio::test]
+async fn hotpath_prints_miss_single_flight_then_moka_hit() {
+    use std::time::Instant;
+    use ks_helius::CacheState;
+
+    let mock = MockServer::start().await;
+    let counter = Arc::new(AtomicUsize::new(0));
+    let counter_clone = counter.clone();
+    Mock::given(any())
+        .respond_with(SlowCounterResponder {
+            count: counter_clone,
+            delay: Duration::from_millis(50),
+            body: json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"context": {"slot": 1}, "value": 1_713_358_840u64},
+            }),
+        })
+        .mount(&mock)
+        .await;
+
+    let client = client_for_mock(&mock.uri(), HeliusConfig::default());
+    let addr = "GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq";
+    let params = json!([addr]);
+
+    let mut handles = Vec::with_capacity(20);
+    let t0 = Instant::now();
+    for i in 0..20 {
+        let c = client.clone();
+        let p = params.clone();
+        handles.push(tokio::spawn(async move {
+            let started = Instant::now();
+            let (val, state): (serde_json::Value, CacheState) = c
+                .cached_call_with_state("getBalance", p, None)
+                .await
+                .expect("ok");
+            (i, state, started.elapsed(), val)
+        }));
+    }
+    let mut rows = Vec::new();
+    for h in handles {
+        rows.push(h.await.expect("join"));
+    }
+    rows.sort_by_key(|r| r.0);
+    let stampede_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let fired = counter.load(Ordering::SeqCst);
+    println!("--- KeyShield hot path (ks-helius, memory + single-flight) ---");
+    for (i, state, elapsed, _) in &rows {
+        let ms = elapsed.as_secs_f64() * 1000.0;
+        match state {
+            CacheState::Miss if *i == 0 || fired == 1 => {
+                if *i == 0 {
+                    println!(
+                        "MISS -> mock RTT: {:.1}ms  getBalance[{}]  upstream_fires={}",
+                        ms, i, fired
+                    );
+                } else {
+                    println!(
+                        "JOIN [Single-Flight Dedup] -> {:.1}ms  caller {} waited on Shared<Future>",
+                        ms, i
+                    );
+                }
+            }
+            CacheState::Hit => {
+                println!("HIT  [moka memory] -> {:.3}ms  caller {}", ms, i);
+            }
+            CacheState::Miss => {
+                println!(
+                    "JOIN [Single-Flight Dedup] -> {:.1}ms  caller {} (CacheState::Miss = joined fire)",
+                    ms, i
+                );
+            }
+        }
+    }
+    println!(
+        "stampede: 20 callers, {:.1}ms wall, upstream_fires={} (want 1)",
+        stampede_ms, fired
+    );
+
+    let hit_t0 = Instant::now();
+    let (_val, after): (serde_json::Value, CacheState) = client
+        .cached_call_with_state("getBalance", params, None)
+        .await
+        .expect("cached");
+    let hit_ms = hit_t0.elapsed().as_secs_f64() * 1000.0;
+    println!(
+        "HIT  [moka memory] -> {:.3}ms  after stampede  state={:?}",
+        hit_ms, after
+    );
+    assert_eq!(fired, 1);
+    assert_eq!(after, CacheState::Hit);
+    assert!(hit_ms < 5.0, "moka hit should be milliseconds, got {hit_ms}");
+}
+
 // ─── 10. 5xx upstream surfaces as HeliusError::Upstream ─────────────────────
 
 #[tokio::test]
