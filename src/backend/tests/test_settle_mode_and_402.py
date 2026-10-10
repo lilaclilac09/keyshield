@@ -193,3 +193,5 @@ def test_wallet_balances_parses_get_multiple_accounts():
     second = wallet_balances.fetch_wallet_balances(owner, fetch_impl=lambda *_: (_ for _ in ()).throw(RuntimeError("no rpc")))
     assert second["cached"] is True
     assert second["sol_lamports"] == 3_100_000_000
+    assert second["rpc_ms"] is not None
+    assert second["rpc_ms"] < 5

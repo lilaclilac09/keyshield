@@ -19,7 +19,9 @@ import httpx
 CIRCLE_DEVNET_USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
 DEFAULT_RPC = "https://api.devnet.solana.com"
 _CACHE: dict[str, tuple[dict, float]] = {}
-_TTL_SEC = 2.0
+# Status strip polls every 15s. Keep the handshake (~200ms RPC) and serve
+# later reads from memory so the bar stays millisecond.
+_TTL_SEC = 20.0
 
 
 def rpc_url() -> str:
@@ -84,11 +86,13 @@ def fetch_wallet_balances(
 
     ata = derive_associated_token_address(owner, mint)
     cache_key = f"{endpoint}:{owner}:{ata}"
+    t0 = time.perf_counter()
     hit = _CACHE.get(cache_key)
     now = time.monotonic()
     if hit and now < hit[1]:
         cached = dict(hit[0])
         cached["cached"] = True
+        cached["rpc_ms"] = round((time.perf_counter() - t0) * 1000, 3)
         return cached
 
     payload = {
@@ -100,7 +104,6 @@ def fetch_wallet_balances(
             {"encoding": "base64", "commitment": "confirmed"},
         ],
     }
-    t0 = time.perf_counter()
     try:
         if fetch_impl is not None:
             raw = fetch_impl(endpoint, payload)
