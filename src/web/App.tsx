@@ -24,6 +24,8 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
+import { StatusStrip } from './components/StatusStrip';
+import { DemoWizard, isDemoPath } from './components/DemoWizard';
 
 type Section = 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
@@ -84,6 +86,10 @@ const MainContent: React.FC = () => {
 
   const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
 
+  if (isDemoPath()) {
+    return <DemoWizard onExit={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }} />;
+  }
+
   if (!isAuthenticated) return <AuthScreen onAuthenticated={() => setIsAuthenticated(true)} />;
 
   const fullAddr = publicKey?.toBase58() ?? getWalletAddress() ?? '';
@@ -98,6 +104,7 @@ const MainContent: React.FC = () => {
         <Sidebar items={NAV} active={section} onNavigate={(id: string) => setSection(id as Section)} walletAddress={fullAddr} connected={!!fullAddr} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
           <Header title={config.title} subtitle={config.subtitle} onSearch={() => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
+          <StatusStrip />
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
               {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} />}

@@ -1992,6 +1992,7 @@ def _capture_locked(
     stream["sequence_number"] = (
         next_seq if advance_seq else int(stream.get("last_settled_seq") or 0)
     )
+    stream["settle_mode"] = outcome.mode
     return stream
 
 
@@ -2142,6 +2143,103 @@ def list_streams(user_id: str) -> dict:
         return {"streams": streams, "summary": summary}
     finally:
         conn.close()
+
+
+def last_receipt(user_id: str) -> dict | None:
+    """Newest hold/capture for the status strip. Hash prefix + settle_mode."""
+    conn = _db()
+    try:
+        row = conn.execute(
+            """
+            SELECT h.artifact_hash, h.status, h.micro_usdc, s.id, s.tx_signature,
+                   s.settled_micro_usdc
+              FROM mpp_holds h
+              JOIN mpp_streams s ON s.id = h.stream_id
+             WHERE s.user_id = ? AND h.artifact_hash IS NOT NULL
+             ORDER BY h.id DESC
+             LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        digest, hold_status, micro, stream_id, open_sig, settled = row
+        attempt = conn.execute(
+            """
+            SELECT tx_signature, success, error
+              FROM mpp_settle_attempts
+             WHERE stream_id = ?
+             ORDER BY ts DESC, id DESC
+             LIMIT 1
+            """,
+            (int(stream_id),),
+        ).fetchone()
+        mode = "stub"
+        sig = open_sig
+        if hold_status == "held":
+            mode = "held"
+        elif hold_status == "captured" and attempt and int(attempt[1]) == 1:
+            mode = "submitted"
+            sig = attempt[0] or open_sig
+        elif hold_status == "captured" and attempt and int(attempt[1]) == 0:
+            mode = "failed"
+            sig = attempt[0] or open_sig
+        elif hold_status == "captured" and int(settled or 0) > 0:
+            mode = "stub"
+        elif hold_status in ("released", "expired"):
+            mode = "failed"
+        digest = str(digest)
+        return {
+            "hash": digest,
+            "hash8": digest[:8],
+            "mode": mode,
+            "signature": sig,
+            "stream_id": int(stream_id),
+            "micro_usdc": int(micro or 0),
+        }
+    finally:
+        conn.close()
+
+
+def status_strip(user_id: str, *, fetch_balances=None) -> dict:
+    """Coinbase-style top bar: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Wallet balances come from one server-side getMultipleAccounts so the
+    dashboard does not depend on the browser reaching public Devnet RPC.
+    """
+    listed = list_streams(user_id)
+    open_streams = [s for s in listed["streams"] if s.get("status") == "open"]
+    remaining = None
+    if open_streams:
+        remaining = sum(
+            int(s["escrow_micro_usdc"])
+            for s in open_streams
+            if s.get("escrow_micro_usdc") is not None
+        )
+    out = {
+        "stream_remaining_micro_usdc": remaining,
+        "streams_open": listed["summary"]["streams_open"],
+        "last_receipt": last_receipt(user_id),
+        "wallet": None,
+        "sol_lamports": None,
+        "usdc_micro": None,
+        "rpc_ms": None,
+        "cached": False,
+    }
+    try:
+        from ..billing.wallet_balances import fetch_wallet_balances, looks_like_pubkey
+
+        if looks_like_pubkey(user_id):
+            fn = fetch_balances or fetch_wallet_balances
+            bal = fn(user_id)
+            out["wallet"] = bal.get("wallet") or user_id
+            out["sol_lamports"] = bal.get("sol_lamports")
+            out["usdc_micro"] = bal.get("usdc_micro")
+            out["rpc_ms"] = bal.get("rpc_ms")
+            out["cached"] = bool(bal.get("cached"))
+    except Exception:
+        out["wallet"] = user_id
+    return out
 
 
 def list_events(user_id: str, limit: int = 20) -> dict:

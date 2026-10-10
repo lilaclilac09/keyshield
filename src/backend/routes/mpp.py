@@ -131,6 +131,21 @@ async def mpp_list_events(request: Request, limit: int = 20):
     return JSONResponse(mpp_streams.list_events(sess["user_id"], limit))
 
 
+@router.get("/mpp/status")
+async def mpp_status_strip(request: Request):
+    """Top-bar snapshot: SOL, Devnet USDC, stream remaining, last receipt.
+
+    Balances are fetched server-side (getMultipleAccounts) so the UI
+    does not depend on the browser reaching public Devnet RPC.
+    """
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import mpp_streams
+
+    return JSONResponse(mpp_streams.status_strip(sess["user_id"]))
+
+
 # ─── 3. POST /mpp/streams (open new) ──────────────────────────────────────
 
 
@@ -364,6 +379,21 @@ async def mpp_capture(stream_id: int, request: Request):
             {"detail": str(e), "code": "unverified_fulfillment"},
             status_code=400,
         )
+    try:
+        from ..billing import usage as usage_mod
+
+        usage_mod.log_call(
+            user_id=sess["user_id"],
+            upstream=str(stream.get("upstream") or "mpp"),
+            key_type="mpp",
+            method="CAPTURE",
+            path=f"/mpp/streams/{stream_id}/capture",
+            cost_usd=round(int(stream.get("just_settled_micro_usdc") or 0) / 1_000_000, 6),
+            status_code=200,
+            settle_mode=str(stream.get("settle_mode") or "captured"),
+        )
+    except Exception:
+        logger.exception("usage log after capture failed")
     return JSONResponse({"stream": stream})
 
 

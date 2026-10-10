@@ -74,7 +74,8 @@ async def usage_stats(request: Request):
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
     stats = usage_mod.get_stats(user_id)
-    return JSONResponse({"stats": stats})
+    rows = stats.get("stats", stats) if isinstance(stats, dict) else stats
+    return JSONResponse({"stats": rows})
 
 
 @router.get("/usage/history")
@@ -162,3 +163,68 @@ async def billing_topup(request: Request):
     if verified_mode is not None:
         payload["verified_mode"] = verified_mode
     return JSONResponse(payload)
+
+
+@router.get("/billing/402-preview")
+async def billing_402_preview(request: Request):
+    """details — Coinbase 402 body, no debit."""
+    from ..billing import x402_preview
+
+    params = request.query_params
+    try:
+        body = x402_preview.parse_preview_query(
+            params.get("amount"),
+            params.get("max_amount"),
+            params.get("resource"),
+        )
+    except ValueError as e:
+        return JSONResponse({"detail": str(e), "code": "invalid_amount"}, status_code=400)
+    return JSONResponse(body)
+
+
+@router.post("/billing/402-pay")
+async def billing_402_pay(request: Request):
+    """Pay after details. Refuses when amount > --max-amount. Does not fake submitted."""
+    from ..billing import usage as usage_mod
+    from ..billing import x402_preview
+
+    sess = _auth(request)
+    user_id = sess["user_id"] if sess else "default"
+    body = await request.json()
+    try:
+        amount = x402_preview.canonical_micro(
+            body.get("amount_micro_usdc", body.get("amount", 1))
+        )
+        cap = x402_preview.canonical_micro(
+            body.get("max_amount_micro_usdc", body.get("max_amount", 0))
+        )
+        x402_preview.assert_under_cap(amount, cap)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e), "code": "over_cap"}, status_code=400)
+
+    preview = x402_preview.build_preview(
+        amount_micro_usdc=amount,
+        max_amount_micro_usdc=cap,
+        resource=str(body.get("resource") or "/demo"),
+    )
+    usage_mod.log_call(
+        user_id=user_id,
+        upstream="x402",
+        key_type="mpp",
+        method="PAY",
+        path="/billing/402-pay",
+        cost_usd=round(amount / 1_000_000, 6),
+        status_code=200,
+        settle_mode="stub",
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "settle_mode": "stub",
+            "amount_micro_usdc": amount,
+            "max_amount_micro_usdc": cap,
+            "preview": preview,
+            "stream_id": body.get("stream_id"),
+            "detail": "preview accepted; capture still needs a stream MAC for on-chain submitted",
+        }
+    )

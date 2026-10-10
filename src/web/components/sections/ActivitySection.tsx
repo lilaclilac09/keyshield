@@ -3,7 +3,10 @@ import { Card, StatCard } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { DataTable, Column } from '../ui/DataTable';
-import { PaymentBadge, inferPaymentStatus, type PaymentStatus } from '../ui/PaymentBadge';
+import { PaymentBadge } from '../ui/PaymentBadge';
+import { normalizeSettleMode, type SettleMode } from '../../lib/payment-status';
+import { OpenStreamTab } from '../OpenStreamTab';
+import { PaymentPreview } from '../PaymentPreview';
 import { VenueBadge, inferVenue, type Venue } from '../ui/VenueBadge';
 import { CostBadge } from '../ui/CostBadge';
 import { apiFetch } from '../../lib/auth';
@@ -11,8 +14,9 @@ import { apiFetch } from '../../lib/auth';
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
   tokens_in: number; tokens_out: number; cost_usd: number; latency_ms: number; status_code: number; ts: number;
-  /** Server-supplied payment settlement state. Falls back to inferPaymentStatus. */
-  payment_status?: PaymentStatus;
+  /** Server settle_mode. Never infer "paid" from cost_usd. */
+  settle_mode?: SettleMode | string;
+  payment_status?: SettleMode | string;
   /** Server-supplied response source. Falls back to inferVenue. */
   venue?: Venue;
 }
@@ -103,7 +107,7 @@ export const ActivitySection: React.FC = () => {
     { header: 'Cost', render: e => <span className={e.cost_usd > 0 ? 'text-white' : 'text-[#5e6a91]'}>{fmtCost(e.cost_usd)}</span> },
     { header: 'Latency', render: e => <span className="text-[#8a96c2]">{e.latency_ms}ms</span> },
     { header: 'Time', render: e => <span className="text-[#5e6a91]">{fmtTs(e.ts)}</span> },
-    { header: 'Payment', render: e => <PaymentBadge status={e.payment_status ?? inferPaymentStatus(e)} /> },
+    { header: 'Payment', render: e => <PaymentBadge settleMode={e.settle_mode || e.payment_status} status={normalizeSettleMode(e)} /> },
     { header: 'Venue', render: e => <VenueBadge venue={e.venue ?? inferVenue(e)} /> },
     { header: 'Call Cost', render: e => <CostBadge costUsd={e.cost_usd} /> },
   ];
@@ -183,6 +187,12 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
+          <Card title="Open stream tab" description="开库 → build-open-tx → wallet popup → record-tx → Explorer">
+            <OpenStreamTab onOpened={() => refresh()} />
+          </Card>
+          <Card title="402 preview" description="details first, then Pay, refuse over --max-amount">
+            <PaymentPreview streamId={mppStreams.find(s => s.status === 'open')?.id} defaultAmount={1} defaultMax={1000} />
+          </Card>
           <Card title="Active Streams">
             {mppStreams.length === 0 ? <p className="text-[12px] text-[#5e6a91] text-center py-4">No MPP streams open yet.</p> :
               mppStreams.map(s => (

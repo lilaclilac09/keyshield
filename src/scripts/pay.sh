@@ -29,6 +29,8 @@
 #   bash scripts/pay.sh --build-tx-only       # just print the build-tx
 #                                             # JSON payloads (for frontend
 #                                             # wallet-adapter wiring)
+#   bash src/scripts/pay.sh --details --max-amount 1000
+#   bash src/scripts/pay.sh --max-amount 1000
 #
 # Exit codes: 0 success, 1 setup error, 2 endpoint failure.
 
@@ -43,14 +45,25 @@ DEMO_AGENT_NAME="${KS_DEMO_AGENT_NAME:-trading-bot-demo}"
 DEMO_UPSTREAM="${KS_DEMO_UPSTREAM:-anthropic}"
 
 BUILD_TX_ONLY=0
-for arg in "$@"; do
-  case "$arg" in
-    --build-tx-only) BUILD_TX_ONLY=1 ;;
+DETAILS_ONLY=0
+MAX_AMOUNT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --build-tx-only) BUILD_TX_ONLY=1; shift ;;
+    --details) DETAILS_ONLY=1; shift ;;
+    --max-amount)
+      MAX_AMOUNT="${2:-}"
+      shift 2
+      ;;
+    --max-amount=*)
+      MAX_AMOUNT="${1#*=}"
+      shift
+      ;;
     -h|--help)
       sed -n '1,/^set -euo/p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
-    *) echo "unknown flag: $arg"; exit 1 ;;
+    *) echo "unknown flag: $1"; exit 1 ;;
   esac
 done
 
@@ -158,6 +171,32 @@ ok "wallet $WALLET  token ${TOKEN:0:12}…"
 
 AUTH=(-H "authorization: Bearer $TOKEN")
 
+BUY_MICRO="${KS_BUY_MICRO_USDC:-1000000}"
+if [[ -n "$MAX_AMOUNT" ]]; then
+  if ! [[ "$MAX_AMOUNT" =~ ^[0-9]+$ ]]; then
+    die "--max-amount must be a canonical integer (micro-USDC)"
+  fi
+  if (( BUY_MICRO > MAX_AMOUNT )); then
+    die "buy ${BUY_MICRO} exceeds --max-amount ${MAX_AMOUNT}"
+  fi
+fi
+
+# ── 1b. 402 details (awal: details before pay) ──────────────────────────────
+
+section "1b. 402 preview"
+PREVIEW=$(curl -sf "$API_BASE/billing/402-preview?amount=${BUY_MICRO}&max_amount=${MAX_AMOUNT:-0}" "${AUTH[@]}" \
+  || curl -sf "$API_BASE/billing/402-preview?amount=${BUY_MICRO}&max_amount=${MAX_AMOUNT:-0}")
+echo "$PREVIEW" | jpp
+OVER=$(echo "$PREVIEW" | jget over_cap)
+if [[ "$OVER" == "true" ]]; then
+  die "402 preview over_cap — raise --max-amount or lower KS_BUY_MICRO_USDC"
+fi
+ok "402 details amount=$BUY_MICRO max=${MAX_AMOUNT:-0}"
+if (( DETAILS_ONLY == 1 )); then
+  ok "details-only; not paying"
+  exit 0
+fi
+
 # ── 2. x402 topup demo ──────────────────────────────────────────────────────
 
 section "2. x402 payment proof + idempotency"
@@ -260,7 +299,6 @@ fi
 ok "artifact $ARTIFACT"
 
 info "3c. submit-open-tx (settler-as-owner signs vault/grant/open)"
-BUY_MICRO="${KS_BUY_MICRO_USDC:-1000000}"
 HTTP_STATUS=$(curl -s -o /tmp/mpp-submit-open.json -w '%{http_code}' \
   -X POST "$API_BASE/mpp/streams/$STREAM_ID/submit-open-tx" "${AUTH[@]}" \
   -H 'content-type: application/json' \
