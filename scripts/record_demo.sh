@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # KeyShield record-demo harness (~2 minutes, zero prompts).
 #
-#   A  mock upstream (SSE / 502 / drop)
+#   A  mock upstream (X-Test-Scenario: stream_success | fault_502)
 #   B  ks-proxy / proxy-helius (RUST_LOG=info) pointed at the mock
-#   C  timed client — scenes 1–4
+#   C  timed client — scenes 1–5 (problem, PRF, IPC inject, measured SSE, Devnet/502)
 #   D  OpenRouter Nemotron plug-in (saved vault/env key, else mock)
+#   E  OpenClaw runtime stand-in (Unix socket IPC — no clipboard / no .env)
 #
 #   bash scripts/record_demo.sh
 #   bash scripts/record_demo.sh --fast
@@ -46,40 +47,74 @@ PROXY_PORT="${KS_RECORD_PROXY_PORT:-18000}"
 MOCK_URL="http://127.0.0.1:${MOCK_PORT}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 LOG_DIR="$WORKDIR/logs"
-mkdir -p "$LOG_DIR" "$WORKDIR/vault/dev-bypass" "$WORKDIR/sessions"
+mkdir -p "$LOG_DIR" "$WORKDIR/vault/dev-bypass" "$WORKDIR/sessions" "$WORKDIR/ipc"
 
 KS_PROXY_BIN="${KS_PROXY_BIN:-$ROOT/src/proxy/target/debug/ks-proxy}"
 if [[ ! -x "$KS_PROXY_BIN" ]]; then
   KS_PROXY_BIN="$ROOT/src/proxy/target/debug/ks-proxy"
 fi
 
-TS() { date -u +"%H:%M:%S"; }
+TS() { date -u +"%H:%M:%S.%6N"; }
 say() { printf '\033[2m%s\033[0m \033[36m%-6s\033[0m %s\n' "$(TS)" "$1" "$2"; }
 ok()  { printf '\033[2m%s\033[0m \033[32m%-6s\033[0m %s\n' "$(TS)" "OK" "$1"; }
 err() { printf '\033[2m%s\033[0m \033[31m%-6s\033[0m %s\n' "$(TS)" "FAIL" "$1"; }
 
+KEYPAIR="${KS_RECORD_WALLET_KEYPAIR:-$ROOT/.keyshield-devnet/user-devnet.json}"
+PUBFILE="${KS_RECORD_WALLET_PUB:-$ROOT/.keyshield-devnet/user-devnet.pub}"
+if [[ -z "${KS_RECORD_WALLET:-}" ]]; then
+  if command -v solana-keygen >/dev/null 2>&1 && [[ -f "$KEYPAIR" ]]; then
+    KS_RECORD_WALLET="$(solana-keygen pubkey "$KEYPAIR")"
+  elif [[ -f "$PUBFILE" ]]; then
+    KS_RECORD_WALLET="$(tr -d '[:space:]' < "$PUBFILE")"
+  else
+    err "no local wallet (set KS_RECORD_WALLET or $KEYPAIR)"
+    exit 1
+  fi
+fi
+export KS_RECORD_WALLET
+export KS_RECORD_RPC="${KS_RECORD_RPC:-https://api.devnet.solana.com}"
+export KS_RECORD_PROGRAM_ID="${KS_RECORD_PROGRAM_ID:-41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j}"
+export KS_RECORD_USDC_MINT="${KS_RECORD_USDC_MINT:-4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU}"
+export KS_RECORD_API="${KS_RECORD_API:-http://127.0.0.1:8000}"
+if [[ -z "${KS_RECORD_SSE_INTERVAL_MS:-}" ]]; then
+  if [[ "$PACE_MS" -le 200 ]]; then
+    KS_RECORD_SSE_INTERVAL_MS=4
+  else
+    KS_RECORD_SSE_INTERVAL_MS=40
+  fi
+fi
+export KS_RECORD_SSE_INTERVAL_MS
+
 MOCK_PID=""
 PROXY_PID=""
+RUNTIME_PID=""
 cleanup() {
   if [[ -n "${PROXY_PID}" ]] && kill -0 "$PROXY_PID" 2>/dev/null; then
     kill "$PROXY_PID" 2>/dev/null || true
     wait "$PROXY_PID" 2>/dev/null || true
   fi
+  if [[ -n "${RUNTIME_PID}" ]] && kill -0 "$RUNTIME_PID" 2>/dev/null; then
+    kill "$RUNTIME_PID" 2>/dev/null || true
+    wait "$RUNTIME_PID" 2>/dev/null || true
+  fi
   if [[ -n "${MOCK_PID}" ]] && kill -0 "$MOCK_PID" 2>/dev/null; then
     kill "$MOCK_PID" 2>/dev/null || true
     wait "$MOCK_PID" 2>/dev/null || true
   fi
+  rm -f "${KS_RECORD_IPC_SOCK:-}" "${KS_RECORD_IPC_READY:-}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
 echo
 printf '\033[1mKeyShield record-demo harness\033[0m\n'
 say "INIT" "workdir $WORKDIR"
-say "INIT" "pace ${PACE_MS}ms  split=$SPLIT"
+say "INIT" "pace ${PACE_MS}ms  split=$SPLIT  sse_interval=${KS_RECORD_SSE_INTERVAL_MS}ms"
+say "INIT" "wallet $KS_RECORD_WALLET"
 
 # ── Component A ──────────────────────────────────────────────────────────────
 say "A" "starting mock upstream on :${MOCK_PORT}"
-KS_RECORD_MOCK_PORT="$MOCK_PORT" node "$ROOT/scripts/record_demo_mock_upstream.mjs" \
+KS_RECORD_MOCK_PORT="$MOCK_PORT" KS_RECORD_SSE_INTERVAL_MS="$KS_RECORD_SSE_INTERVAL_MS" \
+  node "$ROOT/scripts/record_demo_mock_upstream.mjs" \
   >"$LOG_DIR/mock.log" 2>&1 &
 MOCK_PID=$!
 for i in $(seq 1 40); do
@@ -155,6 +190,41 @@ for i in $(seq 1 50); do
   sleep 0.15
 done
 
+# ── Component E ──────────────────────────────────────────────────────────────
+export KS_RECORD_IPC_SOCK="$WORKDIR/ipc/openclaw.sock"
+export KS_RECORD_IPC_READY="$WORKDIR/ipc/ready"
+export KS_RECORD_IPC_AUTH="${KS_RECORD_IPC_AUTH:-$(openssl rand -hex 32)}"
+rm -f "$KS_RECORD_IPC_SOCK" "$KS_RECORD_IPC_READY"
+say "E" "starting OpenClaw runtime stand-in (unix socket IPC)"
+env \
+  -u OPENAI_API_KEY \
+  -u OPENROUTER_API_KEY \
+  -u ANTHROPIC_API_KEY \
+  -u HELIUS_API_KEY \
+  KS_RECORD_IPC_SOCK="$KS_RECORD_IPC_SOCK" \
+  KS_RECORD_IPC_AUTH="$KS_RECORD_IPC_AUTH" \
+  KS_RECORD_IPC_READY="$KS_RECORD_IPC_READY" \
+  node "$ROOT/scripts/record_demo_openclaw_runtime.mjs" \
+  >"$LOG_DIR/openclaw.log" 2>&1 &
+RUNTIME_PID=$!
+for i in $(seq 1 40); do
+  if [[ -S "$KS_RECORD_IPC_SOCK" && -f "$KS_RECORD_IPC_READY" ]]; then
+    ok "openclaw runtime ready  pid=$RUNTIME_PID  sock=$KS_RECORD_IPC_SOCK"
+    break
+  fi
+  if ! kill -0 "$RUNTIME_PID" 2>/dev/null; then
+    err "openclaw runtime exited"
+    cat "$LOG_DIR/openclaw.log" || true
+    exit 1
+  fi
+  if [[ "$i" -eq 40 ]]; then
+    err "openclaw runtime did not become ready"
+    cat "$LOG_DIR/openclaw.log" || true
+    exit 1
+  fi
+  sleep 0.1
+done
+
 if [[ "$SPLIT" -eq 1 ]] && command -v tmux >/dev/null 2>&1; then
   say "UI" "tmux session ks-record-demo (logs only — client stays in this pane)"
   tmux -f /exec-daemon/tmux.portal.conf has-session -t "=ks-record-demo" 2>/dev/null \
@@ -166,12 +236,18 @@ if [[ "$SPLIT" -eq 1 ]] && command -v tmux >/dev/null 2>&1; then
 fi
 
 # ── Components C + D ─────────────────────────────────────────────────────────
-say "C" "running timed client (scenes 1–4 + OpenRouter plug-in)"
+say "C" "running timed client (scenes 1–5 + OpenRouter plug-in)"
 export KS_RECORD_MOCK_URL="$MOCK_URL"
 export KS_RECORD_PROXY_URL="$PROXY_URL"
 export KS_RECORD_WORKDIR="$WORKDIR"
 export KS_RECORD_PACE_MS="$PACE_MS"
-export KS_RECORD_CLIPBOARD="${KS_RECORD_CLIPBOARD:-}"
+# Empty export would force the client onto the env clipboard path.
+# Leave it unset so xclip / pbpaste can run.
+if [[ -n "${KS_RECORD_CLIPBOARD:-}" ]]; then
+  export KS_RECORD_CLIPBOARD
+else
+  unset KS_RECORD_CLIPBOARD
+fi
 export KS_VAULT_DB_PATH="${KS_VAULT_DB_PATH:-$ROOT/src/backend/data/vault_shim.db}"
 npx --yes tsx "$ROOT/scripts/record_demo_client.ts"
 
@@ -182,5 +258,7 @@ npm run test:fault
 ok "record-demo complete"
 say "LOGS" "mock     $LOG_DIR/mock.log"
 say "LOGS" "ks-proxy $LOG_DIR/ks-proxy.log"
+say "LOGS" "openclaw $LOG_DIR/openclaw.log"
+say "SPEC" "session  $WORKDIR/session-spec.json"
 say "ENV"  "bad.env  $WORKDIR/exposed.env"
 echo
