@@ -68,6 +68,4 @@ def parse_preview_query(amount, max_amount, resource: str | None = None) -> dict
 
 def assert_under_cap(amount_micro_usdc: int, max_amount_micro_usdc: int) -> None:
     if max_amount_micro_usdc > 0 and amount_micro_usdc > max_amount_micro_usdc:
-        raise ValueError(
-            f"amount {amount_micro_usdc} exceeds --max-amount {max_amount_micro_usdc}"
-        )
+        raise ValueError(f"amount {amount_micro_usdc} exceeds --max-amount {max_amount_micro_usdc}")

@@ -192,9 +192,7 @@ async def billing_402_pay(request: Request):
     user_id = sess["user_id"] if sess else "default"
     body = await request.json()
     try:
-        amount = x402_preview.canonical_micro(
-            body.get("amount_micro_usdc", body.get("amount", 1))
-        )
+        amount = x402_preview.canonical_micro(body.get("amount_micro_usdc", body.get("amount", 1)))
         cap = x402_preview.canonical_micro(
             body.get("max_amount_micro_usdc", body.get("max_amount", 0))
         )
