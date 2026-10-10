@@ -112,6 +112,7 @@ export async function enrollVault(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ vaultId, attestation, expectedChallenge }),
+      signal: AbortSignal.timeout(2500),
     });
   } catch (e) {
     throw describeNetError(e, 'register');

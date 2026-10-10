@@ -181,3 +181,44 @@ def test_home_does_not_use_openrouter_as_helius_key(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert seen == [""]
     assert res.json()["wallet"]["sol"] == 1.0
+
+
+def test_store_then_call_returns_timed_latency(tmp_path, monkeypatch):
+    """Home Save → Call must print milliseconds timed on that request."""
+    from src.backend.proxy import api_router
+
+    client, token = _token(tmp_path, monkeypatch)
+    secret = "sk-or-v1-" + ("n" * 24)
+    stored = client.post(
+        "/keychain/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"value": secret},
+    )
+    assert stored.status_code == 200
+    assert stored.json()["upstream"] == "openrouter"
+    assert secret not in str(stored.json())
+
+    async def _fake_rest(provider, method, path, body, api_key, extra_headers=None, **kwargs):
+        assert provider == "openrouter"
+        assert api_key == secret
+        assert b"nemotron" in body
+        return b'{"id":"chatcmpl-ks","choices":[{"message":{"content":"ok"}}]}', 200, "MISS"
+
+    monkeypatch.setattr(api_router, "call_rest", _fake_rest)
+    res = client.post(
+        "/keychain/call",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"upstream": "openrouter", "prompt": "Nemotron ping"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["live"] is True
+    assert body["status"] == 200
+    assert body["upstream"] == "openrouter"
+    assert "latency_ms" in body
+    assert isinstance(body["latency_ms"], (int, float))
+    assert body["latency_ms"] >= 0
+    assert "nemotron" in (body.get("model") or "")
+    assert secret not in str(body)
+    assert body["key_prefix"]
+    assert "n" * 24 not in str(body)

@@ -23,6 +23,7 @@ export interface KeychainCallResult {
   latency_ms: number;
   key_source: string;
   key_prefix: string;
+  model?: string | null;
 }
 
 export interface KeychainStoredApi {

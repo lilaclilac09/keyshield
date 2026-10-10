@@ -390,11 +390,14 @@ export const ActivitySection: React.FC = () => {
         try {
           res = await vproxyFetch(stream.upstream, path, { method: 'POST', headers, body });
           via = 'vproxy';
-          if (res.status === 422) res = null;
+          // Live OpenRouter 401/403 with a fixture key is not a completed meter.
+          // Demo copy promises synthetic hold when no real key is pasted.
+          if (res.status === 422 || (demoMode && !res.ok)) res = null;
         } catch {
           res = null;
         }
       }
+      if (res && demoMode && !res.ok) res = null;
       if (!res) {
         const d = await demoMeterStream(stream.id, 'KeyShield demo ping');
         setOpenOk(true);

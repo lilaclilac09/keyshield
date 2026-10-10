@@ -56,15 +56,15 @@ Do not paste live secrets into the recording. The left-pane `.env` is a fixture 
 
 ---
 
-## Scene 3 — Fast-path streaming under 80ms (1:10 – 1:45)
+## Scene 3 — Fast-path streaming, timed on this take (1:10 – 1:45)
 
 **Visual:** Client `POST /proxy/openai/v1/chat/completions` through `ks-proxy`. Logs show TTFT, total RTT, and `Memory zeroized` / socket close. Optional cut to `RUST_LOG=info` in the proxy pane.
 
-**Action:** Highlight `overhead Nms < 80ms` (or the WARN if the box is slow).
+**Action:** Read the printed RTT from this take. Quote that number, or drop the number. Do not say “under 80ms” unless this take measured it.
 
 **Voiceover:**
 
-> For agents and high-frequency bots, latency is everything. KeyShield's Rust proxy acts as a localized data plane. It resolves credentials from lock-free memory in microseconds, streams tokens with zero-copy chunk piping, and zeroizes memory buffers immediately after socket transmission. Full security with less than 80 milliseconds of total overhead.
+> For agents and high-frequency bots, latency is everything. KeyShield's Rust proxy acts as a localized data plane. It resolves credentials from lock-free memory, streams tokens with zero-copy chunk piping, and zeroizes memory buffers immediately after socket transmission. The number on screen is the milliseconds this call actually took.
 
 ---
 

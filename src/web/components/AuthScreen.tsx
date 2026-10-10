@@ -86,7 +86,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                 <div className="mt-4 space-y-2">
                   <button type="button" onClick={handleDemo} disabled={demoLoading} className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
                     {demoLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                    <span className="text-[13px] font-semibold uppercase tracking-wider">{demoLoading ? 'Starting demo\u2026' : 'Start demo'}</span>
+                    <span className="text-[13px] font-semibold uppercase tracking-wider" data-testid="start-demo">{demoLoading ? 'Starting demo\u2026' : 'Start demo'}</span>
                   </button>
                   <p className="text-[13px] text-[#8a96c2]">Opens Home first — wallet balance, stored APIs, connection time. {demoModel ? `Meter uses ${demoModel}.` : ''}</p>
                   {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}

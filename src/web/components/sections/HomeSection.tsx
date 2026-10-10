@@ -4,6 +4,7 @@ import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { getPasskeyTrust } from '../../lib/auth';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
+import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
 import {
   callKeychain,
   detectUpstream,
@@ -146,6 +147,7 @@ export const HomeSection: React.FC<Props> = ({
                 </div>
                 <button
                   type="button"
+                  data-testid={`api-call-${api.upstream}`}
                   disabled={busy !== null}
                   onClick={() => void runCall(api.upstream)}
                   className="ml-2 h-10 px-4 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
@@ -163,7 +165,9 @@ export const HomeSection: React.FC<Props> = ({
         <div className="flex flex-wrap gap-3">
           <Pill ok={!!conn?.api && !error} label="API" sub={loading ? 'Connecting…' : error ? `Offline · ${error}` : `Online${homeMs != null ? ` · ${Math.round(homeMs)}ms` : ''}`} />
           <Pill ok={walletConnected && !!wallet?.address} label="Wallet" sub={wallet?.address ? `${wallet.address.slice(0, 4)}…${wallet.address.slice(-4)}` : 'Not connected'} />
-          <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'You keep the secret — unlock to verify'} />
+          <div data-testid="passkey-pill">
+            <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'You keep the secret — unlock to verify'} />
+          </div>
           <Pill ok={!!home?.plan} label={home?.plan?.name ?? 'Free'} sub={home?.plan?.auto_plugin ? (home.plan.low_latency ? 'Accelerate · cache on' : 'Plugin · biometric ZK') : 'Vault + passkeys · PAYG calls'} />
           <Pill ok={!!conn?.autosign} label="Autosign" sub={conn?.autosign ? 'Owner keystore ready' : 'Off'} />
           <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
@@ -189,17 +193,19 @@ export const HomeSection: React.FC<Props> = ({
         </div>
       </div>
 
-      <details className="rounded-2xl border border-[#243365] bg-[#131c39] p-5">
-        <summary className="cursor-pointer text-[20px] font-semibold text-white">Paste a key · more</summary>
-        <div className="space-y-4 mt-4">
+      <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
-          <h3 className="text-[18px] font-semibold text-white">Detect → save → one-click call</h3>
+          <h3 className="text-[20px] font-semibold text-white">OpenRouter · NVIDIA Nemotron</h3>
         </div>
         <p className="text-[15px] text-[#8a96c2]">
-          Paste a key, or save one from the page via the extension. Agent passwords and private keys stay on your device — passkey / PRF verifies without the server seeing plaintext. Frameworks use <code className="text-white">/vproxy/…</code>.
+          Paste your own <code className="text-white">sk-or-…</code> from openrouter.ai/keys, Save to the vault, then Call.
+          Default model is free{' '}
+          <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
+          The number below is milliseconds this Call timed — not a marketing claim.
         </p>
         <textarea
+          data-testid="key-paste"
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           rows={3}
@@ -210,11 +216,18 @@ export const HomeSection: React.FC<Props> = ({
           <span className="text-[15px] text-[#a8b3d8]">
             {detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : paste.trim() ? 'Unrecognized shape — pick Vault to choose a provider' : 'Waiting for paste'}
           </span>
-          <button type="button" disabled={busy !== null || !paste.trim()} onClick={() => void savePaste()} className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50">
+          <button
+            type="button"
+            data-testid="key-save"
+            disabled={busy !== null || !paste.trim()}
+            onClick={() => void savePaste()}
+            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
+          >
             {busy === 'save' ? 'Saving…' : 'Save'}
           </button>
           <button
             type="button"
+            data-testid="key-call"
             disabled={busy !== null || !detected.upstream}
             onClick={() => detected.upstream && void runCall(detected.upstream)}
             className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
@@ -222,14 +235,14 @@ export const HomeSection: React.FC<Props> = ({
             Call
           </button>
         </div>
-        {msg && <p className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
+        {msg && <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
         {lastCall && (
-          <p className="text-[14px] font-mono text-[#8a96c2]">
-            {lastCall.upstream} {lastCall.path} · {lastCall.latency_ms}ms · {lastCall.cache} · {lastCall.key_prefix}
+          <p data-testid="call-latency" className="text-[16px] font-mono text-white">
+            Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
+            {lastCall.model ? ` · ${lastCall.model}` : ''}
           </p>
         )}
-        </div>
-      </details>
+      </div>
 
       <div>
         <h3 className="text-[20px] font-semibold text-white mb-3">More</h3>

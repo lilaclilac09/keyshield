@@ -265,6 +265,8 @@ async def keychain_call(request: Request):
         )
 
     latency_ms = (time.perf_counter() - t0) * 1000.0
+    from ..proxy.openrouter_interface import DEMO_MODEL
+
     reply = {
         "upstream": call_upstream,
         "path": path or "(json-rpc)",
@@ -274,6 +276,7 @@ async def keychain_call(request: Request):
         "latency_ms": round(latency_ms, 2),
         "key_source": source,
         "key_prefix": kc.mask_key(api_key),
+        "model": DEMO_MODEL if call_upstream == "openrouter" else None,
     }
     echo = _refuse_echo(api_key, reply)
     if echo:
