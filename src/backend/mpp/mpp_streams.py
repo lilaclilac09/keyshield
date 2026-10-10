@@ -662,11 +662,16 @@ def settle_on_chain(
         if not _PDA_MISSING_WARNED.get(stream_id):
             logger.warning(
                 "mpp_settle stream %s: PDA/ATA not opened on-chain "
-                "(open_stream still DB-only) — stub-fallback returning 0",
+                "(wallet must sign open_payment_stream and POST the sig). "
+                "Configured settler → failed; no settler → stub ledger.",
                 stream_id,
             )
             _PDA_MISSING_WARNED[stream_id] = True
-        return SettleOutcome(0, "stub")
+        # HVC: a loaded settler is not a stub ledger. Debiting
+        # `settled` here was a receipt without a chain tx.
+        if _stub_ledger():
+            return SettleOutcome(0, "stub")
+        return SettleOutcome(0, "failed")
 
     # Idempotency check. A confirmed success is a cache hit. A timeout
     # or other indeterminate error is not — the first submit may still
@@ -1852,6 +1857,9 @@ def _capture_locked(
     ):
         _rollback(conn)
         raise CaptureRejected("settlement failed")
+    if outcome.mode == "stub" and not _stub_ledger():
+        _rollback(conn)
+        raise CaptureRejected("settlement stub while chain settler configured")
     advance_seq = outcome.mode == "submitted" or (outcome.mode == "stub" and _stub_ledger())
 
     if advance_seq:

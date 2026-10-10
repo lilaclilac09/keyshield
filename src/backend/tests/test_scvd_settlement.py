@@ -164,6 +164,37 @@ def test_identical_meter_payload_is_idempotent_not_a_new_purchase(db):
     assert replay["settled_micro_usdc"] == 0
 
 
+def test_configured_settler_without_pda_does_not_debit_settled(db, monkeypatch):
+    """Loaded settler + DB-only stream must fail closed, not stub-debit."""
+    from solders.keypair import Keypair
+
+    kp = Keypair()
+    path = db / "mpp-settler-devnet.json"
+    path.write_text(json.dumps(list(bytes(kp))))
+    ata = mpp_onchain._b58encode_pure(bytes([0x22]) * 32)
+    monkeypatch.setenv("KS_MPP_SETTLER_KEY", str(path))
+    monkeypatch.setenv("KS_PLATFORM_USDC_ATA", ata)
+    monkeypatch.setenv("KS_KEYSHIELD_PROGRAM_ID", "11111111111111111111111111111111")
+
+    stream = _open()
+    recorded = mpp_streams.record_usage("alice", stream["id"], 1, 0, status_code=200, body=CHAT)
+    digest = recorded["artifact_hash"]
+    sig = sign_artifact_hash(SESSION, bytes.fromhex(digest))
+    with pytest.raises(CaptureRejected, match="settlement failed"):
+        mpp_streams.settle_receipt(
+            "alice", stream["id"], digest, session_key=SESSION, signature=sig
+        )
+    fresh = mpp_streams.list_streams("alice")["streams"][0]
+    assert fresh["settled_micro_usdc"] == 0
+    assert fresh["pending_micro_usdc"] == 800
+
+    outcome = mpp_streams.settle_on_chain(
+        stream["id"], 800, bytes(range(32)), 1, bytes(range(32)), bytes(range(32, 64))
+    )
+    assert outcome.mode == "failed"
+    assert outcome.debited_micro_usdc == 0
+
+
 def test_settler_key_json_path_does_not_force_stub(tmp_path, monkeypatch):
     """devnet-setup used to export a file path; that must load, not stub."""
     from solders.keypair import Keypair
