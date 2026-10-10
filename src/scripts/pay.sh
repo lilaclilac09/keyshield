@@ -95,13 +95,22 @@ ok "stack is up"
 section "1. wallet-login (ed25519 challenge)"
 KS_PY="${KS_PYTHON:-$REPO_ROOT/.venv/bin/python3}"
 [[ -x "$KS_PY" ]] || KS_PY="python3"
-WALLET_LOGIN=$("$KS_PY" - "$API_BASE" <<'PY'
+SETTLER_KP="${KS_MPP_SETTLER_KEYPAIR:-$REPO_ROOT/.keyshield-devnet/mpp-settler-devnet.json}"
+WALLET_LOGIN=$("$KS_PY" - "$API_BASE" "$SETTLER_KP" <<'PY'
 import base64, json, sys, urllib.request
+from pathlib import Path
 from nacl.signing import SigningKey
 import base58
 
 base = sys.argv[1]
-sk = SigningKey.generate()
+kp_path = Path(sys.argv[2])
+if kp_path.is_file():
+    raw = json.loads(kp_path.read_text())
+    if not isinstance(raw, list) or len(raw) != 64:
+        raise SystemExit("settler keypair JSON must be 64 bytes")
+    sk = SigningKey(bytes(int(b) & 0xFF for b in raw[:32]))
+else:
+    sk = SigningKey.generate()
 wallet = base58.b58encode(bytes(sk.verify_key)).decode()
 
 def http(method, path, body=None):
@@ -245,7 +254,20 @@ if [[ -z "$ARTIFACT" ]]; then
 fi
 ok "artifact $ARTIFACT"
 
-info "3c. capture with session HMAC (not a bare /settle)"
+info "3c. submit-open-tx (settler-as-owner signs vault/grant/open)"
+BUY_MICRO="${KS_BUY_MICRO_USDC:-1000000}"
+HTTP_STATUS=$(curl -s -o /tmp/mpp-submit-open.json -w '%{http_code}' \
+  -X POST "$API_BASE/mpp/streams/$STREAM_ID/submit-open-tx" "${AUTH[@]}" \
+  -H 'content-type: application/json' \
+  -d "{\"maxTotalMicroUsdc\": $BUY_MICRO}")
+cat /tmp/mpp-submit-open.json | jpp
+if [[ "$HTTP_STATUS" == "200" ]]; then
+  ok "on-chain open $HTTP_STATUS"
+else
+  warn "submit-open-tx HTTP $HTTP_STATUS — capture will stay fail-closed until vault/USDC/SOL exist"
+fi
+
+info "3d. capture with session HMAC (not a bare /settle)"
 CAPTURE_BODY=$(python3 - "$TOKEN" "$ARTIFACT" <<'PY'
 import hashlib, hmac, json, sys
 token, artifact = sys.argv[1], sys.argv[2]
@@ -265,7 +287,7 @@ else
   warn "capture HTTP $HTTP_STATUS — if settler env is loaded, the stream PDA must be wallet-signed on-chain first"
 fi
 
-info "3d. close stream"
+info "3e. close stream"
 CLOSE=$(curl -sf -X POST "$API_BASE/mpp/streams/$STREAM_ID/close" "${AUTH[@]}")
 echo "$CLOSE" | jpp
 ok "stream closed"

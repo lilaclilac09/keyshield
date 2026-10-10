@@ -604,3 +604,76 @@ async def mpp_record_tx(stream_id: int, request: Request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"stream": stream})
+
+
+def _autosign_error(exc: Exception) -> JSONResponse:
+    from ..mpp.owner_submit import OwnerSubmitError
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    if isinstance(exc, OwnerSubmitError):
+        detail = str(exc)
+        if "not loaded" in detail:
+            return JSONResponse({"detail": "owner autosign unavailable"}, status_code=503)
+        return JSONResponse({"detail": detail}, status_code=400)
+    if isinstance(exc, MppSubmitError):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    logger.exception("mpp autosign failed")
+    return JSONResponse({"detail": "autosign failed"}, status_code=500)
+
+
+@router.get("/mpp/autosign/status")
+async def mpp_autosign_status(request: Request):
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    from ..mpp import owner_submit
+
+    return JSONResponse(owner_submit.owner_status())
+
+
+@router.post("/mpp/autosign/open")
+async def mpp_autosign_open(request: Request):
+    """Vault + grant + open + record-tx, owner-signed with the settler key."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    try:
+        result = await owner_submit.submit_full_open(sess["user_id"], body)
+    except (owner_submit.OwnerSubmitError, MppSubmitError) as exc:
+        return _autosign_error(exc)
+    return JSONResponse(result)
+
+
+@router.post("/mpp/streams/{stream_id}/submit-open-tx")
+async def mpp_submit_open_tx(stream_id: int, request: Request):
+    """Sign and send open_payment_stream with the settler-as-owner key."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    body = await request.json()
+    from ..mpp import owner_submit, mpp_streams
+    from ..mpp.mpp_onchain import MppSubmitError
+
+    raw_cap = body.get("maxTotalMicroUsdc", body.get("max_total_micro_usdc"))
+    if raw_cap is None:
+        try:
+            row = _fetch_owned_stream(sess["user_id"], stream_id)
+            raw_cap = row.get("max_total_micro_usdc") or 1_000_000
+        except mpp_streams.StreamNotFound:
+            return JSONResponse({"detail": "stream not found"}, status_code=404)
+    try:
+        result = await owner_submit.submit_open_for_stream(
+            sess["user_id"],
+            stream_id,
+            int(raw_cap),
+            owner_usdc_ata=body.get("usdcAta") or body.get("ownerUsdcAta"),
+        )
+    except mpp_streams.StreamNotFound:
+        return JSONResponse({"detail": "stream not found"}, status_code=404)
+    except (owner_submit.OwnerSubmitError, MppSubmitError) as exc:
+        return _autosign_error(exc)
+    return JSONResponse(result)
