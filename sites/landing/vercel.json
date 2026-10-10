@@ -1,6 +1,7 @@
 {
   "framework": null,
   "outputDirectory": ".",
+  "ignoreCommand": "[ \"$VERCEL_ENV\" = \"production\" ] && exit 1 || exit 0",
   "headers": [
     {
       "source": "/(.*)",
