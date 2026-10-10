@@ -578,6 +578,7 @@ def settle_on_chain(
     settlement_seq: int = 1,
     capture_signature: bytes | None = None,
     request_hash: bytes | None = None,
+    db_conn: sqlite3.Connection | None = None,
 ) -> SettleOutcome:
     """Submit a real `mpp_settle` ix (#26) to Solana.
 
@@ -736,6 +737,7 @@ def settle_on_chain(
             debited=0,
             error=str(e),
             artifact_root=root_hex,
+            conn=db_conn,
         )
         return SettleOutcome(0, "failed")
 
@@ -770,6 +772,7 @@ def settle_on_chain(
             debited=int(micro_usdc) if replayed else 0,
             error=(_INDETERMINATE_PREFIX + str(e)) if indeterminate else str(e),
             artifact_root=root_hex,
+            conn=db_conn,
         )
         if replayed:
             return SettleOutcome(int(micro_usdc), "submitted")
@@ -786,6 +789,7 @@ def settle_on_chain(
         error=None,
         tx_signature=tx_sig,
         artifact_root=root_hex,
+        conn=db_conn,
     )
     return SettleOutcome(int(debited), "submitted")
 
@@ -860,11 +864,14 @@ def _record_settle_attempt(
     error: str | None = None,
     tx_signature: str | None = None,
     artifact_root: str | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> None:
     """Insert a row in `mpp_settle_attempts`. UNIQUE constraint on
     (stream_id, requested_micro_usdc, ts) means duplicate inserts at
     the same exact second are silently absorbed."""
-    conn = _db()
+    own = conn is None
+    if conn is None:
+        conn = _db()
     try:
         try:
             conn.execute(
@@ -885,13 +892,20 @@ def _record_settle_attempt(
                     artifact_root,
                 ),
             )
-            conn.commit()
+            if own:
+                conn.commit()
         except sqlite3.IntegrityError:
             # Duplicate (same stream/amount/ts) — fine, the prior
             # row is the source of truth.
             pass
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                logger.warning("mpp_settle_attempts locked: %s", exc)
+                return
+            raise
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
 def _run_async_in_thread(coro):
@@ -1875,7 +1889,15 @@ def _capture_locked(
     next_seq = last_seq + 1
     if next_seq <= last_seq:
         raise ReplayRejected("SettlementReplay")
-    outcome = settle_on_chain(int(stream_id), cost, root, next_seq, sig, request_hash)
+    outcome = settle_on_chain(
+        int(stream_id),
+        cost,
+        root,
+        next_seq,
+        sig,
+        request_hash,
+        db_conn=conn,
+    )
     if outcome.mode == "indeterminate":
         _rollback(conn)
         raise CaptureRejected("settlement indeterminate")
