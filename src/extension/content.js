@@ -55,7 +55,7 @@ const PROVIDERS = [
     patterns: [
       /sk-or-[A-Za-z0-9_-]{12,}/g,
     ],
-    domains:  ['openrouter.ai'],
+    domains:  ['openrouter.ai', 'openrouter.demo.localhost'],
     minLen:   16,
   },
   {
@@ -138,6 +138,22 @@ const PROVIDERS = [
     minLen:   32,
     requiresDomain: true,
   },
+  {
+    id:       'vercel',
+    name:     'Vercel',
+    label:    'VC',
+    patterns: [/(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['vercel.com', 'vercel.demo.localhost'],
+    minLen:   24,
+  },
+  {
+    id:       'github',
+    name:     'GitHub',
+    label:    'GH',
+    patterns: [/(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['github.com', 'github.demo.localhost'],
+    minLen:   24,
+  },
 ];
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -188,7 +204,12 @@ function dismissThisDomain() {
 // Domain → provider boost (when a page has a matching provider domain,
 // we treat its keys as high-confidence)
 function isOnDomain(provider) {
-  return provider.domains.some(d => HOST === d || HOST.endsWith('.' + d));
+  if (provider.domains.some(d => HOST === d || HOST.endsWith('.' + d))) return true;
+  if (HOST.endsWith('.demo.localhost')) {
+    const slug = HOST.split('.')[0];
+    return provider.id === slug || provider.domains.some(d => d.startsWith(slug));
+  }
+  return false;
 }
 
 function ksHostMatches(hostname, allowList) {

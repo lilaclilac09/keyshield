@@ -22,6 +22,8 @@ _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("anthropic", re.compile(r"sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}")),
     ("groq", re.compile(r"gsk_[A-Za-z0-9]{32,}")),
     ("helius", re.compile(r"helius_auth_[A-Za-z0-9]{16,}")),
+    ("vercel", re.compile(r"(?:vercel_|vcp_)[A-Za-z0-9_]{20,}")),
+    ("github", re.compile(r"(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}")),
     ("openai", re.compile(r"sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}")),
 )
 
