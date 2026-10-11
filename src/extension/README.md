@@ -18,23 +18,21 @@ src/extension/
 
 ## Backend
 
-By default the extension talks to the **OSS-oriented** public defaults in the popup/background sources:
+Sign-in default is the hosted dashboard:
 
-- API base: `https://keyshield-production.up.railway.app` (FastAPI control plane)
-- Dashboard: `https://keyshield.dev`
+- API base: `https://keyshield-production.up.railway.app`
+- Dashboard: `https://app.ks.aileena.xyz` (not `ks.app.aileena.xyz`)
 
-Forks should replace these with **your own** deployment URLs (or use local dev). Both URLs can be overridden at runtime from the popup's **Settings & manual
-token** panel (stored in `chrome.storage.local.ks_api_base` and
-`chrome.storage.local.ks_dashboard_url`). The popup also exposes a
-**Use local dev** button that flips both back to
-`http://127.0.0.1:8001` / `http://127.0.0.1:5173` for working against the
-local Vite + FastAPI stack.
+`https://keyshield.dev` has **no public DNS** and is rewritten to
+`app.ks.aileena.xyz`. Local Vite is popup **Use local dev**
+(`http://127.0.0.1:8001` / `http://127.0.0.1:5173`).
 
-Existing installs that were defaulted to old localhost URLs are migrated to
-the production defaults the next time the popup or background opens the
-dashboard, unless the user explicitly saved a non-production URL (tracked
-via `chrome.storage.local.ks_url_pref_pinned`). Older builds that pointed at
-maintainer-specific `*.ks.aileena.xyz` hosts are also migrated away unless pinned.
+If GitHub DNS fails, **do not** edit `~/Downloads/…` unless you want
+the new Sign-in button. Login works without that folder: open
+`https://app.ks.aileena.xyz`, copy the session token, popup
+**Register token**. See `LOCAL-SIGNIN.md`.
+If Chrome cannot Reload: **Remove** then **Load unpacked** from this
+folder.
 
 ## Install — Chrome / Edge / Brave / Arc
 
@@ -64,7 +62,9 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Click **→ Sign in to KeyShield** in the popup. It opens your configured dashboard (default `https://keyshield.dev`) and the dashboard registers a token with the extension via `chrome.runtime.sendMessage`.
-- **Sign-in link doesn't open / opens a dead localhost tab:** You're on an old build that defaulted to `http://127.0.0.1:5173`. Open the popup once — the migration logic will rewrite the stored dashboard URL to the current default automatically (unless you've explicitly pinned a custom URL via Settings).
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` yourself (skip Sign-in on v1.1.1). Wallet / passkey. Copy token → **Register token**.
+- **Sign-in opens a blank `keyshield.dev` tab:** That is GitHub `main` 1.1.1. Do not edit Downloads. Use the token paste path. After this PR is on `main`, Load unpacked **1.1.7**.
+- **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
+- **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
-- **Manifest changes:** After editing `manifest.json`, click the **Reload** circle on the extension card in `chrome://extensions/`.
+- **Manifest changes:** After editing `manifest.json`, try the **Reload** circle. If Chrome will not reload, Remove then Load unpacked.

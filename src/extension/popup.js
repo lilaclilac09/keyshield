@@ -10,20 +10,16 @@
 //      builds) to the public API / dashboard defaults below, unless
 //      the user has explicitly pinned a non-production target.
 
-// Production defaults — OSS fork ships with a public Railway API + keyshield.dev
-// dashboard. Override via the Settings panel or set chrome.storage.
-const DEFAULT_API_BASE      = "https://keyshield-production.up.railway.app";
-const DEFAULT_DASHBOARD_URL = "https://keyshield.dev";
-
-// Local dev URLs — exposed via the "Reset to local" button in the settings
-// pane for users actually running the Vite + FastAPI stack on their machine.
+// Sign-in default is the hosted dashboard. keyshield.dev has no DNS.
+// ks.app.aileena.xyz is the wrong label — the real host is app.ks.aileena.xyz.
+// Local Vite is Settings → Use local dev (127.0.0.1:5173), not the default.
+const PROD_API_BASE       = "https://keyshield-production.up.railway.app";
+const PROD_DASHBOARD_URL  = "https://app.ks.aileena.xyz";
 const LOCAL_API_BASE      = "http://127.0.0.1:8001";
 const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
+const DEFAULT_API_BASE      = PROD_API_BASE;
+const DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz";
 
-// Old defaults we want to silently upgrade to production on next popup open
-// so existing installs don't keep opening dead localhost tabs after the user
-// shuts down their dev server. "Reset to local" still works — we only
-// migrate URLs the user never explicitly chose.
 const STALE_DASHBOARD_DEFAULTS = [
   "http://127.0.0.1:5173",
   "http://localhost:5173",
@@ -34,8 +30,19 @@ const STALE_API_DEFAULTS = [
   "http://127.0.0.1:8000",
   "http://localhost:8000",
 ];
-const LEGACY_API_BASES = ["https://keyshield-production.up.railway.app"];
-const LEGACY_DASHBOARD_URLS = ["https://app.ks.aileena.xyz"];
+const LEGACY_API_BASES = [];
+
+const DEAD_DASHBOARD_URLS = [
+  "https://keyshield.dev",
+  "https://www.keyshield.dev",
+  "https://app.keyshield.dev",
+  "https://ks.app.aileena.xyz",
+];
+
+function isDeadDashboardUrl(url) {
+  const u = String(url || "").replace(/\/+$/, "");
+  return DEAD_DASHBOARD_URLS.some((d) => u === d || u.startsWith(`${d}/`));
+}
 
 // Marker we set when the user explicitly opts into a non-production target so
 // the migration logic in loadSettings() doesn't fight them on every open.
@@ -70,9 +77,8 @@ async function loadSettings() {
   //     page on a fresh install.
   let dash = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
   const dashIsBackendPort = /:800[01](\/|$)/.test(dash);
-  const dashIsStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
-  const dashIsLegacy      = !pinned && LEGACY_DASHBOARD_URLS.some((u) => dash === u || dash.startsWith(u + "/"));
-  if (dashIsBackendPort || dashIsStaleLocal || dashIsLegacy) {
+  const dashIsStaleLocal  = STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
+  if (dashIsBackendPort || dashIsStaleLocal || isDeadDashboardUrl(dash)) {
     dash = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: dash }); } catch { /* noop */ }
   }
@@ -87,6 +93,11 @@ async function loadSettings() {
 
   $("api").value  = api;
   $("dash").value = dash;
+  const build = $("build");
+  if (build) {
+    const ver = chrome.runtime.getManifest().version;
+    build.textContent = `v${ver} · Sign-in opens ${dash}`;
+  }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.
@@ -135,19 +146,12 @@ async function saveSettings() {
 }
 
 async function openDashboardForSignin() {
-  const stored = await chrome.storage.local.get(["ks_dashboard_url", PIN_PREF_KEY]);
-  const pinned = !!stored[PIN_PREF_KEY];
-  let url = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
-  // Treat any stale local URL (old default that points at a dev server the
-  // user might not be running) the same as a missing value, and silently
-  // migrate it to the production default.
-  const isBackendPort = /:800[01](\/|$)/.test(url);
-  const isStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => url === u || url.startsWith(u + "/"));
-  const isLegacyDash  = !pinned && LEGACY_DASHBOARD_URLS.some((u) => url === u || url.startsWith(u + "/"));
-  if (isBackendPort || isStaleLocal || isLegacyDash) {
-    url = DEFAULT_DASHBOARD_URL;
-    try { await chrome.storage.local.set({ ks_dashboard_url: url }); } catch { /* noop */ }
-  }
+  // Sign-in always opens the hosted dashboard. 127.0.0.1:5173 is the Vite
+  // clone and must bounce / not be the login tab. Use local dev is for API.
+  let url = "https://app.ks.aileena.xyz";
+  try {
+    await chrome.storage.local.set({ ks_dashboard_url: url });
+  } catch { /* noop */ }
   try { await chrome.tabs.create({ url }); }
   catch (e) {
     setStatus(`Couldn't open tab: ${String(e)}`, "err", 3000);
@@ -246,6 +250,16 @@ async function pointAtLocal() {
     [PIN_PREF_KEY]:   true,    // user explicitly wants local — don't migrate
   });
   setStatus("Pointed at local dev (127.0.0.1).", "ok", 2500);
+  loadSettings();
+}
+
+async function pointAtProduction() {
+  await chrome.storage.local.set({
+    ks_api_base:      PROD_API_BASE,
+    ks_dashboard_url: PROD_DASHBOARD_URL,
+    [PIN_PREF_KEY]:   true,
+  });
+  setStatus("Pointed at production (app.ks.aileena.xyz).", "ok", 2500);
   loadSettings();
 }
 
@@ -355,8 +369,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("clear"       ).addEventListener("click", clearSession);
   const ptRemote = $("point-remote");
   const ptLocal  = $("point-local");
+  const ptProd   = $("point-prod");
   if (ptRemote) ptRemote.addEventListener("click", pointAtRemote);
   if (ptLocal)  ptLocal.addEventListener("click",  pointAtLocal);
+  if (ptProd)   ptProd.addEventListener("click",   pointAtProduction);
 
   const expBtn = $("export-vault");
   const impBtn = $("import-vault");

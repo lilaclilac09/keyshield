@@ -60,6 +60,15 @@
 </head>
 <body>
   <div id="root"></div>
+  <script>
+    (function () {
+      if (/(?:^|[?&])local=1(?:&|$)/.test(location.search)) return;
+      var h = location.hostname;
+      var p = location.port;
+      if ((h !== '127.0.0.1' && h !== 'localhost') || (p && p !== '5173' && p !== '5174')) return;
+      location.replace('https://app.ks.aileena.xyz' + location.pathname + location.search + location.hash);
+    })();
+  </script>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>
