@@ -562,15 +562,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const stored = await chrome.storage.local.get([PIN_PREF_KEY, 'ks_dashboard_url']);
       const dash = String(stored.ks_dashboard_url || '');
       const pinnedLocal = !!stored[PIN_PREF_KEY] && /127\.0\.0\.1:5173|localhost:5173/.test(dash);
-      const dashboardUrl = pinnedLocal ? LOCAL_DASHBOARD_URL : DEFAULT_DASHBOARD_URL;
-      const url = pinnedLocal
-        ? `${LOCAL_DASHBOARD_URL}/?local=1&ext=1`
-        : `${String(dashboardUrl).replace(/\/+$/, '')}/?ext=1`;
-      if (!pinnedLocal) {
-        try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
+      let usedLocal = false;
+      if (pinnedLocal) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 400);
+          await fetch('http://127.0.0.1:5173/', { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+          clearTimeout(timer);
+          usedLocal = true;
+        } catch {
+          usedLocal = false;
+          try {
+            await chrome.storage.local.set({ ks_dashboard_url: DEFAULT_DASHBOARD_URL, [PIN_PREF_KEY]: false });
+          } catch { /* noop */ }
+        }
+      } else {
+        try { await chrome.storage.local.set({ ks_dashboard_url: DEFAULT_DASHBOARD_URL }); } catch { /* noop */ }
       }
+      const url = usedLocal
+        ? `${LOCAL_DASHBOARD_URL}/?local=1&ext=1&demo=shop`
+        : `${DEFAULT_DASHBOARD_URL}/?ext=1&demo=shop`;
       chrome.tabs.create({ url });
-      sendResponse({ ok: true, dashboardUrl });
+      sendResponse({ ok: true, dashboardUrl: usedLocal ? LOCAL_DASHBOARD_URL : DEFAULT_DASHBOARD_URL, usedLocal });
     })();
     return true;
   }

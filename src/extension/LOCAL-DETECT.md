@@ -1,36 +1,16 @@
-# 1.1.3 on your Mac — local detect + auto-save
+# 1.1.3 on your Mac — hosted Sign-in + detect + shop
 
-`git pull` fails (`Could not resolve host: github.com`). This Cloud
-agent still cannot write `~/Downloads/privacy_hack/keyshield`.
-Stay on **KeyShield — Sovereign Vault**. Do **not** paste HTML
-(`<script>…</script>`) into zsh. That is a parse error.
+`127.0.0.1:5173` **refused** means Vite is not running. That is why
+1.1.3 / a pinned 1.1.9 Sign-in looks dead. Do **not** `git pull` if
+github.com will not resolve. Do **not** paste HTML into zsh.
 
-1.1.3 already points at local Vite (`127.0.0.1:5173`) and local API
-(`127.0.0.1:8001`). What it is missing: **Allow → auto-save**.
+Stay on **KeyShield — Sovereign Vault**. Sign-in must open
+`https://app.ks.aileena.xyz/?ext=1&demo=shop`.
 
-## 1. Start the local stack
-
-From the Downloads repo (or any clone that already has the backend):
+## 1. Patch 1.1.3 → 1.2.0 on disk (python3 only)
 
 ```bash
 cd ~/Downloads/privacy_hack/keyshield
-python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001
-```
-
-In another terminal, if you use the dashboard:
-
-```bash
-cd ~/Downloads/privacy_hack/keyshield/src/web
-npx vite --host 127.0.0.1 --port 5173
-```
-
-`curl http://127.0.0.1:8001/health` must print `{"status":"ok"...}`.
-
-## 2. Patch 1.1.3 → 1.1.9 on disk (python3 only)
-
-Copy **only** the block below into Terminal. Not the HTML demo page.
-
-```bash
 python3 - <<'PY'
 from pathlib import Path
 import json, re
@@ -43,13 +23,26 @@ elif (root / "manifest.json").exists() and (root / "popup.js").exists():
 else:
     raise SystemExit("cd to ~/Downloads/privacy_hack/keyshield first")
 
+HOSTED = "https://app.ks.aileena.xyz"
 man_path = ext / "manifest.json"
 man = json.loads(man_path.read_text())
-man["version"] = "1.1.9"
+man["version"] = "1.2.0"
 man.setdefault("optional_host_permissions", [])
 if "<all_urls>" not in man["optional_host_permissions"]:
     man["optional_host_permissions"].append("<all_urls>")
 man_path.write_text(json.dumps(man, indent=2) + "\n")
+
+for name in ("popup.js", "background.js"):
+    path = ext / name
+    text = path.read_text()
+    text = re.sub(
+        r"const DEFAULT_DASHBOARD_URL = ['\"][^'\"]+['\"]",
+        f'const DEFAULT_DASHBOARD_URL = "{HOSTED}"' if name == "popup.js"
+        else f"const DEFAULT_DASHBOARD_URL = '{HOSTED}'",
+        text,
+        count=1,
+    )
+    path.write_text(text)
 
 cjs = ext / "content.js"
 c = cjs.read_text()
@@ -88,51 +81,29 @@ loadAutoStorePref();
 """
     cjs.write_text(c)
 
-demo = ext / "detect-demo.html"
-demo.write_text("""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>KeyShield detect demo</title></head>
-<body style="font-family:sans-serif;background:#0a0d1a;color:#e4e4e7;padding:32px">
-<h1>KeyShield detect demo</h1>
-<p>Fake OpenAI key. The extension must toast API key detected.</p>
-<code>sk-proj-LOCALDETECTDEMOKEY1234567890abcd</code>
-</body></html>
-""")
-
-print("ok version 1.1.9")
-print("extension", ext)
-print("demo", demo)
+print("ok 1.2.0", ext)
+print("ver", json.loads(man_path.read_text())["version"])
+print("dash", [l for l in (ext / "popup.js").read_text().splitlines() if "DEFAULT_DASHBOARD_URL" in l][0])
+print("auto", "maybeAutoStore" in cjs.read_text())
 print("next: chrome://extensions Remove + Load unpacked this folder")
-print("then: python3 -m http.server 8765 --directory", ext)
-print("then: open http://127.0.0.1:8765/detect-demo.html")
+print("then Sign-in must open https://app.ks.aileena.xyz/?ext=1&demo=shop")
 PY
 ```
 
-## 3. Reload the same extension name
+Screen must say `ok 1.2.0` and `DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz"`.
 
-1. `chrome://extensions` → **Remove** the 1.1.3 card.
-2. **Load unpacked** → the same `src/extension` folder.
-3. Card must still say **KeyShield — Sovereign Vault** and now **1.1.9**.
-4. Popup → **Use local 5173 / 8001** → **Allow detect + auto-save** → Allow in Chrome.
+## 2. Reload the same extension name
 
-## 4. Prove detect + store
+1. `chrome://extensions` → **Remove** the old card.
+2. **Load unpacked** → `src/extension`.
+3. Name **KeyShield — Sovereign Vault**, version **1.2.0**.
+4. Popup → **Use hosted app.ks.aileena.xyz** → **Allow detect + auto-save**.
+5. Click **Sign in**. It must **not** open `127.0.0.1:5173`.
 
-```bash
-cd ~/Downloads/privacy_hack/keyshield/src/extension
-python3 -m http.server 8765
-```
+## 3. What you should see
 
-Chrome tab: `http://127.0.0.1:8765/detect-demo.html`
+1. Hosted Sign-in. If this device already has a passkey id: **Sign In as abcd…wxyz**.
+2. After login: Home shop card — paste a key (like Cursor API Keys), **Buy $0.10 credit** (balance changes), **RPC speed check**.
+3. Detect still works on any page after Allow.
 
-- Toast **API key detected** must appear.
-- Click **Allow auto-save** once (permission).
-- Status must be **Saved 1 key**.
-- Later keys on that profile auto-save.
-
-```bash
-curl -sS -H 'X-Dev-Mode: 1' http://127.0.0.1:8001/manage/vault
-```
-
-Must list an `openai` / `sk-proj-LOCALDETECT…` item.
-
-If the toast is missing: reload the demo tab after Allow. Site access
-must be **On all sites** on the extension card.
+Do not start Vite unless you actually want a local dashboard. Settings → Use local dev only after `curl http://127.0.0.1:5173` works.

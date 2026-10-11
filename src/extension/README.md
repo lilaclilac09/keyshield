@@ -25,8 +25,9 @@ Sign-in default is the hosted dashboard:
 - Dashboard: `https://app.ks.aileena.xyz` (not `ks.app.aileena.xyz`)
 
 `https://keyshield.dev` has **no public DNS** and is rewritten to
-`app.ks.aileena.xyz`. Local Vite is popup **Use local dev**
-(`http://127.0.0.1:8001` / `http://127.0.0.1:5173`).
+`app.ks.aileena.xyz`. Local Vite is Settings → **Use local dev**
+and only if `127.0.0.1:5173` answers. Sign-in default is
+`https://app.ks.aileena.xyz/?ext=1&demo=shop`.
 
 If GitHub DNS fails, **do not** edit `~/Downloads/…` unless you want
 the new Sign-in button. Login works without that folder: open
@@ -63,10 +64,11 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.1.9). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
-- **Sign-in should open already logged in:** Load unpacked **1.1.9**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`.
-- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.1.9**. **Allow detect + auto-save**, then open `detect-demo.html`.
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.2.0). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
+- **Sign-in should open already logged in:** Load unpacked **1.2.0**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`. `127.0.0.1:5173` refused means Vite is off — Sign-in must fall back to the hosted app.
+- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.2.0**. **Use hosted** + **Allow detect + auto-save**.
+- **Passkey after jump-out:** a preregistered `ks_passkey_user` / wallet id must show **Sign In as abcd…wxyz**. A stale token 401 must not wipe that id.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
-- **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
+- **Want local Vite instead:** popup Settings → **Use local dev** only after `curl http://127.0.0.1:5173` works.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
 - **Manifest changes:** After editing `manifest.json`, try the **Reload** circle. If Chrome will not reload, Remove then Load unpacked.
