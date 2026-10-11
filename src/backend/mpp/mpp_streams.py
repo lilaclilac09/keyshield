@@ -847,6 +847,58 @@ def _find_recent_attempt(
         conn.close()
 
 
+def latest_successful_settle(
+    user_id: str | None = None,
+    stream_id: int | None = None,
+) -> dict | None:
+    """Newest successful mpp_settle attempt with a cluster signature.
+
+    Stream.tx_signature is often the OpenStream sig (`record_tx_signature`
+    on open). Receipts must read `mpp_settle_attempts` instead.
+    """
+    clauses = ["a.success = 1", "a.tx_signature IS NOT NULL", "TRIM(a.tx_signature) != ''"]
+    args: list[object] = []
+    if user_id is not None:
+        clauses.append("s.user_id = ?")
+        args.append(user_id)
+    if stream_id is not None:
+        clauses.append("a.stream_id = ?")
+        args.append(int(stream_id))
+    where = " AND ".join(clauses)
+    conn = _db()
+    try:
+        row = conn.execute(
+            f"""
+            SELECT a.tx_signature, a.debited_micro_usdc, a.ts, a.artifact_root,
+                   s.id, s.settled_micro_usdc, s.stream_pda, s.stream_usdc_ata
+              FROM mpp_settle_attempts a
+              JOIN mpp_streams s ON s.id = a.stream_id
+             WHERE {where}
+             ORDER BY a.ts DESC, a.id DESC
+             LIMIT 1
+            """,
+            tuple(args),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    sig = str(row[0])
+    digest = str(row[3] or "")
+    return {
+        "hash": digest,
+        "hash8": (digest or sig)[:8],
+        "mode": "submitted",
+        "signature": sig,
+        "stream_id": row[4],
+        "micro_usdc": int(row[1] or 0),
+        "settled_micro_usdc": int(row[5] or 0),
+        "stream_pda": row[6],
+        "stream_usdc_ata": row[7],
+        "ts": row[2],
+    }
+
+
 def _record_settle_attempt(
     stream_id: int,
     requested_micro_usdc: int,
