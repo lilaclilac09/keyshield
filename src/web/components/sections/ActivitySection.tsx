@@ -653,6 +653,7 @@ export const ActivitySection: React.FC = () => {
               <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
             </div>
             {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
+            </div>
           </Card>
         </div>
       )}
