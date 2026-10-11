@@ -403,6 +403,42 @@ hash cannot debit the Devnet escrow.
                             └── pinocchio mpp_settle on Devnet USDC
 ```
 
+### Architectural contrast: KeyShield vs. legacy secret managers
+
+Traditional secret managers (1Password CLI, HashiCorp Vault) were built for
+human engineers and static CI/CD. Autonomous runtimes (browser-use, multi-agent
+loops) expose the gap: a static key-value vault has no execution context.
+
+| Dimension | Legacy secret managers | KeyShield |
+|---|---|---|
+| **Secret lifecycle** | Long-lived secrets in an encrypted vault; `op run` / `op read` emit the same root token every time | On-device derivation (WebAuthn-PRF → HKDF → AES-GCM). Agent holds a session token, not `sk-` / `gsk_` |
+| **Execution blast radius** | Org-wide GitHub / Vercel PATs land in the agent process | Scope-bounded session. Root credentials never enter agent memory |
+| **Memory lifecycle** | Plaintext via env / stdout; survives debug dumps and traces | `X-Upstream-API-Key` lives only in the request task and drops on socket close. `secrecy` + `zeroize` is intended crate-level hardening, not a current `ks-proxy` Cargo dependency |
+| **State-machine awareness** | Passive store. Zero view of downstream fulfillment | Hold → verify 32-byte artifact → capture. Empty / 502 / truncated body cannot debit |
+| **Failure handling** | Blind emission: 502 / desync can orphan a debit | On-chain clawback after the dispute window. Last honest `MppSettle` on this wallet consumed **1,906 CU** |
+| **Credential fetch overhead** | IPC / local HTTP daemon (typically 10–50 ms per read) | Dashboard handshake is one server `getMultipleAccounts`; later reads are in-process memory (this take: 224 ms then 0.002 ms). Not a WAN product claim |
+
+**1. Ephemeral derivation vs. static blast radius.** `op run` hands the
+runtime a long-lived root token. Prompt injection or a stuck loop then has
+org-wide authority. KeyShield never puts that token in agent memory: the
+proxy injects the decrypted provider key once per upstream hop.
+
+**2. Drop-on-close vs. environment leakage.** Secrets in `env` or stdout
+persist across process lifetime and show up in traces. KeyShield keeps the
+decrypted key in the request task only (see [Failure modes](#failure-modes-and-security-boundaries)).
+
+**3. Hold-verify-capture vs. orphan debits.** A vault that only emits keys
+cannot tell a 502 from a fulfilled call. Phase 1 locks micro-USDC; phase 2
+refuses empty / error / short digests; phase 3 settles only on
+`HMAC-SHA256(session, artifact)`. Desync clawback is `ForceClawback` (ix 28)
+after `last_active + timeout`.
+
+**4. In-process cache vs. heavy IPC.** 1Password’s local daemon is an extra
+round trip per credential. KeyShield’s `/mpp/status` path is a memory cache
+in the Python control plane (20 s TTL on this take). Do not quote a 9,000×
+WAN figure — production proxy latency is still unmeasured (see **Faster when
+cached** above).
+
 ### Same vault. Two interfaces.
 
 **For you** — Dashboard + Chrome extension. Add keys, rotate, see usage, share with teammates (scoped, revocable).
