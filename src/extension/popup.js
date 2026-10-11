@@ -105,6 +105,11 @@ async function loadSettings() {
 
   $("api").value  = api;
   $("dash").value = dash;
+  const build = $("build");
+  if (build) {
+    const ver = chrome.runtime.getManifest().version;
+    build.textContent = `v${ver} · Sign-in opens ${dash}`;
+  }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.

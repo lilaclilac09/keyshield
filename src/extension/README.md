@@ -34,7 +34,9 @@ URLs are rewritten to the unpacked or packed default.
 
 If Chrome cannot Reload after you edit this folder: **Remove** the
 extension, then **Load unpacked** again from the same path (e.g.
-`~/Downloads/privacy_hack/keyshield/src/extension`). Version **1.1.2**.
+`~/Downloads/privacy_hack/keyshield/src/extension`). The card must
+show **1.1.3**. **1.1.1** is `main` and still opens `keyshield.dev`.
+See `LOCAL-SIGNIN.md`.
 
 Popup **Use production** / **Use local dev** / **Point at remote** pin
 `ks_api_base` / `ks_dashboard_url`. Unpacked builds do **not** migrate

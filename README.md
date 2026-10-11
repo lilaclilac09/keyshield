@@ -86,7 +86,9 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
    **Do not use `https://keyshield.dev/`** — no public DNS.
    Chrome often cannot Reload after a folder/source change: **Remove**
    the extension, then **Load unpacked** again from the same folder
-   (version **1.1.2**). Hosted Sign-in: popup **Use production** →
+   (card must say **1.1.3**). If the card still says **1.1.1**, you
+   loaded `main` — that source still opens `https://keyshield.dev`.
+   See `src/extension/LOCAL-SIGNIN.md`. Hosted Sign-in: popup **Use production** →
    [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz).
    If popup stays `no token`, paste the Developer token → **Register token**.
    No Chrome Web Store listing yet. Firefox is a temporary add-on only

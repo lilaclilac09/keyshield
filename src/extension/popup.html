@@ -214,14 +214,21 @@
 <body>
   <h1>KeyShield Vault <span class="badge" id="conn">…</span></h1>
   <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
+  <div id="build" class="sub" style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
+    checking loaded build…
+  </div>
 
   <button id="signin">→ Sign in to KeyShield</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    Unpacked from <code>src/extension</code> → Sign-in opens
-    <code>http://127.0.0.1:5173</code> (run <code>node dev.cjs</code> first).
-    If Chrome cannot Reload, <strong>Remove</strong> this extension, then
-    <strong>Load unpacked</strong> again from that same folder.
-    Do not open <code>https://keyshield.dev</code> — no DNS.
+    After Load unpacked the card and this line must say <strong>v1.1.3</strong>.
+    If you still see <strong>1.1.1</strong>, Chrome loaded
+    <code>main</code> — that source still opens <code>keyshield.dev</code>.
+    Sign-in on this build opens <code>http://127.0.0.1:5173</code>
+    (run <code>node dev.cjs</code> first). If Reload does nothing:
+    <strong>Remove</strong> then <strong>Load unpacked</strong> from
+    <code>src/extension</code> (the folder that contains only
+    <code>manifest.json</code>, <code>popup.js</code>, <code>background.js</code>,
+    <code>content.js</code>, <code>popup.html</code>).
   </p>
   <div id="status" class="status"></div>
 
