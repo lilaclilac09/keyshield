@@ -216,23 +216,21 @@ export const StoryJourney: React.FC = () => {
             <h2 className="text-xl font-bold mt-1">{active.label} secret field</h2>
             <p className="text-[12px] text-[#a1a1aa] mt-1">{active.how}</p>
             <label className="block mt-4 text-[10px] uppercase text-[#8a96c2]">API Key</label>
-            <div className="relative mt-1">
-              <input
-                readOnly
-                data-ks="key-field"
-                value={filledNow ? mask(filledNow) : ''}
-                placeholder={runner === 'openclaw' ? 'empty until Fill — then KS_TOKEN is what the agent holds' : 'empty — click Fill'}
-                className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-3 font-mono text-sm"
-              />
-              <button
-                type="button"
-                data-ks="fill"
-                onClick={fillActive}
-                className="absolute right-2 top-2 px-3 py-1 rounded bg-[#0a0d1a] border border-[#1c2550] text-[#5b8cff] text-xs font-semibold"
-              >
-                Fill
-              </button>
-            </div>
+            <input
+              readOnly
+              data-ks="key-field"
+              value={filledNow ? mask(filledNow) : ''}
+              placeholder={runner === 'openclaw' ? 'empty until Fill — then KS_TOKEN is what the agent holds' : 'empty — click Fill'}
+              className="mt-1 w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-3 font-mono text-sm"
+            />
+            <button
+              type="button"
+              data-ks="fill"
+              onClick={fillActive}
+              className="mt-3 w-full rounded-lg bg-[#5b8cff] text-white text-sm py-2.5 font-semibold"
+            >
+              Fill {active.label}
+            </button>
             <p className="mt-3 text-[12px] text-emerald-300">
               {filledNow ? `Filled for ${active.label}` : `No value in ${active.label} yet`}
             </p>
@@ -250,7 +248,7 @@ export const StoryJourney: React.FC = () => {
         <div className="rounded-xl border border-[#243365] bg-[#0e1631] p-4">
           <div className="text-[10px] uppercase text-[#8a96c2]">RPC / wallet</div>
           <p className="text-[12px] mt-2">SOL {sol} · USDC {usdc} · {status?.cached ? 'CACHE' : 'HANDSHAKE'} {status?.rpc_ms ?? '—'}ms</p>
-          <button type="button" data-ks="handshake" onClick={() => void handshake()} className="mt-3 px-3 py-1.5 rounded bg-white text-black text-xs font-semibold">
+          <button type="button" data-ks="handshake" onClick={() => void handshake()} className="mt-3 w-full px-3 py-2 rounded bg-white text-black text-sm font-semibold">
             Handshake
           </button>
         </div>
