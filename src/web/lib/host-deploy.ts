@@ -43,7 +43,7 @@ type Loc = Pick<Location, 'hostname' | 'port' | 'pathname' | 'search' | 'hash'>;
 
 /** Vite login tab. `?local=1` keeps the clone for UI work. */
 export function isLocalViteSigninHost(loc: Loc): boolean {
-  if (/(?:^|[?&])local=1(?:&|$)/.test(loc.search || '')) return false;
+  if (/(?:^|[?&])(?:local=1|colosseum=1)(?:&|$)/.test(loc.search || '')) return false;
   const host = loc.hostname;
   const port = loc.port;
   return (

@@ -199,7 +199,7 @@ export const X402TrustManager: React.FC = () => {
   const currentHostAlreadyTrusted = currentHost ? !!trustList[currentHost] : false;
 
   return (
-    <div className="rounded-2xl border border-[#243365] bg-[#131c39]/60 p-5 space-y-4">
+    <div data-colosseum="x402" className="rounded-2xl border border-[#243365] bg-[#131c39]/60 p-5 space-y-4">
       {/* Header */}
       <div>
         <h3 className="text-[14px] font-medium text-white flex items-center gap-2">

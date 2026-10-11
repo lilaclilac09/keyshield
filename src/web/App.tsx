@@ -27,6 +27,7 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
+import { ColosseumOverlay } from './components/ColosseumOverlay';
 
 type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
@@ -170,6 +171,7 @@ const MainContent: React.FC = () => {
           </div>
         </main>
       </div>
+      <ColosseumOverlay onGo={(id) => setSection(id as Section)} />
     </div>
   );
 };
