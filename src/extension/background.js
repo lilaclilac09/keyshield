@@ -65,36 +65,40 @@ async function _getVaultKeyBytes() {
   return r.ks_vault_key ? _b64uDec(r.ks_vault_key) : null;
 }
 
-// ── Domain → upstream map for auto-fill (subset of content.js PROVIDERS) ────
-// Used by GET_KEYS_FOR_DOMAIN to resolve which vault items belong to a page.
-const DOMAIN_TO_UPSTREAM = {
-  'openrouter.ai':         'openrouter',
-  'scvd.store':            'openrouter',
-  'platform.openai.com':   'openai',
-  'openai.com':            'openai',
-  'console.anthropic.com': 'anthropic',
-  'anthropic.com':         'anthropic',
-  'console.groq.com':      'groq',
-  'groq.com':              'groq',
-  'console.mistral.ai':    'mistral',
-  'mistral.ai':            'mistral',
-  'dashboard.cohere.com':  'cohere',
-  'cohere.com':            'cohere',
-  'cohere.ai':             'cohere',
-  'dashboard.helius.dev':  'helius',
-  'helius.dev':            'helius',
-  'helius.xyz':            'helius',
-  'dashboard.0x.org':      '0x',
-  '0x.org':                '0x',
-  'dashboard.alchemy.com': 'alchemy',
-  'alchemy.com':           'alchemy',
-  'vercel.com':            'vercel',
-  'vercel.demo.localhost': 'vercel',
-  'github.com':            'github',
-  'github.demo.localhost': 'github',
-  'openrouter.demo.localhost': 'openrouter',
-  'cursor.demo.localhost': 'openrouter',
-  'devin.demo.localhost':  'openrouter',
+// ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
+// cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
+const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'groq'];
+const DOMAIN_TO_UPSTREAMS = {
+  'openrouter.ai':         ['openrouter'],
+  'scvd.store':            ['openrouter'],
+  'platform.openai.com':   ['openai'],
+  'openai.com':            ['openai'],
+  'console.anthropic.com': ['anthropic'],
+  'anthropic.com':         ['anthropic'],
+  'console.groq.com':      ['groq'],
+  'groq.com':              ['groq'],
+  'console.mistral.ai':    ['mistral'],
+  'mistral.ai':            ['mistral'],
+  'dashboard.cohere.com':  ['cohere'],
+  'cohere.com':            ['cohere'],
+  'cohere.ai':             ['cohere'],
+  'dashboard.helius.dev':  ['helius'],
+  'helius.dev':            ['helius'],
+  'helius.xyz':            ['helius'],
+  'dashboard.0x.org':      ['0x'],
+  '0x.org':                ['0x'],
+  'dashboard.alchemy.com': ['alchemy'],
+  'alchemy.com':           ['alchemy'],
+  'vercel.com':            ['vercel'],
+  'vercel.demo.localhost': ['vercel'],
+  'github.com':            ['github'],
+  'github.demo.localhost': ['github'],
+  'openrouter.demo.localhost': ['openrouter'],
+  'cursor.com':            CURSOR_FILL_UPSTREAMS,
+  'www.cursor.com':        CURSOR_FILL_UPSTREAMS,
+  'cursor.sh':             CURSOR_FILL_UPSTREAMS,
+  'cursor.demo.localhost': CURSOR_FILL_UPSTREAMS,
+  'devin.demo.localhost':  ['openrouter'],
 };
 
 function _normalizeHostname(input) {
@@ -103,15 +107,14 @@ function _normalizeHostname(input) {
   return raw.replace(/\.+$/, '');
 }
 
-function _upstreamForDomain(domain) {
+function _upstreamsForDomain(domain) {
   const normalized = _normalizeHostname(domain);
-  if (!normalized) return null;
-  if (DOMAIN_TO_UPSTREAM[normalized]) return DOMAIN_TO_UPSTREAM[normalized];
-  // suffix match (e.g. foo.openai.com → openai)
-  for (const d of Object.keys(DOMAIN_TO_UPSTREAM)) {
-    if (normalized === d || normalized.endsWith('.' + d)) return DOMAIN_TO_UPSTREAM[d];
+  if (!normalized) return [];
+  if (DOMAIN_TO_UPSTREAMS[normalized]) return DOMAIN_TO_UPSTREAMS[normalized];
+  for (const d of Object.keys(DOMAIN_TO_UPSTREAMS)) {
+    if (normalized === d || normalized.endsWith('.' + d)) return DOMAIN_TO_UPSTREAMS[d];
   }
-  return null;
+  return [];
 }
 
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
@@ -141,15 +144,12 @@ function _manageHeaders(apiBase, token, extra) {
 }
 
 async function getKeysForDomain(domain) {
+  const upstreams = _upstreamsForDomain(domain);
+  if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
+
   const keyBytes = await _getVaultKeyBytes();
-  if (!keyBytes) return { ok: false, reason: 'no-vault-key' };
-
-  const upstream = _upstreamForDomain(domain);
-  // We still query the vault even without a known upstream — caller may match
-  // by hostname suffix on their side. But for now, no match → no keys.
-  if (!upstream) return { ok: false, reason: 'no-upstream-match' };
-
   const { token } = await getStoredToken();
+  if (!token) return { ok: false, reason: 'no-token' };
   const { apiBase } = await getApiBase();
   const headers = _manageHeaders(apiBase, token);
 
@@ -163,26 +163,39 @@ async function getKeysForDomain(domain) {
   }
   if (!Array.isArray(items)) return { ok: false, reason: 'bad-response' };
 
-  const matched = items.filter((it) =>
-    it && it.upstream === upstream &&
-    Number(it.cipher_v) === 1 &&
-    typeof it.cipher === 'string' && it.cipher !== '' &&
-    typeof it.iv === 'string' && it.iv !== ''
-  );
+  const wanted = new Set(upstreams);
+  const matched = items.filter((it) => it && wanted.has(it.upstream));
   if (matched.length === 0) return { ok: false, reason: 'no-keys' };
 
   const out = [];
   for (const it of matched) {
-    let value;
-    try {
-      value = await _decryptCipher(keyBytes, it.cipher, it.iv);
-    } catch (e) {
-      // skip items we can't decrypt (key mismatch, corrupt cipher, etc.)
-      continue;
+    let value = '';
+    const cipherOk = Number(it.cipher_v) === 1
+      && typeof it.cipher === 'string' && it.cipher !== ''
+      && typeof it.iv === 'string' && it.iv !== '';
+    if (cipherOk && keyBytes) {
+      try {
+        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
+      } catch {
+        value = '';
+      }
     }
-    out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
+    if (!value) {
+      try {
+        const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
+        if (dec.ok) {
+          const body = await dec.json();
+          value = typeof body.value === 'string' ? body.value : '';
+        }
+      } catch {
+        value = '';
+      }
+    }
+    if (value) out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
   }
-  if (out.length === 0) return { ok: false, reason: 'decrypt-failed' };
+  if (out.length === 0) {
+    return { ok: false, reason: keyBytes ? 'decrypt-failed' : 'no-vault-key' };
+  }
   return { ok: true, keys: out };
 }
 

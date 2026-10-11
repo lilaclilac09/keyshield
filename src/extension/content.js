@@ -541,20 +541,92 @@ function showNotification(_key, _provider, _onDomain) { renderPanel(); }
 
 const KS_FILL_ATTACHED = '__ksFillAttached';   // marker on inputs we've decorated
 let   ksFillEnabled    = null;                 // null=unknown, true=have keys, false=skip
+let   ksCachedKeys     = null;
 
-function ksIsFillableInput(el) {
-  if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
-  if (el.closest && el.closest('#keyshield-detection-notice')) return false;
-  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
-  if (el.disabled || el.readOnly) return false;
-  const type = (el.getAttribute('type') || '').toLowerCase();
-  if (el.tagName === 'INPUT' && type === 'password') return true;
+const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([type]), textarea, '
+  + 'input[name*=key i], input[placeholder*=key i], input[placeholder*=API i], '
+  + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
+  + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
+
+function ksInputHaystack(el) {
   const name = (el.getAttribute('name') || '').toLowerCase();
   const ph   = (el.getAttribute('placeholder') || '').toLowerCase();
   const id   = (el.getAttribute('id') || '').toLowerCase();
   const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-  const hay  = `${name} ${ph} ${id} ${aria}`;
-  return /\bkey\b|api[\s_-]?key|api\b|token|secret/.test(hay);
+  let label = '';
+  try {
+    if (el.id && typeof CSS !== 'undefined' && CSS.escape) {
+      const lab = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lab) label += ` ${lab.textContent || ''}`;
+    }
+  } catch { /* ignore selector issues */ }
+  const wrapped = el.closest && el.closest('label');
+  if (wrapped) label += ` ${wrapped.textContent || ''}`;
+  const prev = el.previousElementSibling;
+  if (prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) {
+    label += ` ${prev.textContent || ''}`;
+  }
+  return `${name} ${ph} ${id} ${aria} ${label}`.toLowerCase();
+}
+
+function ksMatchUpstreamForHaystack(hay) {
+  if (/\bcursor\b|\bcrsr\b/.test(hay)) return 'cursor';
+  if (/\bopenrouter\b|\bsk-or\b/.test(hay)) return 'openrouter';
+  if (/\banthropic\b|\bclaude\b|\bsk-ant\b/.test(hay)) return 'anthropic';
+  if (/\bopenai\b|\bchatgpt\b|\bgpt\b|\bsk-proj\b/.test(hay)) return 'openai';
+  if (/\bgroq\b|\bgsk_/.test(hay)) return 'groq';
+  if (/\bhelius\b/.test(hay)) return 'helius';
+  if (/\bvercel\b/.test(hay)) return 'vercel';
+  if (/\bgithub\b|\bghp_|\bgithub_pat_/.test(hay)) return 'github';
+  return null;
+}
+
+function ksPickKeyForInput(el, keys) {
+  if (!keys || !keys.length) return null;
+  const hay = ksInputHaystack(el);
+  const wanted = ksMatchUpstreamForHaystack(hay);
+  if (wanted) return keys.find((k) => k.upstream === wanted) || null;
+  if (/\bpassword\b/.test(hay) && !/\b(key|token|secret|api)\b/.test(hay)) return null;
+  if (keys.length === 1) return keys[0];
+  return null;
+}
+
+function ksLooksLikeKeyInput(el) {
+  if (!el) return false;
+  if (el.closest && el.closest('#keyshield-detection-notice')) return false;
+  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
+  if (el.disabled || el.readOnly) return false;
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (el.tagName === 'INPUT' && (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'submit')) {
+    return false;
+  }
+  const hay = ksInputHaystack(el);
+  if (el.tagName === 'INPUT' && type === 'password') {
+    return /\bkey\b|api[\s_-]?key|api\b|token|secret|openai|anthropic|openrouter|groq|helius|cursor|claude/.test(hay);
+  }
+  return /\bkey\b|api[\s_-]?key|api\b|token|secret|openai|anthropic|openrouter|groq|helius|cursor|claude/.test(hay);
+}
+
+function ksIsFillableInput(el) {
+  if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
+  return ksLooksLikeKeyInput(el);
+}
+
+function ksAutoFillEmptyInputs(keys) {
+  if (!keys || !keys.length) return;
+  let nodes;
+  try { nodes = document.querySelectorAll(KS_FILL_INPUT_SEL); }
+  catch { return; }
+  nodes.forEach((input) => {
+    if (!ksLooksLikeKeyInput(input)) return;
+    if (input.dataset && input.dataset.ksAutofilled) return;
+    if (String(input.value || '').trim().length > 0) return;
+    const key = ksPickKeyForInput(input, keys);
+    if (key && key.value) {
+      ksSetValue(input, key.value);
+      if (input.dataset) input.dataset.ksAutofilled = '1';
+    }
+  });
 }
 
 function ksFlashGreen(el) {
@@ -727,13 +799,11 @@ function ksAttachFillButton(input) {
 
 function ksScanForInputs() {
   if (ksFillEnabled === false) return;
-  const sel = 'input[type=password], input[name*=key i], input[placeholder*=key i], '
-            + 'input[placeholder*=API i], input[name*=token i], input[placeholder*=token i], '
-            + 'input[name*=secret i], textarea[name*=key i]';
   let nodes;
-  try { nodes = document.querySelectorAll(sel); }
+  try { nodes = document.querySelectorAll(KS_FILL_INPUT_SEL); }
   catch { return; }
   nodes.forEach(ksAttachFillButton);
+  if (ksCachedKeys && ksCachedKeys.length) ksAutoFillEmptyInputs(ksCachedKeys);
 }
 
 // Must match manifest externally_connectable. Used to skip Fill on the
@@ -761,7 +831,9 @@ function isKeyShieldDashboardHost() {
   ksRequestKeys().then((resp) => {
     if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
       ksFillEnabled = true;
+      ksCachedKeys = resp.keys;
       ksScanForInputs();
+      ksAutoFillEmptyInputs(resp.keys);
     } else {
       ksFillEnabled = false;
     }

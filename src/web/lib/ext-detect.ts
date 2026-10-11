@@ -33,8 +33,8 @@ export function shouldPopupForKey(opts: {
   return !opts.alreadySaved;
 }
 
-/** Popup must show this exact line after Remove + Load unpacked 1.2.2. */
-export const DETECT_READY_VERSION = '1.2.2';
+/** Popup must show this exact line after Remove + Load unpacked 1.2.3. */
+export const DETECT_READY_VERSION = '1.2.3';
 export const DETECT_READY_OK = `ok ${DETECT_READY_VERSION} <all_urls>`;
 
 export function formatDetectReadyLine(opts: {
