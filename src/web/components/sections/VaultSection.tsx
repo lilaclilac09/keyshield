@@ -49,7 +49,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   <div className="space-y-6">
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste or extension detect</p>
-      <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius_auth_…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
+      <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  vercel_…  github_pat_…  gsk_…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : 'Auto-detects provider prefix'}</span>
         <button type="button" disabled={busy || !paste.trim()} onClick={() => void saveAndCall(false)} className="h-9 px-3 rounded-lg bg-white text-black text-[13px] font-semibold disabled:opacity-50">Save</button>

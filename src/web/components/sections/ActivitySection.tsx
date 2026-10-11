@@ -65,6 +65,14 @@ export const ActivitySection: React.FC = () => {
       ? 'mpp'
       : 'usage'
   ));
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const next = (e as CustomEvent<Tab>).detail;
+      if (next) setTab(next);
+    };
+    window.addEventListener('ks-colosseum-tab', onTab as EventListener);
+    return () => window.removeEventListener('ks-colosseum-tab', onTab as EventListener);
+  }, []);
   const [history, setHistory] = useState<UsageEntry[]>([]);
   const [stats, setStats] = useState<UsageStat[]>([]);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
@@ -635,6 +643,7 @@ export const ActivitySection: React.FC = () => {
             </Card>
           )}
           <Card title="Top Up" description="Ledger credit via POST /billing/topup. Phantom SOL uses GET /billing/sol-quote then POST /billing/topup-solana. Paste a USDC tx for /billing/topup-solana-usdc.">
+            <div data-colosseum="topup">
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
@@ -644,13 +653,14 @@ export const ActivitySection: React.FC = () => {
               <Button variant="primary" size="md" onClick={handleSolTopup} disabled={topupBusy || !topupAmt || !connected} loading={topupBusy}>Phantom SOL</Button>
             </div>
             {topupMsg && <p className={`text-[12px] mt-2 ${topupOk ? 'text-emerald-400' : 'text-red-400'}`}>{topupMsg}</p>}
+            </div>
           </Card>
         </div>
       )}
 
       {tab === 'topup' && (
         <Card title="Top Up" description="Ledger credit, Phantom SOL (quote + transfer + verify), or paste a Devnet USDC tx signature.">
-          <div className="flex items-center gap-2">
+          <div data-colosseum="topup" className="flex items-center gap-2">
             <div className="flex-1">
               <label className="block text-[10px] text-[#8a96c2] uppercase tracking-wider mb-1.5">Amount (USD)</label>
               <input type="number" min="1" step="0.01" value={topupAmt} onChange={e => { setTopupAmt(e.target.value); setTopupMsg(''); setTopupOk(false); }} placeholder="10.00" className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10" />
@@ -677,6 +687,14 @@ export const ActivitySection: React.FC = () => {
               <StatCard label="Settled" value={fmtCost(mppSummary.settled_usd)} />
             </div>
           )}
+          <div data-colosseum="fail" className="rounded-xl border border-rose-900/40 bg-rose-950/20 px-4 py-3 mb-3">
+            <p className="text-[14px] font-semibold text-white">Failed pay</p>
+            <p className="text-[13px] text-[#a8b3d8] mt-1">
+              A raw <code className="text-white">.env</code> plus HTTP 502 can debit empty.
+              A wrong fulfillment hash does not Capture. On-chain confirm is the tx signature
+              after mpp_settle ix 26 — not a mock.
+            </p>
+          </div>
           <Card title="Open payment stream" description="vault → grant → open (prereq ATA + fund) → record-tx PDA. Auto-sign uses the sealed owner key; wallet sign uses Phantom/Solflare on Devnet. Meter: Device Vault → server vault → demo-meter.">
             <p className="text-[11px] text-[#8a96c2] mb-3">
               {autosignPubkey ? `Auto-sign ${autosignPubkey.slice(0, 4)}…${autosignPubkey.slice(-4)}` : 'Auto-sign off'}
@@ -710,7 +728,9 @@ export const ActivitySection: React.FC = () => {
               <Button variant="primary" size="md" onClick={() => handleOpenStream('autosign')} disabled={openBusy || !autosignPubkey || !openAgent.trim()} loading={openBusy && openStep.startsWith('autosign')}>Open (auto-sign)</Button>
               <Button variant="secondary" size="md" onClick={() => handleOpenStream('wallet')} disabled={openBusy || !connected || !programId || !openAgent.trim()} loading={openBusy && !openStep.startsWith('autosign')}>Open (wallet sign)</Button>
               {(demoMode || autosignPubkey) && (
+                <span data-colosseum="devnet">
                 <Button variant="secondary" size="md" onClick={handleTwoMinDemo} disabled={openBusy} loading={openBusy && openStep.startsWith('2-min')}>2-min demo</Button>
+                </span>
               )}
             </div>
             <div className="mt-4 rounded-lg border border-[#243365] bg-[#0e1631] p-3">
@@ -770,7 +790,9 @@ export const ActivitySection: React.FC = () => {
                     {s.stream_pda && <div className="text-[10px] font-mono text-[#3e4a72] mt-0.5">PDA {s.stream_pda.slice(0, 8)}…{s.stream_pda.slice(-4)}</div>}
                   </div>
                   {s.status === 'open' && (
+                    <span data-colosseum="meter">
                     <Button variant="secondary" size="sm" loading={meterBusy === s.id} disabled={meterBusy !== null} onClick={() => handleMeter(s)}>Meter</Button>
+                    </span>
                   )}
                   {s.status === 'open' && s.pending_artifact_hash && (
                     <Button variant="primary" size="sm" loading={captureBusy === s.id} disabled={captureBusy !== null} onClick={() => handleCapturePrep(s)}>Capture</Button>

@@ -97,7 +97,7 @@ export const AgentsSection: React.FC = () => {
   const handleRevoke = async (id: number) => { try { await apiFetch(`/agents/${id}`, { method: 'DELETE' }); setAgentList(prev => prev.filter(a => a.id !== id)); } catch {} };
 
   return (
-    <div className="space-y-5">
+    <div data-colosseum="wired" className="space-y-5">
       <Card title="Agent Authentication" description="Agents authenticate with their own ed25519 keypair. Register the agent's public key here once.">
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -115,6 +115,7 @@ export const AgentsSection: React.FC = () => {
       </Card>
 
       <Card title="Registered Agents" headerRight={<button onClick={load} className="text-[#8a96c2] hover:text-white transition-colors"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>}>
+        <div data-colosseum="agents">
         {planSnap && (
           <p className="text-[12px] text-[#8a96c2] mb-3">
             Runtime seats on {planSnap.plan.name}: {planSnap.used.runtime}/{planSnap.plan.devices.runtime}
@@ -136,6 +137,7 @@ export const AgentsSection: React.FC = () => {
             <Button variant="destructive" size="sm" onClick={() => handleRevoke(a.id)}>Revoke</Button>
           </div>
         ))}
+        </div>
       </Card>
 
       <Card title="Register a New Agent">

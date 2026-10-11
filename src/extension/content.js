@@ -90,6 +90,22 @@ const PROVIDERS = [
     minLen:   40,
   },
   {
+    id:       'vercel',
+    name:     'Vercel',
+    label:    'VC',
+    patterns: [/(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['vercel.com'],
+    minLen:   24,
+  },
+  {
+    id:       'github',
+    name:     'GitHub',
+    label:    'GH',
+    patterns: [/(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['github.com'],
+    minLen:   24,
+  },
+  {
     id:       'mistral',
     name:     'Mistral AI',
     label:    'AI',

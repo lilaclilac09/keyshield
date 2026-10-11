@@ -135,6 +135,34 @@ extension and **Load unpacked** again. Reload does not always pick up
 a new service worker. Do not paste a token into a blank
 `keyshield.dev` page.
 
+### Two-minute Colosseum — What you hear and see
+
+This is **the** 2-minute battle. Not the terminal harness in
+`docs/DEMO_RECORDING_SCRIPT.md` (that is a 5-scene mock SSE take).
+Record **this product UI**: `http://127.0.0.1:5173/?local=1&colosseum=1`
+after `node dev.cjs`. English captions, VO line, and zoom are on-screen.
+15 beats × 8s = 2:00. Plain language + code + clicks:
+[`docs/demo-what-you-hear-and-see.md`](docs/demo-what-you-hear-and-see.md).
+
+1. Wallet after settle — zoom SOL / USDC / Credit. Live wallet after settle, not a mock.
+2. Open free key page — `sk-or-` on the OpenRouter Nemotron page.
+3. Detect and store — zoom Detected openrouter + Save. Detect the shape, store ciphertext only.
+4. Vercel + GitHub universal keys — same detector. Universal keys, one vault.
+5. New page autofill — zoom the Cursor / Devin API Key field.
+6. Fill button — the agent holds `KS_TOKEN`, never the raw key.
+7. Devnet buy — Hold / Verify / Capture, `mpp_settle` ix 26.
+8. RPC flash handshake — zoom the RPC pill. First hop is slower, then near zero. Not redb.
+9. Failed pay — `.env` + 502 can debit empty; a wrong hash does not Capture.
+10. vs 1Password CLI — detect, fill, x402, on-chain settle. Jobs 1Password does not do.
+11. All wired — OpenClaw, x402, Pyth Hermes (SSE prices in this repo), Cursor / Devin.
+12. Top Up — a payable rail credits the ledger.
+13. Stream Meter — open Devnet stream. Agent column is Cursor.
+14. x402 auto-pay — trusted domain hits 402, it pays.
+15. Agent registry — Cursor / Devin / OpenClaw already registered.
+
+Hermes here is Pyth SSE, not a chat bot. Sign-in is
+`https://app.ks.aileena.xyz`. Local record uses `?local=1`.
+
 ### 3. Pay for a stream (optional)
 
 On **Payments** (Activity): connect / paste an OpenRouter key once, then

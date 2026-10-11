@@ -246,10 +246,10 @@ async function pointAtRemote() {
 async function pointAtLocal() {
   await chrome.storage.local.set({
     ks_api_base:      LOCAL_API_BASE,
-    ks_dashboard_url: LOCAL_DASHBOARD_URL,
-    [PIN_PREF_KEY]:   true,    // user explicitly wants local — don't migrate
+    ks_dashboard_url: "https://app.ks.aileena.xyz",
+    [PIN_PREF_KEY]:   true,
   });
-  setStatus("Pointed at local dev (127.0.0.1).", "ok", 2500);
+  setStatus("API local. Sign-in stays https://app.ks.aileena.xyz.", "ok", 2500);
   loadSettings();
 }
 

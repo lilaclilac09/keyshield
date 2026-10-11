@@ -27,6 +27,7 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
+import { ColosseumOverlay } from './components/ColosseumOverlay';
 
 type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
@@ -61,7 +62,11 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
 const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (hasStoredToken()) return true;
+    try { return new URLSearchParams(window.location.search).has('colosseum'); }
+    catch { return false; }
+  });
   const [section, setSection] = useState<Section>(() => (
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
       ? 'activity'
@@ -170,6 +175,7 @@ const MainContent: React.FC = () => {
           </div>
         </main>
       </div>
+      <ColosseumOverlay onGo={(id) => setSection(id as Section)} />
     </div>
   );
 };

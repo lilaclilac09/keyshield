@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
-import { getPasskeyTrust } from '../../lib/auth';
+import { getPasskeyTrust, getToken } from '../../lib/auth';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
@@ -51,6 +51,7 @@ export const HomeSection: React.FC<Props> = ({
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
+  const [agentField, setAgentField] = useState('');
 
   const detected = detectUpstream(paste);
   const passkey = !!getPasskeyTrust();
@@ -108,7 +109,17 @@ export const HomeSection: React.FC<Props> = ({
 
       <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="flex flex-wrap gap-3">
+        <a
+          href="?local=1&colosseum=1"
+          className="h-11 px-4 rounded-xl bg-white text-black text-[15px] font-semibold inline-flex items-center"
+        >
+          Colosseum 2-min
+        </a>
+        <p className="text-[14px] text-[#8a96c2] self-center">English captions + VO + zoom. 15 beats.</p>
+      </div>
+
+      <div data-colosseum="wallet" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
           <p className="text-[16px] text-[#8a96c2]">SOL</p>
           <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">{fmt(wallet?.sol)}</p>
@@ -170,7 +181,9 @@ export const HomeSection: React.FC<Props> = ({
           </div>
           <Pill ok={!!home?.plan} label={home?.plan?.name ?? 'Free'} sub={home?.plan?.auto_plugin ? (home.plan.low_latency ? 'Accelerate · cache on' : 'Plugin · biometric ZK') : 'Vault + passkeys · PAYG calls'} />
           <Pill ok={!!conn?.autosign} label="Autosign" sub={conn?.autosign ? 'Owner keystore ready' : 'Off'} />
-          <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
+          <div data-colosseum="rpc">
+            <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
+          </div>
         </div>
         <div className="flex flex-wrap gap-3 mt-4">
           {onUnlock && !vaultOpen && (
@@ -193,7 +206,7 @@ export const HomeSection: React.FC<Props> = ({
         </div>
       </div>
 
-      <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
+      <div data-colosseum="key-page" data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
           <h3 className="text-[20px] font-semibold text-white">OpenRouter · NVIDIA Nemotron</h3>
@@ -209,10 +222,10 @@ export const HomeSection: React.FC<Props> = ({
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           rows={3}
-          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius_auth_…"
+          placeholder="sk-or-…  vercel_…  github_pat_…  sk-proj-…  gsk_…"
           className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
         />
-        <div className="flex flex-wrap items-center gap-3">
+        <div data-colosseum="detect" className="flex flex-wrap items-center gap-3">
           <span className="text-[15px] text-[#a8b3d8]">
             {detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : paste.trim() ? 'Unrecognized shape — pick Vault to choose a provider' : 'Waiting for paste'}
           </span>
@@ -236,12 +249,43 @@ export const HomeSection: React.FC<Props> = ({
           </button>
         </div>
         {msg && <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
+        <p data-colosseum="universal" className="text-[14px] text-[#8a96c2]">
+          Universal detector: <code className="text-white">sk-or-</code>, <code className="text-white">vercel_</code>, <code className="text-white">github_pat_</code>, <code className="text-white">ghp_</code>. One vault.
+        </p>
         {lastCall && (
           <p data-testid="call-latency" className="text-[16px] font-mono text-white">
             Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
             {lastCall.model ? ` · ${lastCall.model}` : ''}
           </p>
         )}
+      </div>
+
+      <div data-colosseum="autofill" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-3">
+        <h3 className="text-[20px] font-semibold text-white">Cursor / Devin API Key</h3>
+        <p className="text-[14px] text-[#8a96c2]">New page that needs a key. Fill injects KS_TOKEN, never the raw sk-or-.</p>
+        <input
+          value={agentField}
+          onChange={(e) => setAgentField(e.target.value)}
+          placeholder="API Key"
+          className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
+        />
+        <button
+          type="button"
+          data-colosseum="fill"
+          onClick={() => setAgentField(getToken() || 'ksv2_sess_…')}
+          className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold"
+        >
+          Fill
+        </button>
+      </div>
+
+      <div data-colosseum="onepassword" className="rounded-2xl border border-[#243365] bg-[#0e1631] p-5">
+        <h3 className="text-[20px] font-semibold text-white">vs 1Password CLI</h3>
+        <p className="text-[15px] text-[#a8b3d8] mt-2">
+          1Password stores and pastes. KeyShield also detects the key on the provider page,
+          fills Cursor / Devin / OpenClaw with KS_TOKEN only, auto-pays x402, and settles
+          Hold / Verify / Capture on Solana. Jobs 1Password does not do.
+        </p>
       </div>
 
       <div>
