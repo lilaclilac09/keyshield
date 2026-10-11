@@ -25,6 +25,7 @@ import {
   usePublicControlPlaneFallback,
 } from './host-deploy';
 import { mergeSessionSides, parseExtensionSession } from './ext-session';
+import { resolvePasskeyUserId } from './passkey-id';
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
@@ -120,6 +121,11 @@ export function getWalletAddress(): string | null {
 
 export function setWalletAddress(addr: string): void {
   localStorage.setItem(WALLET_KEY, addr);
+  // Seed the Face ID id so jumping out of Sign-in still shows
+  // "Sign In as abcd…wxyz" instead of only the wallet connector.
+  if (addr && !localStorage.getItem(PASSKEY_USER)) {
+    localStorage.setItem(PASSKEY_USER, addr);
+  }
 }
 
 // ── Auth state events ─────────────────────────────────────────────────────
@@ -234,8 +240,9 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   // must not wipe a token Start demo just wrote (React Strict Mode +
   // useVaults both fire that GET on the auth screen).
   if (res.status === 401 && token && getToken() === token && !path.startsWith('/auth/')) {
+    // Drop the stale session only. Keep ks_passkey_user so Face ID
+    // still works after a tab jump or a leftover extension token.
     clearAuth();
-    clearPasskeyTrust();
     notifyAuthChanged();
   }
   return res;
@@ -358,7 +365,10 @@ export function setPasskeyTrust(userId: string, passphrase: string): void {
 }
 
 export function getPasskeyTrust(): { userId: string; passphrase: string } | null {
-  const u = localStorage.getItem(PASSKEY_USER);
+  const u = resolvePasskeyUserId({
+    passkeyUser: localStorage.getItem(PASSKEY_USER),
+    wallet: localStorage.getItem(WALLET_KEY),
+  });
   if (!u) return null;
   // Migration: if passphrase was previously stored in localStorage (pre-P0 fix),
   // move it to sessionStorage and remove from localStorage on first access.
@@ -370,6 +380,9 @@ export function getPasskeyTrust(): { userId: string; passphrase: string } | null
   const p = sessionStorage.getItem(PASSKEY_PP);
   // p may be null (sessionStorage cleared on tab close) or '' (empty passphrase).
   // Return trust as long as userId is known — passphrase defaults to empty string.
+  if (!localStorage.getItem(PASSKEY_USER)) {
+    localStorage.setItem(PASSKEY_USER, u);
+  }
   return { userId: u, passphrase: p ?? '' };
 }
 
@@ -381,8 +394,14 @@ export function clearPasskeyTrust(): void {
 
 export async function passkeyLogin(): Promise<{ token: string; userId: string }> {
   const trust = getPasskeyTrust();
-  if (!trust) throw new Error('No passkey registered on this device');
-  const { userId, passphrase } = trust;
+  const userId = trust?.userId
+    ?? resolvePasskeyUserId({
+      passkeyUser: localStorage.getItem(PASSKEY_USER),
+      wallet: localStorage.getItem(WALLET_KEY),
+    });
+  if (!userId) throw new Error('No passkey registered on this device');
+  const passphrase = trust?.passphrase ?? sessionStorage.getItem(PASSKEY_PP) ?? '';
+  localStorage.setItem(PASSKEY_USER, userId);
 
   let optsRes: Response;
   try {

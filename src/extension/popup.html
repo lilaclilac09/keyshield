@@ -220,12 +220,12 @@
 
   <button id="signin">→ Sign in to KeyShield</button>
   <button id="allow-detect" class="secondary">Allow detect + auto-save</button>
-  <button id="use-local-top" class="secondary">Use local 5173 / 8001</button>
+  <button id="use-hosted-top" class="secondary">Use hosted app.ks.aileena.xyz</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    v1.1.9: after Allow, detect must toast and auto-save to the local API.
-    Use local keeps Sign-in on <code>http://127.0.0.1:5173/?local=1&amp;ext=1</code>.
-    1.1.3 cannot git pull — run the python3 patch in LOCAL-DETECT.md.
-    Do not paste HTML into zsh.
+    v1.2.0 Sign-in opens <code>https://app.ks.aileena.xyz/?ext=1&amp;demo=shop</code>.
+    <code>127.0.0.1:5173</code> refused means Vite is not running — do not wait on it.
+    After Allow, detect toasts and auto-saves. Then Home: paste a key, buy $0.10, RPC speed.
+    Do not paste HTML into zsh. Do not git pull if github.com will not resolve.
   </p>
   <div id="status" class="status"></div>
 

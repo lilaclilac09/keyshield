@@ -2,22 +2,40 @@ import React, { useEffect, useState } from 'react';
 import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
-import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, getPasskeyTrust, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
+import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
+import { readPasskeyUserIdFromStorage, shortPasskeyLabel, shouldShowPasskeyPanel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
 
 export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
-  const [trust] = useState(() => getPasskeyTrust());
-  // Show passkey login by default if ANY passkey device record exists
-  // (trust may be null if sessionStorage was cleared, but userId in localStorage is enough)
-  const hasPasskeyDevice = !!localStorage.getItem('ks_passkey_user');
-  const [useWallet, setUseWallet] = useState(!trust && !hasPasskeyDevice);
+  const [userId, setUserId] = useState<string | null>(() => readPasskeyUserIdFromStorage());
+  const [preferWallet, setPreferWallet] = useState(false);
   const [pkLoading, setPkLoading] = useState(false);
   const [pkError, setPkError] = useState('');
   const [demoOn, setDemoOn] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState('');
   const [demoModel, setDemoModel] = useState('');
+
+  useEffect(() => {
+    const sync = () => {
+      const id = readPasskeyUserIdFromStorage();
+      setUserId(id);
+      // Jumping out (Phantom / Face ID / dead 5173) and back must restore
+      // the preregistered-id button, not leave the wallet-only panel up.
+      if (id) setPreferWallet(false);
+    };
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('storage', sync);
+    window.addEventListener('ks-auth-changed', sync);
+    return () => {
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('ks-auth-changed', sync);
+    };
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/health/mpp`)
@@ -48,14 +66,30 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       setDemoLoading(false);
     }
   };
-  const effectiveTrust = trust ?? (hasPasskeyDevice ? { userId: localStorage.getItem('ks_passkey_user')!, passphrase: '' } : null);
-  const shortAddr = effectiveTrust ? `${effectiveTrust.userId.slice(0, 4)}\u2026${effectiveTrust.userId.slice(-4)}` : '';
 
-  const handleFaceID = async () => { setPkLoading(true); setPkError(''); try { const { token, userId } = await passkeyLogin(); setToken(token); setWalletAddress(userId); notifyAuthChanged(); onAuthenticated(); } catch (e) { setPkError(e instanceof Error ? e.message : 'Face ID failed'); } finally { setPkLoading(false); } };
-  const forgetDevice = () => { clearPasskeyTrust(); setUseWallet(true); };
+  const showPasskeyPanel = shouldShowPasskeyPanel({ userId, preferWallet });
+  const shortAddr = userId ? shortPasskeyLabel(userId) : '';
 
-  // Show the passkey panel when we have a device record (even if sessionStorage was cleared)
-  const showPasskeyPanel = (trust || hasPasskeyDevice) && !useWallet;
+  const handleFaceID = async () => {
+    setPkLoading(true);
+    setPkError('');
+    try {
+      const { token, userId: signed } = await passkeyLogin();
+      setToken(token);
+      setWalletAddress(signed);
+      notifyAuthChanged();
+      onAuthenticated();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Face ID failed';
+      const jumped = /abort|cancel|not allowed|visibility|document/i.test(msg);
+      setPkError(jumped
+        ? 'Passkey was interrupted — tap Sign In again. Your id is still on this device.'
+        : msg);
+    } finally {
+      setPkLoading(false);
+    }
+  };
+  const forgetDevice = () => { clearPasskeyTrust(); setUserId(null); setPreferWallet(true); };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6 py-12">
@@ -70,13 +104,13 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           {showPasskeyPanel ? (
             <div className="w-full space-y-3">
               <div className="rounded-xl border border-[#243365]/50 p-2 bg-[#131c39]">
-                <button type="button" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
+                <button type="button" data-testid="passkey-signin" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
                   <span className="flex items-center justify-center w-5 h-5">{pkLoading ? <Loader2 size={18} className="animate-spin" /> : <Fingerprint size={18} />}</span>
                   <span className="text-[15px] font-semibold uppercase tracking-wider">{pkLoading ? 'Verifying\u2026' : `Sign In as ${shortAddr}`}</span>
                 </button>
               </div>
               {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
-              <button type="button" onClick={() => setUseWallet(true)} className="w-full text-center py-2 text-[12px] text-[#8a96c2] hover:text-white transition-colors">Use a different wallet instead</button>
+              <button type="button" onClick={() => setPreferWallet(true)} className="w-full text-center py-2 text-[12px] text-[#8a96c2] hover:text-white transition-colors">Use a different wallet instead</button>
               <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>
             </div>
           ) : (
@@ -88,11 +122,11 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                     {demoLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                     <span className="text-[13px] font-semibold uppercase tracking-wider" data-testid="start-demo">{demoLoading ? 'Starting demo\u2026' : 'Start demo'}</span>
                   </button>
-                  <p className="text-[13px] text-[#8a96c2]">Opens Home first — wallet balance, stored APIs, connection time. {demoModel ? `Meter uses ${demoModel}.` : ''}</p>
+                  <p className="text-[13px] text-[#8a96c2]">Home: paste a key, buy $0.10 shop credit (balance changes), RPC speed check. {demoModel ? `Meter uses ${demoModel}.` : ''}</p>
                   {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}
                 </div>
               )}
-              {hasPasskeyDevice && <button type="button" onClick={() => setUseWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
+              {userId && <button type="button" onClick={() => setPreferWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
             </>
           )}
         </div>

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
-import { getPasskeyTrust } from '../../lib/auth';
+import { apiFetch, getPasskeyTrust } from '../../lib/auth';
+import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, wantsShopDemo } from '../../lib/shop-demo';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
@@ -10,6 +11,7 @@ import {
   callKeychain,
   detectUpstream,
   extractDetectedKey,
+  fetchKeychainHome,
   storeDetectedKey,
   type KeychainCallResult,
   type KeychainHome,
@@ -52,6 +54,7 @@ export const HomeSection: React.FC<Props> = ({
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
+  const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
 
   const detected = detectUpstream(paste);
   const passkey = !!getPasskeyTrust();
@@ -191,6 +194,83 @@ export const HomeSection: React.FC<Props> = ({
             className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[16px] font-semibold"
           >
             Plans →
+          </button>
+        </div>
+      </div>
+
+      <div
+        data-testid="shop-demo-card"
+        className={`rounded-2xl border bg-[#131c39] p-5 space-y-4 ${highlightShop ? 'border-emerald-700/80' : 'border-[#243365]'}`}
+      >
+        <div className="flex items-center gap-2">
+          <Wallet size={18} className="text-white" />
+          <h3 className="text-[20px] font-semibold text-white">Shop · pay · RPC</h3>
+        </div>
+        <p className="text-[15px] text-[#8a96c2]">
+          Buy {SHOP_ITEM_NAME} ${SHOP_CREDIT_USD.toFixed(2)} — Credit changes on this page. Then ping RPC twice to see the accelerated cache.
+        </p>
+        <p className="text-[28px] font-bold text-white" data-testid="shop-balance">
+          Credit ${fmt(home?.ledger.balance_usd, 2)}
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            data-testid="shop-buy"
+            disabled={busy !== null}
+            onClick={() => {
+              const before = home?.ledger.balance_usd ?? 0;
+              setBusy('shop');
+              setMsg(null);
+              void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
+                .then(async (r) => {
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) throw new Error((d as { detail?: string }).detail ?? 'Shop credit failed');
+                  const after = typeof (d as { balance_usd?: number }).balance_usd === 'number'
+                    ? (d as { balance_usd: number }).balance_usd
+                    : before + SHOP_CREDIT_USD;
+                  setOk(true);
+                  setMsg(`Bought ${SHOP_ITEM_NAME} · ${describeBalanceChange(before, after).label}`);
+                  onRefresh();
+                })
+                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
+                .finally(() => setBusy(null));
+            }}
+            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'shop' ? 'Buying…' : `Buy $${SHOP_CREDIT_USD.toFixed(2)} credit`}
+          </button>
+          <button
+            type="button"
+            data-testid="shop-rpc"
+            disabled={busy !== null}
+            onClick={() => {
+              setBusy('rpc');
+              setMsg(null);
+              const addr = home?.wallet.address ?? '';
+              const t0 = performance.now();
+              void fetchKeychainHome(addr)
+                .then(async (first) => {
+                  const ms1 = performance.now() - t0;
+                  const t1 = performance.now();
+                  const second = await fetchKeychainHome(addr);
+                  const ms2 = performance.now() - t1;
+                  setOk(true);
+                  setMsg(describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc));
+                  onRefresh();
+                })
+                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'RPC ping failed'); })
+                .finally(() => setBusy(null));
+            }}
+            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'rpc' ? 'Pinging…' : 'RPC speed check'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onGo('activity')}
+            className="h-11 px-5 rounded-xl border border-[#243365] text-white text-[15px] font-semibold"
+          >
+            Payments →
           </button>
         </div>
       </div>

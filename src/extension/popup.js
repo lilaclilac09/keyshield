@@ -78,7 +78,9 @@ async function loadSettings() {
   let dash = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
   const dashIsBackendPort = /:800[01](\/|$)/.test(dash);
   const dashIsStaleLocal  = STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
-  if (dashIsBackendPort || dashIsStaleLocal || isDeadDashboardUrl(dash)) {
+  // 5173 is only kept when the user pinned local. A leftover 1.1.3 default
+  // (or a refused Vite) must not stay as the Sign-in target.
+  if (dashIsBackendPort || isDeadDashboardUrl(dash) || (!pinned && dashIsStaleLocal)) {
     dash = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: dash }); } catch { /* noop */ }
   }
@@ -148,17 +150,45 @@ async function saveSettings() {
   setStatus("Saved");
 }
 
-function signinDashboardHref(pinnedLocal) {
-  if (pinnedLocal) return "http://127.0.0.1:5173/?local=1&ext=1";
-  return "https://app.ks.aileena.xyz/?ext=1";
+function hostedSigninHref() {
+  return "https://app.ks.aileena.xyz/?ext=1&demo=shop";
+}
+
+function localSigninHref() {
+  return "http://127.0.0.1:5173/?local=1&ext=1&demo=shop";
+}
+
+async function probeLocalDashboard() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 400);
+  try {
+    await fetch("http://127.0.0.1:5173/", { method: "GET", cache: "no-store", signal: ctrl.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function unpinDeadLocal() {
+  await chrome.storage.local.set({
+    ks_dashboard_url: DEFAULT_DASHBOARD_URL,
+    [PIN_PREF_KEY]: false,
+  });
 }
 
 async function openDashboardForSignin() {
   const stored = await chrome.storage.local.get([PIN_PREF_KEY, "ks_dashboard_url"]);
   const dash = String(stored.ks_dashboard_url || "");
   const pinnedLocal = !!stored[PIN_PREF_KEY] && /127\.0\.0\.1:5173|localhost:5173/.test(dash);
-  const url = signinDashboardHref(pinnedLocal);
-  if (!pinnedLocal) {
+  let usedLocal = false;
+  let url = hostedSigninHref();
+  if (pinnedLocal) {
+    usedLocal = await probeLocalDashboard();
+    if (usedLocal) url = localSigninHref();
+    else await unpinDeadLocal();
+  } else {
     try { await chrome.storage.local.set({ ks_dashboard_url: "https://app.ks.aileena.xyz" }); } catch { /* noop */ }
   }
   try { await chrome.tabs.create({ url }); }
@@ -167,12 +197,14 @@ async function openDashboardForSignin() {
     return;
   }
   const { ks_token } = await chrome.storage.local.get("ks_token");
-  if (pinnedLocal) {
-    setStatus("Opened local dashboard (5173). Keep Use local dev on.", "ok", 4000);
+  if (usedLocal) {
+    setStatus("Opened local dashboard (5173 is live).", "ok", 4000);
+  } else if (pinnedLocal) {
+    setStatus("5173 refused — opened https://app.ks.aileena.xyz instead.", "ok", 5000);
   } else if (ks_token) {
-    setStatus("Opened signed-in dashboard.", "ok", 4000);
+    setStatus("Opened signed-in dashboard (shop + RPC).", "ok", 4000);
   } else {
-    setStatus("Opened dashboard — sign in once; the token returns here.", "ok", 4000);
+    setStatus("Opened hosted Sign-in — wallet once, then shop + RPC.", "ok", 4000);
   }
   [800, 2000, 4000, 8000].forEach((ms) => setTimeout(loadSettings, ms));
 }
@@ -279,12 +311,19 @@ async function pointAtRemote() {
 }
 
 async function pointAtLocal() {
+  const live = await probeLocalDashboard();
+  if (!live) {
+    await unpinDeadLocal();
+    setStatus("5173 refused. Sign-in stays on app.ks.aileena.xyz. Start Vite only if you need a local dashboard.", "err", 5000);
+    loadSettings();
+    return;
+  }
   await chrome.storage.local.set({
     ks_api_base:      LOCAL_API_BASE,
     ks_dashboard_url: LOCAL_DASHBOARD_URL,
     [PIN_PREF_KEY]:   true,    // user explicitly wants local — don't migrate
   });
-  setStatus("Pointed at local dev (127.0.0.1).", "ok", 2500);
+  setStatus("Pointed at local Vite (5173 is live).", "ok", 2500);
   loadSettings();
 }
 
@@ -401,8 +440,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("signin"      ).addEventListener("click", openDashboardForSignin);
   const allowDetect = $("allow-detect");
   if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);
-  const useLocalTop = $("use-local-top");
-  if (useLocalTop) useLocalTop.addEventListener("click", pointAtLocal);
+  const useHostedTop = $("use-hosted-top");
+  if (useHostedTop) useHostedTop.addEventListener("click", pointAtProduction);
   $("save"        ).addEventListener("click", saveSettings);
   $("register"    ).addEventListener("click", registerManualToken);
   $("clear"       ).addEventListener("click", clearSession);
