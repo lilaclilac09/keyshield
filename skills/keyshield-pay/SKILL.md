@@ -62,7 +62,14 @@ mac = HMAC-SHA256(session_token_utf8, bytes.fromhex(artifact_hash))
 
 UI: `/demo` is the 3-step wizard (connect → open tab → 402 details/Pay). Activity has the same CTAs. Top bar reads `GET /mpp/status` (one `getMultipleAccounts` for SOL + Circle USDC ATA, 2s cache) plus stream remaining and last receipt (`hash[:8]` + mode).
 
-GitNexus (no global binary): `node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream`
+GitNexus (no global binary). `cd` into the keyshield clone first — not `~`:
+
+```
+node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
+npm run gitnexus -- detect-changes --scope all
+```
+
+Do not paste `<符号>`. From `$HOME`, `node src/scripts/gitnexus.cjs` resolves to `/Users/you/src/scripts/gitnexus.cjs` (MODULE_NOT_FOUND).
 
 ## Caps and refusals
 

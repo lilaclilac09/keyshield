@@ -45,6 +45,17 @@ npm install                    # root + workspaces
 cd src/web && npm install      # frontend bundle
 ```
 
+## GitNexus CLI
+
+There is no global `gitnexus` on macOS PATH. Run from this repo root, not `~`:
+
+```bash
+node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
+npm run gitnexus -- detect-changes --scope all
+```
+
+Do not paste `<符号>`. `node src/scripts/gitnexus.cjs` from `$HOME` resolves to `/Users/you/src/scripts/gitnexus.cjs`.
+
 ## Manual launch (separate terminals)
 
 ```bash

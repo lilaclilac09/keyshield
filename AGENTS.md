@@ -882,6 +882,18 @@ This project is indexed by GitNexus as **keyshield** (6516 symbols, 11707 relati
 
 ## CLI
 
+`gitnexus` is **not** on macOS PATH. Do not run it from `~`.
+`.gitnexus/run.cjs` is gitignored — use the wrapper:
+
+```
+cd /path/to/keyshield
+node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
+node src/scripts/gitnexus.cjs detect-changes --scope all
+npm run gitnexus -- impact status_strip --direction upstream
+```
+
+Never paste `<符号>`. That is a placeholder. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws MODULE_NOT_FOUND.
+
 | Task | Read this skill file |
 |------|---------------------|
 | Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
