@@ -14,6 +14,8 @@ import {
   MPP_SHOP_SKU,
   type MppShopReceipt,
   isMppShopReceipt,
+  receiptFilename,
+  renderMppReceiptHtml,
 } from './mpp-receipt';
 
 const RECEIPT_STORAGE_KEY = 'ks_mpp_shop_receipt';
@@ -131,4 +133,32 @@ export async function buyMppShopSku(): Promise<MppShopReceipt> {
 
 function formatOpenUi(micro: number): string {
   return (micro / 1_000_000).toFixed(2);
+}
+
+export function downloadTextFile(filename: string, body: string, mime: string): void {
+  const blob = new Blob([body], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function downloadMppReceipt(receipt: MppShopReceipt, kind: 'html' | 'json' = 'html'): void {
+  if (kind === 'json') {
+    downloadTextFile(receiptFilename(receipt, 'json'), JSON.stringify(receipt, null, 2), 'application/json');
+    return;
+  }
+  downloadTextFile(receiptFilename(receipt, 'html'), renderMppReceiptHtml(receipt), 'text/html;charset=utf-8');
+}
+
+export function openMppReceiptPrint(receipt: MppShopReceipt): void {
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) {
+    downloadMppReceipt(receipt, 'html');
+    return;
+  }
+  popup.document.write(renderMppReceiptHtml(receipt));
+  popup.document.close();
 }

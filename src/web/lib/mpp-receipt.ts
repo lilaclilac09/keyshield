@@ -81,3 +81,68 @@ export function isMppShopReceipt(value: unknown): value is MppShopReceipt {
   return row.network === 'solana-devnet' && typeof row.sku === 'string'
     && typeof row.captureMicroUsdc === 'number';
 }
+
+export function receiptNumber(receipt: MppShopReceipt): string {
+  if (receipt.settleSlot != null) return `KS-MPP-${receipt.settleSlot}`;
+  if (receipt.settleTx) return `KS-MPP-${receipt.settleTx.slice(0, 8)}`;
+  return 'KS-MPP-PENDING';
+}
+
+export function receiptFilename(receipt: MppShopReceipt, ext: 'html' | 'json'): string {
+  return `keyshield-receipt-${receiptNumber(receipt).toLowerCase()}.${ext}`;
+}
+
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+export function renderMppReceiptHtml(receipt: MppShopReceipt): string {
+  const no = receiptNumber(receipt);
+  const open = receipt.openTx ? explorerTx(receipt.openTx) : '';
+  const settle = receipt.settleTx ? explorerTx(receipt.settleTx) : '';
+  const owner = receipt.owner ? explorerAddress(receipt.owner) : '';
+  const stream = receipt.streamPda ? explorerAddress(receipt.streamPda) : '';
+  const ata = receipt.streamAta ? explorerAddress(receipt.streamAta) : '';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>KeyShield receipt ${esc(no)}</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0a0d1a; color: #e4e4e7; margin: 0; padding: 32px; }
+    h1 { font-size: 28px; margin: 0 0 4px; }
+    .sub { color: #8a96c2; margin: 0 0 24px; }
+    .paid { color: #34d399; font-weight: 700; letter-spacing: 0.08em; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #243365; font-size: 14px; }
+    th { color: #8a96c2; font-weight: 600; width: 28%; }
+    a { color: #93b4ff; word-break: break-all; }
+    code { font-family: ui-monospace, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <p class="paid">PAID · SOLANA DEVNET</p>
+  <h1>Receipt ${esc(no)}</h1>
+  <p class="sub">${esc(receipt.sku)} · ${esc(formatMicroUsdc(receipt.captureMicroUsdc))} USDC · not $X402 / $M32 · ix 26 mpp_settle</p>
+  <table>
+    <tr><th>SKU</th><td>${esc(receipt.sku)}</td></tr>
+    <tr><th>OpenStream</th><td>${receipt.openTx ? `<a href="${esc(open)}">${esc(receipt.openTx)}</a>` : '—'} ${receipt.openSlot != null ? `· slot ${receipt.openSlot}` : ''}</td></tr>
+    <tr><th>MppSettle</th><td>${receipt.settleTx ? `<a href="${esc(settle)}">${esc(receipt.settleTx)}</a>` : '—'} ${receipt.settleSlot != null ? `· slot ${receipt.settleSlot}` : ''} ${receipt.settleCu != null ? `· ${receipt.settleCu} CU` : ''} ${receipt.settleErr == null && receipt.settleTx ? '· err=null' : ''}</td></tr>
+    <tr><th>Owner</th><td>${receipt.owner ? `<a href="${esc(owner)}">${esc(receipt.owner)}</a>` : '—'}</td></tr>
+    <tr><th>Stream</th><td>${receipt.streamPda ? `<a href="${esc(stream)}">${esc(receipt.streamPda)}</a>` : '—'}</td></tr>
+    <tr><th>Escrow ATA</th><td>${receipt.streamAta ? `<a href="${esc(ata)}">${esc(receipt.streamAta)}</a>` : '—'}</td></tr>
+  </table>
+  <table>
+    <tr><th>Account</th><th>Before</th><th>After</th></tr>
+    <tr><td>Owner USDC</td><td>${esc(receipt.ownerUsdcBefore ?? '—')}</td><td>${esc(receipt.ownerUsdcAfter ?? '—')}</td></tr>
+    <tr><td>Stream escrow</td><td>${esc(receipt.escrowBefore ?? '—')}</td><td>${esc(receipt.escrowAfter ?? '—')}</td></tr>
+    <tr><td>Platform USDC</td><td>${esc(receipt.platformBefore ?? '—')}</td><td>${esc(receipt.platformAfter ?? '—')}</td></tr>
+  </table>
+</body>
+</html>
+`;
+}

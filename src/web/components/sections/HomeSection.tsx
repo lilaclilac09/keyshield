@@ -4,14 +4,9 @@ import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
-import { buyMppShopSku, loadStoredMppReceipt } from '../../lib/mpp-shop';
-import {
-  explorerAddress,
-  explorerTx,
-  formatMicroUsdc,
-  shortSig,
-  type MppShopReceipt,
-} from '../../lib/mpp-receipt';
+import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
+import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
+import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
@@ -213,63 +208,18 @@ export const HomeSection: React.FC<Props> = ({
       >
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">Shop · pay · RPC</h3>
+          <h3 className="text-[20px] font-semibold text-white">Shop</h3>
         </div>
-        <p className="text-[15px] text-[#8a96c2]">
-          Devnet MPP shop — lock escrow, then capture {SHOP_MPP_USD.toFixed(2)} USDC (ix 26).
-          Not Raydium / Pump.fun <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
-          Ledger ${SHOP_CREDIT_USD.toFixed(2)} is a different button and does not emit a Solana tx.
-        </p>
-        <p className="text-[28px] font-bold text-white" data-testid="shop-balance">
-          SKU {formatMicroUsdc(receipt.captureMicroUsdc)} USDC
-        </p>
-        <div
-          data-testid="shop-receipt"
-          className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3 text-[13px] font-mono space-y-1"
-        >
-          <p className="text-white text-[15px] font-semibold font-sans">{receipt.sku}</p>
-          <p>
-            Open{' '}
-            {receipt.openTx ? (
-              <a className="text-[#93b4ff]" href={explorerTx(receipt.openTx)} target="_blank" rel="noreferrer">
-                {shortSig(receipt.openTx)}
-              </a>
-            ) : '—'}
-            {receipt.openSlot != null ? ` · slot ${receipt.openSlot}` : ''}
+        <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-2">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">For sale · Solana Devnet</p>
+          <p className="text-[22px] font-semibold text-white">{formatMicroUsdc(receipt.captureMicroUsdc)} USDC metered call</p>
+          <p className="text-[15px] text-[#8a96c2]">
+            Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix 26).
+            Not Raydium / Pump.fun <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
           </p>
-          <p>
-            Settle{' '}
-            {receipt.settleTx ? (
-              <a className="text-[#93b4ff]" href={explorerTx(receipt.settleTx)} target="_blank" rel="noreferrer">
-                {shortSig(receipt.settleTx)}
-              </a>
-            ) : '—'}
-            {receipt.settleSlot != null ? ` · slot ${receipt.settleSlot}` : ''}
-            {receipt.settleCu != null ? ` · ${receipt.settleCu} CU` : ''}
-            {receipt.settleErr == null && receipt.settleTx ? ' · err=null' : ''}
-          </p>
-          <p>
-            Owner {receipt.ownerUsdcBefore ?? '—'} → {receipt.ownerUsdcAfter ?? '—'}
-            {' · '}escrow {receipt.escrowBefore ?? '—'} → {receipt.escrowAfter ?? '—'}
-            {' · '}platform {receipt.platformBefore ?? '—'} → {receipt.platformAfter ?? '—'}
-          </p>
-          {receipt.streamPda && (
-            <p>
-              stream{' '}
-              <a className="text-[#93b4ff]" href={explorerAddress(receipt.streamPda)} target="_blank" rel="noreferrer">
-                {shortSig(receipt.streamPda)}
-              </a>
-              {receipt.streamAta ? (
-                <>
-                  {' · '}ATA{' '}
-                  <a className="text-[#93b4ff]" href={explorerAddress(receipt.streamAta)} target="_blank" rel="noreferrer">
-                    {shortSig(receipt.streamAta)}
-                  </a>
-                </>
-              ) : null}
-            </p>
-          )}
+          <p className="text-[28px] font-bold text-white" data-testid="shop-balance">${SHOP_MPP_USD.toFixed(2)}</p>
         </div>
+        <MppReceiptCard receipt={receipt} />
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -282,7 +232,8 @@ export const HomeSection: React.FC<Props> = ({
                 .then((next) => {
                   setReceipt(next);
                   setOk(true);
-                  setMsg(`Bought ${next.sku} · settle ${next.settleTx ? shortSig(next.settleTx) : 'submitted'}`);
+                  setMsg(`Bought ${next.sku} · receipt ready`);
+                  downloadMppReceipt(next, 'html');
                   onRefresh();
                 })
                 .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
@@ -290,7 +241,7 @@ export const HomeSection: React.FC<Props> = ({
             }}
             className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
           >
-            {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} on Devnet`}
+            {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} · get receipt`}
           </button>
           <button
             type="button"
