@@ -36,7 +36,7 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
-**Start here:** [How to use this](#how-to-use-this) · [Two-minute demo](#4-two-minute-demo--what-you-hear-and-see) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [Two-minute demo](#4-two-minute-demo--what-you-hear-and-see) · [Captions + 白话 + code](docs/demo-what-you-hear-and-see.md) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -125,50 +125,27 @@ npm run live:e2e:dry
 Do not run a live Devnet settle unless you intend to spend operator
 USDC. Stage 4 live stays opt-in (`LIVE_E2E=1`).
 
-### 4. Two-minute demo — what you hear and see
+### 4. Two-minute demo — What you hear and see
 
 A film must stay **under 120 seconds** and show **opened pages + clicks**,
-not stills. Anything that will not fit goes here — record these tabs
-yourself on the unchanged dashboard.
+not stills. Say these English captions on screen. 白话原理、代码位置、
+如何交互：[`docs/demo-what-you-hear-and-see.md`](docs/demo-what-you-hear-and-see.md).
 
-**Click path (English captions on screen):**
-
-1. **Home** — wallet before. Zoom SOL / USDC / Credit.
-2. Open `/journey/openrouter.html` — copy the free `sk-or-` on that page.
-3. Back to **Home** — paste → **Detected openrouter** → **Save**.
-4. Same box: `vercel_…` / `github_pat_…` (same detector, one vault).
-5. Open `/journey/cursor.html` — fill the API Key field (Cursor / Devin).
-6. Sidebar **Agents** — Cursor / Devin / OpenClaw registry (ed25519, not raw keys).
-7. **Payments → MPP Streams** — **2-min demo** or **Meter**, then **Capture**.
-8. **Payments → Top Up** — credit the ledger (not a shop mock).
-9. **Home** again — wallet after. Owner USDC stays the same; micros left the stream.
-10. `/story` → **8 Agents + x402** (Pyth Hermes = price SSE, not an LLM) → **6 Failed pay**.
-11. Sidebar **X402 Trust** — auto-pay domains for HTTP 402.
-
-| Beat | What you hear and see | 白话 / plain words | Code | How to click |
-|---|---|---|---|---|
-| Wallet before / after | SOL 1.7134 / USDC 19 / Credit $0.10 | Live Devnet balances from the session wallet, not a mock. | `HomeSection.tsx` ← `GET /keychain/home` in `src/web/lib/keychain.ts` | Home. Hover the three cards. |
-| Free key page | OpenRouter Nemotron fixture, `sk-or-` in `<code>` | Already-open page that *has* a key. Copy it. Do not invent a shop. | `src/web/public/journey/openrouter.html` | Open that URL. Triple-click the key. Copy. |
-| Detect + Save | Chip **Detected openrouter** + **Saved** | Prefix regex names the provider. Server stores ciphertext / prefix only. | `detectUpstream` / `storeDetectedKey` in `src/web/lib/keychain.ts`; paste in `HomeSection.tsx` (`data-testid=key-paste`) | Paste. Wait for Detected. Click **Save**. |
-| Vercel + GitHub | Same Detected chip, `vercel_` / `github_pat_` | Universal keys. One vault, same paste box. | Same `DETECTORS` list (`vercel_`, `vcp_`, `ghp_`, `github_pat_`) | Paste a second shape. Save again. |
-| Autofill | Cursor / Devin API Key input filled | Agent later holds `KS_TOKEN`, not the raw `sk-`. | `src/web/public/journey/cursor.html`; extension fill in `src/extension/content.js` | Open the fixture. Click the field. Fill. |
-| Agents | **Registered Agents** card | Generate & Register creates an ed25519 identity. Seed shown once. | `AgentsSection.tsx` → `POST /agents/register` | Sidebar **Agents**. |
-| Buy / Meter | **2-min demo done** or Meter + Capture | Hold → record artifact → HMAC → `mpp_settle` ix 26. Micros leave the **stream**, not a second owner debit. | `handleTwoMinDemo` / `handleMeter` in `ActivitySection.tsx`; `src/web/lib/mpp-capture.ts` | Payments → **MPP Streams** (not Usage). Click **2-min demo**. |
-| Top Up | Top Up form on Payments | Payable API credits the ledger so Meter has something to spend. | `creditUsdcTopup` in `ActivitySection.tsx` | Payments → **Top Up**. |
-| RPC handshake | `/story` RPC scene: first ~445 ms, then ~0.01 / 0.002 ms | In-process 20s memory cache on `GET /mpp/status`. Not redb. Not a WAN 9000× claim. | `src/backend/routes/mpp.py` status handler; `StoryJourney.tsx` RPC scene | `/story` → RPC scene. |
-| Failed pay | Hash fail → no Capture | Wrong hash / HMAC: settled does not move; ATA does not move. A naive `.env` + 502 can orphan a debit. | `StoryJourney.tsx` `FailScene`; capture 409 `capture_rejected` / 400 `unverified_fulfillment` | `/story` → **6 Failed pay**. |
-| vs 1Password CLI | Detect / fill / x402 / on-chain settle | 1Password is strong at human passwords. It does not detect `sk-or-` on a page, fill Cursor, or settle USDC after fulfillment. | `StoryJourney.tsx` `OnePasswordScene` | `/story` → 1Password scene. |
-| Hermes + mesh | Card **Pyth Hermes — Price SSE** | Hermes in this repo is Pyth's SSE gateway (`PythFeed`). Not an LLM runner. | `StoryJourney.tsx` `MeshScene`; `src/backend/trading/feeds` | `/story` → **8 Agents + x402**. |
-| x402 | X402 Trust domains | Extension intercepts `402` + `X-Payment-Required` on trusted hosts. | `X402TrustManager.tsx`; `src/extension/content.js` | Sidebar **X402 Trust**. |
-
-**On-chain reliability (will not fit in two minutes):**
-
-| Case | What must happen | Proof |
-|---|---|---|
-| Owner fund (once) | Owner USDC 20 → 19 | Devnet TX `5ovL2vFsDeQdncMvP8yCKfoYQhBwKdjdydh7X4AFqLyUFiqrfvFeB9g2yBi5GbC2zEbBEd6rfL8pMLARqVWcyb6F` (slot 509405947, Ok) |
-| Honest capture | Stream escrow drops; owner USDC stays 19 | `mpp_settle` ix 26 from the stream, not a second owner debit |
-| Wrong hash | HTTP 400 `unverified_fulfillment` | settled unchanged |
-| Wrong HMAC | HTTP 409 `capture_rejected` / `hold_expired` | ATA unchanged |
+1. **Wallet after settle** — zoom SOL 1.7134 / USDC 19 / Credit $0.10. Live wallet after settle, not a mock.
+2. **Open free key page** — `sk-or-` on the OpenRouter Nemotron page.
+3. **Detect and store** — zoom Detected openrouter + Save. Detect the shape, store ciphertext only.
+4. **Vercel + GitHub universal keys** — same detector. Universal keys, one vault.
+5. **New page autofill** — zoom the Cursor / Devin API Key field.
+6. **Fill button** — the agent holds `KS_TOKEN`, never the raw key.
+7. **Devnet buy** — Hold / Verify / Capture, `mpp_settle` ix 26.
+8. **RPC flash handshake** — zoom 0.01 ms / 0.002 ms. First hop ~445 ms, then near zero. Not redb.
+9. **Failed pay** — `.env` + 502 can debit empty; a wrong hash does not Capture.
+10. **vs 1Password CLI** — detect, fill, x402, on-chain settle. Jobs 1Password does not do.
+11. **All wired** — OpenClaw, x402, Pyth Hermes (SSE prices in this repo), Cursor / Devin.
+12. **Top Up** — a payable rail credits the ledger.
+13. **Stream Meter** — open Devnet stream. Agent column is Cursor.
+14. **x402 auto-pay** — trusted domain hits 402, it pays.
+15. **Agent registry** — Cursor / Devin / OpenClaw already registered.
 
 Hermes = Pyth SSE. Path A = WebAuthn-PRF → HKDF → AES-GCM. Do not rewrite the dashboard to stage this walk.
 
