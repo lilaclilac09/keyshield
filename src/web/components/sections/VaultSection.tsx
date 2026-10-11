@@ -74,8 +74,8 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
-        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty'}</p>
-        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Add your first encrypted secret to get started'}</p>
+        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
+        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Extension saves show here when you return to Vault. If the popup said Sign-in, those keys went to the local-dev bucket — sign in and detect again.'}</p>
         {!searchQuery && (
           <>
             <button onClick={onAdd} className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors">

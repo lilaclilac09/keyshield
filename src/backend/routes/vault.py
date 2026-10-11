@@ -26,6 +26,7 @@ Endpoints:
 from __future__ import annotations
 
 import json as _json
+import os
 import sqlite3
 import time
 import uuid
@@ -101,17 +102,51 @@ def _auth(request: Request) -> dict | None:
 
 
 def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
-    """Resolve the caller. Bearer session wins; otherwise X-Dev-Mode:1
-    opts into the local "default" user. Returns 401 if neither.
+    """Resolve the caller. A Bearer token, even a stale one, is the
+    session. X-Dev-Mode:1 is only the no-Authorization local-dev
+    fallback. A bad Bearer plus X-Dev-Mode must not write to the
+    shared ``default`` user — that hid extension saves from Vault.
 
     The 2-tuple shape is kept so callers can early-return on error.
     """
-    sess = _auth(request)
-    if sess:
-        return sess["user_id"], None
+    token = request.headers.get("Authorization", "")
+    if token.startswith("Bearer "):
+        sess = _auth(request)
+        if sess:
+            return sess["user_id"], None
+        return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
     if request.headers.get("X-Dev-Mode") == "1":
         return "default", None
     return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
+
+
+def _may_claim_default(request: Request) -> bool:
+    """Local / explicit only. Never adopt shared Railway ``default`` rows."""
+    if os.environ.get("KS_CLAIM_DEFAULT_VAULT") == "1":
+        return True
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    return host in {"127.0.0.1", "localhost"}
+
+
+def _claim_default_rows(conn: sqlite3.Connection, uid: str) -> int:
+    """Move orphaned ``default`` rows onto an empty session user.
+
+    Extension + stale Bearer used to write ``user_id=default``. After a
+    real login the Vault list was empty even though the keys were in
+    the same SQLite file. Hosted/shared DBs must not do this.
+    """
+    if not uid or uid == "default":
+        return 0
+    n = conn.execute(
+        "SELECT COUNT(*) FROM vault_items WHERE user_id = ?", (uid,)
+    ).fetchone()[0]
+    if n:
+        return 0
+    cur = conn.execute(
+        "UPDATE vault_items SET user_id = ? WHERE user_id = 'default'",
+        (uid,),
+    )
+    return int(cur.rowcount or 0)
 
 
 def _iso(ts: float | None) -> str | None:
@@ -155,6 +190,8 @@ async def vault_list(request: Request):
     if err:
         return err
     with _db() as conn:
+        if _may_claim_default(request):
+            _claim_default_rows(conn, uid)
         rows = conn.execute(
             "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC",
             (uid,),

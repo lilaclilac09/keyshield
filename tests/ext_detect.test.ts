@@ -42,16 +42,16 @@ describe("shouldPopupForKey", () => {
 });
 
 describe("formatDetectReadyLine", () => {
-  it("prints the exact ok 1.2.1 <all_urls> line", () => {
-    expect(formatDetectReadyLine({ version: "1.2.1", hasAllUrls: true })).toEqual({
+  it("prints the exact ok 1.2.2 <all_urls> line", () => {
+    expect(formatDetectReadyLine({ version: "1.2.2", hasAllUrls: true })).toEqual({
       ok: true,
-      text: "ok 1.2.1 <all_urls>",
+      text: "ok 1.2.2 <all_urls>",
     });
-    expect(DETECT_READY_OK).toBe("ok 1.2.1 <all_urls>");
+    expect(DETECT_READY_OK).toBe("ok 1.2.2 <all_urls>");
   });
 
   it("tells the user to Remove + Load unpacked when <all_urls> is missing", () => {
-    expect(formatDetectReadyLine({ version: "1.2.1", hasAllUrls: false }).text).toContain(
+    expect(formatDetectReadyLine({ version: "1.2.2", hasAllUrls: false }).text).toContain(
       "Remove + Load unpacked",
     );
     expect(formatDetectReadyLine({ version: "1.1.3", hasAllUrls: true }).ok).toBe(false);

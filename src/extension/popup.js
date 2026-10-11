@@ -59,11 +59,11 @@ function setStatus(text, kind = "ok", ms = 1500) {
 
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
-  if (ver === "1.2.1" && hasAllUrls) return { ok: true, text: "ok 1.2.1 <all_urls>" };
+  if (ver === "1.2.2" && hasAllUrls) return { ok: true, text: "ok 1.2.2 <all_urls>" };
   if (!hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
   }
-  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.1)` };
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.2)` };
 }
 
 async function hasAllUrlsPermission() {

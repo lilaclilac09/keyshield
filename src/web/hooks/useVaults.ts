@@ -22,6 +22,7 @@ import {
   getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
+import { isVaultListPayload, parseVaultListPayload, VAULT_CHANGED_EVENT } from '../lib/vault-list';
 
 const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
   openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
@@ -108,10 +109,20 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         const r = await apiFetch('/manage/vault');
         if (!r.ok) {
           setVaultItems(local);
+          if (r.status >= 400 && local.length === 0) {
+            setError(r.status === 401 ? 'sign in again to load vault' : `vault list failed (${r.status})`);
+          }
           return;
         }
-        const rows = (await r.json()) as Array<Parameters<typeof serverRowToVault>[0]>;
-        const serverItems = (Array.isArray(rows) ? rows : []).map(serverRowToVault);
+        const payload = await r.json();
+        if (!isVaultListPayload(payload)) {
+          setVaultItems(local);
+          if (local.length === 0) setError('vault list failed');
+          return;
+        }
+        const rows = parseVaultListPayload(payload);
+        const serverItems = rows.map(serverRowToVault);
+        setError(null);
         const byId = new Map(serverItems.map((item) => [item.id, item]));
         for (const item of local) {
           if (!byId.has(item.id) && !byId.has(item.name)) byId.set(item.id, item);
@@ -119,6 +130,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         setVaultItems([...byId.values()]);
       } catch {
         setVaultItems(local);
+        if (local.length === 0) setError('vault list failed');
       }
     })();
   }, []);
@@ -144,7 +156,15 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
     refresh();
     const handler = () => refresh();
     window.addEventListener('ks-auth-changed', handler);
-    return () => window.removeEventListener('ks-auth-changed', handler);
+    window.addEventListener(VAULT_CHANGED_EVENT, handler);
+    window.addEventListener('focus', handler);
+    document.addEventListener('visibilitychange', handler);
+    return () => {
+      window.removeEventListener('ks-auth-changed', handler);
+      window.removeEventListener(VAULT_CHANGED_EVENT, handler);
+      window.removeEventListener('focus', handler);
+      document.removeEventListener('visibilitychange', handler);
+    };
   }, [refresh]);
 
   const filteredItems = useMemo(() => {

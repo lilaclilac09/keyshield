@@ -37,6 +37,11 @@
     });
   }
 
+  function announceVaultSaved() {
+    try { window.dispatchEvent(new CustomEvent('ks-vault-changed')); } catch { /* noop */ }
+    try { window.postMessage({ __ks_vault_changed: true }, location.origin); } catch { /* noop */ }
+  }
+
   announce();
   shareSession();
   window.addEventListener('message', (e) => {
@@ -44,4 +49,9 @@
     if (e.data.__ks_ext_request) announce();
     if (e.data.__ks_ext_request_session) shareSession();
   });
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'KS_VAULT_SAVED') announceVaultSaved();
+    });
+  } catch { /* noop */ }
 })();

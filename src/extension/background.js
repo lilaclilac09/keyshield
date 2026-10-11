@@ -122,6 +122,24 @@ async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
   return new TextDecoder().decode(pt);
 }
 
+function _isLocalApi(apiBase) {
+  try {
+    const host = new URL(apiBase).hostname;
+    return host === '127.0.0.1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
+function _manageHeaders(apiBase, token, extra) {
+  const headers = { ...(extra || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  // X-Dev-Mode is loopback-only. On Railway a stale Bearer plus this
+  // header used to write user_id=default, so Vault listed none.
+  if (_isLocalApi(apiBase)) headers['X-Dev-Mode'] = '1';
+  return headers;
+}
+
 async function getKeysForDomain(domain) {
   const keyBytes = await _getVaultKeyBytes();
   if (!keyBytes) return { ok: false, reason: 'no-vault-key' };
@@ -133,8 +151,7 @@ async function getKeysForDomain(domain) {
 
   const { token } = await getStoredToken();
   const { apiBase } = await getApiBase();
-  const headers = { 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token);
 
   let items;
   try {
@@ -229,16 +246,23 @@ function notify(title, message, icon) {
 
 // ── Direct store (no tab) ───────────────────────────────────────────────────
 
+async function notifyDashboardVaultSaved() {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return; }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'KS_VAULT_SAVED' }); } catch { /* no bridge */ }
+  }
+}
+
 async function directStore({ upstream, value }) {
   try {
     const { token } = await getStoredToken();
+    if (!token) return { ok: false, reason: 'no-token' };
     const { apiBase } = await getApiBase();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-Dev-Mode':   '1',
-    };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
     let body;
     const keyBytes = await _getVaultKeyBytes();
@@ -276,6 +300,7 @@ async function directStore({ upstream, value }) {
       if (!r.ok) {
         return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
       }
+      try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: 'network', detail: String(e) };
@@ -300,8 +325,7 @@ async function _vaultFingerprint(keyBytes) {
 async function exportVault() {
   const { token } = await getStoredToken();
   const { apiBase } = await getApiBase();
-  const headers = { 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token);
 
   let items;
   try {
@@ -358,8 +382,7 @@ async function importVault(jsonStr) {
 
   const { token } = await getStoredToken();
   const { apiBase } = await getApiBase();
-  const headers = { 'Content-Type': 'application/json', 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
   let imported = 0;
   let skipped  = 0;

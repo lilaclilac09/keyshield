@@ -521,7 +521,7 @@ async function bulkSave() {
     setTimeout(closePanel, 8000);
   } else {
     let detail = `Saved ${saved}, ${failed} failed.`;
-    if      (lastReason === 'token-expired') detail += ' Session expired — sign in again.';
+    if      (lastReason === 'token-expired' || lastReason === 'no-token') detail += ' Sign in so saves land in your vault.';
     else if (lastReason === 'network')       detail += ' Backend unreachable.';
     else if (lastReason === 'extension')     detail += ` Extension messaging error${lastExtra ? ` (${lastExtra})` : ''}.`;
     else if (lastReason)                     detail += ` (${lastReason})`;
