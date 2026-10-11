@@ -208,6 +208,8 @@ const PROVIDERS: { id: string; name: string; placeholder: string }[] = [
   { id: 'helius',    name: 'Helius RPC',       placeholder: 'xxxxxxxx-…' },
   { id: 'mistral',   name: 'Mistral AI',       placeholder: 'xxxxxxxxxxxxxxxx' },
   { id: 'cohere',    name: 'Cohere',           placeholder: 'xxxxxxxxxxxxxxxx' },
+  { id: 'vercel',    name: 'Vercel',           placeholder: 'vercel_…' },
+  { id: 'github',    name: 'GitHub',           placeholder: 'ghp_ / github_pat_…' },
 ];
 
 const inputCls =

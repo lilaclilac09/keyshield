@@ -1,17 +1,26 @@
 # Demo storyboard
 
-Takes are **local mock SSE + Unix-socket OpenClaw IPC + live Devnet RPC**.
-They do not unlock a real WebAuthn authenticator. Scene 5 does not submit
-a new chain transaction; it reads the latest confirmed program signature.
+Canonical English shot list for Cursor / Screen Studio:
+**[CURSOR_LIVE_STORYBOARD.md](CURSOR_LIVE_STORYBOARD.md)**.
+
+This table is the **harness** take (`bash scripts/record_demo.sh`).
+It uses local mock SSE + Unix-socket OpenClaw IPC + **live Devnet RPC**.
+It does not unlock a real WebAuthn authenticator. Scene 5’s 502 is a
+**labeled mock**. A new on-chain micro-settle is Scene 5 of the Cursor
+storyboard, not this table, unless you run the live capture curls.
 
 | ID | Time | Screen | Action | Expected visible result | Caption | Evidence | Fallback |
 |---|---|---|---|---|---|---|---|
-| S1 | 0:00–0:25 | Terminal | SCENE 1 | Fixture `.env` + blank template + HTTP 502 + local SOL/USDC | Anti-pattern, then real wallet | harness stdout | `--fast` |
-| S2 | 0:25–0:50 | Terminal | SCENE 2 | Ciphertext; clipboard `0 bytes`; `ksv2_sess_…` | SHA-256 PRF stand-in | same | skip if no xclip |
-| S3 | 0:50–1:20 | Terminal | SCENE 3 | IPC inject; spec `blanks=0`; runtime `KS_TOKEN`; clipboard still 0 | No paste, no form, no markdown blanks | `session-spec.json` + openclaw log | sock in workdir |
-| S4 | 1:20–1:50 | Terminal | SCENE 4 | Measured TTFT / total through `ks-proxy` | Quote the clock. No canned `68.4ms` | same | WARN if ≥80ms |
-| S5 | 1:50–2:30 | Terminal + Explorer | SCENE 5 | Confirmed sig + CU; HOLD → 502 → clawback 0.00 | Ignore WrongSize `678bq…` | RPC + `test:fault` | Explorer |
-| SD | 2:30 | Terminal | scene D | Nemotron mock or masked live key | MOCK unless OpenRouter 200 | console | skip live key |
+| S0 | 0:00–0:12 | Browser / curl | `GET /mpp/status` ×2 | Handshake `cached=false` ~200ms; then `cached=true` ~0.00x ms; SOL+USDC | Funded wallet, not faucet | `/mpp/status` | restart uvicorn with `env.sh` |
+| S1 | 0:12–0:40 | Chrome + extension | Open `openrouter.ai` ; scan `sk-or-` ; Save | Toast OR; `/demo/openrouter` model id, no secret | Human in a browser | extension log | fixture scan (Linux) |
+| S2 | 0:40–1:00 | Dashboard + curl | One-click permit → `/vproxy/openrouter` | Masked `key_prefix`; `latency_ms` this take | Agent holds `KS_TOKEN` | `/keychain/call` | mock if no key |
+| S3 | 1:00–1:22 | Terminal | OpenClaw IPC inject | `KS_TOKEN=ksv2_sess_…`; spec `blanks=0`; clipboard 0 | Not Pyth Hermes | openclaw log | sock in workdir |
+| S4 | 1:22–1:42 | Terminal | HOLD → record → CAPTURE | `settle_mode` honest | How agents consume | capture JSON | skip if no stream |
+| S5 | 1:42–2:08 | Terminal + Explorer | 1 micro-USDC live settle | `submitted` + `getTransaction` err=null; strip updates | Real buy | Explorer | do not fake receipt |
+| S6 | 2:08–2:22 | Terminal | Labeled `fault_502` | Clawback; settled does not advance | MOCK banner on | `test:fault` | — |
+| S7 | 2:22–2:38 | Terminal | Status cache + `ks-helius` stampede | MISS then JOIN/HIT; `upstream_fires=1` | redb not live | cargo `--nocapture` | skip rust |
+| S8 | 2:38–2:50 | `/talk` or Cursor diff | Draft → review → accept | Method A open | Permit after inspect | `/talk` on pay stack | Cursor UI |
 
-Voiceover text: [DEMO_RECORDING_SCRIPT.md](DEMO_RECORDING_SCRIPT.md).
+Voiceover: [CURSOR_LIVE_STORYBOARD.md](CURSOR_LIVE_STORYBOARD.md).
+Harness words: [DEMO_RECORDING_SCRIPT.md](DEMO_RECORDING_SCRIPT.md).
 Playback files: [EVIDENCE_INDEX.md](EVIDENCE_INDEX.md).

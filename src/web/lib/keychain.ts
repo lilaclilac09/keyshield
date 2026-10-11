@@ -75,6 +75,8 @@ const DETECTORS: { upstream: string; re: RegExp }[] = [
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },
   { upstream: 'helius', re: /helius_auth_[A-Za-z0-9]{16,}/ },
+  { upstream: 'vercel', re: /(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/ },
+  { upstream: 'github', re: /(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/ },
   { upstream: 'openai', re: /sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}/ },
 ];
 

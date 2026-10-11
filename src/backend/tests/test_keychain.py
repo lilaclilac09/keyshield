@@ -39,6 +39,8 @@ def test_detect_specific_prefixes_beat_generic_sk():
     assert kc.detect_upstream(oai_key)["upstream"] == "openai"
     assert kc.detect_upstream("gsk_" + "d" * 40)["upstream"] == "groq"
     assert kc.detect_upstream("helius_auth_" + "e" * 20)["upstream"] == "helius"
+    assert kc.detect_upstream("vercel_DEMOKEYSHIELDLOCALONLY99xx")["upstream"] == "vercel"
+    assert kc.detect_upstream("github_pat_DEMOKEYSHIELDLOCALONLY99")["upstream"] == "github"
     dumped = str(kc.detect_upstream(or_key))
     assert or_key not in dumped
 

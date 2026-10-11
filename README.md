@@ -427,6 +427,67 @@ hash cannot debit the Devnet escrow.
                             └── pinocchio mpp_settle on Devnet USDC
 ```
 
+### Architectural Contrast: KeyShield vs. Legacy Secret Managers (1Password / Vault)
+
+Traditional secret managers (1Password CLI, HashiCorp Vault) were engineered
+for human engineers and static CI/CD pipelines. Autonomous execution
+environments (browser-use, multi-agent runtimes) expose fundamental
+architectural flaws when backed by a static key-value vault.
+
+KeyShield replaces static secret storage with an execution-aware,
+hardware-anchored session sandbox.
+
+| Feature dimension | Legacy secret managers (1Password CLI) | KeyShield architecture |
+|---|---|---|
+| **Secret lifecycle** | Static, persistent secrets stored in encrypted vaults | Ephemeral derivation via WebAuthn-PRF |
+| **Execution blast radius** | All-or-nothing root PATs (GitHub, Vercel) exposed to the agent runtime | Context-bounded, single-use session keys (TTL) |
+| **Memory lifecycle** | Plaintext injected via env / stdout; survives debug dumps and traces | Native Rust host sandbox; key material is request-scoped and dropped on socket close |
+| **State-machine awareness** | Passive key-value store. Zero context on downstream fulfillment | Active settlement machine (Hold → Verify → Capture) |
+| **Failure handling** | Blind emission: 502 / desync becomes an unrecoverable orphan debit | On-chain clawback. Last honest `MppSettle` on this wallet: **1,906 CU** |
+| **Performance overhead** | IPC / local HTTP daemon (10–50 ms per credential fetch) | Pinocchio zero-copy on-chain path; in-process cache hit **0.004 ms** vs **37.7 ms** WAN RTT |
+
+**1. Ephemeral derivation vs. static blast radius**
+
+- **1Password CLI:** `op run` / `op read` hand the runtime a long-lived
+  high-privilege root token (org-wide GitHub PAT, Vercel production deploy
+  token). One prompt injection, model drift, or stuck loop is enough to
+  wreck production.
+- **KeyShield:** Root credentials never enter agent execution memory.
+  Short-lived, scope-bounded session credentials are derived on-device
+  (WebAuthn-PRF). Access is restricted to designated DOM contexts, targeted
+  API paths, and micro-TTL windows.
+
+**2. Physical memory drop-on-close vs. environment leakage**
+
+- **1Password CLI:** Secrets injected into environment variables or printed
+  to stdout persist across the process lifetime. Browser-automation agents
+  log traces, dump DOM, or stream prompt context to model endpoints —
+  plaintext credentials leak with them.
+- **KeyShield:** Native Rust state machines. Decrypted keys and
+  `X-Upstream-API-Key` live only in the request task and are dropped when
+  the socket closes. `secrecy` + `zeroize` is the intended crate-level
+  hardening of that contract (see [Failure modes](#failure-modes-and-security-boundaries)).
+
+**3. Hold-Verify-Capture vs. blind orphan debits**
+
+- **1Password CLI:** Once a credential is released, the vault has zero
+  insight into fulfillment. A 502, a TCP teardown, or a partial stream
+  desync can drain funds or quota with nothing delivered.
+- **KeyShield:** Settlement is decoupled from fulfillment.
+  1. **Hold** — lock execution collateral in an on-chain non-custodial vault.
+  2. **Verify** — cryptographic proof of fulfillment (32-byte artifact) against the upstream body.
+  3. **Capture / clawback** — on desync or abort, `ForceClawback` returns remaining escrow. Last honest settle on this wallet consumed **1,906 CU**; no human in the loop.
+
+**4. Zero-copy sub-millisecond primitives vs. heavy IPC**
+
+- **1Password CLI:** Legacy daemons add 10–50 ms of IPC / local-socket
+  overhead per credential. That is a bottleneck in sub-second agent
+  pipelines.
+- **KeyShield:** Pinocchio zero-copy Solana handlers plus host memory
+  cache. In-process cache hit **0.004 ms** vs **37.7 ms** WAN RTT on the
+  measured `/mpp/status` path — the hop the agent does *not* pay after the
+  first handshake.
+
 ### Same vault. Two interfaces.
 
 **For you** — Dashboard + Chrome extension. Add keys, rotate, see usage, share with teammates (scoped, revocable).
@@ -628,6 +689,7 @@ npm run gitnexus -- detect-changes --scope all
 | [keyshield.md](keyshield.md) | On-chain verification, failure boundaries, 4-stage test matrix |
 | [docs/EVIDENCE_INDEX.md](docs/EVIDENCE_INDEX.md) | Artifact IDs, checksums, verified vs claimed |
 | [docs/REVIEWER_QUICKSTART.md](docs/REVIEWER_QUICKSTART.md) | How to re-run the matrix and watch the takes |
+| [docs/CURSOR_LIVE_STORYBOARD.md](docs/CURSOR_LIVE_STORYBOARD.md) | English Cursor / Screen Studio shot list (OpenRouter scan, OpenClaw, live 1µ USDC, RPC) |
 | [docs/DEMO_RECORDING_SCRIPT.md](docs/DEMO_RECORDING_SCRIPT.md) | 2-minute record-demo scenes + voiceover |
 | [docs/DEMO_STORYBOARD.md](docs/DEMO_STORYBOARD.md) | Scene table for the recorded takes |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped when |
