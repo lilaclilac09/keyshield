@@ -77,6 +77,13 @@ const DOMAIN_TO_UPSTREAM = {
   '0x.org':                '0x',
   'dashboard.alchemy.com': 'alchemy',
   'alchemy.com':           'alchemy',
+  'vercel.com':            'vercel',
+  'vercel.demo.localhost': 'vercel',
+  'github.com':            'github',
+  'github.demo.localhost': 'github',
+  'openrouter.demo.localhost': 'openrouter',
+  'cursor.demo.localhost': 'openrouter',
+  'devin.demo.localhost':  'openrouter',
 };
 
 function _normalizeHostname(input) {

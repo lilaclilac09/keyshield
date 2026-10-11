@@ -131,6 +131,79 @@ async def mpp_list_events(request: Request, limit: int = 20):
     return JSONResponse(mpp_streams.list_events(sess["user_id"], limit))
 
 
+# Handshake strip used by Home / story RPC. 20s in-process memory — not redb.
+_STATUS_TTL_SEC = 20.0
+_status_cache: dict[str, tuple[float, dict]] = {}
+
+
+@router.get("/mpp/status")
+async def mpp_status(request: Request):
+    """SOL + USDC + open-stream remaining. First call is RPC; repeats hit memory."""
+    sess, err = _require_auth(request)
+    if err:
+        return err
+    import time
+
+    from ..mpp import mpp_streams, owner_keystore
+    from ..proxy import keychain as kc
+
+    user_id = sess["user_id"]
+    now = time.perf_counter()
+    hit = _status_cache.get(user_id)
+    if hit and (now - hit[0]) < _STATUS_TTL_SEC:
+        body = dict(hit[1])
+        body["cached"] = True
+        body["rpc_ms"] = round((time.perf_counter() - now) * 1000.0, 3)
+        return JSONResponse(body)
+
+    t0 = time.perf_counter()
+    address = ""
+    if kc.looks_like_pubkey(user_id):
+        address = user_id
+    else:
+        try:
+            address = owner_keystore.owner_status().get("pubkey") or ""
+        except Exception:
+            address = ""
+    wallet = await kc.fetch_wallet_balances(address, None)
+    listed = mpp_streams.list_streams(user_id)
+    streams = listed.get("streams") or []
+    open_streams = [s for s in streams if s.get("status") == "open"]
+    remaining = 0
+    for stream in open_streams:
+        escrow = stream.get("escrow_micro_usdc")
+        if escrow is not None:
+            remaining += int(escrow)
+    last = None
+    for stream in streams:
+        sig = stream.get("on_chain_signature")
+        if not sig:
+            continue
+        digest = stream.get("pending_artifact_hash") or ""
+        last = {
+            "hash": digest,
+            "hash8": (digest or sig)[:8],
+            "mode": "submitted",
+            "signature": sig,
+            "stream_id": stream.get("id"),
+            "micro_usdc": stream.get("settled_micro_usdc"),
+        }
+        break
+    rpc_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    body = {
+        "stream_remaining_micro_usdc": remaining,
+        "streams_open": len(open_streams),
+        "last_receipt": last,
+        "wallet": address or wallet.get("address"),
+        "sol_lamports": wallet.get("sol_lamports"),
+        "usdc_micro": wallet.get("usdc_micro"),
+        "rpc_ms": rpc_ms,
+        "cached": False,
+    }
+    _status_cache[user_id] = (now, dict(body))
+    return JSONResponse(body)
+
+
 # ─── 3. POST /mpp/streams (open new) ──────────────────────────────────────
 
 

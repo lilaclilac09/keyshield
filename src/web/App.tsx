@@ -27,6 +27,7 @@ import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
+import { StoryJourney } from './components/StoryJourney';
 
 type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
 
@@ -174,5 +175,13 @@ const MainContent: React.FC = () => {
   );
 };
 
-const App: React.FC = () => (<SolanaProvider><MainContent /></SolanaProvider>);
+function isStoryPath(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.pathname === '/story' || window.location.pathname.startsWith('/story/');
+}
+
+const App: React.FC = () => {
+  if (isStoryPath()) return <StoryJourney />;
+  return (<SolanaProvider><MainContent /></SolanaProvider>);
+};
 export default App;

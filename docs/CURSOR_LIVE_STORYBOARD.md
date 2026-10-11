@@ -4,12 +4,20 @@ Screen Studio / OBS shot list for the Solana Colosseum / Paradigm Frontiers
 take. **Record what this repo actually does.** Do not invent a shop, a
 disk cache, or a headed Touch ID on Linux.
 
+**One-page coherent take (Linux Cloud or Screen Studio):**
+`http://127.0.0.1:5173/story?auto=1` — OpenRouter scan → Cursor/Devin fill →
+Vercel + GitHub detectors → live 1 µUSDC capture → RPC handshake → labeled
+502 vs hash-fail → 1Password CLI contrast → OpenClaw / x402 / Pyth Hermes.
+Seed a session with `http://127.0.0.1:5173/story-seed.html#<KS_TOKEN>` then
+the URL strips the token. Fixture pages: `/journey/openrouter.html`,
+`/journey/cursor.html`.
+
 Two cameras, one take (~2:30):
 
 | Pane | What |
 |---|---|
 | Left | Terminal: `bash scripts/record_demo.sh --split` **or** the live buy curls below |
-| Right | Chrome at `http://127.0.0.1:5173` (passkey) **and** `https://openrouter.ai` (extension) |
+| Right | Chrome at `http://127.0.0.1:5173/story?auto=1` **or** `https://openrouter.ai` (extension) |
 
 Default wallet (gitignored, already funded on Devnet):
 `.keyshield-devnet/user-devnet.json` → `GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq`.

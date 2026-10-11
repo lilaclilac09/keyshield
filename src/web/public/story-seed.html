@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>KeyShield story seed</title>
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var token = params.get('t') || (location.hash || '').replace(/^#/, '');
+    if (token) {
+      try { localStorage.setItem('ks_token', token); } catch (e) { /* ignore */ }
+    }
+    location.replace('/story?auto=1');
+  })();
+</script>
