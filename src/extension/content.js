@@ -548,6 +548,51 @@ const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([ty
   + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
   + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
 
+const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b/;
+
+function ksIsCursorFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'cursor.com' || host.endsWith('.cursor.com')
+    || host === 'cursor.sh' || host.endsWith('.cursor.sh')
+    || host === 'cursor.demo.localhost';
+}
+
+function ksIsCursorFillContext() {
+  const host = location.hostname;
+  const path = String(location.pathname || '').toLowerCase();
+  const title = String(document.title || '').toLowerCase();
+  if (ksIsCursorFillHost(host)) return true;
+  if (path.includes('cursor-settings-fill-demo')) return true;
+  return title.includes('cursor') && /setting|api key|models/.test(`${path} ${title}`);
+}
+
+function ksAncestorHaystack(el) {
+  const chunks = [];
+  let node = el;
+  for (let depth = 0; depth < 8 && node; depth++) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const labeled = parent.querySelector
+      && parent.querySelector('.setting-item-label, .setting-item-title, [class*="setting-item-label"]');
+    if (labeled && labeled !== el && !labeled.contains(el)) {
+      chunks.push(String(labeled.textContent || '').slice(0, 240));
+    }
+    const prev = parent.previousElementSibling;
+    if (prev) {
+      const prevLabel = (prev.querySelector && prev.querySelector('.setting-item-label, .setting-item-title, label')) || prev;
+      const t = String(prevLabel.textContent || '').trim();
+      if (t && t.length < 240) chunks.push(t);
+    }
+    for (const sel of ['label', '.setting-item-label']) {
+      const hit = parent.querySelector && parent.querySelector(sel);
+      if (hit && !hit.contains(el)) chunks.push(String(hit.textContent || '').slice(0, 240));
+    }
+    node = parent;
+    if (chunks.join(' ').length > 120) break;
+  }
+  return chunks.join(' ');
+}
+
 function ksInputHaystack(el) {
   const name = (el.getAttribute('name') || '').toLowerCase();
   const ph   = (el.getAttribute('placeholder') || '').toLowerCase();
@@ -566,6 +611,7 @@ function ksInputHaystack(el) {
   if (prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) {
     label += ` ${prev.textContent || ''}`;
   }
+  label += ` ${ksAncestorHaystack(el)}`;
   return `${name} ${ph} ${id} ${aria} ${label}`.toLowerCase();
 }
 
@@ -581,14 +627,43 @@ function ksMatchUpstreamForHaystack(hay) {
   return null;
 }
 
+function ksLooksLikeLoginPassword(hay) {
+  const text = String(hay || '').toLowerCase();
+  if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(text)) return true;
+  return /\bpassword\b/.test(text) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(text);
+}
+
+function ksPreferredCursorFillKey(keys) {
+  const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+  for (const upstream of order) {
+    const hit = keys.find((k) => k.upstream === upstream && k.value);
+    if (hit) return hit;
+  }
+  return keys.find((k) => k.value) || null;
+}
+
 function ksPickKeyForInput(el, keys) {
   if (!keys || !keys.length) return null;
   const hay = ksInputHaystack(el);
+  const type = (el.getAttribute('type') || '').toLowerCase();
   const wanted = ksMatchUpstreamForHaystack(hay);
-  if (wanted) return keys.find((k) => k.upstream === wanted) || null;
-  if (/\bpassword\b/.test(hay) && !/\b(key|token|secret|api)\b/.test(hay)) return null;
+  if (wanted) {
+    const labeled = keys.find((k) => k.upstream === wanted);
+    if (labeled) return labeled;
+  }
+  if (ksLooksLikeLoginPassword(hay)) return null;
+  if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
+    return ksPreferredCursorFillKey(keys);
+  }
   if (keys.length === 1) return keys[0];
   return null;
+}
+
+function ksLooksLikeCursorApiBlank(el, hay, type) {
+  if (!ksIsCursorFillContext()) return false;
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return type === 'password' || !String(hay || '').trim();
 }
 
 function ksLooksLikeKeyInput(el) {
@@ -601,10 +676,9 @@ function ksLooksLikeKeyInput(el) {
     return false;
   }
   const hay = ksInputHaystack(el);
-  if (el.tagName === 'INPUT' && type === 'password') {
-    return /\bkey\b|api[\s_-]?key|api\b|token|secret|openai|anthropic|openrouter|groq|helius|cursor|claude/.test(hay);
-  }
-  return /\bkey\b|api[\s_-]?key|api\b|token|secret|openai|anthropic|openrouter|groq|helius|cursor|claude/.test(hay);
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return ksLooksLikeCursorApiBlank(el, hay, type);
 }
 
 function ksIsFillableInput(el) {
@@ -612,21 +686,47 @@ function ksIsFillableInput(el) {
   return ksLooksLikeKeyInput(el);
 }
 
+function ksCollectFillInputs(root) {
+  const out = [];
+  const visit = (node) => {
+    if (!node) return;
+    let list = [];
+    try { list = node.querySelectorAll ? node.querySelectorAll(KS_FILL_INPUT_SEL) : []; }
+    catch { list = []; }
+    list.forEach((el) => out.push(el));
+    let all = [];
+    try { all = node.querySelectorAll ? node.querySelectorAll('*') : []; }
+    catch { all = []; }
+    for (const el of all) {
+      if (el.shadowRoot) visit(el.shadowRoot);
+    }
+  };
+  visit(root || document);
+  return out;
+}
+
 function ksAutoFillEmptyInputs(keys) {
-  if (!keys || !keys.length) return;
-  let nodes;
-  try { nodes = document.querySelectorAll(KS_FILL_INPUT_SEL); }
-  catch { return; }
+  if (!keys || !keys.length) return 0;
+  const nodes = ksCollectFillInputs(document);
+  const candidates = [];
   nodes.forEach((input) => {
     if (!ksLooksLikeKeyInput(input)) return;
     if (input.dataset && input.dataset.ksAutofilled) return;
     if (String(input.value || '').trim().length > 0) return;
-    const key = ksPickKeyForInput(input, keys);
-    if (key && key.value) {
-      ksSetValue(input, key.value);
-      if (input.dataset) input.dataset.ksAutofilled = '1';
-    }
+    candidates.push(input);
   });
+  const remaining = keys.filter((k) => k && k.value);
+  let filled = 0;
+  for (const input of candidates) {
+    const key = ksPickKeyForInput(input, remaining);
+    if (!key || !key.value) continue;
+    ksSetValue(input, key.value);
+    if (input.dataset) input.dataset.ksAutofilled = '1';
+    const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
+    if (idx >= 0) remaining.splice(idx, 1);
+    filled += 1;
+  }
+  return filled;
 }
 
 function ksFlashGreen(el) {
@@ -657,12 +757,29 @@ function ksSetValue(el, value) {
 }
 
 function ksRequestKeys() {
-  return sendToBackground({ type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname }).then((response) => {
+  return sendToBackground({
+    type: 'GET_KEYS_FOR_DOMAIN',
+    domain: location.hostname,
+    pathname: location.pathname,
+    title: document.title,
+  }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
     }
     return { ok: true, keys: response.keys };
   });
+}
+
+async function ksFillPageNow() {
+  const resp = await ksRequestKeys();
+  if (!resp || !resp.ok || !Array.isArray(resp.keys) || !resp.keys.length) {
+    return { ok: false, filled: 0, reason: resp?.reason || 'no-keys' };
+  }
+  ksFillEnabled = true;
+  ksCachedKeys = resp.keys;
+  ksScanForInputs();
+  const filled = ksAutoFillEmptyInputs(resp.keys);
+  return { ok: true, filled, keys: resp.keys.length };
 }
 
 function ksCloseDropdowns() {
@@ -798,10 +915,7 @@ function ksAttachFillButton(input) {
 }
 
 function ksScanForInputs() {
-  if (ksFillEnabled === false) return;
-  let nodes;
-  try { nodes = document.querySelectorAll(KS_FILL_INPUT_SEL); }
-  catch { return; }
+  const nodes = ksCollectFillInputs(document);
   nodes.forEach(ksAttachFillButton);
   if (ksCachedKeys && ksCachedKeys.length) ksAutoFillEmptyInputs(ksCachedKeys);
 }
@@ -820,27 +934,41 @@ function isKeyShieldDashboardHost() {
   );
 }
 
-// On load: ping background once. If we have keys for this domain, enable
-// the fill UI. If `no-vault-key`, stay disabled silently.
+// On load: ping background. Retry after login — a first miss used to disable
+// fill forever, which left the Cursor Settings black space empty.
 (function ksInitFillUI() {
-  // Best-effort: dashboard pages shouldn't get the fill button.
   if (isKeyShieldDashboardHost()) {
     ksFillEnabled = false;
     return;
   }
-  ksRequestKeys().then((resp) => {
-    if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
-      ksFillEnabled = true;
-      ksCachedKeys = resp.keys;
-      ksScanForInputs();
-      ksAutoFillEmptyInputs(resp.keys);
-    } else {
-      ksFillEnabled = false;
-    }
-  });
+  const refresh = () => {
+    ksRequestKeys().then((resp) => {
+      if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
+        ksFillEnabled = true;
+        ksCachedKeys = resp.keys;
+        ksScanForInputs();
+        ksAutoFillEmptyInputs(resp.keys);
+      }
+    });
+  };
+  refresh();
   setInterval(() => {
-    if (ksFillEnabled) ksScanForInputs();
+    if (!ksCachedKeys || !ksCachedKeys.length) refresh();
+    else ksScanForInputs();
   }, 2000);
+  try {
+    chrome.storage?.onChanged?.addListener?.((changes, area) => {
+      if (area === 'local' && changes.ks_token && changes.ks_token.newValue) refresh();
+      if (area === 'session' && changes.ks_vault_key && changes.ks_vault_key.newValue) refresh();
+    });
+  } catch { /* noop */ }
+  try {
+    chrome.runtime?.onMessage?.addListener?.((msg, _sender, sendResponse) => {
+      if (!msg || msg.type !== 'FILL_PAGE_NOW') return false;
+      ksFillPageNow().then(sendResponse);
+      return true;
+    });
+  } catch { /* noop */ }
 })();
 
 // ── Bridge: announce extension ID to KeyShield dashboard ────────────────────

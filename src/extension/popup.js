@@ -59,11 +59,11 @@ function setStatus(text, kind = "ok", ms = 1500) {
 
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
-  if (ver === "1.2.3" && hasAllUrls) return { ok: true, text: "ok 1.2.3 <all_urls>" };
+  if (ver === "1.2.4" && hasAllUrls) return { ok: true, text: "ok 1.2.4 <all_urls>" };
   if (!hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
   }
-  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.3)` };
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.4)` };
 }
 
 async function hasAllUrlsPermission() {
@@ -246,6 +246,63 @@ async function openDashboardForSignin() {
     setStatus("Opened hosted Sign-in — wallet once, then shop + RPC.", "ok", 4000);
   }
   [800, 2000, 4000, 8000].forEach((ms) => setTimeout(loadSettings, ms));
+}
+
+async function fillActiveTab() {
+  let resp;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: "FILL_PAGE_NOW" });
+  } catch (e) {
+    setStatus(`Fill failed: ${String(e)}`, "err", 3500);
+    return;
+  }
+  if (resp && resp.ok) {
+    setStatus(
+      resp.filled
+        ? `Pasted ${resp.filled} saved key${resp.filled === 1 ? "" : "s"} into empty API boxes.`
+        : "No empty API box on this tab. Use Copy for Cursor desktop Settings.",
+      "ok",
+      5000,
+    );
+    return;
+  }
+  if (resp && resp.reason === "restricted-tab") {
+    setStatus("Chrome cannot fill Cursor desktop. Copy the key, then paste into the black API box.", "err", 5500);
+    return;
+  }
+  setStatus(`Fill skipped: ${resp?.reason || "no keys"}. Sign in, then try again.`, "err", 4000);
+}
+
+async function copyPreferredCursorKey() {
+  let resp;
+  try {
+    resp = await chrome.runtime.sendMessage({
+      type: "GET_KEYS_FOR_DOMAIN",
+      domain: "cursor.com",
+      pathname: "/settings",
+    });
+  } catch (e) {
+    setStatus(`Copy failed: ${String(e)}`, "err", 3000);
+    return;
+  }
+  if (!resp || !resp.ok || !Array.isArray(resp.keys) || !resp.keys.length) {
+    setStatus("No saved Cursor/OpenAI key. Sign in and save a key first.", "err", 4000);
+    return;
+  }
+  const order = ["cursor", "openai", "openrouter", "anthropic", "groq"];
+  let key = null;
+  for (const upstream of order) {
+    key = resp.keys.find((k) => k.upstream === upstream && k.value);
+    if (key) break;
+  }
+  key = key || resp.keys[0];
+  try {
+    await navigator.clipboard.writeText(key.value);
+  } catch (e) {
+    setStatus(`Clipboard blocked: ${String(e)}`, "err", 3500);
+    return;
+  }
+  setStatus(`Copied ${key.upstream} key — paste into the Cursor API black box (click Show first).`, "ok", 5000);
 }
 
 async function allowDetectAndStore() {
@@ -491,6 +548,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("signin"      ).addEventListener("click", openDashboardForSignin);
   const allowDetect = $("allow-detect");
   if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);
+  const fillTab = $("fill-tab");
+  if (fillTab) fillTab.addEventListener("click", fillActiveTab);
+  const copyCursor = $("copy-cursor-key");
+  if (copyCursor) copyCursor.addEventListener("click", copyPreferredCursorKey);
   const useHostedTop = $("use-hosted-top");
   if (useHostedTop) useHostedTop.addEventListener("click", pointAtProduction);
   $("save"        ).addEventListener("click", saveSettings);

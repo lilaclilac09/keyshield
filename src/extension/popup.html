@@ -215,7 +215,7 @@
   <h1>KeyShield Vault <span class="badge" id="conn">…</span></h1>
   <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
   <div id="detect-ready" class="status" style="display:block;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
-    checking 1.2.3 + &lt;all_urls&gt;…
+    checking 1.2.4 + &lt;all_urls&gt;…
   </div>
   <div id="build" class="sub" style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
     checking loaded build…
@@ -223,13 +223,18 @@
 
   <button id="signin">→ Sign in to KeyShield</button>
   <button id="allow-detect" class="secondary">Allow detect + auto-save</button>
+  <button id="fill-tab" class="secondary">Fill this tab</button>
+  <button id="copy-cursor-key" class="secondary">Copy key for Cursor API box</button>
   <button id="use-hosted-top" class="secondary">Use hosted app.ks.aileena.xyz</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    Popup must show <code>ok 1.2.3 &lt;all_urls&gt;</code>. If it does not:
+    Popup must show <code>ok 1.2.4 &lt;all_urls&gt;</code>. If it does not:
     chrome://extensions → <strong>Remove</strong> then <strong>Load unpacked</strong>
     <code>src/extension</code>. Do not only Reload. After Sign-in the scanner
     stays on and saves <code>sk-proj-</code> / <code>sk-or-</code> / <code>key_</code>
-    / <code>crsr_</code> / <code>helius_auth_</code>. Cursor: click Show first.
+    / <code>crsr_</code> / <code>helius_auth_</code>. Saved keys auto-fill the
+    matching API blank (Cursor Settings black box included). Chrome cannot
+    inject into Cursor desktop — use <strong>Copy key for Cursor API box</strong>
+    then paste. Cursor: click Show first.
   </p>
   <div id="status" class="status"></div>
 

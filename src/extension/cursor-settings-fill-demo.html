@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cursor Settings</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: #181818;
+      color: #cccccc;
+      padding: 28px 36px;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; color: #f3f3f3; }
+    .sub { color: #8b8b8b; font-size: 12px; margin-bottom: 22px; max-width: 42rem; line-height: 1.5; }
+    .setting-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 14px 0;
+      border-bottom: 1px solid #2b2b2b;
+      max-width: 720px;
+    }
+    .setting-item-label { display: block; font-size: 13px; color: #e0e0e0; }
+    .setting-item-description { display: block; font-size: 11px; color: #8b8b8b; margin-top: 4px; }
+    .black-space {
+      width: 280px;
+      height: 28px;
+      padding: 0 8px;
+      background: #0e0e0e;
+      border: 1px solid #3c3c3c;
+      border-radius: 3px;
+      color: #d4d4d4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .black-space:focus { outline: 1px solid #0e639c; }
+    .login {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #2b2b2b;
+      max-width: 420px;
+    }
+    .login label { display: block; font-size: 12px; color: #8b8b8b; margin-bottom: 6px; }
+    .note { margin-top: 20px; font-size: 11px; color: #6b6b6b; max-width: 42rem; }
+  </style>
+</head>
+<body>
+  <h1>Cursor Settings · API Keys</h1>
+  <p class="sub">
+    Mock of the Cursor Settings black API boxes. KeyShield 1.2.4 must paste the
+    matching saved key into each empty box. The login password stays empty.
+    Chrome cannot inject into Cursor desktop — this page is the web stand-in.
+  </p>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <span class="setting-item-label">OpenAI API Key</span>
+      <span class="setting-item-description">Used for GPT models. Click Show in Cursor first.</span>
+    </div>
+    <div class="setting-item-control">
+      <input type="password" class="black-space" id="openai-key" autocomplete="off" />
+    </div>
+  </div>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <span class="setting-item-label">Anthropic API Key</span>
+      <span class="setting-item-description">Used for Claude models.</span>
+    </div>
+    <div class="setting-item-control">
+      <input type="password" class="black-space" id="anthropic-key" autocomplete="off" />
+    </div>
+  </div>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <span class="setting-item-label">OpenRouter API Key</span>
+    </div>
+    <div class="setting-item-control">
+      <input type="password" class="black-space" id="openrouter-key" autocomplete="off" />
+    </div>
+  </div>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <span class="setting-item-description">Unlabeled Cursor API black space (no label[for]).</span>
+    </div>
+    <div class="setting-item-control">
+      <input type="password" class="black-space" id="cursor-black" autocomplete="off" />
+    </div>
+  </div>
+
+  <div class="login">
+    <label for="login-password">Password</label>
+    <input type="password" id="login-password" class="black-space" autocomplete="current-password" />
+  </div>
+
+  <p class="note">
+    Do not paste this file into zsh. Open it as
+    <code>http://127.0.0.1:8765/cursor-settings-fill-demo.html</code>
+    after Remove + Load unpacked <code>src/extension</code>. Popup must show
+    <code>ok 1.2.4 &lt;all_urls&gt;</code>.
+  </p>
+</body>
+</html>

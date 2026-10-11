@@ -117,6 +117,22 @@ function _upstreamsForDomain(domain) {
   return [];
 }
 
+function _isCursorFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'cursor.com' || host.endsWith('.cursor.com')
+    || host === 'cursor.sh' || host.endsWith('.cursor.sh')
+    || host === 'cursor.demo.localhost';
+}
+
+/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
+function _isCursorKeyFetchContext(domain, pathname) {
+  if (_isCursorFillHost(domain)) return true;
+  const host = _normalizeHostname(domain);
+  const path = String(pathname || '').toLowerCase();
+  const local = host === '127.0.0.1' || host === 'localhost';
+  return local && path.includes('cursor-settings-fill-demo');
+}
+
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
   const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
   const ct = _b64uDec(cipherB64u);
@@ -143,8 +159,11 @@ function _manageHeaders(apiBase, token, extra) {
   return headers;
 }
 
-async function getKeysForDomain(domain) {
-  const upstreams = _upstreamsForDomain(domain);
+async function getKeysForDomain(domain, extra) {
+  let upstreams = _upstreamsForDomain(domain);
+  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra && extra.pathname)) {
+    upstreams = CURSOR_FILL_UPSTREAMS.slice();
+  }
   if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
 
   const keyBytes = await _getVaultKeyBytes();
@@ -563,8 +582,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_KEYS_FOR_DOMAIN') {
     (async () => {
       try {
-        const result = await getKeysForDomain(message.domain || '');
+        const result = await getKeysForDomain(message.domain || '', {
+          pathname: message.pathname || '',
+          title: message.title || '',
+        });
         sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'FILL_PAGE_NOW') {
+    (async () => {
+      try {
+        let tabId = message.tabId;
+        let tabUrl = '';
+        if (!tabId) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          tabId = tab && tab.id;
+          tabUrl = (tab && tab.url) || '';
+        }
+        if (!tabId) {
+          sendResponse({ ok: false, reason: 'no-tab' });
+          return;
+        }
+        if (!tabUrl) {
+          try {
+            const tab = await chrome.tabs.get(tabId);
+            tabUrl = (tab && tab.url) || '';
+          } catch { /* noop */ }
+        }
+        if (tabUrl && !/^https?:/i.test(tabUrl)) {
+          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or the fill demo.' });
+          return;
+        }
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            files: ['content.js'],
+          });
+        } catch { /* already injected or restricted */ }
+        let filled = 0;
+        let last = null;
+        try {
+          last = await chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' });
+          if (last && typeof last.filled === 'number') filled = last.filled;
+        } catch (e) {
+          sendResponse({ ok: false, reason: 'no-content', detail: String(e) });
+          return;
+        }
+        sendResponse({ ok: !!(last && last.ok), filled, reason: last && last.reason, keys: last && last.keys });
       } catch (e) {
         sendResponse({ ok: false, reason: 'exception', detail: String(e) });
       }
