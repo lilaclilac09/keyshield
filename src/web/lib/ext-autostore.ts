@@ -18,8 +18,10 @@ export function shouldAutoStore(opts: {
   permissionGranted: boolean;
   unsavedCount: number;
   alreadySaving: boolean;
+  loggedIn?: boolean;
 }): boolean {
-  return Boolean(opts.permissionGranted) && opts.unsavedCount > 0 && !opts.alreadySaving;
+  const armed = Boolean(opts.permissionGranted) || Boolean(opts.loggedIn);
+  return armed && opts.unsavedCount > 0 && !opts.alreadySaving;
 }
 
 export function shouldUseLocalDashboard(opts: {

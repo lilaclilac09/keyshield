@@ -32,3 +32,29 @@ export function shouldPopupForKey(opts: {
 }): boolean {
   return !opts.alreadySaved;
 }
+
+/** Popup must show this exact line after Remove + Load unpacked 1.2.1. */
+export const DETECT_READY_VERSION = '1.2.1';
+export const DETECT_READY_OK = `ok ${DETECT_READY_VERSION} <all_urls>`;
+
+export function formatDetectReadyLine(opts: {
+  version: string;
+  hasAllUrls: boolean;
+}): { ok: boolean; text: string } {
+  const ver = String(opts.version || '').trim();
+  if (ver === DETECT_READY_VERSION && opts.hasAllUrls) {
+    return { ok: true, text: DETECT_READY_OK };
+  }
+  if (!opts.hasAllUrls) {
+    return { ok: false, text: `need Remove + Load unpacked · v${ver || '?'} missing <all_urls>` };
+  }
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want ${DETECT_READY_VERSION})` };
+}
+
+/** After Sign-in, keep scanning and save every new match. */
+export function shouldArmLiveScan(opts: {
+  loggedIn: boolean;
+  autoStorePref?: boolean;
+}): boolean {
+  return Boolean(opts.loggedIn) || Boolean(opts.autoStorePref);
+}

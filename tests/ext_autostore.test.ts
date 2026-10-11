@@ -18,12 +18,21 @@ describe("shouldAutoStore", () => {
     })).toBe(true);
   });
 
-  it("does not save before permission", () => {
+  it("does not save before permission or login", () => {
     expect(shouldAutoStore({
       permissionGranted: false,
       unsavedCount: 2,
       alreadySaving: false,
     })).toBe(false);
+  });
+
+  it("saves after Sign-in even without the Allow click", () => {
+    expect(shouldAutoStore({
+      permissionGranted: false,
+      loggedIn: true,
+      unsavedCount: 1,
+      alreadySaving: false,
+    })).toBe(true);
   });
 
   it("does not double-fire while a save is in flight", () => {

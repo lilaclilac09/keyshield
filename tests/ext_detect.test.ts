@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { classifyDetectedKey, shouldPopupForKey } from "../src/web/lib/ext-detect";
+import {
+  classifyDetectedKey,
+  DETECT_READY_OK,
+  formatDetectReadyLine,
+  shouldArmLiveScan,
+  shouldPopupForKey,
+} from "../src/web/lib/ext-detect";
 
 describe("classifyDetectedKey", () => {
   it("matches OpenAI project keys anywhere", () => {
@@ -32,5 +38,33 @@ describe("shouldPopupForKey", () => {
 
   it("does not re-toast a key that already saved", () => {
     expect(shouldPopupForKey({ alreadySaved: true, panelOpen: false })).toBe(false);
+  });
+});
+
+describe("formatDetectReadyLine", () => {
+  it("prints the exact ok 1.2.1 <all_urls> line", () => {
+    expect(formatDetectReadyLine({ version: "1.2.1", hasAllUrls: true })).toEqual({
+      ok: true,
+      text: "ok 1.2.1 <all_urls>",
+    });
+    expect(DETECT_READY_OK).toBe("ok 1.2.1 <all_urls>");
+  });
+
+  it("tells the user to Remove + Load unpacked when <all_urls> is missing", () => {
+    expect(formatDetectReadyLine({ version: "1.2.1", hasAllUrls: false }).text).toContain(
+      "Remove + Load unpacked",
+    );
+    expect(formatDetectReadyLine({ version: "1.1.3", hasAllUrls: true }).ok).toBe(false);
+  });
+});
+
+describe("shouldArmLiveScan", () => {
+  it("arms after login even without the Allow click", () => {
+    expect(shouldArmLiveScan({ loggedIn: true, autoStorePref: false })).toBe(true);
+  });
+
+  it("stays off before login unless Allow was already granted", () => {
+    expect(shouldArmLiveScan({ loggedIn: false, autoStorePref: false })).toBe(false);
+    expect(shouldArmLiveScan({ loggedIn: false, autoStorePref: true })).toBe(true);
   });
 });

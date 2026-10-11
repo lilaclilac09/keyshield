@@ -669,10 +669,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ── External messages (from dashboard) ──────────────────────────────────────
 
+async function armLiveScanFromLogin() {
+  try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  try { await injectDetectOnAllTabs(); } catch { /* noop */ }
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (message.type === 'KS_TOKEN_REGISTER') {
-    setStoredToken(message.token, message.user).then(() => {
-      console.log('[KeyShield] token registered from dashboard');
+    setStoredToken(message.token, message.user).then(async () => {
+      console.log('[KeyShield] token registered from dashboard — live scan + auto-save on');
+      await armLiveScanFromLogin();
       sendResponse({ ok: true });
     });
     return true;
@@ -726,6 +732,20 @@ async function injectDetectOnAllTabs() {
     }
   }
   return { injected };
+}
+
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status !== 'complete') return;
+    if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return;
+    chrome.storage.local.get(['ks_token', 'ks_auto_store'], (out) => {
+      if (!out || (!out.ks_token && !out.ks_auto_store)) return;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ['content.js'],
+      }).catch(() => {});
+    });
+  });
 }
 
 chrome.runtime.onInstalled.addListener(() => {

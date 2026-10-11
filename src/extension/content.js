@@ -174,6 +174,7 @@ let   panelEl        = null;        // the multi-key floating panel (null when h
 let   domainDismissed = false;      // set asynchronously below
 const AUTO_STORE_KEY = 'ks_auto_store';
 let   autoStoreAllowed = false;
+let   loggedIn = false;
 let   autoStoreInFlight = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
@@ -286,21 +287,30 @@ function handleMatch(key, provider, onDomain) {
   maybeAutoStore();
 }
 
+function detectIsArmed() {
+  return !!(autoStoreAllowed || loggedIn);
+}
+
 function loadAutoStorePref() {
   try {
-    chrome.storage?.local?.get?.([AUTO_STORE_KEY], (out) => {
+    chrome.storage?.local?.get?.([AUTO_STORE_KEY, 'ks_token'], (out) => {
       autoStoreAllowed = !!(out && out[AUTO_STORE_KEY]);
-      if (autoStoreAllowed) maybeAutoStore();
+      loggedIn = !!(out && out.ks_token);
+      if (detectIsArmed()) maybeAutoStore();
     });
-  } catch { /* fail closed — wait for Allow */ }
+  } catch { /* fail closed — wait for Allow / Sign-in */ }
 }
 
 function watchAutoStorePref() {
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
-      if (area !== 'local' || !changes[AUTO_STORE_KEY]) return;
-      autoStoreAllowed = !!changes[AUTO_STORE_KEY].newValue;
-      if (autoStoreAllowed) maybeAutoStore();
+      if (area !== 'local') return;
+      if (changes[AUTO_STORE_KEY]) autoStoreAllowed = !!changes[AUTO_STORE_KEY].newValue;
+      if (changes.ks_token) loggedIn = !!changes.ks_token.newValue;
+      if (detectIsArmed()) {
+        scheduleScan();
+        maybeAutoStore();
+      }
     });
   } catch { /* noop */ }
 }
@@ -312,7 +322,7 @@ function grantAutoStore() {
 }
 
 function maybeAutoStore() {
-  if (!autoStoreAllowed || autoStoreInFlight) return;
+  if (!detectIsArmed() || autoStoreInFlight) return;
   const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
   if (unsaved === 0) return;
   autoStoreInFlight = true;
@@ -400,7 +410,7 @@ function renderPanel() {
   const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
   const btnText = unsavedCount === 0
     ? 'All saved'
-    : autoStoreAllowed
+    : detectIsArmed()
       ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
       : 'Allow auto-save';
 
@@ -424,7 +434,7 @@ function renderPanel() {
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = autoStoreAllowed ? bulkSave : grantAutoStore;
+  panelEl.querySelector('#ks-save-all').onclick = detectIsArmed() ? bulkSave : grantAutoStore;
   panelEl.querySelector('#ks-ignore').onclick = closePanel;
   panelEl.querySelector('#ks-signin').onclick = (ev) => {
     ev.preventDefault();
@@ -809,7 +819,7 @@ function startDetectWatchers() {
   if (globalThis.__ksDetectWired) return;
   globalThis.__ksDetectWired = true;
   watchAutoStorePref();
-  setInterval(scheduleScan, 2000);
+  setInterval(scheduleScan, 1500);
   const attachObserver = () => {
     if (!document.body) return;
     const observer = new MutationObserver(() => scheduleScan());
@@ -819,6 +829,10 @@ function startDetectWatchers() {
   else document.addEventListener('DOMContentLoaded', attachObserver, { once: true });
   document.addEventListener('copy', () => scheduleScan());
   document.addEventListener('input', () => scheduleScan(), { capture: true });
+  document.addEventListener('click', () => scheduleScan(), { capture: true });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) scheduleScan();
+  });
 }
 
 startDetectWatchers();
