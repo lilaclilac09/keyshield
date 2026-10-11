@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { getToken } from '../lib/auth';
 
-/** Old unpacked 1.1.1 cannot receive KS_TOKEN from app.ks.aileena.xyz. */
+/** Fallback copy for old unpacked 1.1.1. v1.1.8 Sign-in restores the session. */
 export const ExtensionTokenCopy: React.FC = () => {
   const token = getToken() ?? '';
   const [copied, setCopied] = useState(false);
@@ -25,12 +25,13 @@ export const ExtensionTokenCopy: React.FC = () => {
       className="w-full rounded-xl border border-[#243365] bg-[#131c39] p-5"
       data-testid="extension-token-copy"
     >
-      <p className="text-[16px] font-semibold text-white">Chrome extension still says no token?</p>
+      <p className="text-[16px] font-semibold text-white">Signed in — token is on this page</p>
       <p className="text-[14px] text-[#a8b3d8] mt-1.5 leading-relaxed">
-        Do not edit <code className="text-white">~/Downloads/privacy_hack/keyshield</code>.
-        That folder is on your Mac. Sign-in on the old 1.1.1 card opens dead{' '}
-        <code className="text-white">keyshield.dev</code>. Copy this session token, then
-        popup → <strong className="text-white">Register token</strong>.
+        Load unpacked <strong className="text-white">v1.1.8</strong> and click Sign-in:
+        this tab and the popup should already show logged in. Old 1.1.1 still
+        opens dead <code className="text-white">keyshield.dev</code> — do not edit{' '}
+        <code className="text-white">~/Downloads/privacy_hack/keyshield</code>.
+        Fallback: copy this token → popup <strong className="text-white">Register token</strong>.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <code className="flex-1 min-w-0 text-[12px] font-mono truncate text-[#8a96c2] px-3 py-2 rounded-lg bg-[#020408] border border-[#131929]">
