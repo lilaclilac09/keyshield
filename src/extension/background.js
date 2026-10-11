@@ -86,6 +86,8 @@ const DOMAIN_TO_UPSTREAM = {
   '0x.org':                '0x',
   'dashboard.alchemy.com': 'alchemy',
   'alchemy.com':           'alchemy',
+  'vercel.com':            'vercel',
+  'github.com':            'github',
 };
 
 function _normalizeHostname(input) {

@@ -138,6 +138,22 @@ const PROVIDERS = [
     minLen:   32,
     requiresDomain: true,
   },
+  {
+    id:       'vercel',
+    name:     'Vercel',
+    label:    'VCL',
+    patterns: [/(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['vercel.com'],
+    minLen:   20,
+  },
+  {
+    id:       'github',
+    name:     'GitHub',
+    label:    'GH',
+    patterns: [/(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['github.com'],
+    minLen:   20,
+  },
 ];
 
 // ── State ───────────────────────────────────────────────────────────────────
