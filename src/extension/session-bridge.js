@@ -16,6 +16,12 @@
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
     chrome.storage.local.get(['ks_token', 'ks_user'], (stored) => {
       const token = stored && stored.ks_token;
+      try {
+        if (stored && stored.ks_user) {
+          if (!localStorage.getItem('ks_passkey_user')) localStorage.setItem('ks_passkey_user', stored.ks_user);
+          if (!localStorage.getItem('ks_wallet')) localStorage.setItem('ks_wallet', stored.ks_user);
+        }
+      } catch { /* noop */ }
       if (!token) return;
       try {
         if (!localStorage.getItem('ks_token')) {

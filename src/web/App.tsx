@@ -8,6 +8,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useVaults } from './hooks/useVaults';
 import { getWalletAddress, apiFetch, clearAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
+import { readPasskeyUserIdFromStorage } from './lib/passkey-id';
+import { wantsShopDemo } from './lib/shop-demo';
 import { syncExtensionVaultKey } from './lib/vault-key';
 import { Sidebar } from './components/ui/Sidebar';
 import { Header } from './components/ui/Header';
@@ -65,13 +67,20 @@ const MainContent: React.FC = () => {
   const [restoringExt, setRestoringExt] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     if (hasStoredToken()) return false;
+    // A preregistered Face ID id must show AuthScreen immediately — do not
+    // hide it behind "Restoring session…" after the user jumps back in.
+    if (readPasskeyUserIdFromStorage()) return false;
     return new URLSearchParams(window.location.search).get('ext') === '1';
   });
-  const [section, setSection] = useState<Section>(() => (
-    typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
+  const [section, setSection] = useState<Section>(() => {
+    if (typeof window !== 'undefined' && wantsShopDemo(window.location.search)) {
+      try { sessionStorage.setItem('ks_landing', 'home'); } catch { /* noop */ }
+      return 'home';
+    }
+    return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
       ? 'activity'
-      : 'home'
-  ));
+      : 'home';
+  });
   const [home, setHome] = useState<KeychainHome | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeLoading, setHomeLoading] = useState(false);
