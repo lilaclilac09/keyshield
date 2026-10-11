@@ -148,29 +148,53 @@ async function saveSettings() {
   setStatus("Saved");
 }
 
-function signinDashboardHref() {
+function signinDashboardHref(pinnedLocal) {
+  if (pinnedLocal) return "http://127.0.0.1:5173/?local=1&ext=1";
   return "https://app.ks.aileena.xyz/?ext=1";
 }
 
 async function openDashboardForSignin() {
-  // Sign-in always opens the hosted dashboard. ?ext=1 restores a token
-  // already in chrome.storage, or pushes a page token back here.
-  const url = signinDashboardHref();
-  try {
-    await chrome.storage.local.set({ ks_dashboard_url: "https://app.ks.aileena.xyz" });
-  } catch { /* noop */ }
+  const stored = await chrome.storage.local.get([PIN_PREF_KEY, "ks_dashboard_url"]);
+  const dash = String(stored.ks_dashboard_url || "");
+  const pinnedLocal = !!stored[PIN_PREF_KEY] && /127\.0\.0\.1:5173|localhost:5173/.test(dash);
+  const url = signinDashboardHref(pinnedLocal);
+  if (!pinnedLocal) {
+    try { await chrome.storage.local.set({ ks_dashboard_url: "https://app.ks.aileena.xyz" }); } catch { /* noop */ }
+  }
   try { await chrome.tabs.create({ url }); }
   catch (e) {
     setStatus(`Couldn't open tab: ${String(e)}`, "err", 3000);
     return;
   }
   const { ks_token } = await chrome.storage.local.get("ks_token");
-  if (ks_token) {
+  if (pinnedLocal) {
+    setStatus("Opened local dashboard (5173). Keep Use local dev on.", "ok", 4000);
+  } else if (ks_token) {
     setStatus("Opened signed-in dashboard.", "ok", 4000);
   } else {
     setStatus("Opened dashboard — sign in once; the token returns here.", "ok", 4000);
   }
   [800, 2000, 4000, 8000].forEach((ms) => setTimeout(loadSettings, ms));
+}
+
+async function allowDetectAndStore() {
+  let granted = false;
+  try {
+    granted = await chrome.permissions.request({ origins: ["<all_urls>"] });
+  } catch (e) {
+    setStatus(`Permission request failed: ${String(e)}`, "err", 3000);
+    return;
+  }
+  if (!granted) {
+    setStatus("Detect permission denied.", "err", 2500);
+    return;
+  }
+  await chrome.storage.local.set({ ks_auto_store: true });
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id && /^https?:/.test(tab.url || "")) await chrome.tabs.reload(tab.id);
+  } catch { /* noop */ }
+  setStatus("Detect allowed. Auto-save is on. Reload the page if the toast is missing.", "ok", 4500);
 }
 
 async function registerManualToken() {
@@ -375,6 +399,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadSettings();
   refreshFingerprint();
   $("signin"      ).addEventListener("click", openDashboardForSignin);
+  const allowDetect = $("allow-detect");
+  if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);
+  const useLocalTop = $("use-local-top");
+  if (useLocalTop) useLocalTop.addEventListener("click", pointAtLocal);
   $("save"        ).addEventListener("click", saveSettings);
   $("register"    ).addEventListener("click", registerManualToken);
   $("clear"       ).addEventListener("click", clearSession);

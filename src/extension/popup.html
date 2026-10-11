@@ -219,11 +219,13 @@
   </div>
 
   <button id="signin">→ Sign in to KeyShield</button>
+  <button id="allow-detect" class="secondary">Allow detect + auto-save</button>
+  <button id="use-local-top" class="secondary">Use local 5173 / 8001</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    v1.1.8 Sign-in opens <code>https://app.ks.aileena.xyz/?ext=1</code>
-    already logged in when a token is in this popup or on the hosted site.
-    Old 1.1.1 still opens the dead host — do not edit
-    <code>~/Downloads/…</code>. Fallback: copy token → <strong>Register token</strong>.
+    v1.1.9: after Allow, detect must toast and auto-save to the local API.
+    Use local keeps Sign-in on <code>http://127.0.0.1:5173/?local=1&amp;ext=1</code>.
+    1.1.3 cannot git pull — run the python3 patch in LOCAL-DETECT.md.
+    Do not paste HTML into zsh.
   </p>
   <div id="status" class="status"></div>
 

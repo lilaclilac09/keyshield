@@ -145,6 +145,9 @@ const PROVIDERS = [
 const detectedKeys   = new Map();   // key -> { provider, onDomain, saved }
 let   panelEl        = null;        // the multi-key floating panel (null when hidden)
 let   domainDismissed = false;      // set asynchronously below
+const AUTO_STORE_KEY = 'ks_auto_store';
+let   autoStoreAllowed = false;
+let   autoStoreInFlight = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
 const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store'];
@@ -232,6 +235,30 @@ function handleMatch(key, provider, onDomain) {
   detectedKeys.set(key, { provider, onDomain, saved: false });
   console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
   renderPanel();
+  maybeAutoStore();
+}
+
+function loadAutoStorePref() {
+  try {
+    chrome.storage?.local?.get?.([AUTO_STORE_KEY], (out) => {
+      autoStoreAllowed = !!(out && out[AUTO_STORE_KEY]);
+      if (autoStoreAllowed) maybeAutoStore();
+    });
+  } catch { /* fail closed — wait for Allow */ }
+}
+
+function grantAutoStore() {
+  autoStoreAllowed = true;
+  try { chrome.storage.local.set({ [AUTO_STORE_KEY]: true }); } catch { /* noop */ }
+  return bulkSave();
+}
+
+function maybeAutoStore() {
+  if (!autoStoreAllowed || autoStoreInFlight) return;
+  const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
+  if (unsaved === 0) return;
+  autoStoreInFlight = true;
+  Promise.resolve(bulkSave()).finally(() => { autoStoreInFlight = false; });
 }
 
 // ── Notification UI (multi-key panel) ───────────────────────────────────────
@@ -310,7 +337,11 @@ function renderPanel() {
   }).join('');
 
   const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
-  const btnText = unsavedCount === 0 ? 'All saved' : unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`;
+  const btnText = unsavedCount === 0
+    ? 'All saved'
+    : autoStoreAllowed
+      ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
+      : 'Allow auto-save';
 
   panelEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px">
@@ -332,7 +363,7 @@ function renderPanel() {
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = bulkSave;
+  panelEl.querySelector('#ks-save-all').onclick = autoStoreAllowed ? bulkSave : grantAutoStore;
   panelEl.querySelector('#ks-ignore').onclick = closePanel;
   panelEl.querySelector('#ks-signin').onclick = (ev) => {
     ev.preventDefault();
@@ -711,6 +742,7 @@ function isKeyShieldDashboardHost() {
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
 loadDismissedDomains();
+loadAutoStorePref();
 
 scan();
 setInterval(scan, 3000);
