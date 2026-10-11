@@ -26,7 +26,7 @@ const PROD_DASHBOARD_URL    = 'https://app.ks.aileena.xyz';
 const LOCAL_KS_BASE         = 'http://127.0.0.1:8001';
 const LOCAL_DASHBOARD_URL   = 'http://127.0.0.1:5173';
 const DEFAULT_KS_BASE       = PROD_KS_BASE;
-const DEFAULT_DASHBOARD_URL = PROD_DASHBOARD_URL;
+const DEFAULT_DASHBOARD_URL = 'https://app.ks.aileena.xyz';
 
 const STALE_DASHBOARD_DEFAULTS = [
   'http://127.0.0.1:5173',
@@ -179,7 +179,7 @@ async function getApiBase() {
     api = DEFAULT_KS_BASE;
     changed = true;
   }
-  if (isDeadDashboardUrl(dash)) {
+  if (isDeadDashboardUrl(dash) || STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(`${u}/`))) {
     dash = DEFAULT_DASHBOARD_URL;
     changed = true;
   }

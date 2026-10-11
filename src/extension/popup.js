@@ -18,7 +18,7 @@ const PROD_DASHBOARD_URL  = "https://app.ks.aileena.xyz";
 const LOCAL_API_BASE      = "http://127.0.0.1:8001";
 const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
 const DEFAULT_API_BASE      = PROD_API_BASE;
-const DEFAULT_DASHBOARD_URL = PROD_DASHBOARD_URL;
+const DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz";
 
 const STALE_DASHBOARD_DEFAULTS = [
   "http://127.0.0.1:5173",
@@ -77,7 +77,7 @@ async function loadSettings() {
   //     page on a fresh install.
   let dash = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
   const dashIsBackendPort = /:800[01](\/|$)/.test(dash);
-  const dashIsStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
+  const dashIsStaleLocal  = STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
   if (dashIsBackendPort || dashIsStaleLocal || isDeadDashboardUrl(dash)) {
     dash = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: dash }); } catch { /* noop */ }
@@ -148,7 +148,7 @@ async function saveSettings() {
 async function openDashboardForSignin() {
   // Sign-in always opens the hosted dashboard. 127.0.0.1:5173 is the Vite
   // clone and must bounce / not be the login tab. Use local dev is for API.
-  let url = DEFAULT_DASHBOARD_URL;
+  let url = "https://app.ks.aileena.xyz";
   try {
     await chrome.storage.local.set({ ks_dashboard_url: url });
   } catch { /* noop */ }
