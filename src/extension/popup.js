@@ -146,18 +146,12 @@ async function saveSettings() {
 }
 
 async function openDashboardForSignin() {
-  const stored = await chrome.storage.local.get(["ks_dashboard_url", PIN_PREF_KEY]);
-  const pinned = !!stored[PIN_PREF_KEY];
-  let url = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
-  // Treat any stale local URL (old default that points at a dev server the
-  // user might not be running) the same as a missing value, and silently
-  // migrate it to the production default.
-  const isBackendPort = /:800[01](\/|$)/.test(url);
-  const isStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => url === u || url.startsWith(u + "/"));
-  if (isBackendPort || isStaleLocal || isDeadDashboardUrl(url)) {
-    url = DEFAULT_DASHBOARD_URL;
-    try { await chrome.storage.local.set({ ks_dashboard_url: url }); } catch { /* noop */ }
-  }
+  // Sign-in always opens the hosted dashboard. 127.0.0.1:5173 is the Vite
+  // clone and must bounce / not be the login tab. Use local dev is for API.
+  let url = DEFAULT_DASHBOARD_URL;
+  try {
+    await chrome.storage.local.set({ ks_dashboard_url: url });
+  } catch { /* noop */ }
   try { await chrome.tabs.create({ url }); }
   catch (e) {
     setStatus(`Couldn't open tab: ${String(e)}`, "err", 3000);

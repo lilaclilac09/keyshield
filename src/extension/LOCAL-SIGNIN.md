@@ -1,5 +1,23 @@
 # Sign in at https://app.ks.aileena.xyz
 
+`http://127.0.0.1:5173/` is the local Vite clone. Sign-in must
+**redirect** to `https://app.ks.aileena.xyz`. Keep local UI with `?local=1`.
+
+If GitHub DNS is down, paste this as the first script in
+`src/web/index.html` inside `<body>`, then reload the 5173 tab:
+
+```html
+<script>
+  (function () {
+    if (/(?:^|[?&])local=1(?:&|$)/.test(location.search)) return;
+    var h = location.hostname;
+    var p = location.port;
+    if ((h !== '127.0.0.1' && h !== 'localhost') || (p && p !== '5173' && p !== '5174')) return;
+    location.replace('https://app.ks.aileena.xyz' + location.pathname + location.search + location.hash);
+  })();
+</script>
+```
+
 The hosted dashboard is **`https://app.ks.aileena.xyz`**.
 Not `ks.app.aileena.xyz`. Not `https://keyshield.dev` (no DNS).
 `http://127.0.0.1:5173` is only for `node dev.cjs`.

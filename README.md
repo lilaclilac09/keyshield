@@ -125,9 +125,9 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 | You are using | Popup Settings → Dashboard URL | Why |
 |---|---|---|
-| Hosted login | `https://app.ks.aileena.xyz` (**default**) | Live vault. Not `ks.app.aileena.xyz` |
+| Hosted login | `https://app.ks.aileena.xyz` (**Sign-in**) | Live vault. Not `ks.app.aileena.xyz` |
+| `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
 | `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
-| Local `node dev.cjs` | **Use local dev** → `http://127.0.0.1:5173` | Passkey needs `127.0.0.1` |
 
 Old unpacked folder (`~/Downloads/…/src/extension`) still opening
 `https://keyshield.dev/`: pull this change, then **Remove** the

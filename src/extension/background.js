@@ -559,17 +559,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   //     every fresh install once the user stops `npm run dev`.
   if (message.type === 'OPEN_DASHBOARD_FOR_SIGNIN') {
     (async () => {
-      const stored = await chrome.storage.local.get(['ks_dashboard_url', PIN_PREF_KEY]);
-      let dashboardUrl = stored.ks_dashboard_url || DEFAULT_DASHBOARD_URL;
-      const pinned = !!stored[PIN_PREF_KEY];
-      const looksLikeBackend = /:800[01](\/|$)/.test(dashboardUrl);
-      const looksStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some(
-        (u) => dashboardUrl === u || dashboardUrl.startsWith(u + '/'),
-      );
-      if (looksLikeBackend || looksStaleLocal || isDeadDashboardUrl(dashboardUrl) || !dashboardUrl) {
-        dashboardUrl = DEFAULT_DASHBOARD_URL;
-        try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
-      }
+      const dashboardUrl = DEFAULT_DASHBOARD_URL;
+      try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
       chrome.tabs.create({ url: dashboardUrl });
       sendResponse({ ok: true, dashboardUrl });
     })();
