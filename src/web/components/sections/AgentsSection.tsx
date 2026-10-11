@@ -35,7 +35,6 @@ export const AgentsSection: React.FC = () => {
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
-  const [activeId, setActiveId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -124,26 +123,17 @@ export const AgentsSection: React.FC = () => {
         )}
         {agentList.length === 0 && !loading && <p className="text-[12px] text-[#5e6a91] text-center py-4">No agents registered yet</p>}
         {agentList.map(a => (
-          <div
-            key={a.id}
-            data-ks={`agent-row-${a.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || a.id}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => setActiveId(a.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveId(a.id); }}
-            className={`flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0 cursor-pointer ${activeId === a.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
-          >
+          <div key={a.id} className="flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0">
             <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] text-white font-medium">{a.name}</span>
                 <Badge variant="neutral">{a.scopes}</Badge>
-                {activeId === a.id && <Badge variant="success" dot>Using</Badge>}
-                {a.last_used_at && activeId !== a.id && <Badge variant="success" dot>Active</Badge>}
+                {a.last_used_at && <Badge variant="success" dot>Active</Badge>}
               </div>
               <div className="text-[11px] text-[#5e6a91] font-mono mt-0.5">{a.pubkey_b58.slice(0, 16)}…{a.pubkey_b58.slice(-8)}</div>
             </div>
-            <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleRevoke(a.id); }}>Revoke</Button>
+            <Button variant="destructive" size="sm" onClick={() => handleRevoke(a.id)}>Revoke</Button>
           </div>
         ))}
       </Card>
