@@ -561,7 +561,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       const dashboardUrl = DEFAULT_DASHBOARD_URL;
       try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
-      chrome.tabs.create({ url: dashboardUrl });
+      chrome.tabs.create({ url: `${String(dashboardUrl).replace(/\/+$/, '')}/?ext=1` });
       sendResponse({ ok: true, dashboardUrl });
     })();
     return true;

@@ -61,6 +61,13 @@ export function hostedDashboardHref(loc: Loc): string {
   return u.toString();
 }
 
+/** Sign-in tab. `ext=1` asks the content script to restore the extension session. */
+export function signinDashboardHref(base: string = PROD_DASHBOARD_URL): string {
+  const u = new URL(base);
+  u.searchParams.set('ext', '1');
+  return u.toString();
+}
+
 /** Returns true when this page is leaving for the hosted Sign-in. */
 export function redirectLocalViteToHostedDashboard(): boolean {
   if (typeof window === 'undefined') return false;

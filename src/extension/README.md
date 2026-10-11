@@ -12,6 +12,7 @@ src/extension/
 ├── manifest.firefox.json  Firefox MV2 manifest
 ├── background.js          service worker (key save, x402, audit retention)
 ├── content.js             content script (key detection, x402 interceptor)
+├── session-bridge.js      document_start token restore on dashboard hosts
 ├── popup.html             toolbar popup UI
 └── popup.js               popup logic (settings + token status)
 ```
@@ -62,8 +63,8 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` yourself (skip Sign-in on v1.1.1). Wallet / passkey. Copy token → **Register token**.
-- **Sign-in opens a blank `keyshield.dev` tab:** That is GitHub `main` 1.1.1. Do not edit Downloads. Use the token paste path. After this PR is on `main`, Load unpacked **1.1.7**.
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.1.8). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
+- **Sign-in should open already logged in:** Load unpacked **1.1.8**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
 - **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.

@@ -220,11 +220,10 @@
 
   <button id="signin">→ Sign in to KeyShield</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    Sign-in opens <code>https://app.ks.aileena.xyz</code>
-    (not <code>ks.app.aileena.xyz</code>, not <code>keyshield.dev</code>).
+    v1.1.8 Sign-in opens <code>https://app.ks.aileena.xyz/?ext=1</code>
+    already logged in when a token is in this popup or on the hosted site.
     Old 1.1.1 still opens the dead host — do not edit
-    <code>~/Downloads/…</code>. Open the hosted app yourself, copy the
-    session token, then <strong>Register token</strong> below.
+    <code>~/Downloads/…</code>. Fallback: copy token → <strong>Register token</strong>.
   </p>
   <div id="status" class="status"></div>
 
@@ -302,8 +301,8 @@
   </details>
 
   <div class="footer">
-    Sign in opens the dashboard. Token pushes back automatically once you
-    connect your wallet and sign the vault-unlock message.
+    Sign-in opens the hosted dashboard already logged in when a session
+    exists. First visit still needs wallet or passkey once.
   </div>
 
   <script src="popup.js"></script>

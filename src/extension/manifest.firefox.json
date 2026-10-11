@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "KeyShield — Sovereign Vault",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "description": "Auto-detect API keys on any page and store them in your encrypted KeyShield vault.",
 
   "permissions": [
@@ -32,6 +32,22 @@
   },
 
   "content_scripts": [
+    {
+      "matches": [
+        "https://app.ks.aileena.xyz/*",
+        "https://*.aileena.xyz/*",
+        "https://keyshield.dev/*",
+        "https://*.keyshield.dev/*",
+        "https://*.up.railway.app/*",
+        "https://*.vercel.app/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["session-bridge.js"],
+      "run_at": "document_start"
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"]
