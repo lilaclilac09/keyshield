@@ -18,23 +18,27 @@ src/extension/
 
 ## Backend
 
-By default the extension talks to the **OSS-oriented** public defaults in the popup/background sources:
+Load unpacked from this folder (no `update_url` in the manifest) so
+**source defaults are local**:
 
-- API base: `https://keyshield-production.up.railway.app` (FastAPI control plane)
+- API base: `http://127.0.0.1:8001`
+- Dashboard: `http://127.0.0.1:5173`
+
+A packed / store build (has `update_url`) uses production instead:
+
+- API base: `https://keyshield-production.up.railway.app`
 - Dashboard: `https://app.ks.aileena.xyz`
 
-`https://keyshield.dev` has **no public DNS**. Older builds opened that
-host on **→ Sign in to KeyShield**, so the tab could not log in. Stored
-`keyshield.dev` / `app.keyshield.dev` URLs are rewritten to
-`app.ks.aileena.xyz` the next time Sign-in runs.
+`https://keyshield.dev` has **no public DNS**. Stored `keyshield.dev`
+URLs are rewritten to the unpacked or packed default.
 
-Forks should replace these with **your own** deployment URLs (or use local
-dev). Override from the popup **Settings & manual token** panel
-(`ks_api_base` / `ks_dashboard_url`). **Use local dev** pins
-`http://127.0.0.1:8001` / `http://127.0.0.1:5173`.
+If Chrome cannot Reload after you edit this folder: **Remove** the
+extension, then **Load unpacked** again from the same path (e.g.
+`~/Downloads/privacy_hack/keyshield/src/extension`). Version **1.1.2**.
 
-Unpinned localhost defaults migrate to production. Dead `keyshield.dev`
-hosts are rewritten even if pinned.
+Popup **Use production** / **Use local dev** / **Point at remote** pin
+`ks_api_base` / `ks_dashboard_url`. Unpacked builds do **not** migrate
+`127.0.0.1:5173` away.
 
 ## Install — Chrome / Edge / Brave / Arc
 
@@ -64,8 +68,9 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Click **→ Sign in to KeyShield**. Default dashboard is `https://app.ks.aileena.xyz`. After wallet login the page should `KS_TOKEN_REGISTER`. Local stack: **Use local dev** first. If the badge stays empty, paste the Developer token into **Register token**.
-- **Sign-in opens a blank `keyshield.dev` tab:** That host has no DNS. Reload unpacked `src/extension`, then Sign in again.
-- **Sign-in opens a dead localhost tab:** Unpinned `:5173` defaults migrate to production. To keep local, click **Use local dev**.
+- **"No token" badge in popup:** Click **→ Sign in to KeyShield**. Unpacked default is `http://127.0.0.1:5173` (`node dev.cjs`). Hosted: **Use production**. After wallet login the page should `KS_TOKEN_REGISTER`. If the badge stays empty, paste the Developer token into **Register token**.
+- **Sign-in opens a blank `keyshield.dev` tab:** That host has no DNS. **Remove** the extension, then **Load unpacked** again from this folder (Reload often does nothing).
+- **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
+- **Sign-in opens localhost but Vite is not running:** start `node dev.cjs`, or click **Use production**.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
-- **Manifest changes:** After editing `manifest.json`, click the **Reload** circle on the extension card in `chrome://extensions/`.
+- **Manifest changes:** After editing `manifest.json`, try the **Reload** circle. If Chrome will not reload, Remove then Load unpacked.

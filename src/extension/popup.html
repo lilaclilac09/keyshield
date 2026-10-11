@@ -216,16 +216,23 @@
   <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
 
   <button id="signin">→ Sign in to KeyShield</button>
+  <p class="hint" style="margin:8px 0 0;line-height:1.45">
+    Unpacked from <code>src/extension</code> → Sign-in opens
+    <code>http://127.0.0.1:5173</code> (run <code>node dev.cjs</code> first).
+    If Chrome cannot Reload, <strong>Remove</strong> this extension, then
+    <strong>Load unpacked</strong> again from that same folder.
+    Do not open <code>https://keyshield.dev</code> — no DNS.
+  </p>
   <div id="status" class="status"></div>
 
   <details>
     <summary>Settings &amp; manual token</summary>
 
     <label for="api">Backend API base URL</label>
-    <input type="text" id="api" placeholder="https://keyshield-production.up.railway.app" />
+    <input type="text" id="api" placeholder="http://127.0.0.1:8001" />
 
     <label for="dash">Dashboard URL</label>
-    <input type="text" id="dash" placeholder="https://app.ks.aileena.xyz" />
+    <input type="text" id="dash" placeholder="http://127.0.0.1:5173" />
 
     <div class="row">
       <button id="save" class="secondary">Save settings</button>
@@ -257,6 +264,7 @@
     <div class="row">
       <button id="point-remote" class="secondary">Point at remote</button>
       <button id="point-local"  class="secondary">Use local dev</button>
+      <button id="point-prod"   class="secondary">Use production</button>
     </div>
 
     <div class="info-block subtle">

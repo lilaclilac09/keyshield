@@ -47,8 +47,9 @@ chrome.storage.local.get(['ks_token', 'ks_user'], console.log)
 ### Pointing the extension at staging or prod
 
 The extension reads `ks_api_base` and `ks_dashboard_url` from
-`chrome.storage.local` (defaults: `http://localhost:8000` and `:3000`).
-Set them once and you can reuse the same unpacked install everywhere:
+`chrome.storage.local`. Unpacked Load from `src/extension` defaults to
+`http://127.0.0.1:8001` / `http://127.0.0.1:5173`. Packed builds default
+to Railway / `https://app.ks.aileena.xyz`. Pin once:
 
 ```js
 chrome.storage.local.set({
@@ -58,7 +59,9 @@ chrome.storage.local.set({
 ```
 
 (`manifest.json` lists `https://app.ks.aileena.xyz/*`. Do not point
-Sign-in at `https://keyshield.dev` — that host has no public DNS.)
+Sign-in at `https://keyshield.dev` — that host has no public DNS.
+If Chrome cannot Reload after a source change, Remove the extension
+and Load unpacked again from the same folder.)
 
 ## 3. Auto-detect demo
 

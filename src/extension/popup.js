@@ -10,32 +10,38 @@
 //      builds) to the public API / dashboard defaults below, unless
 //      the user has explicitly pinned a non-production target.
 
-// Production defaults — OSS fork ships with a public Railway API + the live
-// dashboard. keyshield.dev has no public DNS; Sign-in must not open it.
-// Override via the Settings panel or chrome.storage.
-const DEFAULT_API_BASE      = "https://keyshield-production.up.railway.app";
-const DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz";
+// Unpacked Load (chrome://extensions → this folder) has no update_url.
+// Sign-in must open the local Vite dashboard, not keyshield.dev (no DNS)
+// and not a hosted tab the clone cannot log into.
+function isUnpackedExtension() {
+  try {
+    return !Object.prototype.hasOwnProperty.call(chrome.runtime.getManifest(), "update_url");
+  } catch {
+    return true;
+  }
+}
 
-// Local dev URLs — "Use local dev" in Settings. Pin these so we do not
-// migrate a running Vite tab back to production.
+const UNPACKED = isUnpackedExtension();
+const PROD_API_BASE       = "https://keyshield-production.up.railway.app";
+const PROD_DASHBOARD_URL  = "https://app.ks.aileena.xyz";
 const LOCAL_API_BASE      = "http://127.0.0.1:8001";
 const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
+const DEFAULT_API_BASE      = UNPACKED ? LOCAL_API_BASE : PROD_API_BASE;
+const DEFAULT_DASHBOARD_URL = UNPACKED ? LOCAL_DASHBOARD_URL : PROD_DASHBOARD_URL;
 
-// Old defaults we want to silently upgrade to production on next popup open
-// so existing installs don't keep opening dead localhost tabs after the user
-// shuts down their dev server. "Use local dev" still works — we only
-// migrate URLs the user never explicitly chose.
-const STALE_DASHBOARD_DEFAULTS = [
+// Packed builds only: leftover localhost from an old default → production.
+// Unpacked builds keep 127.0.0.1:5173 — that is the intended Sign-in target.
+const STALE_DASHBOARD_DEFAULTS = UNPACKED ? [] : [
   "http://127.0.0.1:5173",
   "http://localhost:5173",
 ];
-const STALE_API_DEFAULTS = [
+const STALE_API_DEFAULTS = UNPACKED ? [] : [
   "http://127.0.0.1:8001",
   "http://localhost:8001",
   "http://127.0.0.1:8000",
   "http://localhost:8000",
 ];
-const LEGACY_API_BASES = ["https://keyshield-production.up.railway.app"];
+const LEGACY_API_BASES = UNPACKED ? [] : ["https://keyshield-production.up.railway.app"];
 
 // Hosts with no public DNS. Always rewrite, even if pinned — a dead host
 // is not a valid preference. Do not list app.ks.aileena.xyz here.
@@ -260,6 +266,16 @@ async function pointAtLocal() {
   loadSettings();
 }
 
+async function pointAtProduction() {
+  await chrome.storage.local.set({
+    ks_api_base:      PROD_API_BASE,
+    ks_dashboard_url: PROD_DASHBOARD_URL,
+    [PIN_PREF_KEY]:   true,
+  });
+  setStatus("Pointed at production (app.ks.aileena.xyz).", "ok", 2500);
+  loadSettings();
+}
+
 // ── Backup & restore ────────────────────────────────────────────────────────
 // Export hits EXPORT_VAULT in background.js → returns stringified JSON we
 // download as a file. Import reads the chosen file and posts each item back
@@ -366,8 +382,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("clear"       ).addEventListener("click", clearSession);
   const ptRemote = $("point-remote");
   const ptLocal  = $("point-local");
+  const ptProd   = $("point-prod");
   if (ptRemote) ptRemote.addEventListener("click", pointAtRemote);
   if (ptLocal)  ptLocal.addEventListener("click",  pointAtLocal);
+  if (ptProd)   ptProd.addEventListener("click",   pointAtProduction);
 
   const expBtn = $("export-vault");
   const impBtn = $("import-vault");

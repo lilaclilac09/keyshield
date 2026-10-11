@@ -77,20 +77,20 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 1. Open the vault UI and connect a Solana wallet (Phantom / Solflare).
 2. Unlock the Device Vault (passkey / WebAuthn-PRF). Encryption stays
    on this device; the server stores ciphertext only.
-3. **Chrome extension (preferred)** — the vault UI front page shows
-   these steps. Open `chrome://extensions` → Developer mode →
-   **Load unpacked** → select `src/extension` (`manifest.json` inside).
-   Pin the icon, then **→ Sign in to KeyShield**.
-   **Do not use `https://keyshield.dev/`** — that host has **no public
-   DNS**, so the tab is blank and you cannot log in.
-   Default Sign-in URL is [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz).
-   Local `node dev.cjs`: popup **Settings → Use local dev**
-   (`http://127.0.0.1:5173`, not `localhost` — passkey needs `127.0.0.1`).
-   If popup stays `no token` after wallet login, copy the Developer
-   session token and **Register token** in the popup.
-   Reload unpacked after pulling this change so `content.js` announces
-   on `*.aileena.xyz`. No Chrome Web Store listing yet. Firefox is a
-   temporary add-on only (`manifest.firefox.json`).
+3. **Chrome extension (preferred)** — Load unpacked from this repo's
+   `src/extension` (`manifest.json` inside). Example path:
+   `~/Downloads/privacy_hack/keyshield/src/extension`.
+   **Unpacked Sign-in is written in source as**
+   `http://127.0.0.1:5173` (API `http://127.0.0.1:8001`). Run
+   `node dev.cjs` first. Passkey needs `127.0.0.1`, not `localhost`.
+   **Do not use `https://keyshield.dev/`** — no public DNS.
+   Chrome often cannot Reload after a folder/source change: **Remove**
+   the extension, then **Load unpacked** again from the same folder
+   (version **1.1.2**). Hosted Sign-in: popup **Use production** →
+   [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz).
+   If popup stays `no token`, paste the Developer token → **Register token**.
+   No Chrome Web Store listing yet. Firefox is a temporary add-on only
+   (`manifest.firefox.json`).
 4. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
    OpenRouter, Groq, …), or let the Chrome extension save one from
    the provider page.
@@ -128,12 +128,15 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 | You are using | Popup Settings → Dashboard URL | Why |
 |---|---|---|
-| Hosted app | `https://app.ks.aileena.xyz` (**default**) | Live vault + Railway control plane |
-| Local `node dev.cjs` | **Use local dev** → `http://127.0.0.1:5173` | Passkey needs `127.0.0.1`, not `localhost` |
-| `https://keyshield.dev` | rewritten to the hosted app | **No public DNS** — Sign-in cannot log in |
+| Load unpacked from this repo (`src/extension`) | `http://127.0.0.1:5173` (**source default**) | Local Vite. If Reload is greyed out: **Remove** → **Load unpacked** again from the same folder |
+| Hosted app / packed build | **Use production** → `https://app.ks.aileena.xyz` | Live vault + Railway control plane |
+| Local `node dev.cjs` (already unpacked) | already `127.0.0.1:5173`, or **Use local dev** | Passkey needs `127.0.0.1`, not `localhost` |
+| `https://keyshield.dev` | rewritten to the unpacked/packed default | **No public DNS** — Sign-in cannot log in |
 
-Old installs that still open `https://keyshield.dev/`: reload unpacked
-`src/extension`, then Sign in again. Do not paste a token into a blank
+Old unpacked folder (`~/Downloads/…/src/extension`) still opening
+`https://keyshield.dev/`: pull this change, then **Remove** the
+extension and **Load unpacked** again. Reload does not always pick up
+a new service worker. Do not paste a token into a blank
 `keyshield.dev` page.
 
 ### 3. Pay for a stream (optional)
