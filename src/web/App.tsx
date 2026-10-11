@@ -62,7 +62,11 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
 const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (hasStoredToken()) return true;
+    try { return new URLSearchParams(window.location.search).has('colosseum'); }
+    catch { return false; }
+  });
   const [section, setSection] = useState<Section>(() => (
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
       ? 'activity'
