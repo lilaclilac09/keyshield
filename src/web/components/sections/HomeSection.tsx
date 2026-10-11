@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
+import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
 import { getPasskeyTrust } from '../../lib/auth';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
@@ -106,6 +107,7 @@ export const HomeSection: React.FC<Props> = ({
         <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Keychain</h2>
       </div>
 
+      <ExtensionTokenCopy />
       <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

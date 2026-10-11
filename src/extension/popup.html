@@ -222,15 +222,21 @@
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
     Sign-in opens <code>https://app.ks.aileena.xyz</code>
     (not <code>ks.app.aileena.xyz</code>, not <code>keyshield.dev</code>).
-    Wallet / passkey there. If the badge stays <code>no token</code>,
-    copy Developer token → <strong>Register token</strong>.
-    Local stack only: Settings → <strong>Use local dev</strong>
-    (<code>http://127.0.0.1:5173</code>).
+    Old 1.1.1 still opens the dead host — do not edit
+    <code>~/Downloads/…</code>. Open the hosted app yourself, copy the
+    session token, then <strong>Register token</strong> below.
   </p>
   <div id="status" class="status"></div>
 
+  <label for="manual">Paste session token (works on 1.1.1)</label>
+  <textarea id="manual" placeholder="paste session token from app.ks.aileena.xyz Home or Developer"></textarea>
+  <div class="row">
+    <button id="register" class="secondary">Register token</button>
+    <button id="clear" class="danger">Sign out</button>
+  </div>
+
   <details>
-    <summary>Settings &amp; manual token</summary>
+    <summary>Settings</summary>
 
     <label for="api">Backend API base URL</label>
     <input type="text" id="api" placeholder="https://keyshield-production.up.railway.app" />
@@ -240,13 +246,6 @@
 
     <div class="row">
       <button id="save" class="secondary">Save settings</button>
-    </div>
-
-    <label for="manual">Paste session token (fallback)</label>
-    <textarea id="manual" placeholder="paste ks_token from dashboard localStorage…"></textarea>
-    <div class="row">
-      <button id="register" class="secondary">Register token</button>
-      <button id="clear" class="danger">Sign out</button>
     </div>
   </details>
 

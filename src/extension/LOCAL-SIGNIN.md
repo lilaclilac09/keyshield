@@ -1,11 +1,32 @@
-# Sign in at https://app.ks.aileena.xyz
+# Sign in without editing Downloads
 
-Do **not** paste `<script>…</script>` into zsh. That is HTML for
-`src/web/index.html`. The shell will print `parse error near \n`.
+This Cloud / GitHub checkout **cannot** write
+`~/Downloads/privacy_hack/keyshield` on your Mac. You do not need that
+folder to log in.
 
-`git fetch` failing (`Could not resolve host: github.com`) is fine.
-Run this **one** Python block from the repo root. It undoes a 5173
-default, points Sign-in at the hosted app, and writes the Vite redirect.
+## Login now (old 1.1.1 card)
+
+1. Leave the unpacked extension as-is. Do **not** click **Sign in**
+   (that tab is `https://keyshield.dev` and has no DNS).
+2. In the same Chrome profile, open
+   [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz).
+3. Wallet or passkey. Open **Home** (or **Developer** → Session token).
+4. **Copy token for extension**.
+5. KeyShield popup → paste → **Register token**.
+6. Badge must leave `no token`.
+
+Do **not** paste `<script>…</script>` into zsh. That is HTML.
+
+## After this branch is on GitHub `main`
+
+`git pull` the repo you use for Load unpacked (or clone fresh). Then
+`chrome://extensions` → **Remove** → **Load unpacked** → `src/extension`.
+The card must say **1.1.7**. Sign-in then opens
+`https://app.ks.aileena.xyz`.
+
+If `git fetch` fails (`Could not resolve host: github.com`), keep using
+the token paste path above. Optional disk patch (only if you want the
+new Sign-in button on that Mac clone):
 
 ```bash
 cd ~/Downloads/privacy_hack/keyshield
@@ -60,7 +81,7 @@ print("content announce", "app.ks.aileena.xyz" in cjs.read_text())
 
 man = ext / "manifest.json"
 m = man.read_text()
-m = re.sub(r'"version": "1\.[0-9.]+"', '"version": "1.1.4"', m, count=1)
+m = re.sub(r'"version": "1\.[0-9.]+"', '"version": "1.1.7"', m, count=1)
 man.write_text(m)
 print("manifest", [l.strip() for l in m.splitlines() if '"version"' in l][0])
 
@@ -86,12 +107,5 @@ print("ok", HOSTED)
 PY
 ```
 
-Then:
-
-1. Refresh `http://127.0.0.1:5173/` — it should become `https://app.ks.aileena.xyz/`
-2. `chrome://extensions` → **Remove** KeyShield → **Load unpacked** →
-   `~/Downloads/privacy_hack/keyshield/src/extension` (card **1.1.4**)
-3. Sign in. Tab must be `https://app.ks.aileena.xyz`
-4. Wallet / passkey. If badge stays `no token`: Developer token → **Register token**
-
-Or skip Vite: open `https://app.ks.aileena.xyz` yourself, then Register token.
+Then Remove + Load unpacked. Card **1.1.7**. Sign-in tab must be
+`https://app.ks.aileena.xyz`.

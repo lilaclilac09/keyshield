@@ -40,6 +40,14 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
           <p className={`${compact ? 'text-[12px] mt-1' : 'text-[14px] mt-1.5'} text-[#a8b3d8] leading-relaxed`}>
             Auto-detects API keys on OpenAI, Anthropic, OpenRouter, Groq, Helius pages and offers Save to vault. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
           </p>
+          <p className={`${compact ? 'text-[12px] mt-2' : 'text-[14px] mt-2'} text-[#e8ecff] leading-relaxed`}>
+            Already loaded <strong className="text-white">v1.1.1</strong> from Downloads? Do not click Sign-in
+            (opens dead <code className="text-white">keyshield.dev</code>). Stay on{' '}
+            <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>,
+            wallet login, then <strong className="text-white">Copy token for extension</strong> → popup
+            Settings → <strong className="text-white">Register token</strong>.
+            This Cloud agent cannot write <code className="text-white">~/Downloads/privacy_hack/keyshield</code>.
+          </p>
         </div>
       </div>
       <ol className={`${compact ? 'mt-3 space-y-1.5 text-[12px]' : 'mt-4 space-y-2 text-[14px]'} list-decimal list-inside text-[#e8ecff]`}>

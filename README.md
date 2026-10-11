@@ -129,11 +129,16 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 | `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
 | `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
 
-Old unpacked folder (`~/Downloads/…/src/extension`) still opening
-`https://keyshield.dev/`: pull this change, then **Remove** the
-extension and **Load unpacked** again. Reload does not always pick up
-a new service worker. Do not paste a token into a blank
-`keyshield.dev` page.
+Login **without** editing `~/Downloads/privacy_hack/keyshield` (that
+path is on your Mac; this repo cannot write it):
+
+1. Do **not** click Sign-in on a **v1.1.1** card — it opens dead `keyshield.dev`.
+2. Open [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz) in the same Chrome.
+3. Wallet / passkey. Home shows **Copy token for extension**.
+4. Popup → paste → **Register token**. Badge leaves `no token`.
+
+GitHub `main` still ships 1.1.1 / `keyshield.dev` until this PR merges.
+After merge: pull, **Remove**, **Load unpacked** — card must read **1.1.7**.
 
 ### 3. Pay for a stream (optional)
 

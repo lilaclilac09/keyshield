@@ -27,7 +27,10 @@ Sign-in default is the hosted dashboard:
 `app.ks.aileena.xyz`. Local Vite is popup **Use local dev**
 (`http://127.0.0.1:8001` / `http://127.0.0.1:5173`).
 
-If GitHub DNS fails, edit the files on disk — see `LOCAL-SIGNIN.md`.
+If GitHub DNS fails, **do not** edit `~/Downloads/…` unless you want
+the new Sign-in button. Login works without that folder: open
+`https://app.ks.aileena.xyz`, copy the session token, popup
+**Register token**. See `LOCAL-SIGNIN.md`.
 If Chrome cannot Reload: **Remove** then **Load unpacked** from this
 folder.
 
@@ -59,8 +62,8 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Click **→ Sign in to KeyShield**. Default tab is `https://app.ks.aileena.xyz`. After wallet / passkey the page should `KS_TOKEN_REGISTER`. If the badge stays empty, paste the Developer token into **Register token**.
-- **Sign-in opens a blank `keyshield.dev` tab:** That host has no DNS. Set Dashboard URL to `https://app.ks.aileena.xyz`, Save, Sign in again. Or run the offline patch in `LOCAL-SIGNIN.md`.
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` yourself (skip Sign-in on v1.1.1). Wallet / passkey. Copy token → **Register token**.
+- **Sign-in opens a blank `keyshield.dev` tab:** That is GitHub `main` 1.1.1. Do not edit Downloads. Use the token paste path. After this PR is on `main`, Load unpacked **1.1.7**.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
 - **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
