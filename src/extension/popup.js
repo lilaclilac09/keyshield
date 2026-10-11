@@ -10,45 +10,33 @@
 //      builds) to the public API / dashboard defaults below, unless
 //      the user has explicitly pinned a non-production target.
 
-// Unpacked Load (chrome://extensions → this folder) has no update_url.
-// Sign-in must open the local Vite dashboard, not keyshield.dev (no DNS)
-// and not a hosted tab the clone cannot log into.
-function isUnpackedExtension() {
-  try {
-    return !Object.prototype.hasOwnProperty.call(chrome.runtime.getManifest(), "update_url");
-  } catch {
-    return true;
-  }
-}
-
-const UNPACKED = isUnpackedExtension();
+// Sign-in default is the hosted dashboard. keyshield.dev has no DNS.
+// ks.app.aileena.xyz is the wrong label — the real host is app.ks.aileena.xyz.
+// Local Vite is Settings → Use local dev (127.0.0.1:5173), not the default.
 const PROD_API_BASE       = "https://keyshield-production.up.railway.app";
 const PROD_DASHBOARD_URL  = "https://app.ks.aileena.xyz";
 const LOCAL_API_BASE      = "http://127.0.0.1:8001";
 const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
-const DEFAULT_API_BASE      = UNPACKED ? LOCAL_API_BASE : PROD_API_BASE;
-const DEFAULT_DASHBOARD_URL = UNPACKED ? LOCAL_DASHBOARD_URL : PROD_DASHBOARD_URL;
+const DEFAULT_API_BASE      = PROD_API_BASE;
+const DEFAULT_DASHBOARD_URL = PROD_DASHBOARD_URL;
 
-// Packed builds only: leftover localhost from an old default → production.
-// Unpacked builds keep 127.0.0.1:5173 — that is the intended Sign-in target.
-const STALE_DASHBOARD_DEFAULTS = UNPACKED ? [] : [
+const STALE_DASHBOARD_DEFAULTS = [
   "http://127.0.0.1:5173",
   "http://localhost:5173",
 ];
-const STALE_API_DEFAULTS = UNPACKED ? [] : [
+const STALE_API_DEFAULTS = [
   "http://127.0.0.1:8001",
   "http://localhost:8001",
   "http://127.0.0.1:8000",
   "http://localhost:8000",
 ];
-const LEGACY_API_BASES = UNPACKED ? [] : ["https://keyshield-production.up.railway.app"];
+const LEGACY_API_BASES = [];
 
-// Hosts with no public DNS. Always rewrite, even if pinned — a dead host
-// is not a valid preference. Do not list app.ks.aileena.xyz here.
 const DEAD_DASHBOARD_URLS = [
   "https://keyshield.dev",
   "https://www.keyshield.dev",
   "https://app.keyshield.dev",
+  "https://ks.app.aileena.xyz",
 ];
 
 function isDeadDashboardUrl(url) {

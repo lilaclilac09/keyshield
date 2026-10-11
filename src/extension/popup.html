@@ -220,15 +220,12 @@
 
   <button id="signin">→ Sign in to KeyShield</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    After Load unpacked the card and this line must say <strong>v1.1.3</strong>.
-    If you still see <strong>1.1.1</strong>, Chrome loaded
-    <code>main</code> — that source still opens <code>keyshield.dev</code>.
-    Sign-in on this build opens <code>http://127.0.0.1:5173</code>
-    (run <code>node dev.cjs</code> first). If Reload does nothing:
-    <strong>Remove</strong> then <strong>Load unpacked</strong> from
-    <code>src/extension</code> (the folder that contains only
-    <code>manifest.json</code>, <code>popup.js</code>, <code>background.js</code>,
-    <code>content.js</code>, <code>popup.html</code>).
+    Sign-in opens <code>https://app.ks.aileena.xyz</code>
+    (not <code>ks.app.aileena.xyz</code>, not <code>keyshield.dev</code>).
+    Wallet / passkey there. If the badge stays <code>no token</code>,
+    copy Developer token → <strong>Register token</strong>.
+    Local stack only: Settings → <strong>Use local dev</strong>
+    (<code>http://127.0.0.1:5173</code>).
   </p>
   <div id="status" class="status"></div>
 
@@ -236,10 +233,10 @@
     <summary>Settings &amp; manual token</summary>
 
     <label for="api">Backend API base URL</label>
-    <input type="text" id="api" placeholder="http://127.0.0.1:8001" />
+    <input type="text" id="api" placeholder="https://keyshield-production.up.railway.app" />
 
     <label for="dash">Dashboard URL</label>
-    <input type="text" id="dash" placeholder="http://127.0.0.1:5173" />
+    <input type="text" id="dash" placeholder="https://app.ks.aileena.xyz" />
 
     <div class="row">
       <button id="save" class="secondary">Save settings</button>

@@ -18,29 +18,18 @@ src/extension/
 
 ## Backend
 
-Load unpacked from this folder (no `update_url` in the manifest) so
-**source defaults are local**:
-
-- API base: `http://127.0.0.1:8001`
-- Dashboard: `http://127.0.0.1:5173`
-
-A packed / store build (has `update_url`) uses production instead:
+Sign-in default is the hosted dashboard:
 
 - API base: `https://keyshield-production.up.railway.app`
-- Dashboard: `https://app.ks.aileena.xyz`
+- Dashboard: `https://app.ks.aileena.xyz` (not `ks.app.aileena.xyz`)
 
-`https://keyshield.dev` has **no public DNS**. Stored `keyshield.dev`
-URLs are rewritten to the unpacked or packed default.
+`https://keyshield.dev` has **no public DNS** and is rewritten to
+`app.ks.aileena.xyz`. Local Vite is popup **Use local dev**
+(`http://127.0.0.1:8001` / `http://127.0.0.1:5173`).
 
-If Chrome cannot Reload after you edit this folder: **Remove** the
-extension, then **Load unpacked** again from the same path (e.g.
-`~/Downloads/privacy_hack/keyshield/src/extension`). The card must
-show **1.1.3**. **1.1.1** is `main` and still opens `keyshield.dev`.
-See `LOCAL-SIGNIN.md`.
-
-Popup **Use production** / **Use local dev** / **Point at remote** pin
-`ks_api_base` / `ks_dashboard_url`. Unpacked builds do **not** migrate
-`127.0.0.1:5173` away.
+If GitHub DNS fails, edit the files on disk — see `LOCAL-SIGNIN.md`.
+If Chrome cannot Reload: **Remove** then **Load unpacked** from this
+folder.
 
 ## Install — Chrome / Edge / Brave / Arc
 
@@ -70,9 +59,9 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Click **→ Sign in to KeyShield**. Unpacked default is `http://127.0.0.1:5173` (`node dev.cjs`). Hosted: **Use production**. After wallet login the page should `KS_TOKEN_REGISTER`. If the badge stays empty, paste the Developer token into **Register token**.
-- **Sign-in opens a blank `keyshield.dev` tab:** That host has no DNS. **Remove** the extension, then **Load unpacked** again from this folder (Reload often does nothing).
+- **"No token" badge in popup:** Click **→ Sign in to KeyShield**. Default tab is `https://app.ks.aileena.xyz`. After wallet / passkey the page should `KS_TOKEN_REGISTER`. If the badge stays empty, paste the Developer token into **Register token**.
+- **Sign-in opens a blank `keyshield.dev` tab:** That host has no DNS. Set Dashboard URL to `https://app.ks.aileena.xyz`, Save, Sign in again. Or run the offline patch in `LOCAL-SIGNIN.md`.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
-- **Sign-in opens localhost but Vite is not running:** start `node dev.cjs`, or click **Use production**.
+- **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
 - **Manifest changes:** After editing `manifest.json`, try the **Reload** circle. If Chrome will not reload, Remove then Load unpacked.

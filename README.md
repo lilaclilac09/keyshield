@@ -77,20 +77,15 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 1. Open the vault UI and connect a Solana wallet (Phantom / Solflare).
 2. Unlock the Device Vault (passkey / WebAuthn-PRF). Encryption stays
    on this device; the server stores ciphertext only.
-3. **Chrome extension (preferred)** — Load unpacked from this repo's
-   `src/extension` (`manifest.json` inside). Example path:
-   `~/Downloads/privacy_hack/keyshield/src/extension`.
-   **Unpacked Sign-in is written in source as**
-   `http://127.0.0.1:5173` (API `http://127.0.0.1:8001`). Run
-   `node dev.cjs` first. Passkey needs `127.0.0.1`, not `localhost`.
-   **Do not use `https://keyshield.dev/`** — no public DNS.
-   Chrome often cannot Reload after a folder/source change: **Remove**
-   the extension, then **Load unpacked** again from the same folder
-   (card must say **1.1.3**). If the card still says **1.1.1**, you
-   loaded `main` — that source still opens `https://keyshield.dev`.
-   See `src/extension/LOCAL-SIGNIN.md`. Hosted Sign-in: popup **Use production** →
-   [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz).
-   If popup stays `no token`, paste the Developer token → **Register token**.
+3. **Chrome extension (preferred)** — Load unpacked from
+   `src/extension`. Sign-in is
+   [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz)
+   (not `ks.app.aileena.xyz`, not `https://keyshield.dev`).
+   Wallet / passkey on that tab. If the badge stays `no token`,
+   Developer → copy token → **Register token**.
+   Local `node dev.cjs` only: popup **Use local dev**
+   (`http://127.0.0.1:5173`). If GitHub DNS fails, edit the three
+   files on disk — see `src/extension/LOCAL-SIGNIN.md`.
    No Chrome Web Store listing yet. Firefox is a temporary add-on only
    (`manifest.firefox.json`).
 4. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
@@ -130,10 +125,9 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 | You are using | Popup Settings → Dashboard URL | Why |
 |---|---|---|
-| Load unpacked from this repo (`src/extension`) | `http://127.0.0.1:5173` (**source default**) | Local Vite. If Reload is greyed out: **Remove** → **Load unpacked** again from the same folder |
-| Hosted app / packed build | **Use production** → `https://app.ks.aileena.xyz` | Live vault + Railway control plane |
-| Local `node dev.cjs` (already unpacked) | already `127.0.0.1:5173`, or **Use local dev** | Passkey needs `127.0.0.1`, not `localhost` |
-| `https://keyshield.dev` | rewritten to the unpacked/packed default | **No public DNS** — Sign-in cannot log in |
+| Hosted login | `https://app.ks.aileena.xyz` (**default**) | Live vault. Not `ks.app.aileena.xyz` |
+| `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
+| Local `node dev.cjs` | **Use local dev** → `http://127.0.0.1:5173` | Passkey needs `127.0.0.1` |
 
 Old unpacked folder (`~/Downloads/…/src/extension`) still opening
 `https://keyshield.dev/`: pull this change, then **Remove** the

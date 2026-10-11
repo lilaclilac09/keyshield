@@ -21,33 +21,23 @@
 // Production defaults — extension ships pointing at the hosted KeyShield
 // deployment so a fresh install works without a local dev server. Mirrors
 // popup.js. Local-dev users override these via the popup's settings panel.
-function isUnpackedExtension() {
-  try {
-    return !Object.prototype.hasOwnProperty.call(chrome.runtime.getManifest(), 'update_url');
-  } catch {
-    return true;
-  }
-}
-
-const UNPACKED = isUnpackedExtension();
 const PROD_KS_BASE          = 'https://keyshield-production.up.railway.app';
 const PROD_DASHBOARD_URL    = 'https://app.ks.aileena.xyz';
 const LOCAL_KS_BASE         = 'http://127.0.0.1:8001';
 const LOCAL_DASHBOARD_URL   = 'http://127.0.0.1:5173';
-const DEFAULT_KS_BASE       = UNPACKED ? LOCAL_KS_BASE : PROD_KS_BASE;
-const DEFAULT_DASHBOARD_URL = UNPACKED ? LOCAL_DASHBOARD_URL : PROD_DASHBOARD_URL;
+const DEFAULT_KS_BASE       = PROD_KS_BASE;
+const DEFAULT_DASHBOARD_URL = PROD_DASHBOARD_URL;
 
-// Packed only. Unpacked Sign-in is supposed to stay on 127.0.0.1:5173.
-const STALE_DASHBOARD_DEFAULTS = UNPACKED ? [] : [
+const STALE_DASHBOARD_DEFAULTS = [
   'http://127.0.0.1:5173',
   'http://localhost:5173',
 ];
-const LEGACY_API_BASES = UNPACKED ? [] : ['https://keyshield-production.up.railway.app'];
-// Hosts with no public DNS. Always rewrite. Do not list app.ks.aileena.xyz.
+const LEGACY_API_BASES = [];
 const DEAD_DASHBOARD_URLS = [
   'https://keyshield.dev',
   'https://www.keyshield.dev',
   'https://app.keyshield.dev',
+  'https://ks.app.aileena.xyz',
 ];
 const PIN_PREF_KEY = 'ks_url_pref_pinned';
 
