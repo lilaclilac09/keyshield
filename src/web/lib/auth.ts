@@ -24,6 +24,7 @@ import {
   PROD_API_BASE,
   usePublicControlPlaneFallback,
 } from './host-deploy';
+import { mergeSessionSides, parseExtensionSession } from './ext-session';
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
@@ -178,6 +179,41 @@ export async function pingExtension(): Promise<{ installed: boolean; hasToken: b
       resolve({ installed: false, hasToken: false });
     }
   });
+}
+
+function applyMergedExtensionSession(incoming: { token: string; user: string | null }): void {
+  const merged = mergeSessionSides({
+    pageToken: getToken(),
+    pageUser: getWalletAddress(),
+    extensionToken: incoming.token,
+    extensionUser: incoming.user,
+  });
+  if (!merged) return;
+  if (merged.applyToPage) {
+    if (merged.user) setWalletAddress(merged.user);
+    setToken(merged.token);
+    notifyAuthChanged();
+    return;
+  }
+  if (merged.pushToExtension) {
+    pushTokenToExtension(merged.token);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || !event.data || typeof event.data !== 'object') return;
+    const data = event.data as { __ks_ext_announce?: unknown };
+    if (typeof data.__ks_ext_announce === 'string') {
+      try { localStorage.setItem('ks_ext_id', data.__ks_ext_announce); } catch { /* noop */ }
+      const token = getToken();
+      if (token) pushTokenToExtension(token);
+    }
+    const incoming = parseExtensionSession(data);
+    if (incoming) applyMergedExtensionSession(incoming);
+  });
+  try { window.postMessage({ __ks_ext_request: true }, window.location.origin); } catch { /* noop */ }
+  try { window.postMessage({ __ks_ext_request_session: true }, window.location.origin); } catch { /* noop */ }
 }
 
 // ── Authenticated fetch ───────────────────────────────────────────────────

@@ -117,15 +117,18 @@ async function loadSettings() {
   const hasVault = !!session.ks_vault_key;
 
   const badge = $("conn");
+  const signinBtn = $("signin");
   if (ks_token) {
     const short = ks_user ? `${ks_user.slice(0, 4)}…${ks_user.slice(-4)}` : "signed in";
     badge.textContent = hasVault ? `${short} · 🔒` : short;
     badge.title = hasVault
       ? "Token registered. Vault key registered — saves are encrypted client-side."
       : "Token registered, but no vault key yet. Saves go in plaintext until you sign the vault-unlock message in the dashboard.";
+    if (signinBtn) signinBtn.textContent = "→ Open KeyShield";
   } else {
     badge.textContent = "no token";
     badge.title = "Click Sign in to open the dashboard.";
+    if (signinBtn) signinBtn.textContent = "→ Sign in to KeyShield";
   }
 }
 
@@ -145,21 +148,29 @@ async function saveSettings() {
   setStatus("Saved");
 }
 
+function signinDashboardHref() {
+  return "https://app.ks.aileena.xyz/?ext=1";
+}
+
 async function openDashboardForSignin() {
-  // Sign-in always opens the hosted dashboard. 127.0.0.1:5173 is the Vite
-  // clone and must bounce / not be the login tab. Use local dev is for API.
-  let url = "https://app.ks.aileena.xyz";
+  // Sign-in always opens the hosted dashboard. ?ext=1 restores a token
+  // already in chrome.storage, or pushes a page token back here.
+  const url = signinDashboardHref();
   try {
-    await chrome.storage.local.set({ ks_dashboard_url: url });
+    await chrome.storage.local.set({ ks_dashboard_url: "https://app.ks.aileena.xyz" });
   } catch { /* noop */ }
   try { await chrome.tabs.create({ url }); }
   catch (e) {
     setStatus(`Couldn't open tab: ${String(e)}`, "err", 3000);
     return;
   }
-  setStatus(`Opened ${url} — sign in there to register the token here.`, "ok", 4000);
-  // Refresh state shortly after the user has had time to sign in.
-  setTimeout(loadSettings, 1500);
+  const { ks_token } = await chrome.storage.local.get("ks_token");
+  if (ks_token) {
+    setStatus("Opened signed-in dashboard.", "ok", 4000);
+  } else {
+    setStatus("Opened dashboard — sign in once; the token returns here.", "ok", 4000);
+  }
+  [800, 2000, 4000, 8000].forEach((ms) => setTimeout(loadSettings, ms));
 }
 
 async function registerManualToken() {

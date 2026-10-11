@@ -33,8 +33,8 @@
  *       (requiresDomain=true) but inside iframes the host check uses the top
  *       window's hostname; a same-origin iframe is fine, cross-origin iframe
  *       won't trigger. Acceptable for the OpenAI / Helius "happy path" demo.
- *     - The popup writes ks_token via externally_connectable from the dashboard
- *       only. There's no "paste your token" form in the popup itself yet.
+ *     - Dashboard hosts also get session-bridge.js at document_start so an
+ *       existing chrome.storage token lands in localStorage before React.
  */
 
 // ── Provider definitions ────────────────────────────────────────────────────
@@ -680,10 +680,31 @@ function isKeyShieldDashboardHost() {
     try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }
     catch { /* noop */ }
   };
+  const shareSession = () => {
+    try {
+      chrome.storage.local.get(['ks_token', 'ks_user'], (stored) => {
+        const token = stored && stored.ks_token;
+        if (!token) return;
+        try {
+          if (!localStorage.getItem('ks_token')) {
+            localStorage.setItem('ks_token', token);
+            if (stored.ks_user) localStorage.setItem('ks_wallet', stored.ks_user);
+          }
+        } catch { /* noop */ }
+        try {
+          window.postMessage({
+            __ks_ext_session: { token: token, user: stored.ks_user || null },
+          }, location.origin);
+        } catch { /* noop */ }
+      });
+    } catch { /* noop */ }
+  };
   announce();
+  shareSession();
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.__ks_ext_request) announce();
+    if (e.data.__ks_ext_request_session) shareSession();
   });
 })();
 

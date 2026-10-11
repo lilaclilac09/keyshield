@@ -62,6 +62,11 @@ const MainContent: React.FC = () => {
   const { disconnect, publicKey } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasStoredToken());
+  const [restoringExt, setRestoringExt] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (hasStoredToken()) return false;
+    return new URLSearchParams(window.location.search).get('ext') === '1';
+  });
   const [section, setSection] = useState<Section>(() => (
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
       ? 'activity'
@@ -96,6 +101,22 @@ const MainContent: React.FC = () => {
     return () => window.removeEventListener('ks-nav', onNav as EventListener);
   }, []);
 
+  useEffect(() => {
+    const syncAuth = () => {
+      const ok = hasStoredToken();
+      setIsAuthenticated(ok);
+      if (ok) setRestoringExt(false);
+    };
+    window.addEventListener('ks-auth-changed', syncAuth);
+    return () => window.removeEventListener('ks-auth-changed', syncAuth);
+  }, []);
+
+  useEffect(() => {
+    if (!restoringExt) return;
+    const t = window.setTimeout(() => setRestoringExt(false), 400);
+    return () => window.clearTimeout(t);
+  }, [restoringExt]);
+
   const refreshHome = React.useCallback(() => {
     if (!isAuthenticated) return;
     const addr = publicKey?.toBase58() ?? getWalletAddress() ?? '';
@@ -115,6 +136,14 @@ const MainContent: React.FC = () => {
   }, [refreshHome]);
 
   const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
+
+  if (restoringExt && !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b1226] text-[#a8b3d8] text-sm">
+        Restoring session…
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (

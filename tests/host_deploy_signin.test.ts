@@ -3,6 +3,7 @@ import {
   hostedDashboardHref,
   isLocalViteSigninHost,
   PROD_DASHBOARD_URL,
+  signinDashboardHref,
 } from "../src/web/lib/host-deploy";
 
 describe("hosted Sign-in bounce", () => {
@@ -41,5 +42,9 @@ describe("hosted Sign-in bounce", () => {
         hash: "",
       }),
     ).toBe("https://app.ks.aileena.xyz/");
+  });
+
+  it("marks Sign-in with ext=1 so the extension session restores", () => {
+    expect(signinDashboardHref()).toBe("https://app.ks.aileena.xyz/?ext=1");
   });
 });
