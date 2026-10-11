@@ -64,6 +64,7 @@ def test_routes_register() -> None:
         "/keychain/detect",
         "/keychain/call",
         "/keychain/store",
+        "/mpp/status",
     ):
         assert required in paths, f"expected {required} registered; saw {sorted(paths)}"
 
