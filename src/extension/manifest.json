@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "KeyShield — Sovereign Vault",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Auto-detect API keys on any page and store them in your encrypted KeyShield vault.",
 
   "permissions": [
     "storage",
     "notifications",
-    "clipboardRead"
+    "clipboardRead",
+    "scripting",
+    "tabs"
   ],
 
   "optional_host_permissions": [
@@ -15,6 +17,7 @@
   ],
 
   "host_permissions": [
+    "<all_urls>",
     "http://127.0.0.1:8001/*",
     "http://localhost:8001/*",
     "http://localhost:8000/*",
@@ -56,7 +59,9 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
 

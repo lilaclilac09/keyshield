@@ -49,6 +49,17 @@
 
 const PROVIDERS = [
   {
+    id:       'cursor',
+    name:     'Cursor',
+    label:    'CUR',
+    patterns: [
+      /key_[A-Za-z0-9_-]{16,}/g,
+      /crsr[_-][A-Za-z0-9_-]{10,}/g,
+    ],
+    domains:  ['cursor.com', 'www.cursor.com', 'cursor.sh'],
+    minLen:   16,
+  },
+  {
     id:       'openrouter',
     name:     'OpenRouter',
     label:    'OR',
@@ -223,38 +234,54 @@ function ksHostMatches(hostname, allowList) {
 
 // ── Scanner ─────────────────────────────────────────────────────────────────
 
+function collectScanText() {
+  const chunks = [];
+  if (document.body) chunks.push(document.body.innerText || '');
+  const nodes = document.querySelectorAll(
+    'input, textarea, code, pre, [contenteditable="true"], td, th, [role="cell"], [role="gridcell"]',
+  );
+  for (const el of nodes) {
+    chunks.push(el.value || el.textContent || '');
+  }
+  return chunks.join('\n');
+}
+
+let scanTimer = 0;
+function scheduleScan() {
+  if (scanTimer) return;
+  scanTimer = setTimeout(() => {
+    scanTimer = 0;
+    scan();
+  }, 200);
+}
+
 function scan() {
   if (domainDismissed) return;
-  // 1. Visible text
-  const text = document.body?.innerText || '';
-  // 2. Input values (often where keys are revealed via "Show" button)
-  const inputs = Array.from(document.querySelectorAll('input, textarea, code, pre'));
+  if (!document.body) return;
+  const text = collectScanText();
 
   for (const provider of PROVIDERS) {
     const onDomain = isOnDomain(provider);
     if (provider.requiresDomain && !onDomain) continue;
 
     for (const regex of provider.patterns) {
-      regex.lastIndex = 0;  // reset stateful flag
+      regex.lastIndex = 0;
       let m;
       while ((m = regex.exec(text)) !== null) {
         if (m[0].length >= provider.minLen) handleMatch(m[0], provider, onDomain);
-      }
-      for (const el of inputs) {
-        const v = (el.value || el.textContent || '');
-        regex.lastIndex = 0;
-        const im = regex.exec(v);
-        if (im && im[0].length >= provider.minLen) handleMatch(im[0], provider, onDomain);
       }
     }
   }
 }
 
 function handleMatch(key, provider, onDomain) {
-  if (detectedKeys.has(key)) return;
   if (URL_UUIDS.has(key.toLowerCase())) return;
-  detectedKeys.set(key, { provider, onDomain, saved: false });
-  console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
+  const prev = detectedKeys.get(key);
+  if (prev && prev.saved === true) return;
+  if (!prev) {
+    detectedKeys.set(key, { provider, onDomain, saved: false });
+    console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
+  }
   renderPanel();
   maybeAutoStore();
 }
@@ -266,6 +293,16 @@ function loadAutoStorePref() {
       if (autoStoreAllowed) maybeAutoStore();
     });
   } catch { /* fail closed — wait for Allow */ }
+}
+
+function watchAutoStorePref() {
+  try {
+    chrome.storage?.onChanged?.addListener?.((changes, area) => {
+      if (area !== 'local' || !changes[AUTO_STORE_KEY]) return;
+      autoStoreAllowed = !!changes[AUTO_STORE_KEY].newValue;
+      if (autoStoreAllowed) maybeAutoStore();
+    });
+  } catch { /* noop */ }
 }
 
 function grantAutoStore() {
@@ -326,6 +363,9 @@ function buildPanel() {
 }
 
 function closePanel() {
+  for (const [k, v] of detectedKeys) {
+    if (v.saved !== true) detectedKeys.delete(k);
+  }
   if (panelEl && panelEl.parentNode) panelEl.remove();
   panelEl = null;
 }
@@ -762,20 +802,26 @@ function isKeyShieldDashboardHost() {
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
-loadDismissedDomains();
-loadAutoStorePref();
+function startDetectWatchers() {
+  loadDismissedDomains();
+  loadAutoStorePref();
+  scheduleScan();
+  if (globalThis.__ksDetectWired) return;
+  globalThis.__ksDetectWired = true;
+  watchAutoStorePref();
+  setInterval(scheduleScan, 2000);
+  const attachObserver = () => {
+    if (!document.body) return;
+    const observer = new MutationObserver(() => scheduleScan());
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  };
+  if (document.body) attachObserver();
+  else document.addEventListener('DOMContentLoaded', attachObserver, { once: true });
+  document.addEventListener('copy', () => scheduleScan());
+  document.addEventListener('input', () => scheduleScan(), { capture: true });
+}
 
-scan();
-setInterval(scan, 3000);
-
-const observer = new MutationObserver(() => scan());
-observer.observe(document.body, { childList: true, subtree: true });
-
-// User pressed copy on a page — likely just copied a key. Re-scan.
-document.addEventListener('copy', () => setTimeout(scan, 300));
-
-// User typed/pasted in a field — likely revealing a key.
-document.addEventListener('input', () => setTimeout(scan, 300), { capture: true });
+startDetectWatchers();
 
 function ksExtractRequestUrl(args) {
   const first = args?.[0];
@@ -861,6 +907,8 @@ function ksPromptQuickAuth(hostname, reason) {
 // carry the X-Payment-Required: x402 header.
 
 (function () {
+  if (window.__ksFetchWrapped) return;
+  window.__ksFetchWrapped = true;
   const _origFetch = window.fetch.bind(window);
 
   window.fetch = async function (...args) {

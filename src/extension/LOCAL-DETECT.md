@@ -7,7 +7,7 @@ github.com will not resolve. Do **not** paste HTML into zsh.
 Stay on **KeyShield — Sovereign Vault**. Sign-in must open
 `https://app.ks.aileena.xyz/?ext=1&demo=shop`.
 
-## 1. Patch 1.1.3 → 1.2.0 on disk (python3 only)
+## 1. Patch 1.1.3 → 1.2.1 on disk (python3 only)
 
 ```bash
 cd ~/Downloads/privacy_hack/keyshield
@@ -26,10 +26,16 @@ else:
 HOSTED = "https://app.ks.aileena.xyz"
 man_path = ext / "manifest.json"
 man = json.loads(man_path.read_text())
-man["version"] = "1.2.0"
+man["version"] = "1.2.1"
 man.setdefault("optional_host_permissions", [])
 if "<all_urls>" not in man["optional_host_permissions"]:
     man["optional_host_permissions"].append("<all_urls>")
+man.setdefault("host_permissions", [])
+if "<all_urls>" not in man["host_permissions"]:
+    man["host_permissions"].insert(0, "<all_urls>")
+for extra in ("scripting", "tabs"):
+    if extra not in man.get("permissions", []):
+        man.setdefault("permissions", []).append(extra)
 man_path.write_text(json.dumps(man, indent=2) + "\n")
 
 for name in ("popup.js", "background.js"):
@@ -81,7 +87,7 @@ loadAutoStorePref();
 """
     cjs.write_text(c)
 
-print("ok 1.2.0", ext)
+print("ok 1.2.1", ext)
 print("ver", json.loads(man_path.read_text())["version"])
 print("dash", [l for l in (ext / "popup.js").read_text().splitlines() if "DEFAULT_DASHBOARD_URL" in l][0])
 print("auto", "maybeAutoStore" in cjs.read_text())
@@ -96,7 +102,8 @@ Screen must say `ok 1.2.0` and `DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.
 
 1. `chrome://extensions` → **Remove** the old card.
 2. **Load unpacked** → `src/extension`.
-3. Name **KeyShield — Sovereign Vault**, version **1.2.0**.
+3. Name **KeyShield — Sovereign Vault**, version **1.2.1**.
+   Chrome may ask to read all sites — Allow. That is what wires detect.
 4. Popup → **Use hosted app.ks.aileena.xyz** → **Allow detect + auto-save**.
 5. Click **Sign in**. It must **not** open `127.0.0.1:5173`.
 

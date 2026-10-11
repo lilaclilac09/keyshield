@@ -222,11 +222,22 @@ async function allowDetectAndStore() {
     return;
   }
   await chrome.storage.local.set({ ks_auto_store: true });
+  let injected = 0;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "INJECT_DETECT" });
+    if (resp && typeof resp.injected === "number") injected = resp.injected;
+  } catch { /* service worker cold */ }
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.id && /^https?:/.test(tab.url || "")) await chrome.tabs.reload(tab.id);
   } catch { /* noop */ }
-  setStatus("Detect allowed. Auto-save is on. Reload the page if the toast is missing.", "ok", 4500);
+  setStatus(
+    injected
+      ? `Detect + auto-save on. Wired ${injected} tab${injected === 1 ? "" : "s"}. A key on the page must toast.`
+      : "Detect + auto-save on. Reload the page if the toast is missing.",
+    "ok",
+    5000,
+  );
 }
 
 async function registerManualToken() {

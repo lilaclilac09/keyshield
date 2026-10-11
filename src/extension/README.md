@@ -66,7 +66,8 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 - **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.2.0). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
 - **Sign-in should open already logged in:** Load unpacked **1.2.0**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`. `127.0.0.1:5173` refused means Vite is off — Sign-in must fall back to the hosted app.
-- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.2.0**. **Use hosted** + **Allow detect + auto-save**.
+- **No toast when a key is on the page:** load unpacked **1.2.1**. `<all_urls>` is now a host permission so `content.js` injects on cursor.com / openai.com. Popup **Allow detect + auto-save** injects into open tabs. Then reload that tab.
+- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.2.1**. **Use hosted** + **Allow detect + auto-save**.
 - **Passkey after jump-out:** a preregistered `ks_passkey_user` / wallet id must show **Sign In as abcd…wxyz**. A stale token 401 must not wipe that id.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
 - **Want local Vite instead:** popup Settings → **Use local dev** only after `curl http://127.0.0.1:5173` works.
