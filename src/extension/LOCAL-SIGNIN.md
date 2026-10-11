@@ -1,99 +1,97 @@
 # Sign in at https://app.ks.aileena.xyz
 
-`http://127.0.0.1:5173/` is the local Vite clone. Sign-in must
-**redirect** to `https://app.ks.aileena.xyz`. Keep local UI with `?local=1`.
+Do **not** paste `<script>…</script>` into zsh. That is HTML for
+`src/web/index.html`. The shell will print `parse error near \n`.
 
-If GitHub DNS is down, paste this as the first script in
-`src/web/index.html` inside `<body>`, then reload the 5173 tab:
-
-```html
-<script>
-  (function () {
-    if (/(?:^|[?&])local=1(?:&|$)/.test(location.search)) return;
-    var h = location.hostname;
-    var p = location.port;
-    if ((h !== '127.0.0.1' && h !== 'localhost') || (p && p !== '5173' && p !== '5174')) return;
-    location.replace('https://app.ks.aileena.xyz' + location.pathname + location.search + location.hash);
-  })();
-</script>
-```
-
-The hosted dashboard is **`https://app.ks.aileena.xyz`**.
-Not `ks.app.aileena.xyz`. Not `https://keyshield.dev` (no DNS).
-`http://127.0.0.1:5173` is only for `node dev.cjs`.
-
-GitHub fetch failing (`Could not resolve host: github.com`) does not
-block login. Edit the files already on disk.
-
-## Fastest: no file edit
-
-On the **1.1.1** popup you already have:
-
-1. Open the popup → **Settings & manual token**
-2. Dashboard URL = `https://app.ks.aileena.xyz`
-3. Backend API base URL = `https://keyshield-production.up.railway.app`
-4. **Save settings**
-5. **→ Sign in to KeyShield**
-6. On that tab: Phantom / wallet or passkey
-7. If the badge stays `no token`: dashboard **Developer** → copy token →
-   popup **Register token**
-
-`main`'s `content.js` only announces on `keyshield.dev` / `127.0.0.1:5173`.
-Hosted login often needs that Register-token fallback unless you run
-the patch below.
-
-## Offline patch (no git)
+`git fetch` failing (`Could not resolve host: github.com`) is fine.
+Run this **one** Python block from the repo root. It undoes a 5173
+default, points Sign-in at the hosted app, and writes the Vite redirect.
 
 ```bash
-cd ~/Downloads/privacy_hack/keyshield/src/extension
+cd ~/Downloads/privacy_hack/keyshield
 
 python3 - <<'PY'
 from pathlib import Path
+import re
+
+root = Path.cwd()
+if (root / "src/extension/popup.js").exists():
+    pass
+elif (root / "popup.js").exists() and (root / "../web/index.html").exists():
+    root = root.parent.parent
+else:
+    raise SystemExit("run from ~/Downloads/privacy_hack/keyshield")
 
 HOSTED = "https://app.ks.aileena.xyz"
+ext = root / "src/extension"
+web = root / "src/web/index.html"
 
-popup = Path("popup.js")
-p = popup.read_text()
-for old in (
-    'const DEFAULT_DASHBOARD_URL = "https://keyshield.dev";',
-    'const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:5173";',
-):
-    p = p.replace(old, f'const DEFAULT_DASHBOARD_URL = "{HOSTED}";')
-popup.write_text(p)
+def set_dash(path: Path, quote: str) -> str:
+    text = path.read_text()
+    new, n = re.subn(
+        r"const DEFAULT_DASHBOARD_URL = ['\"][^'\"]+['\"];",
+        f"const DEFAULT_DASHBOARD_URL = {quote}{HOSTED}{quote};",
+        text,
+        count=1,
+    )
+    if n != 1:
+        raise SystemExit(f"DEFAULT_DASHBOARD_URL not found in {path.name}")
+    path.write_text(new)
+    return [l for l in new.splitlines() if "DEFAULT_DASHBOARD_URL" in l][0]
 
-bg = Path("background.js")
-b = bg.read_text()
-for old in (
-    "const DEFAULT_DASHBOARD_URL = 'https://keyshield.dev';",
-    "const DEFAULT_DASHBOARD_URL = 'http://127.0.0.1:5173';",
-):
-    b = b.replace(old, f"const DEFAULT_DASHBOARD_URL = '{HOSTED}';")
-bg.write_text(b)
+print("popup", set_dash(ext / "popup.js", '"'))
+print("bg   ", set_dash(ext / "background.js", "'"))
 
-# main only announces on keyshield.dev / 5173 — add the hosted app
-cjs = Path("content.js")
+cjs = ext / "content.js"
 c = cjs.read_text()
-needle = "location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev')"
-insert = needle + " ||\n    location.hostname === 'app.ks.aileena.xyz' || location.hostname.endsWith('.aileena.xyz')"
 if "app.ks.aileena.xyz" not in c:
+    needle = "location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev')"
+    if needle not in c:
+        needle = "location.hostname === 'keyshield.dev' || location.hostname.endsWith('.keyshield.dev')"
     if needle not in c:
         raise SystemExit("content.js announce block not found")
-    c = c.replace(needle, insert, 1)
+    c = c.replace(
+        needle,
+        needle + " ||\n    location.hostname === 'app.ks.aileena.xyz' || location.hostname.endsWith('.aileena.xyz')",
+        1,
+    )
     cjs.write_text(c)
+print("content announce", "app.ks.aileena.xyz" in cjs.read_text())
 
-man = Path("manifest.json")
+man = ext / "manifest.json"
 m = man.read_text()
-m = m.replace('"version": "1.1.1"', '"version": "1.1.4"', 1)
-m = m.replace('"version": "1.1.3"', '"version": "1.1.4"', 1)
+m = re.sub(r'"version": "1\.[0-9.]+"', '"version": "1.1.4"', m, count=1)
 man.write_text(m)
+print("manifest", [l.strip() for l in m.splitlines() if '"version"' in l][0])
 
-print("ok")
-print([l for l in popup.read_text().splitlines() if "DEFAULT_DASHBOARD_URL" in l][0])
-print("content has app.ks.aileena.xyz:", "app.ks.aileena.xyz" in cjs.read_text())
-print([l for l in man.read_text().splitlines() if '"version"' in l][0])
+html = web.read_text()
+marker = "location.replace('https://app.ks.aileena.xyz'"
+if marker not in html:
+    snippet = """  <script>
+    (function () {
+      if (/(?:^|[?&])local=1(?:&|$)/.test(location.search)) return;
+      var h = location.hostname;
+      var p = location.port;
+      if ((h !== '127.0.0.1' && h !== 'localhost') || (p && p !== '5173' && p !== '5174')) return;
+      location.replace('https://app.ks.aileena.xyz' + location.pathname + location.search + location.hash);
+    })();
+  </script>
+"""
+    if "<div id=\"root\"></div>" not in html:
+        raise SystemExit("src/web/index.html missing #root")
+    html = html.replace("<div id=\"root\"></div>\n", "<div id=\"root\"></div>\n" + snippet, 1)
+    web.write_text(html)
+print("index.html redirect", marker in web.read_text())
+print("ok", HOSTED)
 PY
 ```
 
-Then `chrome://extensions` → **Remove** → **Load unpacked** →
-`~/Downloads/privacy_hack/keyshield/src/extension`.
-Card **1.1.4**. Sign-in tab **https://app.ks.aileena.xyz**.
+Then:
+
+1. Refresh `http://127.0.0.1:5173/` — it should become `https://app.ks.aileena.xyz/`
+2. `chrome://extensions` → **Remove** KeyShield → **Load unpacked** →
+   `~/Downloads/privacy_hack/keyshield/src/extension` (card **1.1.4**)
+3. Sign in. Tab must be `https://app.ks.aileena.xyz`
+4. Wallet / passkey. If badge stays `no token`: Developer token → **Register token**
+
+Or skip Vite: open `https://app.ks.aileena.xyz` yourself, then Register token.
