@@ -52,13 +52,13 @@ Set them once and you can reuse the same unpacked install everywhere:
 
 ```js
 chrome.storage.local.set({
-  ks_api_base:      'https://api.keyshield.dev',
-  ks_dashboard_url: 'https://app.keyshield.dev',
+  ks_api_base:      'https://keyshield-production.up.railway.app',
+  ks_dashboard_url: 'https://app.ks.aileena.xyz',
 })
 ```
 
-(`manifest.json` already lists `https://api.keyshield.dev/*` and
-`https://*.keyshield.dev/*` in `host_permissions`, so no extra prompts.)
+(`manifest.json` lists `https://app.ks.aileena.xyz/*`. Do not point
+Sign-in at `https://keyshield.dev` — that host has no public DNS.)
 
 ## 3. Auto-detect demo
 

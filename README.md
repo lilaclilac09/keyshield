@@ -52,7 +52,7 @@ Three layers. Two meters. Seats are not calls.
 
 **Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
 
-**Start here:** [How to use this](#how-to-use-this) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [Chrome extension Sign in](#chrome-extension-sign-in) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -80,9 +80,17 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 3. **Chrome extension (preferred)** — the vault UI front page shows
    these steps. Open `chrome://extensions` → Developer mode →
    **Load unpacked** → select `src/extension` (`manifest.json` inside).
-   Pin the icon, then sign in so the popup gets a session. No Chrome
-   Web Store listing yet. Firefox is supported as a temporary add-on
-   only (`manifest.firefox.json`).
+   Pin the icon, then **→ Sign in to KeyShield**.
+   **Do not use `https://keyshield.dev/`** — that host has **no public
+   DNS**, so the tab is blank and you cannot log in.
+   Default Sign-in URL is [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz).
+   Local `node dev.cjs`: popup **Settings → Use local dev**
+   (`http://127.0.0.1:5173`, not `localhost` — passkey needs `127.0.0.1`).
+   If popup stays `no token` after wallet login, copy the Developer
+   session token and **Register token** in the popup.
+   Reload unpacked after pulling this change so `content.js` announces
+   on `*.aileena.xyz`. No Chrome Web Store listing yet. Firefox is a
+   temporary add-on only (`manifest.firefox.json`).
 4. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
    OpenRouter, Groq, …), or let the Chrome extension save one from
    the provider page.
@@ -115,6 +123,18 @@ and `ks_login <wallet> <passphrase>`.
 Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 (Activity), **Developer**, **Agents**, **Sharing**, **Sessions**,
 **Settings**, **Docs**, **Reports**, **X402 Trust**. Do not rename them.
+
+### Chrome extension Sign in
+
+| You are using | Popup Settings → Dashboard URL | Why |
+|---|---|---|
+| Hosted app | `https://app.ks.aileena.xyz` (**default**) | Live vault + Railway control plane |
+| Local `node dev.cjs` | **Use local dev** → `http://127.0.0.1:5173` | Passkey needs `127.0.0.1`, not `localhost` |
+| `https://keyshield.dev` | rewritten to the hosted app | **No public DNS** — Sign-in cannot log in |
+
+Old installs that still open `https://keyshield.dev/`: reload unpacked
+`src/extension`, then Sign in again. Do not paste a token into a blank
+`keyshield.dev` page.
 
 ### 3. Pay for a stream (optional)
 
@@ -519,6 +539,7 @@ as instruction 0 so the program does not return 6114.
 |---|---|
 | App (vault + developer token) | https://app.ks.aileena.xyz |
 | Marketing | https://ks.aileena.xyz |
+| Chrome extension Sign-in | `https://app.ks.aileena.xyz` — **not** `https://keyshield.dev` (no DNS) |
 | Record-demo harness | [`docs/DEMO_RECORDING_SCRIPT.md`](docs/DEMO_RECORDING_SCRIPT.md) · `npm run demo:record` |
 | YouTube cut | Publish the voiced take from `docs/DEMO_RECORDING_SCRIPT.md` and paste the `youtu.be` URL here — none is checked into the repo yet |
 
