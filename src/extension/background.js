@@ -559,9 +559,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   //     every fresh install once the user stops `npm run dev`.
   if (message.type === 'OPEN_DASHBOARD_FOR_SIGNIN') {
     (async () => {
-      const dashboardUrl = DEFAULT_DASHBOARD_URL;
-      try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
-      chrome.tabs.create({ url: `${String(dashboardUrl).replace(/\/+$/, '')}/?ext=1` });
+      const stored = await chrome.storage.local.get([PIN_PREF_KEY, 'ks_dashboard_url']);
+      const dash = String(stored.ks_dashboard_url || '');
+      const pinnedLocal = !!stored[PIN_PREF_KEY] && /127\.0\.0\.1:5173|localhost:5173/.test(dash);
+      const dashboardUrl = pinnedLocal ? LOCAL_DASHBOARD_URL : DEFAULT_DASHBOARD_URL;
+      const url = pinnedLocal
+        ? `${LOCAL_DASHBOARD_URL}/?local=1&ext=1`
+        : `${String(dashboardUrl).replace(/\/+$/, '')}/?ext=1`;
+      if (!pinnedLocal) {
+        try { await chrome.storage.local.set({ ks_dashboard_url: dashboardUrl }); } catch { /* noop */ }
+      }
+      chrome.tabs.create({ url });
       sendResponse({ ok: true, dashboardUrl });
     })();
     return true;
@@ -602,7 +610,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const reasonMsg = {
         'no-token':      'Sign in to KeyShield first',
         'token-expired': 'Session expired — sign in again',
-        'network':       'Backend unreachable — opening dashboard',
+        'network':       'Backend unreachable — start local API on 127.0.0.1:8001 or check Settings',
       }[result.reason] || `Error: ${result.reason}`;
 
       const { dashboardUrl } = await getApiBase();

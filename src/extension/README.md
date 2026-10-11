@@ -63,8 +63,9 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.1.8). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
-- **Sign-in should open already logged in:** Load unpacked **1.1.8**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`.
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.1.9). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
+- **Sign-in should open already logged in:** Load unpacked **1.1.9**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`.
+- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.1.9**. **Allow detect + auto-save**, then open `detect-demo.html`.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
 - **Want local Vite instead:** popup **Use local dev** (`http://127.0.0.1:5173`) after `node dev.cjs`.
 - **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
