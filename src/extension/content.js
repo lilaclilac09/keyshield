@@ -568,24 +568,28 @@ function ksIsCursorFillContext() {
 
 function ksAncestorHaystack(el) {
   const chunks = [];
-  let node = el;
-  for (let depth = 0; depth < 8 && node; depth++) {
-    const parent = node.parentElement;
-    if (!parent) break;
-    const labeled = parent.querySelector
-      && parent.querySelector('.setting-item-label, .setting-item-title, [class*="setting-item-label"]');
+  const item = el.closest && el.closest('.setting-item, [class*="setting-item"]');
+  if (item) {
+    const labeled = item.querySelector
+      && item.querySelector('.setting-item-label, .setting-item-title, [class*="setting-item-label"], label');
     if (labeled && labeled !== el && !labeled.contains(el)) {
       chunks.push(String(labeled.textContent || '').slice(0, 240));
     }
-    const prev = parent.previousElementSibling;
-    if (prev) {
-      const prevLabel = (prev.querySelector && prev.querySelector('.setting-item-label, .setting-item-title, label')) || prev;
-      const t = String(prevLabel.textContent || '').trim();
-      if (t && t.length < 240) chunks.push(t);
+    return chunks.join(' ');
+  }
+  let node = el;
+  for (let depth = 0; depth < 6 && node; depth++) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const labeled = parent.querySelector
+      && parent.querySelector(':scope > .setting-item-label, :scope > label, :scope > .setting-item-title');
+    if (labeled && labeled !== el && !labeled.contains(el)) {
+      chunks.push(String(labeled.textContent || '').slice(0, 240));
     }
-    for (const sel of ['label', '.setting-item-label']) {
-      const hit = parent.querySelector && parent.querySelector(sel);
-      if (hit && !hit.contains(el)) chunks.push(String(hit.textContent || '').slice(0, 240));
+    const prev = el.previousElementSibling;
+    if (depth === 0 && prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) {
+      const t = String(prev.textContent || '').trim();
+      if (t && t.length < 160) chunks.push(t);
     }
     node = parent;
     if (chunks.join(' ').length > 120) break;
