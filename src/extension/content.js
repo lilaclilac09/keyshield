@@ -138,6 +138,22 @@ const PROVIDERS = [
     minLen:   32,
     requiresDomain: true,
   },
+  {
+    id:       'vercel',
+    name:     'Vercel',
+    label:    'VCL',
+    patterns: [/(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['vercel.com'],
+    minLen:   20,
+  },
+  {
+    id:       'github',
+    name:     'GitHub',
+    label:    'GH',
+    patterns: [/(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/g],
+    domains:  ['github.com'],
+    minLen:   20,
+  },
 ];
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -634,12 +650,25 @@ function ksScanForInputs() {
   nodes.forEach(ksAttachFillButton);
 }
 
+// Must match manifest externally_connectable. Used to skip Fill on the
+// dashboard and to announce chrome.runtime.id so wallet login can push KS_TOKEN.
+function isKeyShieldDashboardHost() {
+  const host = location.host;
+  const hostname = location.hostname;
+  return (
+    host === 'localhost:5173' || host === '127.0.0.1:5173' ||
+    host === 'localhost:3000' || host === '127.0.0.1:3000' ||
+    hostname === 'keyshield.dev' || hostname.endsWith('.keyshield.dev') ||
+    hostname === 'app.ks.aileena.xyz' || hostname.endsWith('.aileena.xyz') ||
+    hostname.endsWith('.up.railway.app') || hostname.endsWith('.vercel.app')
+  );
+}
+
 // On load: ping background once. If we have keys for this domain, enable
 // the fill UI. If `no-vault-key`, stay disabled silently.
 (function ksInitFillUI() {
   // Best-effort: dashboard pages shouldn't get the fill button.
-  if (location.host === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
-      location.hostname === 'keyshield.dev' || location.hostname.endsWith('.keyshield.dev')) {
+  if (isKeyShieldDashboardHost()) {
     ksFillEnabled = false;
     return;
   }
@@ -661,12 +690,7 @@ function ksScanForInputs() {
 // vault key. Manifest's externally_connectable gates who can actually message
 // us — leaking the ID alone confers no privilege.
 (function announceExtensionToDashboard() {
-  const onDashboard = (
-    location.host     === 'localhost:5173' || location.host === '127.0.0.1:5173' ||
-    location.host     === 'localhost:3000' || location.host === '127.0.0.1:3000' ||
-    location.hostname === 'keyshield.dev'  || location.hostname.endsWith('.keyshield.dev')
-  );
-  if (!onDashboard) return;
+  if (!isKeyShieldDashboardHost()) return;
   if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) return;
   const announce = () => {
     try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }

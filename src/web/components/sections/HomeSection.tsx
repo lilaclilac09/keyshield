@@ -190,7 +190,7 @@ export const HomeSection: React.FC<Props> = ({
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           rows={3}
-          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius_auth_…"
+          placeholder="sk-or-…  vercel_…  github_pat_…  sk-proj-…  gsk_…  helius_auth_…"
           className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
         />
         <div className="flex flex-wrap items-center gap-3">

@@ -8,7 +8,8 @@ interface API_PATTERN { name: string; regex: RegExp; priority?: number; }
 const API_PATTERNS: API_PATTERN[] = [
   { name: 'Helius', regex: /(?:api-key=|X-API-Key:\\s*)([a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12})/i, priority: 10 },
   { name: 'OpenAI/Anthropic/Groq', regex: /sk-(?:live|test|proj|ant)_[A-Za-z0-9]{48}/i, priority: 4 },
-  { name: 'GitHub PAT', regex: /gh[pousr]_[A-Za-z0-9]{36,}/i, priority: 4 },
+  { name: 'GitHub PAT', regex: /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}/i, priority: 4 },
+  { name: 'Vercel', regex: /(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/i, priority: 4 },
   { name: 'Stripe', regex: /[rs]k_(?:live|test)_[A-Za-z0-9]{24,}/i, priority: 3 },
   { name: 'AWS', regex: /AKIA[0-9A-Z]{16}/i, priority: 3 },
 ];

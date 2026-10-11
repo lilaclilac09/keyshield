@@ -10,19 +10,20 @@
 //      builds) to the public API / dashboard defaults below, unless
 //      the user has explicitly pinned a non-production target.
 
-// Production defaults — OSS fork ships with a public Railway API + keyshield.dev
-// dashboard. Override via the Settings panel or set chrome.storage.
+// Production defaults — OSS fork ships with a public Railway API + the live
+// dashboard. keyshield.dev has no public DNS; Sign-in must not open it.
+// Override via the Settings panel or chrome.storage.
 const DEFAULT_API_BASE      = "https://keyshield-production.up.railway.app";
-const DEFAULT_DASHBOARD_URL = "https://keyshield.dev";
+const DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.xyz";
 
-// Local dev URLs — exposed via the "Reset to local" button in the settings
-// pane for users actually running the Vite + FastAPI stack on their machine.
+// Local dev URLs — "Use local dev" in Settings. Pin these so we do not
+// migrate a running Vite tab back to production.
 const LOCAL_API_BASE      = "http://127.0.0.1:8001";
 const LOCAL_DASHBOARD_URL = "http://127.0.0.1:5173";
 
 // Old defaults we want to silently upgrade to production on next popup open
 // so existing installs don't keep opening dead localhost tabs after the user
-// shuts down their dev server. "Reset to local" still works — we only
+// shuts down their dev server. "Use local dev" still works — we only
 // migrate URLs the user never explicitly chose.
 const STALE_DASHBOARD_DEFAULTS = [
   "http://127.0.0.1:5173",
@@ -35,7 +36,19 @@ const STALE_API_DEFAULTS = [
   "http://localhost:8000",
 ];
 const LEGACY_API_BASES = ["https://keyshield-production.up.railway.app"];
-const LEGACY_DASHBOARD_URLS = ["https://app.ks.aileena.xyz"];
+
+// Hosts with no public DNS. Always rewrite, even if pinned — a dead host
+// is not a valid preference. Do not list app.ks.aileena.xyz here.
+const DEAD_DASHBOARD_URLS = [
+  "https://keyshield.dev",
+  "https://www.keyshield.dev",
+  "https://app.keyshield.dev",
+];
+
+function isDeadDashboardUrl(url) {
+  const u = String(url || "").replace(/\/+$/, "");
+  return DEAD_DASHBOARD_URLS.some((d) => u === d || u.startsWith(`${d}/`));
+}
 
 // Marker we set when the user explicitly opts into a non-production target so
 // the migration logic in loadSettings() doesn't fight them on every open.
@@ -71,8 +84,7 @@ async function loadSettings() {
   let dash = ks_dashboard_url || DEFAULT_DASHBOARD_URL;
   const dashIsBackendPort = /:800[01](\/|$)/.test(dash);
   const dashIsStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => dash === u || dash.startsWith(u + "/"));
-  const dashIsLegacy      = !pinned && LEGACY_DASHBOARD_URLS.some((u) => dash === u || dash.startsWith(u + "/"));
-  if (dashIsBackendPort || dashIsStaleLocal || dashIsLegacy) {
+  if (dashIsBackendPort || dashIsStaleLocal || isDeadDashboardUrl(dash)) {
     dash = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: dash }); } catch { /* noop */ }
   }
@@ -143,8 +155,7 @@ async function openDashboardForSignin() {
   // migrate it to the production default.
   const isBackendPort = /:800[01](\/|$)/.test(url);
   const isStaleLocal  = !pinned && STALE_DASHBOARD_DEFAULTS.some((u) => url === u || url.startsWith(u + "/"));
-  const isLegacyDash  = !pinned && LEGACY_DASHBOARD_URLS.some((u) => url === u || url.startsWith(u + "/"));
-  if (isBackendPort || isStaleLocal || isLegacyDash) {
+  if (isBackendPort || isStaleLocal || isDeadDashboardUrl(url)) {
     url = DEFAULT_DASHBOARD_URL;
     try { await chrome.storage.local.set({ ks_dashboard_url: url }); } catch { /* noop */ }
   }

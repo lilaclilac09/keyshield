@@ -36,7 +36,7 @@ You already collect passwords in iCloud Keychain. **What if you could do the sam
 
 Dashboard for humans. SDK & CLI for agents. Same vault underneath.
 
-**Start here:** [How to use this](#how-to-use-this) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [Two-minute demo](#4-two-minute-demo--what-you-hear-and-see) · [Captions + 白话 + code](docs/demo-what-you-hear-and-see.md) · [How agents register](#how-agents-register) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -93,6 +93,25 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 (Activity), **Developer**, **Agents**, **Sharing**, **Sessions**,
 **Settings**, **Docs**, **Reports**, **X402 Trust**. Do not rename them.
 
+### Chrome extension Sign in
+
+Load unpacked from `src/extension` (`chrome://extensions` → Developer
+mode). The popup **→ Sign in to KeyShield** button opens the dashboard
+so wallet login can push `KS_TOKEN` back into the extension.
+
+| You are recording / using | Settings → Dashboard URL | Why |
+|---|---|---|
+| Hosted app | `https://app.ks.aileena.xyz` (default) | Live vault UI + Railway control plane |
+| Local `node dev.cjs` | **Use local dev** → `http://127.0.0.1:5173` | Passkey needs `127.0.0.1`, not `localhost` |
+| `https://keyshield.dev` | rewritten automatically | **No public DNS** — the tab cannot log in |
+
+If an old install still opens `https://keyshield.dev/`, reload the
+unpacked extension from this repo, then click Sign in again. Do not
+paste a token into a blank `keyshield.dev` page. After reload, Sign-in
+on `app.ks.aileena.xyz` can push `KS_TOKEN` because `content.js` now
+announces the extension id on `*.aileena.xyz` (it used to announce only
+on localhost and the dead `keyshield.dev` host).
+
 ### 3. Pay for a stream (optional)
 
 On **Payments** (Activity): connect / paste an OpenRouter key once, then
@@ -105,6 +124,30 @@ npm run live:e2e:dry
 
 Do not run a live Devnet settle unless you intend to spend operator
 USDC. Stage 4 live stays opt-in (`LIVE_E2E=1`).
+
+### 4. Two-minute demo — What you hear and see
+
+A film must stay **under 120 seconds** and show **opened pages + clicks**,
+not stills. Say these English captions on screen. 白话原理、代码位置、
+如何交互：[`docs/demo-what-you-hear-and-see.md`](docs/demo-what-you-hear-and-see.md).
+
+1. **Wallet after settle** — zoom SOL 1.7134 / USDC 19 / Credit $0.10. Live wallet after settle, not a mock.
+2. **Open free key page** — `sk-or-` on the OpenRouter Nemotron page.
+3. **Detect and store** — zoom Detected openrouter + Save. Detect the shape, store ciphertext only.
+4. **Vercel + GitHub universal keys** — same detector. Universal keys, one vault.
+5. **New page autofill** — zoom the Cursor / Devin API Key field.
+6. **Fill button** — the agent holds `KS_TOKEN`, never the raw key.
+7. **Devnet buy** — Hold / Verify / Capture, `mpp_settle` ix 26.
+8. **RPC flash handshake** — zoom 0.01 ms / 0.002 ms. First hop ~445 ms, then near zero. Not redb.
+9. **Failed pay** — `.env` + 502 can debit empty; a wrong hash does not Capture.
+10. **vs 1Password CLI** — detect, fill, x402, on-chain settle. Jobs 1Password does not do.
+11. **All wired** — OpenClaw, x402, Pyth Hermes (SSE prices in this repo), Cursor / Devin.
+12. **Top Up** — a payable rail credits the ledger.
+13. **Stream Meter** — open Devnet stream. Agent column is Cursor.
+14. **x402 auto-pay** — trusted domain hits 402, it pays.
+15. **Agent registry** — Cursor / Devin / OpenClaw already registered.
+
+Hermes = Pyth SSE. Path A = WebAuthn-PRF → HKDF → AES-GCM. Do not rewrite the dashboard to stage this walk.
 
 ---
 
