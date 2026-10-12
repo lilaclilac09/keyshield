@@ -214,6 +214,9 @@
 <body>
   <h1>KeyShield Vault <span class="badge" id="conn">…</span></h1>
   <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
+  <div id="detect-ready" class="status" style="display:block;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
+    checking 1.2.1 + &lt;all_urls&gt;…
+  </div>
   <div id="build" class="sub" style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
     checking loaded build…
   </div>
@@ -222,10 +225,11 @@
   <button id="allow-detect" class="secondary">Allow detect + auto-save</button>
   <button id="use-hosted-top" class="secondary">Use hosted app.ks.aileena.xyz</button>
   <p class="hint" style="margin:8px 0 0;line-height:1.45">
-    v1.2.0 Sign-in opens <code>https://app.ks.aileena.xyz/?ext=1&amp;demo=shop</code>.
-    <code>127.0.0.1:5173</code> refused means Vite is not running — do not wait on it.
-    After Allow, detect toasts and auto-saves. Then Home: paste a key, buy $0.10, RPC speed.
-    Do not paste HTML into zsh. Do not git pull if github.com will not resolve.
+    Popup must show <code>ok 1.2.1 &lt;all_urls&gt;</code>. If it does not:
+    chrome://extensions → <strong>Remove</strong> then <strong>Load unpacked</strong>
+    <code>src/extension</code>. Do not only Reload. After Sign-in the scanner
+    stays on and saves <code>sk-proj-</code> / <code>sk-or-</code> / <code>key_</code>
+    / <code>crsr_</code> / <code>helius_auth_</code>. Cursor: click Show first.
   </p>
   <div id="status" class="status"></div>
 

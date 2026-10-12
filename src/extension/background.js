@@ -484,6 +484,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // MV3 wake: content script primes the service worker before bulk save.
+  if (message.type === 'INJECT_DETECT') {
+    (async () => {
+      const result = await injectDetectOnAllTabs();
+      sendResponse({ ok: true, ...result });
+    })();
+    return true;
+  }
+
   if (message.type === 'KS_BG_READY') {
     sendResponse({ ok: true });
     return true;
@@ -661,10 +669,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ── External messages (from dashboard) ──────────────────────────────────────
 
+async function armLiveScanFromLogin() {
+  try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  try { await injectDetectOnAllTabs(); } catch { /* noop */ }
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (message.type === 'KS_TOKEN_REGISTER') {
-    setStoredToken(message.token, message.user).then(() => {
-      console.log('[KeyShield] token registered from dashboard');
+    setStoredToken(message.token, message.user).then(async () => {
+      console.log('[KeyShield] token registered from dashboard — live scan + auto-save on');
+      await armLiveScanFromLogin();
       sendResponse({ ok: true });
     });
     return true;
@@ -700,14 +714,54 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   return false;
 });
 
+async function injectDetectOnAllTabs() {
+  if (!chrome.scripting || !chrome.tabs) return { injected: 0 };
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0 }; }
+  let injected = 0;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js'],
+      });
+      injected += 1;
+    } catch {
+      /* chrome://, Web Store, and other restricted pages */
+    }
+  }
+  return { injected };
+}
+
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status !== 'complete') return;
+    if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return;
+    chrome.storage.local.get(['ks_token', 'ks_auto_store'], (out) => {
+      if (!out || (!out.ks_token && !out.ks_auto_store)) return;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ['content.js'],
+      }).catch(() => {});
+    });
+  });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[KeyShield] v1.1 installed — auto-detect + direct-store enabled');
-  // Enforce audit log retention on install/update (inline — no TS imports in background.js)
+  console.log('[KeyShield] installed — detect toast on every visible API key');
+  injectDetectOnAllTabs().catch(() => {});
   _purgeAuditLogInline().then((result) => {
     const total = result.deletedByAge + result.deletedByCap;
     if (total > 0) console.log('[KeyShield] onInstalled audit purge:', result);
   }).catch((e) => console.warn('[KeyShield] onInstalled audit purge failed:', e));
 });
+
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    injectDetectOnAllTabs().catch(() => {});
+  });
+}
 
 // ── Audit log retention (inline JS, mirrors lib/audit-retention.ts) ──────────
 

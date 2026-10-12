@@ -57,6 +57,43 @@ function setStatus(text, kind = "ok", ms = 1500) {
   if (ms > 0) setTimeout(() => { s.className = "status"; }, ms);
 }
 
+function formatDetectReadyLine(version, hasAllUrls) {
+  const ver = String(version || "").trim();
+  if (ver === "1.2.1" && hasAllUrls) return { ok: true, text: "ok 1.2.1 <all_urls>" };
+  if (!hasAllUrls) {
+    return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
+  }
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.1)` };
+}
+
+async function hasAllUrlsPermission() {
+  try {
+    if (chrome.permissions?.contains) {
+      return await chrome.permissions.contains({ origins: ["<all_urls>"] });
+    }
+  } catch { /* treat as missing so the badge says Remove + Load unpacked */ }
+  return false;
+}
+
+async function refreshDetectReady() {
+  const el = $("detect-ready");
+  if (!el) return { ok: false, text: "" };
+  const ver = chrome.runtime.getManifest().version;
+  const hasAllUrls = await hasAllUrlsPermission();
+  const ready = formatDetectReadyLine(ver, hasAllUrls);
+  el.textContent = ready.text;
+  el.className = `status ${ready.ok ? "ok" : "err"}`;
+  el.style.display = "block";
+  return ready;
+}
+
+async function armLiveScanAfterLogin() {
+  const { ks_token } = await chrome.storage.local.get("ks_token");
+  if (!ks_token) return;
+  await chrome.storage.local.set({ ks_auto_store: true });
+  try { await chrome.runtime.sendMessage({ type: "INJECT_DETECT" }); } catch { /* sw cold */ }
+}
+
 async function loadSettings() {
   const stored = await chrome.storage.local.get([
     "ks_api_base",
@@ -100,6 +137,8 @@ async function loadSettings() {
     const ver = chrome.runtime.getManifest().version;
     build.textContent = `v${ver} · Sign-in opens ${dash}`;
   }
+  await refreshDetectReady();
+  if (ks_token) await armLiveScanAfterLogin();
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.
@@ -222,11 +261,22 @@ async function allowDetectAndStore() {
     return;
   }
   await chrome.storage.local.set({ ks_auto_store: true });
+  let injected = 0;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "INJECT_DETECT" });
+    if (resp && typeof resp.injected === "number") injected = resp.injected;
+  } catch { /* service worker cold */ }
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.id && /^https?:/.test(tab.url || "")) await chrome.tabs.reload(tab.id);
   } catch { /* noop */ }
-  setStatus("Detect allowed. Auto-save is on. Reload the page if the toast is missing.", "ok", 4500);
+  setStatus(
+    injected
+      ? `Detect + auto-save on. Wired ${injected} tab${injected === 1 ? "" : "s"}. A key on the page must toast.`
+      : "Detect + auto-save on. Reload the page if the toast is missing.",
+    "ok",
+    5000,
+  );
 }
 
 async function registerManualToken() {
@@ -437,6 +487,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 document.addEventListener("DOMContentLoaded", () => {
   loadSettings();
   refreshFingerprint();
+  refreshDetectReady();
   $("signin"      ).addEventListener("click", openDashboardForSignin);
   const allowDetect = $("allow-detect");
   if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);

@@ -49,6 +49,17 @@
 
 const PROVIDERS = [
   {
+    id:       'cursor',
+    name:     'Cursor',
+    label:    'CUR',
+    patterns: [
+      /key_[A-Za-z0-9_-]{16,}/g,
+      /crsr[_-][A-Za-z0-9_-]{10,}/g,
+    ],
+    domains:  ['cursor.com', 'www.cursor.com', 'cursor.sh'],
+    minLen:   16,
+  },
+  {
     id:       'openrouter',
     name:     'OpenRouter',
     label:    'OR',
@@ -163,6 +174,7 @@ let   panelEl        = null;        // the multi-key floating panel (null when h
 let   domainDismissed = false;      // set asynchronously below
 const AUTO_STORE_KEY = 'ks_auto_store';
 let   autoStoreAllowed = false;
+let   loggedIn = false;
 let   autoStoreInFlight = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
@@ -223,49 +235,84 @@ function ksHostMatches(hostname, allowList) {
 
 // ── Scanner ─────────────────────────────────────────────────────────────────
 
+function collectScanText() {
+  const chunks = [];
+  if (document.body) chunks.push(document.body.innerText || '');
+  const nodes = document.querySelectorAll(
+    'input, textarea, code, pre, [contenteditable="true"], td, th, [role="cell"], [role="gridcell"]',
+  );
+  for (const el of nodes) {
+    chunks.push(el.value || el.textContent || '');
+  }
+  return chunks.join('\n');
+}
+
+let scanTimer = 0;
+function scheduleScan() {
+  if (scanTimer) return;
+  scanTimer = setTimeout(() => {
+    scanTimer = 0;
+    scan();
+  }, 200);
+}
+
 function scan() {
   if (domainDismissed) return;
-  // 1. Visible text
-  const text = document.body?.innerText || '';
-  // 2. Input values (often where keys are revealed via "Show" button)
-  const inputs = Array.from(document.querySelectorAll('input, textarea, code, pre'));
+  if (!document.body) return;
+  const text = collectScanText();
 
   for (const provider of PROVIDERS) {
     const onDomain = isOnDomain(provider);
     if (provider.requiresDomain && !onDomain) continue;
 
     for (const regex of provider.patterns) {
-      regex.lastIndex = 0;  // reset stateful flag
+      regex.lastIndex = 0;
       let m;
       while ((m = regex.exec(text)) !== null) {
         if (m[0].length >= provider.minLen) handleMatch(m[0], provider, onDomain);
-      }
-      for (const el of inputs) {
-        const v = (el.value || el.textContent || '');
-        regex.lastIndex = 0;
-        const im = regex.exec(v);
-        if (im && im[0].length >= provider.minLen) handleMatch(im[0], provider, onDomain);
       }
     }
   }
 }
 
 function handleMatch(key, provider, onDomain) {
-  if (detectedKeys.has(key)) return;
   if (URL_UUIDS.has(key.toLowerCase())) return;
-  detectedKeys.set(key, { provider, onDomain, saved: false });
-  console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
+  const prev = detectedKeys.get(key);
+  if (prev && prev.saved === true) return;
+  if (!prev) {
+    detectedKeys.set(key, { provider, onDomain, saved: false });
+    console.log(`[KeyShield] detected ${provider.name} key on ${HOST} (onDomain=${onDomain})`);
+  }
   renderPanel();
   maybeAutoStore();
 }
 
+function detectIsArmed() {
+  return !!(autoStoreAllowed || loggedIn);
+}
+
 function loadAutoStorePref() {
   try {
-    chrome.storage?.local?.get?.([AUTO_STORE_KEY], (out) => {
+    chrome.storage?.local?.get?.([AUTO_STORE_KEY, 'ks_token'], (out) => {
       autoStoreAllowed = !!(out && out[AUTO_STORE_KEY]);
-      if (autoStoreAllowed) maybeAutoStore();
+      loggedIn = !!(out && out.ks_token);
+      if (detectIsArmed()) maybeAutoStore();
     });
-  } catch { /* fail closed — wait for Allow */ }
+  } catch { /* fail closed — wait for Allow / Sign-in */ }
+}
+
+function watchAutoStorePref() {
+  try {
+    chrome.storage?.onChanged?.addListener?.((changes, area) => {
+      if (area !== 'local') return;
+      if (changes[AUTO_STORE_KEY]) autoStoreAllowed = !!changes[AUTO_STORE_KEY].newValue;
+      if (changes.ks_token) loggedIn = !!changes.ks_token.newValue;
+      if (detectIsArmed()) {
+        scheduleScan();
+        maybeAutoStore();
+      }
+    });
+  } catch { /* noop */ }
 }
 
 function grantAutoStore() {
@@ -275,7 +322,7 @@ function grantAutoStore() {
 }
 
 function maybeAutoStore() {
-  if (!autoStoreAllowed || autoStoreInFlight) return;
+  if (!detectIsArmed() || autoStoreInFlight) return;
   const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
   if (unsaved === 0) return;
   autoStoreInFlight = true;
@@ -326,6 +373,9 @@ function buildPanel() {
 }
 
 function closePanel() {
+  for (const [k, v] of detectedKeys) {
+    if (v.saved !== true) detectedKeys.delete(k);
+  }
   if (panelEl && panelEl.parentNode) panelEl.remove();
   panelEl = null;
 }
@@ -360,7 +410,7 @@ function renderPanel() {
   const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
   const btnText = unsavedCount === 0
     ? 'All saved'
-    : autoStoreAllowed
+    : detectIsArmed()
       ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
       : 'Allow auto-save';
 
@@ -384,7 +434,7 @@ function renderPanel() {
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = autoStoreAllowed ? bulkSave : grantAutoStore;
+  panelEl.querySelector('#ks-save-all').onclick = detectIsArmed() ? bulkSave : grantAutoStore;
   panelEl.querySelector('#ks-ignore').onclick = closePanel;
   panelEl.querySelector('#ks-signin').onclick = (ev) => {
     ev.preventDefault();
@@ -762,20 +812,30 @@ function isKeyShieldDashboardHost() {
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
-loadDismissedDomains();
-loadAutoStorePref();
+function startDetectWatchers() {
+  loadDismissedDomains();
+  loadAutoStorePref();
+  scheduleScan();
+  if (globalThis.__ksDetectWired) return;
+  globalThis.__ksDetectWired = true;
+  watchAutoStorePref();
+  setInterval(scheduleScan, 1500);
+  const attachObserver = () => {
+    if (!document.body) return;
+    const observer = new MutationObserver(() => scheduleScan());
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  };
+  if (document.body) attachObserver();
+  else document.addEventListener('DOMContentLoaded', attachObserver, { once: true });
+  document.addEventListener('copy', () => scheduleScan());
+  document.addEventListener('input', () => scheduleScan(), { capture: true });
+  document.addEventListener('click', () => scheduleScan(), { capture: true });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) scheduleScan();
+  });
+}
 
-scan();
-setInterval(scan, 3000);
-
-const observer = new MutationObserver(() => scan());
-observer.observe(document.body, { childList: true, subtree: true });
-
-// User pressed copy on a page — likely just copied a key. Re-scan.
-document.addEventListener('copy', () => setTimeout(scan, 300));
-
-// User typed/pasted in a field — likely revealing a key.
-document.addEventListener('input', () => setTimeout(scan, 300), { capture: true });
+startDetectWatchers();
 
 function ksExtractRequestUrl(args) {
   const first = args?.[0];
@@ -861,6 +921,8 @@ function ksPromptQuickAuth(hostname, reason) {
 // carry the X-Payment-Required: x402 header.
 
 (function () {
+  if (window.__ksFetchWrapped) return;
+  window.__ksFetchWrapped = true;
   const _origFetch = window.fetch.bind(window);
 
   window.fetch = async function (...args) {
