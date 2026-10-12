@@ -448,9 +448,7 @@ async def mpp_capture(stream_id: int, request: Request):
             {"detail": str(e), "code": "unverified_fulfillment"},
             status_code=400,
         )
-    receipt = mpp_streams.latest_successful_settle(
-        sess["user_id"], stream_id=int(stream_id)
-    )
+    receipt = mpp_streams.latest_successful_settle(sess["user_id"], stream_id=int(stream_id))
     return JSONResponse({"stream": stream, "receipt": receipt})
 
 

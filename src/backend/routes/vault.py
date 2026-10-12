@@ -40,6 +40,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
+
 def _vault_db_path() -> Path:
     """Same file the Rust proxy reads (`KS_VAULT_DB_PATH`)."""
     env = (os.environ.get("KS_VAULT_DB_PATH") or "").strip()
@@ -144,9 +145,7 @@ def _claim_default_rows(conn: sqlite3.Connection, uid: str) -> int:
     """
     if not uid or uid == "default":
         return 0
-    n = conn.execute(
-        "SELECT COUNT(*) FROM vault_items WHERE user_id = ?", (uid,)
-    ).fetchone()[0]
+    n = conn.execute("SELECT COUNT(*) FROM vault_items WHERE user_id = ?", (uid,)).fetchone()[0]
     if n:
         return 0
     cur = conn.execute(

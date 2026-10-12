@@ -213,8 +213,7 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE vault_items SET updated_at = ?, name = ? "
-                "WHERE id = ? AND user_id = ?",
+                "UPDATE vault_items SET updated_at = ?, name = ? WHERE id = ? AND user_id = ?",
                 (now, f"{upstream} key", existing[0], user_id),
             )
             return str(existing[0])
