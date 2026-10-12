@@ -179,29 +179,34 @@ export async function fetchKeychainHome(address?: string): Promise<KeychainHome>
   return r.json();
 }
 
-export async function storeDetectedKey(value: string, upstream?: string): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
-  const r = await apiFetch('/keychain/store', {
+async function writeManageStore(
+  value: string,
+  upstream: string,
+): Promise<{ id?: string }> {
+  const stored = await apiFetch('/manage/store', {
     method: 'POST',
-    body: JSON.stringify({ value, upstream }),
+    body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
   });
-  const body = await r.json().catch(() => ({ detail: 'store failed' }));
-  if (!r.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
-  const saved = body as { stored: boolean; id: string; upstream: string; prefix: string };
-  // Same session /manage/vault the Vault page lists. Upsert-by-value, no extra row.
-  try {
-    await apiFetch('/manage/store', {
-      method: 'POST',
-      body: JSON.stringify({
-        upstream: saved.upstream || upstream || 'custom',
-        apiKey: value,
-        name: `${saved.upstream || upstream || 'custom'} key`,
-      }),
-    });
-  } catch {
-    /* keychain row is already in vault_shim */
-  }
+  const body = await stored.json().catch(() => ({ detail: 'store failed' }));
+  if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
+  return body as { id?: string };
+}
+
+export async function storeDetectedKey(value: string, upstream?: string): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
+  const detected = detectUpstream(value);
+  const up = (upstream || detected.upstream || '').trim();
+  if (!value.trim()) throw new Error('Paste a key first');
+  if (!up) throw new Error('unrecognized key shape — pick a provider or paste a known prefix');
+  // Write /manage/store only. /keychain/store used to overwrite the latest
+  // helius row, so a sixth UUID ate one of the five already in Vault.
+  const saved = await writeManageStore(value, up);
   emitVaultChanged();
-  return saved;
+  return {
+    stored: true,
+    id: String(saved.id || up),
+    upstream: up,
+    prefix: detected.prefix || `${value.slice(0, 6)}…${value.slice(-4)}`,
+  };
 }
 
 export async function storeDetectedKeys(
