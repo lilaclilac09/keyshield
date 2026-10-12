@@ -403,6 +403,99 @@ export const TRY_PULL_THEN_PATCH_SH = [
   'echo "must see: ver 1.2.4  and  signed-pane True  and  session-bridge True"',
 ].join('\n') + '\n';
 
+/** Compact leftover stamp — no HTML. Uses KS_EXT from find, or cwd. */
+export const OFFLINE_BRIDGE_STAMP_PY = `from pathlib import Path
+import json, os
+NAME = "KeyShield — Sovereign Vault"
+VER = "1.2.4"
+BRIDGE = (
+    "(function keyShieldSessionBridge(){function announce(){try{window.postMessage({__ks_ext_announce:chrome.runtime.id},location.origin)}catch(e){}}"
+    "function capturePageToken(){try{var t=localStorage.getItem('ks_token')||'';if(t.trim().length<12)return;"
+    "chrome.storage.local.get(['ks_token'],function(s){if(s&&s.ks_token===t)return;chrome.storage.local.set({ks_token:t,ks_auto_store:true})})}catch(e){}}"
+    "announce();capturePageToken();[400,1200,3000,8000].forEach(function(ms){setTimeout(capturePageToken,ms)});"
+    "window.addEventListener('ks-auth-changed',capturePageToken);window.addEventListener('storage',capturePageToken);"
+    "window.addEventListener('message',function(e){if(e.source!==window||!e.data)return;if(e.data.__ks_ext_request)announce();"
+    "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\\n"
+)
+SCRIPTS = [
+    {"matches": ["https://app.ks.aileena.xyz/*", "https://*.aileena.xyz/*", "https://keyshield.dev/*", "https://*.keyshield.dev/*", "https://*.up.railway.app/*", "https://*.vercel.app/*", "http://127.0.0.1:5173/*", "http://localhost:5173/*", "http://127.0.0.1:3000/*", "http://localhost:3000/*"], "js": ["session-bridge.js"], "run_at": "document_start"},
+    {"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": True},
+]
+def stamp(ext):
+    man = json.loads((ext / "manifest.json").read_text())
+    man["name"] = NAME
+    man["version"] = VER
+    man.setdefault("optional_host_permissions", [])
+    if "<all_urls>" not in man["optional_host_permissions"]:
+        man["optional_host_permissions"].append("<all_urls>")
+    man.setdefault("host_permissions", [])
+    if "<all_urls>" not in man["host_permissions"]:
+        man["host_permissions"].insert(0, "<all_urls>")
+    for extra in ("scripting", "tabs"):
+        if extra not in man.get("permissions", []):
+            man.setdefault("permissions", []).append(extra)
+    man["content_scripts"] = SCRIPTS
+    dest = ext / "session-bridge.js"
+    if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
+        dest.write_text(BRIDGE)
+    (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
+    ok = any("session-bridge.js" in (row.get("js") or []) for row in (man.get("content_scripts") or []) if isinstance(row, dict))
+    print("stamped", ext, "session-bridge", ok)
+    return man
+targets = []
+env = Path(os.environ.get("KS_EXT") or "").expanduser()
+if (env / "manifest.json").is_file():
+    targets.append(env)
+here = Path.cwd()
+for cand in (here / "src/extension", here, here / "extension"):
+    if (cand / "manifest.json").is_file() and (cand / "popup.js").is_file():
+        targets.append(cand)
+seen = set(); ordered = []
+for p in targets:
+    r = p.resolve()
+    if r in seen:
+        continue
+    seen.add(r); ordered.append(r)
+if not ordered:
+    raise SystemExit("KS_EXT missing — run find first")
+man = None
+for ext in ordered:
+    man = stamp(ext)
+print("ok", ordered[0])
+print("ver", man["version"])
+print("session-bridge", True)
+print("next: chrome://extensions Remove + Load unpacked", ordered[0])
+`;
+
+/** The local-pull block to paste into zsh. No HTML. */
+export const LOCAL_PULL_BRIDGE_SH = [
+  '# zsh — python, not HTML. Leftover 1.2.4: restore session-bridge.js.',
+  'eval "$(python3 - <<\'PY\'',
+  FIND_LOCAL_PATH_PY.trimEnd(),
+  'PY',
+  ')"',
+  'if [ -z "${KS_ROOT:-}" ]; then echo "no KeyShield folder found"; exit 1; fi',
+  'cd "$KS_ROOT" || exit 1',
+  'echo "using $KS_ROOT"',
+  'echo "ext $KS_EXT"',
+  `if git fetch origin ${PATCH_BRANCH}; then`,
+  `  git checkout ${PATCH_BRANCH}`,
+  `  git pull origin ${PATCH_BRANCH} || echo "pull failed — continue python3"`,
+  'else',
+  '  echo "github.com 解析失败就跳过，直接跑下面的 python3"',
+  'fi',
+  'if [ -f src/extension/patch-leftover-bridge.py ]; then',
+  '  python3 src/extension/patch-leftover-bridge.py',
+  'elif [ -f src/extension/patch-signed-popup.py ]; then',
+  '  python3 src/extension/patch-signed-popup.py',
+  'else',
+  '  python3 - <<\'PY\'',
+  OFFLINE_BRIDGE_STAMP_PY.trimEnd(),
+  'PY',
+  'fi',
+  'echo "must see: ver 1.2.4  and  session-bridge True"',
+].join('\n') + '\n';
+
 export const DETECT_AFTER_PATCH = [
   'chrome://extensions → Remove the leftover card (Reload is not enough — even 1.2.4 can miss session-bridge.js)',
   'Load unpacked → the KS_EXT / src/extension folder the terminal printed',

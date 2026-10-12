@@ -23,18 +23,19 @@ Trouble finds the clone from Chrome internals (`Preferences` unpacked
 git fetch origin cursor/cursor-api-autofill-b48a
 git checkout cursor/cursor-api-autofill-b48a
 git pull origin cursor/cursor-api-autofill-b48a
-python3 src/extension/patch-signed-popup.py
-# or: python3 src/extension/patch-signed-popup.py --find
+python3 src/extension/patch-leftover-bridge.py
+# or: python3 src/extension/patch-leftover-bridge.py --find
+# leftover 1.2.4 missing session-bridge: this stamps every KeyShield folder found
 ```
 
 If `github.com` does not resolve, skip git. Run
-`python3 src/extension/patch-signed-popup.py` if that file exists, else
-paste the python3 block from Home / Docs → Trouble (it writes `popup.html`
-with `id="signed-pane"`, stamps `man["version"] = "1.2.4"`, restores
-`session-bridge.js` at `document_start`, and injects `KS-SIGNED-1.2.4`).
-Terminal must print `ver 1.2.4`, `signed-pane True`, and `session-bridge True`.
+`python3 src/extension/patch-leftover-bridge.py` if that file exists, else
+`python3 src/extension/patch-signed-popup.py`, else paste Home / Docs →
+Trouble → **本地 pull 代码** (python, not HTML). It restores
+`session-bridge.js` at `document_start` on every leftover folder.
+Terminal must print `ver 1.2.4` and `session-bridge True`.
 Then chrome://extensions → **Remove** → **Load unpacked**.
-If already signed, popup is the full UI: **N saved** + the list + Sign out.
+If already signed, popup is the full UI: **N saved** + `signed-pane` + the list + Sign out.
 Refresh `https://app.ks.aileena.xyz` so the bridge injects. A leftover
 1.2.4 stamp that only has `content.js` on `<all_urls>` (your loaded
 `manifest.json` can look “ok” and still miss the bridge) stays `no token`.

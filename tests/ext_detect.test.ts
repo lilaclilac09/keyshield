@@ -134,6 +134,7 @@ describe("formatDetectReadyLine", () => {
     expect(localDetect).toContain('man["content_scripts"]');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
+    expect(localDetect).toContain("patch-leftover-bridge.py");
     expect(localSignin).toContain('"version": "1.2.4"');
     expect(readFileSync(resolve(root, "src/extension/patch-signed-popup.py"), "utf8")).toContain("signed-pane");
   });

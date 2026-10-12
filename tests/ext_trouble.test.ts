@@ -9,6 +9,8 @@ import {
   FIND_LOCAL_PATH_PY,
   FIND_WALK_ROOTS,
   LEFTOVER_121_CASE,
+  LOCAL_PULL_BRIDGE_SH,
+  OFFLINE_BRIDGE_STAMP_PY,
   OFFLINE_PATCH_PY,
   PATCH_BRANCH,
   PATCH_VERSION,
@@ -47,6 +49,12 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(TRY_PULL_THEN_PATCH_SH).toContain("ver 1.2.4");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("signed-pane True");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
+    expect(LOCAL_PULL_BRIDGE_SH).toContain("patch-leftover-bridge.py");
+    expect(LOCAL_PULL_BRIDGE_SH).toContain("github.com 解析失败就跳过，直接跑下面的 python3");
+    expect(LOCAL_PULL_BRIDGE_SH).toContain("session-bridge True");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("capturePageToken");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("session-bridge.js");
+    expect(OFFLINE_BRIDGE_STAMP_PY).not.toContain("<!DOCTYPE html>");
   });
 
   it("offline python stamps 1.2.4 signed-pane and LIST_SAVED_APIS", () => {
@@ -93,8 +101,42 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
+    expect(localDetect).toContain("patch-leftover-bridge.py");
     expect(localDetect).toContain("session-bridge.js");
     expect(caseUi).toContain("session-bridge True");
+    expect(caseUi).toContain("LOCAL_PULL_BRIDGE_SH");
+    expect(caseUi).toContain("本地 pull");
+  });
+
+  it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const tmp = mkdtempSync(join(tmpdir(), "ks-leftover-bridge-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    const py = `
+import importlib.util, json
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+man = json.loads((tmp / "manifest.json").read_text())
+assert mod.has_bridge(man) is False
+out = mod.stamp(tmp)
+assert out["version"] == "1.2.4"
+assert mod.has_bridge(out) is True
+assert "capturePageToken" in (tmp / "session-bridge.js").read_text()
+print("session-bridge", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("session-bridge True");
+    const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
+    expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
+    expect(stamped.content_scripts[0].run_at).toBe("document_start");
   });
 
   it("stamp_manifest restores session-bridge on leftover 1.2.4 content.js-only", () => {
