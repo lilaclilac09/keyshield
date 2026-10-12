@@ -39,6 +39,7 @@ def test_detect_specific_prefixes_beat_generic_sk():
     assert kc.detect_upstream(oai_key)["upstream"] == "openai"
     assert kc.detect_upstream("gsk_" + "d" * 40)["upstream"] == "groq"
     assert kc.detect_upstream("helius_auth_" + "e" * 20)["upstream"] == "helius"
+    assert kc.detect_upstream("10470584-67a9-4abc-8def-123456787761")["upstream"] == "helius"
     assert kc.detect_upstream("vercel_DEMOKEYSHIELDLOCALONLY99xx")["upstream"] == "vercel"
     assert kc.detect_upstream("github_pat_DEMOKEYSHIELDLOCALONLY99")["upstream"] == "github"
     dumped = str(kc.detect_upstream(or_key))
@@ -149,6 +150,21 @@ def test_store_then_home_lists_prefix_only(tmp_path, monkeypatch):
     assert "ledger" in snap
     assert "wallet" in snap
     assert "wallet_ms" in snap.get("latency", {})
+
+
+def test_store_helius_dashboard_uuid_without_passkey(tmp_path, monkeypatch):
+    client, token = _token(tmp_path, monkeypatch)
+    secret = "10470584-67a9-4abc-8def-123456787761"
+    stored = client.post(
+        "/keychain/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"value": secret},
+    )
+    assert stored.status_code == 200
+    body = stored.json()
+    assert body["upstream"] == "helius"
+    assert body["stored"] is True
+    assert secret not in str(body)
 
 
 def test_home_unauthorized():

@@ -641,5 +641,6 @@ export const DETECT_AFTER_PATCH = [
   'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup shows N saved',
   'Already signed: N saved + masked key list + Sign out. Vault page shows the same rows.',
   'Keep cursor.com / openai / openrouter / dashboard.helius.dev open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_ / Helius UUID keys (SOL badge)',
+  'Save never asks Face ID / passkey. That prompt is only when you paste a secret into another site (Cursor box, fill, reveal). Detect + Save uses the session token only.',
   'If the toast says Extension context invalidated / Saved 0, N failed: refresh that tab. Remove + Load unpacked kills the old content.js; Retry on the stale panel cannot save.',
 ] as const;

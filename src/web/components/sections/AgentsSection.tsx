@@ -6,7 +6,6 @@ import { Badge } from '../ui/Badge';
 import { Input } from '../ui/Input';
 import { apiFetch } from '../../lib/auth';
 import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
-import { ensureVerified } from '../../lib/zk-verify';
 import type { PlanSnapshot } from '../PlanCatalog';
 
 interface AgentEntry { id: number; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null; }
@@ -65,8 +64,7 @@ export const AgentsSection: React.FC = () => {
       setNewPrivkey(seedB64);
       const slug = `agent__${newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
       let vaultNote = 'Copy the seed now — you keep it. Server only has the pubkey.';
-      const verified = isVaultUnlocked() ? { ok: true } : await ensureVerified();
-      if (verified.ok) {
+      if (isVaultUnlocked()) {
         try {
           await addEntry(slug, seedB64);
           vaultNote = 'Private seed saved on this device. Passkey verifies when you retrieve it. Server never sees it.';

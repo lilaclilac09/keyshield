@@ -10,7 +10,6 @@ import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
 import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
 import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
-import { ensureVerified } from '../../lib/zk-verify';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
 import {
   callKeychain,
@@ -90,13 +89,6 @@ export const HomeSection: React.FC<Props> = ({
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
     try {
-      if (!isVaultUnlocked() && getPasskeyTrust()) {
-        setMsg('Verifying with passkey…');
-        const verified = await ensureVerified();
-        if (!verified.ok && verified.detail && /PRF|passkey|Face ID|No passkey/i.test(verified.detail)) {
-          /* Server vault can still call; local decrypt skipped. */
-        }
-      }
       const result = await callKeychain(upstream);
       setLastCall(result);
       setOk(result.live);
@@ -358,7 +350,7 @@ export const HomeSection: React.FC<Props> = ({
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           rows={3}
-          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius_auth_…"
+          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius UUID…"
           className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
         />
         <div className="flex flex-wrap items-center gap-3">

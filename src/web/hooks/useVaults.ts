@@ -6,8 +6,9 @@
  *                 trigger `unlock()` to do a passkey ceremony
  *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
  *
- * Device Vault (Path A) plus the Python `/manage/*` shim. Demo login lists
- * `/manage/vault` without a passkey unlock; reveal falls back to
+ * Device Vault (Path A) plus the Python `/manage/*` shim. Detect + save
+ * write `/manage/store` without a passkey. Demo login lists `/manage/vault`
+ * without unlock; reveal / paste-elsewhere uses passkey or
  * `/manage/decrypt/{id}`. Use `getDecryptedKey(upstream)` when Device Vault
  * is unlocked and you need a raw key for `/proxy/*`.
  */
@@ -180,13 +181,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      if (!isVaultUnlocked()) {
-        try {
-          await unlock();
-        } catch {
-          /* Demo / no passkey: still write the Python /manage shim. */
-        }
-      }
+      // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) return;
@@ -203,7 +198,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       }
       refresh();
     },
-    [refresh, unlock],
+    [refresh],
   );
 
   const deleteItem = useCallback(

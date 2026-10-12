@@ -7,6 +7,8 @@ import {
   parseVaultListPayload,
   shouldRefreshVaultOnVisit,
 } from "../src/web/lib/vault-list";
+import { needsPasskey } from "../src/web/lib/zk-verify";
+import { detectUpstream } from "../src/web/lib/keychain";
 
 const root = resolve(__dirname, "..");
 
@@ -38,6 +40,34 @@ describe("shouldRefreshVaultOnVisit", () => {
     expect(shouldRefreshVaultOnVisit("vault")).toBe(true);
     expect(shouldRefreshVaultOnVisit("home")).toBe(true);
     expect(shouldRefreshVaultOnVisit("docs")).toBe(false);
+  });
+});
+
+describe("passkey is not required to save", () => {
+  it("only gates paste / reveal / unlock — never detect, save, or call", () => {
+    expect(needsPasskey("save")).toBe(false);
+    expect(needsPasskey("detect")).toBe(false);
+    expect(needsPasskey("call")).toBe(false);
+    expect(needsPasskey("paste")).toBe(true);
+    expect(needsPasskey("reveal")).toBe(true);
+    expect(needsPasskey("unlock")).toBe(true);
+  });
+
+  it("classifies Helius dashboard UUIDs so store does not 422", () => {
+    expect(detectUpstream("10470584-67a9-4abc-8def-123456787761").upstream).toBe("helius");
+  });
+
+  it("Vault / Home save and addItem do not prompt passkey", () => {
+    const vault = readFileSync(resolve(root, "src/web/components/sections/VaultSection.tsx"), "utf8");
+    const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
+    const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
+    expect(vault).toContain("storeDetectedKey");
+    expect(vault).not.toContain("ensureVerified");
+    expect(home).toContain("storeDetectedKey");
+    expect(home).not.toContain("ensureVerified");
+    expect(home).not.toContain("Verifying with passkey");
+    expect(hook).toContain("Detect + save never prompts passkey");
+    expect(hook).not.toMatch(/await unlock\(\)/);
   });
 });
 

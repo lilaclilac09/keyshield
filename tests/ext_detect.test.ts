@@ -36,6 +36,7 @@ describe("classifyDetectedKey", () => {
     expect(classifyDetectedKey("sk-or-v1-abcdefghijkl")?.upstream).toBe("openrouter");
     expect(classifyDetectedKey("gsk_" + "a".repeat(40))?.upstream).toBe("groq");
     expect(classifyDetectedKey("helius_auth_" + "b".repeat(20))?.upstream).toBe("helius");
+    expect(classifyDetectedKey("10470584-67a9-4abc-8def-123456787761")?.upstream).toBe("helius");
   });
 
   it("ignores ordinary sentences", () => {

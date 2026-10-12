@@ -90,6 +90,7 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(DETECT_AFTER_PATCH.join(" ")).toContain("ok 1.2.4 <all_urls>");
     expect(DETECT_AFTER_PATCH.join(" ")).toContain("session-bridge.js");
     expect(DETECT_AFTER_PATCH.join(" ")).toContain("sk-proj-");
+    expect(DETECT_AFTER_PATCH.join(" ")).toContain("Save never asks Face ID");
     expect(LEFTOVER_121_CASE.title).toContain("session-bridge");
     expect(LEFTOVER_121_CASE.symptom).toContain("content.js");
     const docs = readFileSync(resolve(root, "src/web/components/sections/DocsSection.tsx"), "utf8");
