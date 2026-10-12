@@ -79,6 +79,8 @@ badge leaves `no token`, then Vault. Same API host as the save
 | 6 | Shop card + downloadable receipt | **yes** | Home `shop-demo-card` |
 | 7 | Popup merge markers broke Sign-in | **fixed** — parse + `bootPopup` | `popup.js` |
 | 8 | Load unpacked version stamp | **1.2.4** not 1.1.7 / 1.1.9 | `manifest.json` |
+| 9 | Signed-in popup lists only saved APIs | **1.2.4** | `signed-pane` |
+| 10 | Third-party x402 catalog (Crypto Regime LIVE) | **probed**, not a KeyShield SKU | Home `shop-bazaar` |
 
 ### Live shop receipt (present this)
 
@@ -125,6 +127,8 @@ github / vercel. USDC 12.89 matches the receipt after-balance.
 | **x402 trust list** | nav **X402 Trust** | **LIVE config** | Domains the extension may auto-pay |
 | **Extension x402 toast** | any 402 page | **LIVE** with 1.2.4 | HTTP 402 + `X-Payment-Required: x402` |
 | **OpenRouter Connect / Nemotron paste** | Home card | **LIVE inference** | You bring `sk-or-…`. Not a purchased credit |
+| **Crypto Regime API 0.02 USDC** | Home → Shop bazaar | **LIVE 402**, not a KeyShield SKU | `GET https://crypto-regime-api.onrender.com/v1/tokens` — Solana Devnet Circle USDC. Shop cannot settle this 402 |
+| **PayAI Bazaar discovery** | Home → Shop bazaar | **LIVE list** | Discovery only. Not a token |
 
 **Do not present as this product:**
 
@@ -134,6 +138,7 @@ github / vercel. USDC 12.89 matches the receipt after-balance.
 | Tempo wallet vouchers | Archived, not compiled |
 | “OpenRouter credit” as a shop item | User’s own key; `:free` model still needs a session |
 | Buying again on `:8001` | Wrong vault PDA vs the paid stream |
+| Quicknode `x402.quicknode.com/solana-devnet` | LIVE 402, but pays **Base** USDC (`eip155:84532` / `8453`), not Circle Devnet USDC |
 
 ---
 
@@ -176,3 +181,21 @@ into zsh.
 
 On-chain claims above are the last live GHpm buy already settled. This
 document does not spend more operator USDC.
+
+---
+
+## 8. Third-party x402 you can open (not KeyShield SKUs)
+
+Probed 2026-10-12. Circle Devnet USDC
+`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. Network
+`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`.
+
+| Offer | Status | Why |
+|---|---|---|
+| Crypto Regime `GET /v1/tokens` | **LIVE** | HTTP 402, 20000 micro = **0.02 USDC**, payTo `9ScHv3yEJcNj32ctNtPEuGyp1UHPvPFNn1rtsVxcCcY5` |
+| PayAI discovery | **LIVE list** | Returns Crypto Regime + others on that network |
+| Quicknode `x402.quicknode.com/solana-devnet` | **NOT SURFACE** | Pays Base USDC, not Circle Devnet USDC |
+| `$X402` / `$M32` | **NOT SURFACE** | Not a KeyShield SKU |
+
+KeyShield Home shop **cannot** settle the Crypto Regime 402. Do not buy
+again on `:8001`. The KeyShield SKU you already paid is **KS-MPP-509959477**.

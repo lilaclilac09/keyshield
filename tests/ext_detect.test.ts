@@ -81,6 +81,9 @@ describe("formatDetectReadyLine", () => {
     expect(html).toContain("ok 1.2.4");
     expect(html).toContain('id="signed-pane"');
     expect(html).toContain("KeyShield — Sovereign Vault");
+    const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
+    expect(content).toContain("crypto-regime-api.onrender.com");
+    expect(content).toContain("function ksIsX402Challenge");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localSignin).toContain('"version": "1.2.4"');
   });

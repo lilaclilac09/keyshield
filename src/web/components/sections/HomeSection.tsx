@@ -6,6 +6,7 @@ import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
 import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
+import { BAZAAR_OFFERS } from '../../lib/x402-bazaar';
 import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
@@ -306,6 +307,37 @@ export const HomeSection: React.FC<Props> = ({
         {msg && (busy === 'mpp' || busy === 'shop' || busy === 'rpc' || !lastCall) && (
           <p data-testid="shop-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
         )}
+        <div data-testid="shop-bazaar" className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">Third-party x402 · probed</p>
+          <p className="text-[14px] text-[#8a96c2]">
+            LIVE means Solana Devnet Circle USDC. KeyShield cannot settle these 402s.
+            Not Raydium / <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
+          </p>
+          {BAZAAR_OFFERS.map((offer) => (
+            <div
+              key={offer.id}
+              data-testid={`shop-bazaar-${offer.id}`}
+              className="rounded-lg border border-[#243365] px-3 py-3 space-y-1"
+            >
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className={`text-[11px] font-semibold uppercase ${offer.status === 'LIVE' ? 'text-emerald-400' : 'text-[#f87171]'}`}>
+                  {offer.status.replace('_', ' ')}
+                </span>
+                <span className="text-[15px] font-semibold text-white">{offer.name}</span>
+                {offer.amountLabel && <span className="text-[13px] text-[#a8b3d8]">{offer.amountLabel}</span>}
+              </div>
+              <p className="text-[13px] text-[#8a96c2]">{offer.method} · {offer.detail}</p>
+              <a
+                href={offer.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12px] text-[#93b4ff] hover:underline break-all"
+              >
+                {offer.url}
+              </a>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">

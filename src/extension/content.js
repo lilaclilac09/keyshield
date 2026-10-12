@@ -178,7 +178,7 @@ let   loggedIn = false;
 let   autoStoreInFlight = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
-const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store'];
+const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store', 'crypto-regime-api.onrender.com'];
 let lastQuickAuthPromptAt = 0;
 const QUICK_AUTH_COOLDOWN_MS = 5000;
 
@@ -1119,10 +1119,38 @@ function ksPromptQuickAuth(hostname, reason) {
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 20000);
 }
 
+function ksX402PaymentHeader(response) {
+  try {
+    return response.headers.get('PAYMENT-REQUIRED')
+      || response.headers.get('Payment-Required')
+      || response.headers.get('X-Payment-Required')
+      || '';
+  } catch {
+    return '';
+  }
+}
+
+function ksIsX402Challenge(response) {
+  if (!response || response.status !== 402) return false;
+  const raw = String(ksX402PaymentHeader(response) || '').trim();
+  return raw === 'x402' || raw.length > 0;
+}
+
+function ksParseX402Accept(first) {
+  const row = first && typeof first === 'object' ? first : {};
+  const raw = parseFloat(row.amount ?? row.maxAmountRequired ?? '0');
+  return {
+    amount_usd: Number.isFinite(raw) ? raw / 1_000_000 : 0,
+    payTo: row.payTo || '',
+    network: row.network || '',
+    resource: row.resource || '',
+  };
+}
+
 // ── x402 payment interceptor ────────────────────────────────────────────────
 // Wraps window.fetch to detect 402 + x402 headers and show a payment prompt.
 // Does NOT interfere with any other fetch — only intercepts 402 responses that
-// carry the X-Payment-Required: x402 header.
+// carry X-Payment-Required: x402 or PAYMENT-REQUIRED (x402 v2).
 
 (function () {
   if (window.__ksFetchWrapped) return;
@@ -1147,8 +1175,7 @@ function ksPromptQuickAuth(hostname, reason) {
     }
 
     if (
-      response.status === 402 &&
-      response.headers.get('X-Payment-Required') === 'x402' &&
+      ksIsX402Challenge(response) &&
       ksHostMatches(requestHost || location.hostname, PAYMENT_INTERCEPT_TARGETS)
     ) {
       // Clone so the caller still gets the original 402 body
@@ -1161,13 +1188,26 @@ function ksPromptQuickAuth(hostname, reason) {
         let resource   = '';
 
         try {
-          const body = await clone.json();
-          const first = body?.accepts?.[0] ?? {};
-          const raw   = parseFloat(first.maxAmountRequired ?? '0');
-          amount_usd  = raw / 1_000_000;   // USDC 6 decimals → USD
-          payTo       = first.payTo    ?? '';
-          network     = first.network  ?? '';
-          resource    = first.resource ?? (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
+          let first = {};
+          try {
+            const body = await clone.json();
+            first = body?.accepts?.[0] ?? {};
+          } catch { /* empty 402 body — try PAYMENT-REQUIRED */ }
+          if (!first.amount && !first.maxAmountRequired) {
+            const header = ksX402PaymentHeader(response);
+            if (header && header !== 'x402') {
+              try {
+                const decoded = JSON.parse(atob(header));
+                first = decoded?.accepts?.[0] ?? {};
+                if (!resource && decoded?.resource?.url) resource = decoded.resource.url;
+              } catch { /* keep empty */ }
+            }
+          }
+          const parsed = ksParseX402Accept(first);
+          amount_usd  = parsed.amount_usd;
+          payTo       = parsed.payTo;
+          network     = parsed.network;
+          resource    = parsed.resource || resource || (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
         } catch {
           // malformed body — still show a prompt with $0.00
         }

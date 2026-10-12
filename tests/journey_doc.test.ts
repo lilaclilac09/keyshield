@@ -22,5 +22,7 @@ describe("journey vault + payments brief", () => {
     expect(md).toContain("Not a KeyShield SKU");
     expect(md).toContain("Do not present");
     expect(md).toContain("ok 1.2.4 <all_urls>");
+    expect(md).toContain("crypto-regime-api.onrender.com");
+    expect(md).toContain("NOT SURFACE");
   });
 });
