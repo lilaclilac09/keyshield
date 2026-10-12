@@ -191,7 +191,49 @@ def has_bridge(man: dict) -> bool:
     return False
 
 
+THREE_LINE_HTML = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
+<style>
+body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}
+h1{margin:0 0 10px;font-size:14px;font-weight:600;word-spacing:.08em}
+button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px;font-size:13px;word-spacing:.08em}
+button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}
+.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}
+.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}
+.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}
+.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}
+.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}
+.sub{margin:0 0 10px;color:#71717a;font-size:12px}
+body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}
+body.signed-in #detect-ready{display:none!important}.extra{display:none!important}
+</style></head>
+<body data-ui="three-line">
+<h1>KeyShield — Sovereign Vault</h1>
+<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
+<button id="signin" class="guest-only">Sign in to KeyShield</button>
+<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<div id="status" class="status"></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button></div>
+<script src="popup.js"></script></body></html>
+"""
+
+
+def ensure_three_line_popup(ext: Path) -> None:
+    dest = ext / "popup.html"
+    now = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+    if 'data-ui="three-line"' in now and 'id="saved-apis"' in now and "<details" not in now:
+        return
+    here = globals().get("__file__")
+    src = Path(here).resolve().parent / "popup.html" if here else None
+    if src and src.is_file() and 'data-ui="three-line"' in src.read_text(encoding="utf-8"):
+        dest.write_text(src.read_text(encoding="utf-8"))
+        return
+    dest.write_text(THREE_LINE_HTML)
+
+
 def stamp(ext: Path) -> dict:
+    ensure_three_line_popup(ext)
     path = ext / "manifest.json"
     man = json.loads(path.read_text())
     man["name"] = NAME
@@ -233,6 +275,7 @@ def main(argv: list[str] | None = None) -> None:
     print("name", last.get("name", NAME))
     print("ver", last.get("version", VER))
     print("session-bridge", has_bridge(last) if last else False)
+    print("three-line", (ext / "popup.html").is_file() and 'data-ui="three-line"' in (ext / "popup.html").read_text(encoding="utf-8"))
     print("file", (ext / "session-bridge.js").is_file())
     print("hits", len(hits))
     print("next: chrome://extensions → Remove → Load unpacked", ext)

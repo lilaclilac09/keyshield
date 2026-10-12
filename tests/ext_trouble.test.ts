@@ -57,7 +57,10 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(ZSH_SAFE_STAMP_PY).toContain("capturePageToken");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("capturePageToken");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("session-bridge.js");
-    expect(OFFLINE_BRIDGE_STAMP_PY).not.toContain("<!DOCTYPE html>");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('data-ui="three-line"');
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("<!DOCTYPE html>");
+    expect(ZSH_SAFE_STAMP_PY).toContain('data-ui="three-line"');
+    expect(ZSH_SAFE_STAMP_PY).toContain("ensure_three_line_popup");
   });
 
   it("offline python stamps 1.2.4 signed-pane and LIST_SAVED_APIS", () => {
@@ -71,7 +74,8 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).toContain("capturePageToken");
     expect(OFFLINE_PATCH_PY).toContain('print("session-bridge"');
     expect(OFFLINE_PATCH_PY).toContain("https://*.vercel.app/*");
-    expect(OFFLINE_PATCH_PY).toContain("<details");
+    expect(OFFLINE_PATCH_PY).toContain('data-ui="three-line"');
+    expect(OFFLINE_PATCH_PY).not.toContain("<summary>Settings");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
     expect(OFFLINE_PATCH_PY).toContain("Library/Application Support/Google/Chrome");
@@ -122,13 +126,22 @@ describe("leftover 1.2.1 Trouble case", () => {
     const tmp = mkdtempSync(join(tmpdir(), "ks-zsh-stamp-"));
     writeFileSync(join(tmp, "manifest.json"), leftover);
     writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(
+      join(tmp, "popup.html"),
+      `<html><h1>KeyShield — Sovereign Vault<span id="conn">no token</span></h1><details><summary>Settings</summary></details></html>\n`,
+    );
     const out = execFileSync("python3", ["-c", ZSH_SAFE_STAMP_PY], {
       cwd: tmp,
       encoding: "utf8",
     });
     expect(out).toContain("session-bridge True");
+    expect(out).toContain("three-line");
     const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
     expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
+    const popup = readFileSync(join(tmp, "popup.html"), "utf8");
+    expect(popup).toContain('data-ui="three-line"');
+    expect(popup).toContain('id="saved-apis"');
+    expect(popup).not.toContain("<details");
   });
 
   it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {
@@ -140,6 +153,10 @@ describe("leftover 1.2.1 Trouble case", () => {
     writeFileSync(join(tmp, "manifest.json"), leftover);
     writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
     writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    writeFileSync(
+      join(tmp, "popup.html"),
+      `<html><h1>KeyShield — Sovereign Vault<span id="conn">no token</span></h1><button>Fill this tab</button><details><summary>Settings</summary></details></html>\n`,
+    );
     const py = `
 import importlib.util, json
 from pathlib import Path
@@ -153,7 +170,12 @@ out = mod.stamp(tmp)
 assert out["version"] == "1.2.4"
 assert mod.has_bridge(out) is True
 assert "capturePageToken" in (tmp / "session-bridge.js").read_text()
+html = (tmp / "popup.html").read_text()
+assert 'data-ui="three-line"' in html
+assert 'id="saved-apis"' in html
+assert "<details" not in html
 print("session-bridge", True)
+print("three-line", True)
 `;
     const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
     expect(out).toContain("session-bridge True");

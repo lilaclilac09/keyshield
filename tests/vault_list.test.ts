@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   isLocalApiBase,
@@ -5,6 +7,8 @@ import {
   parseVaultListPayload,
   shouldRefreshVaultOnVisit,
 } from "../src/web/lib/vault-list";
+
+const root = resolve(__dirname, "..");
 
 describe("parseVaultListPayload", () => {
   it("keeps a raw array from /manage/vault", () => {
@@ -34,6 +38,17 @@ describe("shouldRefreshVaultOnVisit", () => {
     expect(shouldRefreshVaultOnVisit("vault")).toBe(true);
     expect(shouldRefreshVaultOnVisit("home")).toBe(true);
     expect(shouldRefreshVaultOnVisit("docs")).toBe(false);
+  });
+});
+
+describe("Vault page saved-key hero", () => {
+  it("lists /manage/vault rows after sign-in the same way the popup does", () => {
+    const src = readFileSync(resolve(root, "src/web/components/sections/VaultSection.tsx"), "utf8");
+    expect(src).toContain('data-testid="vault-saved-apis"');
+    expect(src).toContain("1 saved");
+    expect(src).toContain("item.value");
+    expect(src).toContain("item.name");
+    expect(src).toContain("/manage/vault");
   });
 });
 

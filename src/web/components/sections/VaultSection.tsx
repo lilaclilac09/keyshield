@@ -57,6 +57,30 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       </div>
       {msg && <p className="text-[13px] text-[#a8b3d8]">{msg}</p>}
     </div>
+    <div data-testid="vault-saved-apis" className="rounded-xl border border-[#243365] bg-[#0e1631] p-4 space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[28px] font-bold tracking-tight text-white leading-none">
+          {total === 1 ? '1 saved' : `${total} saved`}
+        </p>
+        <p className="text-[12px] text-[#8a96c2]">Extension + Vault · 登录后这里就是已存的 key</p>
+      </div>
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="flex items-baseline justify-between gap-3 rounded-lg border border-[#243365] bg-[#131c39] px-3 py-2">
+              <strong className="text-[13px] text-white">{item.name}</strong>
+              <code className="text-[11px] text-[#93b4ff] break-all">{item.value}</code>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] text-[#8a96c2]">
+          {searchQuery
+            ? 'No secrets match your search'
+            : 'Sign in, then detect. Popup and this Vault list the same /manage/vault rows.'}
+        </p>
+      )}
+    </div>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />
       <StatCard label="Used This Week" value={items.filter(i => Date.now() - i.lastUsedAt < 86400000 * 7).length} hint="across agents and apps" />

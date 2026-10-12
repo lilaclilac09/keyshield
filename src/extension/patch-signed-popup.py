@@ -14,359 +14,30 @@ MARK_JS = "/* KS-SIGNED-1.2.4 */"
 MARK_BG = "/* KS-LIST-SAVED-1.2.4 */"
 
 HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KeyShield</title>
-  <style>
-    :root {
-      color-scheme: dark;
-    }
-    body {
-      width: 320px;
-      margin: 0;
-      padding: 16px;
-      background: #0a0d1a;
-      color: #e4e4e7;
-      font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    h1 {
-      margin: 0 0 4px 0;
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .sub {
-      color: #71717a;
-      font-size: 11px;
-      margin-bottom: 14px;
-    }
-    label {
-      display: block;
-      font-size: 11px;
-      color: #a1a1aa;
-      margin-bottom: 4px;
-      margin-top: 10px;
-    }
-    input[type="text"] {
-      box-sizing: border-box;
-      width: 100%;
-      padding: 7px 9px;
-      background: #020408;
-      border: 1px solid #1c2238;
-      border-radius: 6px;
-      color: #e4e4e7;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 11px;
-    }
-    input[type="text"]:focus {
-      outline: none;
-      border-color: #5b8cff;
-    }
-    button {
-      cursor: pointer;
-      width: 100%;
-      margin-top: 12px;
-      padding: 8px 12px;
-      background: #5b8cff;
-      color: white;
-      border: 1px solid #5b8cff;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    button:hover {
-      background: #7aa1ff;
-    }
-    .status {
-      margin-top: 10px;
-      padding: 6px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      display: none;
-    }
-    .status.ok {
-      display: block;
-      background: rgba(16, 185, 129, 0.12);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-    .status.err {
-      display: block;
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      background: rgba(91, 140, 255, 0.15);
-      color: #93b4ff;
-      border: 1px solid rgba(91, 140, 255, 0.3);
-      margin-left: 4px;
-    }
-    .footer {
-      margin-top: 14px;
-      padding-top: 10px;
-      border-top: 1px solid #1c2238;
-      font-size: 10px;
-      color: #71717a;
-    }
-    button.secondary {
-      background: transparent;
-      color: #a1a1aa;
-      border-color: #27272a;
-    }
-    button.secondary:hover {
-      color: #fafafa;
-      border-color: #3f3f46;
-      background: transparent;
-    }
-    button.danger {
-      background: transparent;
-      color: #f87171;
-      border-color: rgba(239, 68, 68, 0.3);
-    }
-    button.danger:hover {
-      color: #fecaca;
-      border-color: #f87171;
-      background: rgba(239, 68, 68, 0.08);
-    }
-    .row {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-    }
-    .row button { margin-top: 0; flex: 1; }
-    details {
-      margin-top: 12px;
-      border-top: 1px solid #1c2238;
-      padding-top: 10px;
-    }
-    details summary {
-      cursor: pointer;
-      font-size: 11px;
-      color: #71717a;
-      user-select: none;
-      outline: none;
-    }
-    details summary:hover { color: #a1a1aa; }
-    textarea {
-      box-sizing: border-box;
-      width: 100%;
-      min-height: 56px;
-      padding: 7px 9px;
-      background: #020408;
-      border: 1px solid #1c2238;
-      border-radius: 6px;
-      color: #e4e4e7;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px;
-      resize: vertical;
-      margin-top: 4px;
-    }
-    textarea:focus { outline: none; border-color: #5b8cff; }
-    .fingerprint {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 16px;
-      color: #5b8cff;
-      padding: 8px 10px;
-      border: 1px dotted #5b8cff;
-      border-radius: 6px;
-      margin-top: 4px;
-      letter-spacing: 0.06em;
-      text-align: center;
-      background: rgba(91, 140, 255, 0.05);
-    }
-    .info-block {
-      font-size: 10px;
-      color: #a1a1aa;
-      margin: 6px 0 8px 0;
-      line-height: 1.5;
-    }
-    .info-block.subtle {
-      color: #71717a;
-    }
-    .info-block code {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px;
-      color: #93b4ff;
-    }
-    .hint {
-      color: #52525b;
-      font-family: "JetBrains Mono", monospace;
-      font-weight: normal;
-    }
-    input[type="file"] {
-      box-sizing: border-box;
-      width: 100%;
-      padding: 6px 0;
-      color: #a1a1aa;
-      font-size: 11px;
-    }
-    input[type="file"]::file-selector-button {
-      background: transparent;
-      color: #a1a1aa;
-      border: 1px solid #27272a;
-      border-radius: 6px;
-      padding: 5px 9px;
-      margin-right: 8px;
-      font-size: 11px;
-      cursor: pointer;
-    }
-    input[type="file"]::file-selector-button:hover {
-      color: #fafafa;
-      border-color: #3f3f46;
-    }
-    .api-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 8px;
-      padding: 8px 10px;
-      margin-top: 6px;
-      background: #020408;
-      border: 1px solid #1c2238;
-      border-radius: 6px;
-    }
-    .api-row strong { font-size: 12px; color: #e4e4e7; }
-    .api-row code { font-size: 10px; color: #93b4ff; word-break: break-all; }
-    .saved-count {
-      margin: 8px 0 2px;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      color: #fafafa;
-      line-height: 1.1;
-    }
-    body.signed-in .guest-only { display: none !important; }
-    body:not(.signed-in) .signed-only { display: none !important; }
-  </style>
-</head>
-<body>
-  <h1>KeyShield — Sovereign Vault <span class="badge" id="conn">…</span></h1>
-  <div class="sub guest-only">Auto-detect API keys and store them in your encrypted vault.</div>
-  <div id="detect-ready" class="status" style="display:block;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
-    checking 1.2.4 + &lt;all_urls&gt;…
-  </div>
-  <div id="build" class="sub" style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
-    checking loaded build…
-  </div>
-
-  <div id="signed-pane" class="signed-only">
-    <p id="saved-count" class="saved-count">0 saved</p>
-    <p class="sub" style="margin:4px 0 8px">Already signed in. Detect stays on — new keys add to this list.</p>
-    <div id="saved-apis"></div>
-    <p id="saved-empty" class="info-block">None yet. Leave cursor.com / openai / openrouter open and click Show.</p>
-    <button id="fill-tab-signed" class="secondary">Fill this tab</button>
-    <button id="copy-cursor-key-signed" class="secondary">Copy key for Cursor API box</button>
-    <button id="clear-top" class="danger">Sign out</button>
-  </div>
-
-  <button id="signin" class="guest-only">→ Sign in to KeyShield</button>
-  <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
-  <button id="fill-tab" class="secondary guest-only">Fill this tab</button>
-  <button id="copy-cursor-key" class="secondary guest-only">Copy key for Cursor API box</button>
-  <button id="use-hosted-top" class="secondary guest-only">Use hosted app.ks.aileena.xyz</button>
-  <p class="hint guest-only" style="margin:8px 0 0;line-height:1.45">
-    Popup must show <code>ok 1.2.4 &lt;all_urls&gt;</code>. If it does not:
-    chrome://extensions → <strong>Remove</strong> then <strong>Load unpacked</strong>
-    <code>src/extension</code>. Do not only Reload. After Sign-in the scanner
-    stays on and saves <code>sk-proj-</code> / <code>sk-or-</code> / <code>key_</code>
-    / <code>crsr_</code> / <code>helius_auth_</code>. Saved keys auto-fill the
-    matching API blank (Cursor Settings black box included). Chrome cannot
-    inject into Cursor desktop — use <strong>Copy key for Cursor API box</strong>
-    then paste. Cursor: click Show first.
-  </p>
-  <div id="status" class="status"></div>
-
-  <label for="manual" class="guest-only">Paste session token (works on 1.1.1)</label>
-  <textarea id="manual" class="guest-only" placeholder="paste session token from app.ks.aileena.xyz Home or Developer"></textarea>
-  <div class="row guest-only">
-    <button id="register" class="secondary">Register token</button>
-    <button id="clear" class="danger">Sign out</button>
-  </div>
-
-  <details class="guest-only">
-    <summary>Settings</summary>
-
-    <label for="api">Backend API base URL</label>
-    <input type="text" id="api" placeholder="https://keyshield-production.up.railway.app" />
-
-    <label for="dash">Dashboard URL</label>
-    <input type="text" id="dash" placeholder="https://app.ks.aileena.xyz" />
-
-    <div class="row">
-      <button id="save" class="secondary">Save settings</button>
-    </div>
-  </details>
-
-  <details class="guest-only">
-    <summary>Cross-device sync</summary>
-
-    <div class="info-block">
-      Your vault key is derived from your wallet signature, so the SAME wallet
-      produces the SAME key on every browser. Sign in to KeyShield in another
-      browser (same wallet) and compare these 8 hex chars — if they match,
-      both browsers can decrypt the same vault.
-    </div>
-
-    <label>Vault key fingerprint <span class="hint">SHA-256(key)[:4]</span></label>
-    <div id="fingerprint" class="fingerprint">—</div>
-
-    <label for="remote">Remote API base (for deployed backend)</label>
-    <input type="text" id="remote" placeholder="https://keyshield-production.up.railway.app" />
-    <div class="row">
-      <button id="point-remote" class="secondary">Point at remote</button>
-      <button id="point-local"  class="secondary">Use local dev</button>
-      <button id="point-prod"   class="secondary">Use production</button>
-    </div>
-
-    <div class="info-block subtle">
-      Default: <code>https://keyshield-production.up.railway.app</code> — public
-      backend, ciphertext synced via the Cloudflare worker.
-      Local: <code>http://127.0.0.1:8001</code> — ciphertext lives in your
-      machine's SQLite (only useful while you're running the dev stack).
-      Same wallet sig + same backend URL ⇒ same vault visible from anywhere.
-    </div>
-  </details>
-
-  <details class="guest-only">
-    <summary>Backup &amp; restore</summary>
-
-    <div class="info-block">
-      Export your encrypted vault to a JSON file. Decryption still requires
-      your wallet, so the file is safe to put on a USB drive, iCloud Drive,
-      or even a public Gist — without the wallet sig it's opaque ciphertext.
-    </div>
-
-    <div class="row">
-      <button id="export-vault" class="secondary">Export to file…</button>
-    </div>
-
-    <label for="import-file">Restore from JSON file</label>
-    <input type="file" id="import-file" accept="application/json" />
-    <div class="row">
-      <button id="import-vault" class="secondary">Restore</button>
-    </div>
-
-    <div id="backup-status" class="status"></div>
-  </details>
-
-  <div class="footer guest-only">
-    Sign-in opens the hosted dashboard already logged in when a session
-    exists. First visit still needs wallet or passkey once.
-  </div>
-
-  <script src="popup.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
+<style>
+body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}
+h1{margin:0 0 10px;font-size:14px;font-weight:600;word-spacing:.08em}
+button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px;font-size:13px;word-spacing:.08em}
+button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}
+.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}
+.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}
+.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}
+.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}
+.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}
+.sub{margin:0 0 10px;color:#71717a;font-size:12px}
+body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}
+body.signed-in #detect-ready{display:none!important}.extra{display:none!important}
+</style></head>
+<body data-ui="three-line">
+<h1>KeyShield — Sovereign Vault</h1>
+<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
+<button id="signin" class="guest-only">Sign in to KeyShield</button>
+<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<div id="status" class="status"></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button></div>
+<script src="popup.js"></script></body></html>
 """
 
 JS = r"""
@@ -813,14 +484,18 @@ def main(argv: list[str] | None = None) -> None:
     html_path = ext / "popup.html"
     html_now = html_path.read_text() if html_path.exists() else ""
     compact = (
-        'id="signed-pane"' not in html_now
-        or "ok 1.2.4" not in html_now
-        or "<details" not in html_now
-        or 'id="fingerprint"' not in html_now
+        'data-ui="three-line"' not in html_now
+        or 'id="signed-pane"' not in html_now
         or 'id="saved-count"' not in html_now
+        or 'id="saved-apis"' not in html_now
     )
     if compact:
-        html_path.write_text(HTML)
+        here = globals().get("__file__")
+        sibling = Path(here).resolve().parent / "popup.html" if here else None
+        if sibling and sibling.is_file() and 'data-ui="three-line"' in sibling.read_text(encoding="utf-8"):
+            html_path.write_text(sibling.read_text(encoding="utf-8"))
+        else:
+            html_path.write_text(HTML)
     splice(ext / "popup.js", MARK_JS, JS)
     splice(ext / "background.js", MARK_BG, BG)
     man = json.loads((ext / "manifest.json").read_text())
@@ -830,7 +505,8 @@ def main(argv: list[str] | None = None) -> None:
     print("ver", man["version"])
     print("signed-pane", 'id="signed-pane"' in html)
     print("saved-count", 'id="saved-count"' in html)
-    print("full-ui", "<details" in html and 'id="fingerprint"' in html)
+    print("three-line", 'data-ui="three-line"' in html)
+    print("full-ui", 'data-ui="three-line"' in html and 'id="saved-apis"' in html)
     print("session-bridge", manifest_has_session_bridge(man))
     print("hosted", HOSTED)
     print("next: chrome://extensions → Remove → Load unpacked this folder")

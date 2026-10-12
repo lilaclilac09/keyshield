@@ -57,13 +57,17 @@ export function formatSavedCount(n: number): string {
   return count === 1 ? '1 saved' : `${count} saved`;
 }
 
-/** Emergency one-liner HTML is not the user-facing popup. */
+export const THREE_LINE_UI_MARK = 'data-ui="three-line"';
+
+/** True when the popup is the 3-line UI (not leftover Settings / token clutter). */
 export function isCompactPopupHtml(html: string): boolean {
   const text = String(html || '');
   return (
-    !text.includes('<details') ||
-    !text.includes('id="fingerprint"') ||
-    !text.includes('id="saved-count"')
+    text.includes(THREE_LINE_UI_MARK) &&
+    text.includes('id="signed-pane"') &&
+    text.includes('id="saved-count"') &&
+    text.includes('id="saved-apis"') &&
+    !text.includes('<details')
   );
 }
 

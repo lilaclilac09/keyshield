@@ -48,7 +48,9 @@ export const ExtTroubleCase: React.FC<Props> = ({ variant = 'docs' }) => {
             <code className="text-white">eval "$(…)"</code>, or pasted a comment like{' '}
             <code className="text-white">1) find … (Chrome …)</code>. Paste only the block below.
             Terminal must print <code className="text-white">ver 1.2.4</code> and{' '}
-            <code className="text-white">session-bridge True</code>.
+            <code className="text-white">session-bridge True</code>. This also rewrites{' '}
+            <code className="text-white">popup.html</code> to three lines: Sign in, Allow detect,
+            then after login <code className="text-white">N saved</code> + keys. No Settings / token box.
           </p>
           <CodeBlock code={LOCAL_PULL_BRIDGE_SH} />
         </div>

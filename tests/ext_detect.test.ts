@@ -118,9 +118,12 @@ describe("formatDetectReadyLine", () => {
     expect(html).toContain("ok 1.2.4");
     expect(html).toContain('id="signed-pane"');
     expect(html).toContain('id="saved-count"');
-    expect(html).toContain("<details");
+    expect(html).toContain('id="saved-apis"');
+    expect(html).toContain('data-ui="three-line"');
     expect(html).toContain('id="fingerprint"');
-    expect(isCompactPopupHtml(html)).toBe(false);
+    expect(html).not.toContain("<details");
+    expect(isCompactPopupHtml(html)).toBe(true);
+    expect(isCompactPopupHtml('<h1>KeyShield — Sovereign Vault</h1><details><summary>Settings</summary></details>')).toBe(false);
     expect(html).toContain("KeyShield — Sovereign Vault");
     expect(popup).toContain("function harvestTokenFromDashboardTabs");
     expect(popup).toContain("function formatSavedCount");

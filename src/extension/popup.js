@@ -322,13 +322,13 @@ async function loadSettings() {
         ? `${short} · vault key on this device`
         : `${short} · detect stays on`;
     }
-    if (signinBtn) signinBtn.textContent = "→ Open KeyShield";
+    if (signinBtn) signinBtn.textContent = "Open KeyShield";
   } else {
     if (badge) {
       badge.textContent = "no token";
       badge.title = "Sign in on app.ks.aileena.xyz — this popup reads that tab.";
     }
-    if (signinBtn) signinBtn.textContent = "→ Sign in to KeyShield";
+    if (signinBtn) signinBtn.textContent = "Sign in to KeyShield";
   }
 }
 

@@ -40,7 +40,7 @@ export const LEFTOVER_121_CASE = {
   title: 'Leftover 1.2.4 · missing session-bridge',
   titleZh: '本地 1.2.4 只有 content.js · Sign-in 进不了扩展',
   symptom:
-    'Card can already say KeyShield — Sovereign Vault 1.2.4 and ok 1.2.4 <all_urls>, but chrome://extensions → Details → loaded manifest.json only lists content.js on <all_urls>. Hosted Sign-in never writes chrome.storage — popup stays no token. git pull cannot resolve github.com.',
+    'Card can already say KeyShield — Sovereign Vault 1.2.4 and ok 1.2.4 <all_urls>, but the leftover popup still stacks Fill / Copy / Settings / token box, and chrome://extensions → Details → loaded manifest.json only lists content.js on <all_urls>. Hosted Sign-in never writes chrome.storage — title jams into no token. git pull cannot resolve github.com.',
   symptomZh:
     '卡片已经是 1.2.4、popup 也能绿 ok 1.2.4 <all_urls>，但加载的 manifest 只有 content.js，没有 session-bridge.js。hosted Sign-in 写不进扩展，popup 一直 no token。github.com 解析失败。',
 } as const;
@@ -326,27 +326,17 @@ if (not bridge.is_file()) or ("capturePageToken" not in bridge.read_text(encodin
 '''.lstrip())
 (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
 html_now = (ext / "popup.html").read_text() if (ext / "popup.html").exists() else ""
-if 'id="signed-pane"' not in html_now or "ok 1.2.4" not in html_now or "<details" not in html_now or 'id="saved-count"' not in html_now:
+if 'data-ui="three-line"' not in html_now or 'id="saved-apis"' not in html_now or "<details" in html_now:
     (ext / "popup.html").write_text("""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>:root{color-scheme:dark}body{width:320px;margin:0;padding:16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.5 -apple-system,system-ui,sans-serif}h1{margin:0 0 4px;font-size:15px}.sub,.info-block,.footer{color:#71717a;font-size:11px}button{cursor:pointer;width:100%;margin-top:12px;padding:8px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:6px}button.secondary{background:transparent;color:#a1a1aa;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin-top:10px;padding:6px 8px;border-radius:6px;font-size:11px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin-top:6px;background:#020408;border:1px solid #1c2238;border-radius:6px}body.signed-in .guest-only{display:none !important}body:not(.signed-in) .signed-only{display:none !important}</style></head><body>
-<h1>KeyShield — Sovereign Vault <span id="conn"></span></h1>
-<div class="sub signed-only">Already signed in — saved APIs only. Detect stays on.</div>
-<div id="detect-ready" class="status" style="display:block">ok 1.2.4 + &lt;all_urls&gt;…</div>
-<div id="build" class="sub"></div>
-<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><p class="sub">Already signed in. Detect stays on.</p><div id="saved-apis"></div><p id="saved-empty">None yet. Leave a provider tab open — detect saves here.</p><button id="clear-top" class="danger">Sign out</button></div>
+<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px;font-weight:600}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px;font-size:13px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<body data-ui="three-line">
+<h1>KeyShield — Sovereign Vault</h1>
+<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
 <button id="signin" class="guest-only">Sign in to KeyShield</button>
 <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
-<button id="fill-tab" class="secondary guest-only">Fill this tab</button>
-<button id="copy-cursor-key" class="secondary guest-only">Copy key for Cursor API box</button>
-<button id="use-hosted-top" class="secondary guest-only">Use hosted</button>
 <div id="status" class="status"></div>
-<textarea id="manual" class="guest-only"></textarea>
-<div class="guest-only"><button id="register" class="secondary">Register token</button><button id="clear" class="danger">Sign out</button></div>
-<details class="guest-only"><summary>Settings</summary><input id="api"/><input id="dash"/><button id="save">Save</button></details>
-<div id="fingerprint"></div><input id="remote"/>
-<button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button>
-<button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button>
-<div id="backup-status"></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button></div>
 <script src="popup.js"></script></body></html>
 """)
 js = r'''
@@ -376,12 +366,13 @@ print("ok", ext)
 print("ver", man2["version"])
 print("signed-pane", 'id="signed-pane"' in html)
 print("saved-count", 'id="saved-count"' in html)
+print("three-line", 'data-ui="three-line"' in html)
 print("session-bridge", any("session-bridge.js" in (row.get("js") or []) for row in (man2.get("content_scripts") or []) if isinstance(row, dict)))
 print("hosted", HOSTED)
 print("next: chrome://extensions Remove + Load unpacked", ext)
 `;
 
-/** Compact leftover stamp — no HTML. Uses KS_EXT from find, or cwd. */
+/** Compact leftover stamp — session-bridge + three-line popup.html. Uses KS_EXT from find, or cwd. */
 export const OFFLINE_BRIDGE_STAMP_PY = `from pathlib import Path
 import json, os
 NAME = "KeyShield — Sovereign Vault"
@@ -395,11 +386,30 @@ BRIDGE = (
     "window.addEventListener('message',function(e){if(e.source!==window||!e.data)return;if(e.data.__ks_ext_request)announce();"
     "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\\n"
 )
+THREE_LINE_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
+<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<body data-ui="three-line">
+<h1>KeyShield — Sovereign Vault</h1>
+<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
+<button id="signin" class="guest-only">Sign in to KeyShield</button>
+<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<div id="status" class="status"></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
+<script src="popup.js"></script></body></html>
+"""
 SCRIPTS = [
     {"matches": ["https://app.ks.aileena.xyz/*", "https://*.aileena.xyz/*", "https://keyshield.dev/*", "https://*.keyshield.dev/*", "https://*.up.railway.app/*", "https://*.vercel.app/*", "http://127.0.0.1:5173/*", "http://localhost:5173/*", "http://127.0.0.1:3000/*", "http://localhost:3000/*"], "js": ["session-bridge.js"], "run_at": "document_start"},
     {"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": True},
 ]
+def ensure_three_line_popup(ext):
+    dest = ext / "popup.html"
+    now = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+    if 'data-ui="three-line"' in now and 'id="saved-apis"' in now and "<details" not in now:
+        return
+    dest.write_text(THREE_LINE_HTML)
 def stamp(ext):
+    ensure_three_line_popup(ext)
     man = json.loads((ext / "manifest.json").read_text())
     man["name"] = NAME
     man["version"] = VER
@@ -419,6 +429,7 @@ def stamp(ext):
     (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
     ok = any("session-bridge.js" in (row.get("js") or []) for row in (man.get("content_scripts") or []) if isinstance(row, dict))
     print("stamped", ext, "session-bridge", ok)
+    print("three-line", 'data-ui="three-line"' in (ext / "popup.html").read_text(encoding="utf-8"))
     return man
 targets = []
 env = Path(os.environ.get("KS_EXT") or "").expanduser()
@@ -472,6 +483,18 @@ BRIDGE = (
     "window.addEventListener('message',function(e){if(e.source!==window||!e.data)return;if(e.data.__ks_ext_request)announce();"
     "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\\n"
 )
+THREE_LINE_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
+<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<body data-ui="three-line">
+<h1>KeyShield — Sovereign Vault</h1>
+<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
+<button id="signin" class="guest-only">Sign in to KeyShield</button>
+<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<div id="status" class="status"></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
+<script src="popup.js"></script></body></html>
+"""
 SCRIPTS = [
     {"matches": ["https://app.ks.aileena.xyz/*", "https://*.aileena.xyz/*", "https://keyshield.dev/*", "https://*.keyshield.dev/*", "https://*.up.railway.app/*", "https://*.vercel.app/*", "http://127.0.0.1:5173/*", "http://localhost:5173/*", "http://127.0.0.1:3000/*", "http://localhost:3000/*"], "js": ["session-bridge.js"], "run_at": "document_start"},
     {"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": True},
@@ -505,7 +528,14 @@ def walk(root, max_depth=5):
         for c in kids:
             if c.is_dir() and c.name not in SKIP and not c.name.startswith("."):
                 stack.append((c, d + 1))
+def ensure_three_line_popup(ext):
+    dest = ext / "popup.html"
+    now = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+    if 'data-ui="three-line"' in now and 'id="saved-apis"' in now and "<details" not in now:
+        return
+    dest.write_text(THREE_LINE_HTML)
 def stamp(ext):
+    ensure_three_line_popup(ext)
     man = json.loads((ext / "manifest.json").read_text())
     man["name"] = NAME
     man["version"] = VER
@@ -525,6 +555,7 @@ def stamp(ext):
     (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
     ok = any("session-bridge.js" in (row.get("js") or []) for row in (man.get("content_scripts") or []) if isinstance(row, dict))
     print("stamped", ext, "session-bridge", ok)
+    print("three-line", 'data-ui="three-line"' in (ext / "popup.html").read_text(encoding="utf-8"))
     return man
 hits = []
 here = Path.cwd().resolve()
@@ -606,8 +637,8 @@ export const DETECT_AFTER_PATCH = [
   'Load unpacked → the KS_EXT / src/extension folder the terminal printed',
   'Card name KeyShield — Sovereign Vault, version 1.2.4',
   'Details → loaded manifest.json must list session-bridge.js at document_start on app.ks.aileena.xyz — only content.js on <all_urls> stays no token',
-  'Open popup: green ok 1.2.4 <all_urls>',
+  'Open popup: three lines only — green ok 1.2.4 <all_urls>, Sign in, Allow detect. No Settings / token box / URL fields',
   'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup shows N saved',
-  'Already signed: only Saved APIs + Sign out — no Sign-in / token paste',
+  'Already signed: N saved + masked key list + Sign out. Vault page shows the same rows.',
   'Keep cursor.com / openai / openrouter open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_',
 ] as const;
