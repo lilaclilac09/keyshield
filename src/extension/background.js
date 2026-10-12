@@ -364,6 +364,12 @@ function summarizeSavedApis(data) {
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ''),
+      product: String(it.product || ''),
+      domain: String(it.domain || ''),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ''),
     });
   }
   return out;

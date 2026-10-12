@@ -197,9 +197,30 @@ function summarizeSavedApis(data) {
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ""),
+      product: String(it.product || ""),
+      domain: String(it.domain || ""),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ""),
     });
   }
   return out;
+}
+
+function formatApiRowTitle(api) {
+  const name = String((api && api.name) || "").trim();
+  return name || String((api && api.upstream) || "API");
+}
+
+function formatApiRowNote(api) {
+  if (!api) return "";
+  if (api.notes) return String(api.notes);
+  const bits = [api.family, api.product, api.domain].filter(Boolean);
+  const exp = api.expires_at ? `expires ${String(api.expires_at).slice(0, 10)}` : "";
+  if (exp) bits.push(exp);
+  if (api.masked) bits.push(api.masked);
+  return bits.join(" · ");
 }
 
 function applySignedInChrome(signed) {
@@ -307,10 +328,13 @@ async function refreshSavedApis() {
       const row = document.createElement("div");
       row.className = "api-row";
       const name = document.createElement("strong");
-      name.textContent = api.upstream;
+      name.textContent = formatApiRowTitle(api);
+      const note = document.createElement("span");
+      note.className = "api-note";
+      note.textContent = formatApiRowNote(api);
       const mask = document.createElement("code");
       mask.textContent = api.masked;
-      row.append(name, mask);
+      row.append(name, note, mask);
       box.appendChild(row);
     }
   }

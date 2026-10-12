@@ -202,6 +202,39 @@ export function formatCreated(iso?: string | null, epochMs?: number): string {
   return `saved ${new Date(ms).toISOString().slice(0, 10)}`;
 }
 
+export function formatStoredApiCard(api: {
+  name?: string;
+  upstream: string;
+  masked?: string;
+  prefix?: string;
+  family?: string;
+  product?: string;
+  domain?: string;
+  expires_at?: string | null;
+  created_at?: string | null;
+  notes?: string;
+}): { title: string; subtitle: string; meta: string } {
+  const meta = providerMeta(api.upstream);
+  const prefix = String(api.prefix || api.masked || '').trim();
+  const given = String(api.name || '').trim();
+  const title = given && !isGenericVaultName(given, api.upstream)
+    ? given
+    : [meta.name, api.product && api.product !== meta.product ? api.product : '', prefix]
+      .filter(Boolean)
+      .join(' · ');
+  const subtitle = [
+    api.family || meta.family,
+    api.product || meta.product,
+  ].filter(Boolean).join(' · ');
+  const metaLine = [
+    api.domain || meta.domain,
+    prefix,
+    formatExpiry(api.expires_at),
+    formatCreated(api.created_at),
+  ].filter(Boolean).join(' · ');
+  return { title, subtitle, meta: metaLine };
+}
+
 export function catalogTags(upstream: string, extra: string[] = []): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

@@ -30,6 +30,52 @@ def _token(tmp_path, monkeypatch) -> tuple[TestClient, str]:
     return TestClient(app), token
 
 
+def test_tag_value_reads_host_and_page():
+    tags = ["AI", "host:dashboard.helius.dev", "page:API Keys"]
+    assert kc.tag_value(tags, "host") == "dashboard.helius.dev"
+    assert kc.tag_value(tags, "page") == "API Keys"
+    assert kc.tag_value(tags, "missing") == ""
+
+
+def test_store_two_helius_keys_keep_distinct_names(tmp_path, monkeypatch):
+    client, token = _token(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+    a = "10470584-67a9-4abc-8def-123456787761"
+    b = "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1"
+    first = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "value": a,
+            "domain": "dashboard.helius.dev",
+            "pageTitle": "API Keys",
+        },
+    )
+    second = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "value": b,
+            "domain": "dashboard.helius.dev",
+            "pageTitle": "API Keys",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    listed = client.get("/manage/vault", headers=headers).json()
+    rows = [row for row in listed if row.get("upstream") == "helius"]
+    assert len(rows) == 2
+    names = {row["name"] for row in rows}
+    assert len(names) == 2
+    assert all("Helius" in name for name in names)
+    assert all(row.get("family") == "RPC" for row in rows)
+    assert all(row.get("expires_at") for row in rows)
+    dumped = str(listed)
+    assert a not in dumped and b not in dumped
+
+
 def test_distinguish_name_separates_helius_uuids():
     a = kc.distinguish_name(
         upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", host="dashboard.helius.dev"

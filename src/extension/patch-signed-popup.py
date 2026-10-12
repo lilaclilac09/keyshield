@@ -14,7 +14,7 @@ MARK_JS = "/* KS-SIGNED-1.2.4 */"
 MARK_BG = "/* KS-LIST-SAVED-1.2.4 */"
 
 HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.line.err{color:#f87171}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}#copy-status,#fill-ms,#saved-count{display:none}</style></head>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.line.err{color:#f87171}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;flex-direction:column;gap:2px;padding:6px 0}.api-note{font-size:11px;color:#8a96c2}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}#copy-status,#fill-ms,#saved-count{display:none}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
 <section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="signed-status" class="saved-count">0 saved</p><p id="collected-line" class="line ok">0 collected</p><p id="saved-count" class="sub">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
@@ -58,7 +58,7 @@ function summarizeSavedApis(data) {
     if (!upstream) continue;
     let masked = String(it.masked_value || "").trim();
     if (!masked) masked = it.cipher ? "encrypted" : "saved";
-    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked });
+    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked, family: String(it.family || ""), product: String(it.product || ""), domain: String(it.domain || ""), notes: String(it.notes || "") });
   }
   return out;
 }
@@ -155,10 +155,13 @@ async function refreshSavedApis() {
       const row = document.createElement("div");
       row.className = "api-row";
       const name = document.createElement("strong");
-      name.textContent = api.upstream;
+      name.textContent = api.name || api.upstream;
+      const note = document.createElement("span");
+      note.className = "api-note";
+      note.textContent = api.notes || [api.family, api.product].filter(Boolean).join(" · ");
       const mask = document.createElement("code");
       mask.textContent = api.masked;
-      row.append(name, mask);
+      row.append(name, note, mask);
       box.appendChild(row);
     }
   }
@@ -221,7 +224,7 @@ function summarizeSavedApis(data) {
     if (!upstream) continue;
     let masked = String(it.masked_value || "").trim();
     if (!masked) masked = it.cipher ? "encrypted" : "saved";
-    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked });
+    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked, family: String(it.family || ""), product: String(it.product || ""), domain: String(it.domain || ""), notes: String(it.notes || "") });
   }
   return out;
 }

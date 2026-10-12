@@ -183,10 +183,19 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     expiry_label = f"expires {expires_iso[:10]}" if expires_iso else "no expiry"
     if not isinstance(tags, list):
         tags = []
+    host = kc.tag_value(tags, "host")
+    page_title = kc.tag_value(tags, "page")
+    note_bits = [str(meta["family"]), product, host or str(meta["domain"]), expiry_label]
+    if page_title:
+        note_bits.append(page_title)
     return {
         "id": row["id"],
         "name": kc.distinguish_name(
-            upstream=upstream, raw=str(raw), name=str(row["name"] or "")
+            upstream=upstream,
+            raw=str(raw),
+            name=str(row["name"] or ""),
+            host=host,
+            page_title=page_title,
         ),
         "type": row["type"],
         "upstream": row["upstream"],
@@ -194,8 +203,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "prefix": masked if str(raw).strip() else "",
         "family": meta["family"],
         "product": product,
-        "domain": meta["domain"],
-        "notes": f"{meta['family']} · {product} · {expiry_label}",
+        "domain": host or meta["domain"],
+        "notes": " · ".join(b for b in note_bits if b),
         "has_plaintext": bool(str(raw).strip()),
         "cipher": row["cipher"] or "",
         "iv": row["iv"] or "",
@@ -261,6 +270,8 @@ async def vault_store(request: Request):
         extra_tags = []
     if host:
         extra_tags = [*extra_tags, f"host:{host}"]
+    if page_title:
+        extra_tags = [*extra_tags, f"page:{page_title[:80]}"]
     tags_json = _json.dumps(kc.catalog_tags(str(upstream), [str(t) for t in extra_tags]))
 
     # Same plaintext key → same row. A second Helius UUID stays a new row.

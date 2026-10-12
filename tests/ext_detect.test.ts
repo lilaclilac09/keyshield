@@ -32,7 +32,10 @@ import {
   shouldArmLiveScan,
   shouldPopupForKey,
   summarizeSavedApis,
+  formatApiRowTitle,
+  formatApiRowNote,
 } from "../src/web/lib/ext-detect";
+import { formatStoredApiCard } from "../src/web/lib/provider-catalog";
 
 describe("classifyDetectedKey", () => {
   it("matches OpenAI project keys anywhere", () => {
@@ -305,8 +308,53 @@ describe("summarizeSavedApis", () => {
 
   it("accepts {items} payloads and cipher-only rows", () => {
     expect(summarizeSavedApis({ items: [{ upstream: "groq", cipher: "abc" }] })).toEqual([
-      { id: "groq", upstream: "groq", name: "groq key", masked: "encrypted" },
+      {
+        id: "groq",
+        upstream: "groq",
+        name: "groq key",
+        masked: "encrypted",
+        family: "",
+        product: "",
+        domain: "",
+        expires_at: null,
+        created_at: null,
+        notes: "",
+      },
     ]);
+  });
+
+  it("keeps family, product, expiry so two Helius rows stay distinct", () => {
+    const rows = summarizeSavedApis([
+      {
+        id: "1",
+        upstream: "helius",
+        name: "Helius RPC · Solana RPC · 104705••••7761 · dashboard.helius.dev",
+        family: "RPC",
+        product: "Solana RPC",
+        domain: "dashboard.helius.dev",
+        masked_value: "104705••••7761",
+        expires_at: "2026-11-11T00:00:00Z",
+      },
+      {
+        id: "2",
+        upstream: "helius",
+        name: "Helius RPC · Solana RPC · 210e4c••••aaa1 · dashboard.helius.dev",
+        family: "RPC",
+        product: "Solana RPC",
+        domain: "dashboard.helius.dev",
+        masked_value: "210e4c••••aaa1",
+        expires_at: "2026-11-11T00:00:00Z",
+      },
+    ]);
+    expect(rows[0].name).not.toBe(rows[1].name);
+    expect(formatApiRowTitle(rows[0])).toContain("104705");
+    expect(formatApiRowTitle(rows[1])).toContain("210e4c");
+    expect(formatApiRowNote(rows[0])).toContain("RPC");
+    const a = formatStoredApiCard({ upstream: "helius", prefix: "104705••••7761" });
+    const b = formatStoredApiCard({ upstream: "helius", prefix: "210e4c••••aaa1" });
+    expect(a.title).not.toBe(b.title);
+    expect(a.subtitle).toContain("RPC");
+    expect(formatStoredApiCard({ upstream: "anthropic", family: "AI", product: "Claude" }).subtitle).toContain("AI");
   });
 });
 

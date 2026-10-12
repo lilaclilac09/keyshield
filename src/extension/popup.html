@@ -46,11 +46,13 @@
     }
     .api-row {
       display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 6px 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 0;
+      border-bottom: 1px solid #1c2238;
     }
     .api-row strong { font-size: 12px; color: #e4e4e7; }
+    .api-row .api-note { font-size: 11px; color: #8a96c2; }
     .api-row code { font-size: 11px; color: #93b4ff; word-break: break-all; }
     .sub { margin: 0 0 8px; color: #71717a; font-size: 12px; }
     button {

@@ -3,6 +3,8 @@
  * A visible key on any page must match one of these and pop the panel.
  */
 
+import { formatStoredApiCard } from './provider-catalog';
+
 export type DetectedShape = {
   upstream: string;
   key: string;
@@ -319,7 +321,42 @@ export type SavedApiRow = {
   upstream: string;
   name: string;
   masked: string;
+  family: string;
+  product: string;
+  domain: string;
+  expires_at: string | null;
+  created_at: string | null;
+  notes: string;
 };
+
+export function formatApiRowTitle(api: SavedApiRow): string {
+  return formatStoredApiCard({
+    name: api.name,
+    upstream: api.upstream,
+    masked: api.masked,
+    family: api.family,
+    product: api.product,
+    domain: api.domain,
+    expires_at: api.expires_at,
+    created_at: api.created_at,
+    notes: api.notes,
+  }).title;
+}
+
+export function formatApiRowNote(api: SavedApiRow): string {
+  if (api.notes) return api.notes;
+  const card = formatStoredApiCard({
+    name: api.name,
+    upstream: api.upstream,
+    masked: api.masked,
+    family: api.family,
+    product: api.product,
+    domain: api.domain,
+    expires_at: api.expires_at,
+    created_at: api.created_at,
+  });
+  return `${card.subtitle} · ${card.meta}`;
+}
 
 /** Signed-in popup lists only these — never raw `value`. */
 export function summarizeSavedApis(data: unknown): SavedApiRow[] {
@@ -342,16 +379,29 @@ export function summarizeSavedApis(data: unknown): SavedApiRow[] {
       masked_value?: string;
       cipher?: string;
       value?: string;
+      family?: string;
+      product?: string;
+      domain?: string;
+      expires_at?: string | null;
+      created_at?: string | null;
+      notes?: string;
+      prefix?: string;
     };
     const upstream = String(it.upstream || '').toLowerCase().trim();
     if (!upstream) continue;
-    let masked = String(it.masked_value || '').trim();
+    let masked = String(it.masked_value || it.prefix || '').trim();
     if (!masked) masked = it.cipher ? 'encrypted' : 'saved';
     out.push({
       id: String(it.id || upstream),
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ''),
+      product: String(it.product || ''),
+      domain: String(it.domain || ''),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ''),
     });
   }
   return out;

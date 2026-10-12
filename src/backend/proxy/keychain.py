@@ -221,6 +221,15 @@ def distinguish_name(
     return " · ".join(p for p in parts if p)
 
 
+def tag_value(tags: list[Any] | None, prefix: str) -> str:
+    needle = f"{prefix.lower().rstrip(':')}:"
+    for tag in tags or []:
+        text = str(tag or "")
+        if text.lower().startswith(needle):
+            return text.split(":", 1)[1].strip()
+    return ""
+
+
 def catalog_tags(upstream: str, extra: list[str] | None = None) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -396,22 +405,31 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
             parsed_tags = []
         if not isinstance(parsed_tags, list):
             parsed_tags = []
+        host = tag_value(parsed_tags, "host")
+        page_title = tag_value(parsed_tags, "page")
         expiry_label = f"expires {expires_at[:10]}" if expires_at else "no expiry"
+        note_bits = [str(meta["family"]), product, prefix, host or str(meta["domain"]), expiry_label]
+        if page_title:
+            note_bits.append(page_title)
         out.append(
             {
                 "id": item_id,
                 "name": distinguish_name(
-                    upstream=upstream, raw=raw, name=str(row["name"] or "")
+                    upstream=upstream,
+                    raw=raw,
+                    name=str(row["name"] or ""),
+                    host=host,
+                    page_title=page_title,
                 ),
                 "upstream": upstream,
                 "prefix": prefix,
                 "family": meta["family"],
                 "product": product,
-                "domain": meta["domain"],
+                "domain": host or meta["domain"],
                 "expires_at": expires_at,
                 "created_at": created_at,
                 "tags": catalog_tags(upstream, [str(t) for t in parsed_tags]),
-                "notes": f"{meta['family']} · {product} · {prefix} · {expiry_label}",
+                "notes": " · ".join(b for b in note_bits if b),
             }
         )
     return out

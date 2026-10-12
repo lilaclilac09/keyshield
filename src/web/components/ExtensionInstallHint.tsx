@@ -44,11 +44,7 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             Load unpacked <strong className="text-white">v1.2.4</strong> from <code className="text-white">src/extension</code>.
             Sign-in then opens already logged in when a token is in the popup or on{' '}
             <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>.
-            Old <strong className="text-white">v1.1.1</strong> still opens dead <code className="text-white">keyshield.dev</code>
-            — stay on the hosted app, copy token → <strong className="text-white">Register token</strong>.
-            Leftover <strong className="text-white">1.2.4</strong>: Docs → Troubleshooting — find your clone from
-            Chrome internals (Details → Loaded from), try pull, skip if github.com DNS fails, then python3.
-            Do not hardcode a Downloads path.
+            Sign-in stuck? Docs → Troubleshooting.
           </p>
         </div>
       </div>

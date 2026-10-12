@@ -56,8 +56,11 @@ describe("shop demo helpers", () => {
     const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
     expect(home).toContain("shop-proof-strip");
     expect(home).toContain("SHOP_PROOF_SETTLE_CU");
+    expect(home).toContain("text-[40px]");
     expect(home).toContain("WebAuthn PRF");
     expect(home).toContain("ForceClawback");
+    expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf("Stored APIs"));
+    expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf(">Connection<"));
   });
 
   it("keeps the 2.00 USDC MPP shop SKU separate from ledger credit", () => {
