@@ -41,7 +41,7 @@ export const ExtTroubleCase: React.FC<Props> = ({ variant = 'docs' }) => {
 
         <div>
           <p className="text-[12px] font-semibold text-white mb-1">
-            1. 本地 stamp · paste this only. Do not use eval.
+            1. Local stamp — paste this only. Do not use eval.
           </p>
           <p className="text-[11px] text-[#8a96c2] mb-2 leading-relaxed">
             zsh parse error near <code className="text-white">)</code> means you wrapped python in{' '}
@@ -80,7 +80,7 @@ git pull origin cursor/cursor-api-autofill-b48a || echo skip-git
 
         <details>
           <summary className="text-[12px] font-semibold text-white cursor-pointer">
-            3. Pull failed — session-bridge stamp only（短 python，不是 HTML）
+            3. Pull failed — session-bridge stamp only (python, not HTML)
           </summary>
           <div className="mt-2">
             <CodeBlock code={`python3 - <<'PY'\n${OFFLINE_BRIDGE_STAMP_PY.trimEnd()}\nPY\n`} />
@@ -89,7 +89,7 @@ git pull origin cursor/cursor-api-autofill-b48a || echo skip-git
 
         <details open={!home}>
           <summary className="text-[12px] font-semibold text-white cursor-pointer">
-            4. Full signed-pane fallback（仍是 python，不要当 HTML 粘）
+            4. Full signed-pane fallback (python, do not paste as HTML)
           </summary>
           <div className="mt-2">
             <CodeBlock code={`python3 - <<'PY'\n${OFFLINE_PATCH_PY.trimEnd()}\nPY\n`} />
@@ -97,7 +97,7 @@ git pull origin cursor/cursor-api-autofill-b48a || echo skip-git
         </details>
 
         <div>
-          <p className="text-[12px] font-semibold text-white mb-2">Then detect · 立刻检测</p>
+          <p className="text-[12px] font-semibold text-white mb-2">Then detect</p>
           <ol className="space-y-1.5 list-decimal list-inside text-[12px] text-[#e8ecff]">
             {DETECT_AFTER_PATCH.map((step) => (
               <li key={step}>{step}</li>

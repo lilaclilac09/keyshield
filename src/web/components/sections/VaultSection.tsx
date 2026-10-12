@@ -4,6 +4,7 @@ import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
 import { callKeychain, detectUpstream, extractDetectedKeys, storeDetectedKeys } from '../../lib/keychain';
+import { formatExpiry } from '../../lib/provider-catalog';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -63,8 +64,13 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <div className="space-y-2">
           {items.map((item) => (
             <div key={item.id} className="flex items-baseline justify-between gap-3 rounded-lg border border-[#243365] bg-[#131c39] px-3 py-2">
-              <strong className="text-[13px] text-white">{item.name}</strong>
-              <code className="text-[11px] text-[#93b4ff] break-all">{item.value}</code>
+              <div className="min-w-0">
+                <strong className="text-[13px] text-white">{item.name}</strong>
+                <p className="text-[11px] text-[#8a96c2]">
+                  {[item.family, item.product, item.prefix, formatExpiry(item.expiryDate)].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || item.value}</code>
             </div>
           ))}
         </div>

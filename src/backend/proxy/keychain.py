@@ -6,6 +6,7 @@ vault/env key already stored for the session user.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -33,6 +34,93 @@ _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openai", re.compile(r"sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}")),
 )
 
+_PROVIDERS: dict[str, dict[str, str | tuple[str, ...]]] = {
+    "openai": {
+        "name": "OpenAI",
+        "family": "AI",
+        "product": "GPT",
+        "domain": "platform.openai.com",
+        "tags": ("AI", "GPT", "OPENAI"),
+    },
+    "anthropic": {
+        "name": "Anthropic Claude",
+        "family": "AI",
+        "product": "Claude",
+        "domain": "console.anthropic.com",
+        "tags": ("AI", "CLAUDE", "ANTHROPIC"),
+    },
+    "groq": {
+        "name": "Groq",
+        "family": "AI",
+        "product": "Groq LPU",
+        "domain": "console.groq.com",
+        "tags": ("AI", "GROQ", "FAST"),
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "family": "AI",
+        "product": "NVIDIA Nemotron",
+        "domain": "openrouter.ai",
+        "tags": ("AI", "NEMOTRON", "OPENROUTER"),
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "family": "AI",
+        "product": "Mistral",
+        "domain": "console.mistral.ai",
+        "tags": ("AI", "MISTRAL"),
+    },
+    "cohere": {
+        "name": "Cohere",
+        "family": "AI",
+        "product": "Command",
+        "domain": "dashboard.cohere.com",
+        "tags": ("AI", "COHERE"),
+    },
+    "cursor": {
+        "name": "Cursor",
+        "family": "AI",
+        "product": "Cursor",
+        "domain": "cursor.com",
+        "tags": ("AI", "CURSOR"),
+    },
+    "helius": {
+        "name": "Helius RPC",
+        "family": "RPC",
+        "product": "Solana RPC",
+        "domain": "dashboard.helius.dev",
+        "tags": ("RPC", "SOLANA", "HELIUS"),
+    },
+    "0x": {
+        "name": "0x Protocol",
+        "family": "DEX",
+        "product": "0x Swap",
+        "domain": "dashboard.0x.org",
+        "tags": ("DEX", "0X"),
+    },
+    "alchemy": {
+        "name": "Alchemy",
+        "family": "RPC",
+        "product": "EVM RPC",
+        "domain": "dashboard.alchemy.com",
+        "tags": ("RPC", "ALCHEMY"),
+    },
+    "vercel": {
+        "name": "Vercel",
+        "family": "INFRA",
+        "product": "Vercel",
+        "domain": "vercel.com",
+        "tags": ("INFRA", "VERCEL"),
+    },
+    "github": {
+        "name": "GitHub",
+        "family": "GIT",
+        "product": "GitHub PAT",
+        "domain": "github.com",
+        "tags": ("GIT", "GITHUB"),
+    },
+}
+
 _PUBKEY_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _USDC_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 _USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
@@ -43,6 +131,109 @@ def mask_key(raw: str) -> str:
     if len(text) < 10:
         return "••••"
     return f"{text[:6]}…{text[-4:]}"
+
+
+def provider_meta(upstream: str) -> dict[str, Any]:
+    ident = (upstream or "").strip().lower()
+    row = _PROVIDERS.get(ident)
+    if row:
+        tags = row["tags"]
+        return {
+            "id": ident,
+            "name": str(row["name"]),
+            "family": str(row["family"]),
+            "product": str(row["product"]),
+            "domain": str(row["domain"]),
+            "tags": list(tags) if isinstance(tags, tuple) else list(tags or []),
+        }
+    return {
+        "id": ident or "custom",
+        "name": ident or "API",
+        "family": "INFRA",
+        "product": "API key",
+        "domain": "",
+        "tags": ["KEY"],
+    }
+
+
+def infer_product(upstream: str, raw: str = "") -> str:
+    text = (raw or "").strip()
+    if text.startswith("sk-or-"):
+        return "NVIDIA Nemotron"
+    if text.startswith("sk-ant-"):
+        return "Claude"
+    if text.startswith("sk-proj-"):
+        return "GPT project"
+    if text.startswith("sk-svcacct-"):
+        return "OpenAI service account"
+    if text.startswith("sk-admin-"):
+        return "OpenAI admin"
+    if text.startswith("gsk_"):
+        return "Groq LPU"
+    if text.startswith("key_") or text.lower().startswith("crsr"):
+        return "Cursor"
+    if text.startswith("github_pat_") or text.startswith("ghp_"):
+        return "GitHub PAT"
+    if text.startswith("vercel_") or text.startswith("vcp_"):
+        return "Vercel"
+    if text.startswith("helius_auth_") or (
+        len(text) == 36 and text.count("-") == 4
+    ):
+        return "Solana RPC"
+    return str(provider_meta(upstream)["product"])
+
+
+def is_generic_vault_name(name: str, upstream: str) -> bool:
+    n = (name or "").strip().lower()
+    up = (upstream or "").strip().lower()
+    if not n or n in {"unnamed", "untitled", "key"}:
+        return True
+    if n in {up, f"{up} key", f"{up}key"}:
+        return True
+    return n.endswith(" key") and n.startswith(up)
+
+
+def distinguish_name(
+    *,
+    upstream: str,
+    raw: str,
+    host: str = "",
+    name: str = "",
+    page_title: str = "",
+) -> str:
+    """Human label + prefix + host so two Helius UUIDs are not the same card."""
+    prefix = mask_key(raw)
+    meta = provider_meta(upstream)
+    given = (name or "").strip()
+    if given and not is_generic_vault_name(given, upstream):
+        return given if prefix in given else f"{given} · {prefix}"
+    parts = [str(meta["name"])]
+    product = infer_product(upstream, raw)
+    if product and product.lower() not in str(meta["name"]).lower():
+        parts.append(product)
+    parts.append(prefix)
+    host = (host or "").strip()
+    if host:
+        parts.append(host)
+    title = " ".join((page_title or "").split())[:48]
+    if title and not any(title.lower() in str(p).lower() for p in parts):
+        parts.append(title)
+    return " · ".join(p for p in parts if p)
+
+
+def catalog_tags(upstream: str, extra: list[str] | None = None) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for tag in list(provider_meta(upstream)["tags"]) + list(extra or []):
+        text = str(tag or "").strip()
+        if not text:
+            continue
+        key = text.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
 
 
 def extract_key(raw: str) -> str:
@@ -167,7 +358,7 @@ def parse_usdc_micro(rpc_result: Any) -> int | None:
     return total if found else 0
 
 
-def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
+def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
     """Names + prefixes only. Never returns the raw key.
 
     One card per vault row. Five Helius keys stay five rows — do not
@@ -175,11 +366,11 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
     """
     from ..routes import vault as vault_mod
 
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     with vault_mod._db() as conn:
         rows = conn.execute(
-            "SELECT id, name, upstream, value FROM vault_items "
-            "WHERE user_id = ? ORDER BY updated_at DESC",
+            "SELECT id, name, upstream, value, tags, created_at, updated_at, expires_at "
+            "FROM vault_items WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
     seen: set[str] = set()
@@ -195,12 +386,32 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
         if not raw.strip():
             continue
         prefix = mask_key(raw)
+        meta = provider_meta(upstream)
+        product = infer_product(upstream, raw)
+        expires_at = vault_mod._iso(row["expires_at"]) if row["expires_at"] else None
+        created_at = vault_mod._iso(row["created_at"])
+        try:
+            parsed_tags = json.loads(row["tags"] or "[]")
+        except Exception:
+            parsed_tags = []
+        if not isinstance(parsed_tags, list):
+            parsed_tags = []
+        expiry_label = f"expires {expires_at[:10]}" if expires_at else "no expiry"
         out.append(
             {
                 "id": item_id,
-                "name": str(row["name"] or upstream),
+                "name": distinguish_name(
+                    upstream=upstream, raw=raw, name=str(row["name"] or "")
+                ),
                 "upstream": upstream,
                 "prefix": prefix,
+                "family": meta["family"],
+                "product": product,
+                "domain": meta["domain"],
+                "expires_at": expires_at,
+                "created_at": created_at,
+                "tags": catalog_tags(upstream, [str(t) for t in parsed_tags]),
+                "notes": f"{meta['family']} · {product} · {prefix} · {expiry_label}",
             }
         )
     return out

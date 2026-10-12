@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Key, Copy, Trash2, Check, Shield, Lock, FileText, Terminal, KeyRound } from 'lucide-react';
 import { VaultItem, PasswordPayload, NotePayload, EnvPayload, SSHKeyPayload } from '../types';
 import { getPrefs } from '../lib/preferences';
+import { formatExpiry } from '../lib/provider-catalog';
 import { ConfirmButton } from './ui/ConfirmButton';
 import { CopyButton } from './ui/CopyButton';
 
@@ -64,8 +65,13 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
           <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${TYPE_BG[item.type]}`}>{TYPE_ICON[item.type]}</div>
           <div className="min-w-0">
             <h3 className="text-[14px] font-medium text-white truncate leading-tight">{item.name || 'Untitled'}</h3>
+            {(item.family || item.product) && (
+              <p className="text-[11px] text-[#93b4ff] truncate">{[item.family, item.product].filter(Boolean).join(' · ')}</p>
+            )}
+            {item.prefix && <p className="text-[11px] font-mono text-[#8a96c2] truncate">{item.prefix}</p>}
+            {item.expiryDate && <p className="text-[11px] text-[#5e6a91] truncate">{formatExpiry(item.expiryDate)}</p>}
             {item.domain && <p className="text-[11px] text-[#8a96c2] truncate">{item.domain}</p>}
-            {item.type !== 'api_key' && !item.domain && <p className="text-[11px] text-[#8a96c2] capitalize">{item.type.replace('_', ' ')}</p>}
+            {item.type !== 'api_key' && !item.domain && !item.family && <p className="text-[11px] text-[#8a96c2] capitalize">{item.type.replace('_', ' ')}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

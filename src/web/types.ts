@@ -11,6 +11,10 @@ export interface VaultItem {
   tags: string[];
   notes?: string;
   expiryDate?: string;
+  prefix?: string;
+  family?: string;
+  product?: string;
+  upstream?: string;
 }
 
 export interface PasswordPayload {

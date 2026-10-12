@@ -30,6 +30,19 @@ def _token(tmp_path, monkeypatch) -> tuple[TestClient, str]:
     return TestClient(app), token
 
 
+def test_distinguish_name_separates_helius_uuids():
+    a = kc.distinguish_name(
+        upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", host="dashboard.helius.dev"
+    )
+    b = kc.distinguish_name(
+        upstream="helius", raw="210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1", host="dashboard.helius.dev"
+    )
+    assert a != b
+    assert "Helius" in a and "Helius" in b
+    assert "104705" in a or "7761" in a
+    assert kc.is_generic_vault_name("helius key", "helius") is True
+
+
 def test_detect_specific_prefixes_beat_generic_sk():
     or_key = "sk-or-v1-" + ("a" * 24)
     ant_key = "sk-ant-api03-" + ("b" * 48)
@@ -212,6 +225,12 @@ def test_five_helius_keys_store_then_manage_vault_lists_all(tmp_path, monkeypatc
     apis = [row for row in home.json()["apis"] if row["upstream"] == "helius"]
     assert len(apis) == 5
     assert secrets[0] not in str(home.json())
+    names = [str(row.get("name") or "") for row in apis]
+    assert len(set(names)) == 5
+    assert all("Helius" in name for name in names)
+    assert all(row.get("family") == "RPC" for row in apis)
+    assert all(row.get("product") for row in apis)
+    assert all(row.get("expires_at") for row in apis)
 
 
 def test_home_unauthorized():

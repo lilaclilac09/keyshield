@@ -16,6 +16,7 @@ import {
   pendingHitsToFillKeys,
   maskVaultPreview,
 } from "../src/web/lib/vault-list";
+import { vaultStoreName } from "../src/web/lib/provider-catalog";
 
 const root = resolve(__dirname, "..");
 
@@ -142,8 +143,15 @@ describe("pending vault preview", () => {
     expect(merged).toHaveLength(2);
     const fill = pendingHitsToFillKeys(hits, ["openai", "anthropic"]);
     expect(fill).toEqual([
-      { id: "pending-openai", upstream: "openai", name: "openai key", value: "sk-proj-LOCALONLYFILLTEST123456" },
+      {
+        id: "pending-openai",
+        upstream: "openai",
+        name: vaultStoreName({ upstream: "openai", value: hits[1].value }),
+        value: "sk-proj-LOCALONLYFILLTEST123456",
+      },
     ]);
+    expect(rows[0].name).toContain("Helius");
+    expect(rows[0].family).toBe("RPC");
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(hook).toContain("previewPendingVaultHits");
     expect(hook).toContain("__ks_pending_vault");

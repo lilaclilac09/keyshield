@@ -1,8 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   SHOP_CREDIT_USD,
   SHOP_MPP_ITEM_NAME,
   SHOP_MPP_USD,
+  SHOP_PROOF_CACHE_MS,
+  SHOP_PROOF_CLAWBACK_IX,
+  SHOP_PROOF_SETTLE_CU,
+  SHOP_PROOF_SETTLE_IX,
+  SHOP_PROOF_WAN_MS,
   describeBalanceChange,
   describeRpcPing,
   formatUsd,
@@ -38,6 +45,19 @@ describe("shop demo helpers", () => {
     expect(describeRpcPing(80, 8, "HIT", "helius-cache")).toBe(
       "1st 80ms · 2nd 8ms · faster · cache HIT · helius-cache",
     );
+  });
+
+  it("highlights 1,906 CU, 0.004ms cache, PRF, and clawback", () => {
+    expect(SHOP_PROOF_SETTLE_CU).toBe(1906);
+    expect(SHOP_PROOF_CACHE_MS).toBe(0.004);
+    expect(SHOP_PROOF_WAN_MS).toBe(37.7);
+    expect(SHOP_PROOF_CLAWBACK_IX).toBe(28);
+    expect(SHOP_PROOF_SETTLE_IX).toBe(26);
+    const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
+    expect(home).toContain("shop-proof-strip");
+    expect(home).toContain("SHOP_PROOF_SETTLE_CU");
+    expect(home).toContain("WebAuthn PRF");
+    expect(home).toContain("ForceClawback");
   });
 
   it("keeps the 2.00 USDC MPP shop SKU separate from ledger credit", () => {

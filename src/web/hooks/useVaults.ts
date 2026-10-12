@@ -22,16 +22,7 @@ import {
   VAULT_CHANGED_EVENT,
   type PendingVaultHit,
 } from '../lib/vault-list';
-
-const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
-  openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
-  anthropic: { name: 'Anthropic Claude', domain: 'anthropic.com', tags: ['AI', 'CLAUDE'] },
-  helius: { name: 'Helius RPC', domain: 'helius.dev', tags: ['RPC', 'SOLANA'] },
-  mistral: { name: 'Mistral AI', domain: 'mistral.ai', tags: ['AI'] },
-  cohere: { name: 'Cohere', domain: 'cohere.ai', tags: ['AI'] },
-  groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
-  openrouter: { name: 'OpenRouter', domain: 'openrouter.ai', tags: ['AI', 'NEMOTRON'] },
-};
+import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
   const idx = slug.indexOf('__');
@@ -44,6 +35,11 @@ function serverRowToVault(row: {
   type?: string;
   upstream?: string;
   masked_value?: string;
+  prefix?: string;
+  family?: string;
+  product?: string;
+  domain?: string;
+  notes?: string;
   tags?: string[];
   created_at?: string | null;
   updated_at?: string | null;
@@ -51,26 +47,32 @@ function serverRowToVault(row: {
 }): VaultItem {
   const upstream = (row.upstream || row.id || 'custom').toLowerCase();
   const type = inferType(upstream);
-  const meta = UPSTREAM_META[upstream] ?? { name: row.name || upstream, domain: '', tags: ['KEY'] };
+  const meta = providerMeta(upstream);
   const created = row.created_at ? Date.parse(row.created_at) : Date.now();
   const updated = row.updated_at ? Date.parse(row.updated_at) : created;
+  const prefix = row.prefix || row.masked_value || '';
   return {
     id: row.id,
     name: row.name || meta.name,
     type,
     value: `${API_BASE}/proxy/${upstream}/`,
-    domain: meta.domain,
+    domain: row.domain || meta.domain,
     createdAt: Number.isFinite(created) ? created : Date.now(),
     lastUsedAt: Number.isFinite(updated) ? updated : Date.now(),
-    tags: [...(Array.isArray(row.tags) ? row.tags : meta.tags), 'PROXY'],
+    tags: catalogTags(upstream, Array.isArray(row.tags) ? row.tags.map(String) : []),
     expiryDate: row.expires_at ?? undefined,
+    notes: row.notes || `${meta.family} · ${row.product || meta.product} · ${formatExpiry(row.expires_at)}`,
+    prefix,
+    family: row.family || meta.family,
+    product: row.product || meta.product,
+    upstream,
   };
 }
 
 function entryToVault(entry: VaultEntry): VaultItem {
   const type = inferType(entry.upstream);
   if (type === 'api_key') {
-    const meta = UPSTREAM_META[entry.upstream] ?? { name: entry.upstream, domain: '', tags: ['KEY'] };
+    const meta = providerMeta(entry.upstream);
     return {
       id: entry.upstream,
       name: meta.name,
@@ -79,7 +81,10 @@ function entryToVault(entry: VaultEntry): VaultItem {
       domain: meta.domain,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
-      tags: [...meta.tags, 'VAULT'],
+      tags: catalogTags(entry.upstream, ['VAULT']),
+      family: meta.family,
+      product: meta.product,
+      upstream: entry.upstream,
     };
   }
   return {
@@ -211,7 +216,12 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       }
       const stored = await apiFetch('/manage/store', {
         method: 'POST',
-        body: JSON.stringify({ upstream, apiKey: rawKey, name: data.name || upstream }),
+        body: JSON.stringify({
+          upstream,
+          apiKey: rawKey,
+          value: rawKey,
+          name: vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }),
+        }),
       });
       if (!stored.ok) {
         const err = await stored.json().catch(() => ({ detail: 'store failed' }));

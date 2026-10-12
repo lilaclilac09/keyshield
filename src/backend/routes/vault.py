@@ -174,20 +174,36 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         masked = "encrypted"
     else:
         masked = _mask(raw)
+    from ..proxy import keychain as kc
+
+    upstream = str(row["upstream"] or "")
+    meta = kc.provider_meta(upstream)
+    product = kc.infer_product(upstream, str(raw))
+    expires_iso = _iso(row["expires_at"]) if row["expires_at"] else None
+    expiry_label = f"expires {expires_iso[:10]}" if expires_iso else "no expiry"
+    if not isinstance(tags, list):
+        tags = []
     return {
         "id": row["id"],
-        "name": row["name"],
+        "name": kc.distinguish_name(
+            upstream=upstream, raw=str(raw), name=str(row["name"] or "")
+        ),
         "type": row["type"],
         "upstream": row["upstream"],
         "masked_value": masked,
+        "prefix": masked if str(raw).strip() else "",
+        "family": meta["family"],
+        "product": product,
+        "domain": meta["domain"],
+        "notes": f"{meta['family']} · {product} · {expiry_label}",
         "has_plaintext": bool(str(raw).strip()),
         "cipher": row["cipher"] or "",
         "iv": row["iv"] or "",
         "cipher_v": row["cipher_v"] or 0,
-        "tags": tags,
+        "tags": kc.catalog_tags(upstream, [str(t) for t in tags]),
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
-        "expires_at": _iso(row["expires_at"]) if row["expires_at"] else None,
+        "expires_at": expires_iso,
     }
 
 
@@ -223,15 +239,29 @@ async def vault_store(request: Request):
     now = time.time()
     expiry_days = body.get("expiry_days", 30)
     expires_at = now + (expiry_days * 86400) if expiry_days else None
-    tags = body.get("tags", [])
-    if isinstance(tags, list):
-        tags_json = _json.dumps(tags)
-    else:
-        tags_json = "[]"
     stored_value = str(body.get("value") or body.get("apiKey") or body.get("api_key") or "").strip()
     upstream = body.get("upstream") or ""
     if not stored_value:
         return JSONResponse({"detail": "Paste the API key"}, status_code=400)
+    from ..proxy import keychain as kc
+
+    host = str(
+        body.get("origin") or body.get("domain") or body.get("host") or ""
+    ).strip()
+    page_title = str(body.get("pageTitle") or body.get("page_title") or "").strip()
+    stored_name = kc.distinguish_name(
+        upstream=str(upstream),
+        raw=stored_value,
+        host=host,
+        name=str(body.get("name") or ""),
+        page_title=page_title,
+    )
+    extra_tags = body.get("tags", [])
+    if not isinstance(extra_tags, list):
+        extra_tags = []
+    if host:
+        extra_tags = [*extra_tags, f"host:{host}"]
+    tags_json = _json.dumps(kc.catalog_tags(str(upstream), [str(t) for t in extra_tags]))
 
     # Same plaintext key → same row. A second Helius UUID stays a new row.
     # Cipher-only leftovers (empty value) get the next pasted secret instead
@@ -277,7 +307,7 @@ async def vault_store(request: Request):
             (
                 item_id,
                 uid,
-                body.get("name") or "unnamed",
+                stored_name,
                 body.get("type") or "api_key",
                 upstream,
                 stored_value,

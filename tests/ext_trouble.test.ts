@@ -46,7 +46,7 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(shouldSkipGitPull("nodename nor servname provided, or not known")).toBe(true);
     expect(shouldSkipGitPull("Name or service not known")).toBe(true);
     expect(TRY_PULL_THEN_PATCH_SH).toContain(`git fetch origin ${PATCH_BRANCH}`);
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com 解析失败就跳过，直接跑下面的 python3");
+    expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com DNS failed — skip git, run python3 below");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
     expect(TRY_PULL_THEN_PATCH_SH).not.toContain("eval ");
     expect(isZshSafePullBlock(LOCAL_PULL_BRIDGE_SH)).toBe(true);
@@ -106,7 +106,9 @@ describe("leftover 1.2.1 Trouble case", () => {
     const token = readFileSync(resolve(root, "src/web/components/ExtensionTokenCopy.tsx"), "utf8");
     const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
     expect(docs).toContain("ExtTroubleCase");
-    expect(home).toContain("ExtTroubleCase");
+    expect(docs).toContain("Troubleshooting");
+    expect(home).not.toContain("ExtTroubleCase");
+    expect(home).toContain("Docs → Troubleshooting");
     expect(caseUi).toContain("ext-trouble-leftover-121");
     expect(hint).toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");

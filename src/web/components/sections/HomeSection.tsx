@@ -2,9 +2,21 @@ import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
-import { ExtTroubleCase } from '../ExtTroubleCase';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
-import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
+import {
+  describeBalanceChange,
+  describeRpcPing,
+  SHOP_CREDIT_USD,
+  SHOP_ITEM_NAME,
+  SHOP_MPP_USD,
+  SHOP_PROOF_CACHE_MS,
+  SHOP_PROOF_CLAWBACK_IX,
+  SHOP_PROOF_SETTLE_CU,
+  SHOP_PROOF_SETTLE_IX,
+  SHOP_PROOF_WAN_MS,
+  wantsShopDemo,
+} from '../../lib/shop-demo';
+import { formatExpiry } from '../../lib/provider-catalog';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
 import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
 import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
@@ -110,7 +122,6 @@ export const HomeSection: React.FC<Props> = ({
 
       <ExtensionTokenCopy />
       <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
-      <ExtTroubleCase variant="home" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
@@ -146,8 +157,10 @@ export const HomeSection: React.FC<Props> = ({
               <div key={api.id} className="flex items-center gap-3 rounded-2xl border border-[#243365] bg-[#0e1631] px-4 py-3">
                 <Key size={18} className="text-white" />
                 <div>
-                  <p className="text-[17px] font-semibold text-white">{api.upstream}</p>
+                  <p className="text-[17px] font-semibold text-white">{api.name || api.upstream}</p>
+                  <p className="text-[13px] text-[#93b4ff]">{[api.family, api.product].filter(Boolean).join(' · ') || api.upstream}</p>
                   <p className="text-[13px] font-mono text-[#8a96c2]">{api.prefix}</p>
+                  <p className="text-[12px] text-[#5e6a91]">{api.notes || formatExpiry(api.expires_at)}</p>
                 </div>
                 <button
                   type="button"
@@ -204,6 +217,32 @@ export const HomeSection: React.FC<Props> = ({
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
           <h3 className="text-[20px] font-semibold text-white">Shop</h3>
+        </div>
+        <div data-testid="shop-proof-strip" className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-4 py-4 space-y-3">
+          <p className="text-[13px] uppercase tracking-wider text-emerald-400">How to buy an API · Solana Devnet MPP</p>
+          <p className="text-[16px] text-white">
+            Click Buy ${SHOP_MPP_USD.toFixed(2)} · get receipt. Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix {SHOP_PROOF_SETTLE_IX}).
+            That receipt is the paid API proof — not Raydium / $X402 / $M32.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <p className="text-[28px] font-bold text-white leading-none">{SHOP_PROOF_SETTLE_CU.toLocaleString()} CU</p>
+              <p className="text-[12px] text-[#8a96c2] mt-1">MppSettle compute</p>
+            </div>
+            <div>
+              <p className="text-[28px] font-bold text-white leading-none">{SHOP_PROOF_CACHE_MS}ms</p>
+              <p className="text-[12px] text-[#8a96c2] mt-1">cache vs {SHOP_PROOF_WAN_MS}ms WAN</p>
+            </div>
+            <div>
+              <p className="text-[16px] font-semibold text-white">WebAuthn PRF</p>
+              <p className="text-[12px] text-[#8a96c2] mt-1">device-bound unwrap</p>
+            </div>
+            <div>
+              <p className="text-[16px] font-semibold text-white">ForceClawback ix {SHOP_PROOF_CLAWBACK_IX}</p>
+              <p className="text-[12px] text-[#8a96c2] mt-1">on-chain recover</p>
+            </div>
+          </div>
+          <p className="text-[13px] text-[#8a96c2]">买 API：点 Buy $2.00 出收据。链上结算 1,906 CU，缓存 0.004ms，PRF 解钥，ix 28 可追回。</p>
         </div>
         <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-2">
           <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">For sale · Solana Devnet</p>
@@ -391,7 +430,7 @@ export const HomeSection: React.FC<Props> = ({
           {[
             { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Links & troubleshooting', sub: 'Leftover 1.2.1 · github.com DNS · find path' },
+            { id: 'docs', title: 'Docs → Troubleshooting', sub: 'Leftover 1.2.4 · missing session-bridge' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
           ].map((row) => (
             <button

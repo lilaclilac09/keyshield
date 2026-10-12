@@ -680,7 +680,7 @@ export const LOCAL_PULL_BRIDGE_SH = [
 
 export const TRY_PULL_THEN_PATCH_SH = [
   '# zsh. python not HTML. Do not use eval.',
-  `git fetch origin ${PATCH_BRANCH} || echo "github.com 解析失败就跳过，直接跑下面的 python3"`,
+  `git fetch origin ${PATCH_BRANCH} || echo "github.com DNS failed — skip git, run python3 below"`,
   `git checkout ${PATCH_BRANCH} || echo skip-git`,
   `git pull origin ${PATCH_BRANCH} || echo skip-git`,
   LOCAL_PULL_BRIDGE_SH.trimEnd(),

@@ -2,6 +2,7 @@
 
 import { API_BASE, apiFetch } from './auth';
 import { emitVaultChanged } from './vault-list';
+import { vaultStoreName } from './provider-catalog';
 
 export interface DetectedKey {
   upstream: string | null;
@@ -32,6 +33,13 @@ export interface KeychainStoredApi {
   name: string;
   upstream: string;
   prefix: string;
+  family?: string;
+  product?: string;
+  domain?: string;
+  expires_at?: string | null;
+  created_at?: string | null;
+  tags?: string[];
+  notes?: string;
 }
 
 export interface KeychainHome {
@@ -199,7 +207,12 @@ async function writeManageStore(
 ): Promise<{ id?: string }> {
   const stored = await apiFetch('/manage/store', {
     method: 'POST',
-    body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
+    body: JSON.stringify({
+      upstream,
+      apiKey: value,
+      value,
+      name: vaultStoreName({ upstream, value }),
+    }),
   });
   const body = await stored.json().catch(() => ({ detail: 'store failed' }));
   if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');

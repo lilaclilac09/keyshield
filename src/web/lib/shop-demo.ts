@@ -11,6 +11,14 @@ export const SHOP_ITEM_NAME = 'Shop credit';
 export const SHOP_MPP_ITEM_NAME = MPP_SHOP_SKU;
 export const SHOP_MPP_USD = 2;
 
+/** Last honest MppSettle on the GHpm Devnet demo wallet (README). */
+export const SHOP_PROOF_SETTLE_CU = 1906;
+/** In-process cache hit vs WAN RTT on the same path. */
+export const SHOP_PROOF_CACHE_MS = 0.004;
+export const SHOP_PROOF_WAN_MS = 37.7;
+export const SHOP_PROOF_CLAWBACK_IX = 28;
+export const SHOP_PROOF_SETTLE_IX = 26;
+
 export function wantsShopDemo(search: string): boolean {
   try {
     return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get('demo') === 'shop';
