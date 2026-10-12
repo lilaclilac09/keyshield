@@ -60,16 +60,35 @@ export function formatSavedCount(n: number): string {
 
 export const THREE_LINE_UI_MARK = 'data-ui="three-line"';
 
-/** True when the popup is the 3-line UI (not leftover Settings / token clutter). */
+const LEFTOVER_POPUP_CLUTTER = [
+  '<details',
+  'Register token',
+  'Fill this tab',
+  'Use hosted',
+  'Copy key for Cursor',
+];
+
+/** True when the popup is the 3-row UI (auth/vault, detect, copy). */
 export function isCompactPopupHtml(html: string): boolean {
   const text = String(html || '');
+  if (LEFTOVER_POPUP_CLUTTER.some((mark) => text.includes(mark))) return false;
   return (
     text.includes(THREE_LINE_UI_MARK) &&
+    text.includes('id="row-auth"') &&
+    text.includes('id="row-detect"') &&
+    text.includes('id="row-copy"') &&
     text.includes('id="signed-pane"') &&
     text.includes('id="saved-count"') &&
     text.includes('id="saved-apis"') &&
+    text.includes('id="detect-line"') &&
+    text.includes('id="copy-status"') &&
     !text.includes('<details')
   );
+}
+
+/** Leftover full Settings / Register token must be overwritten. */
+export function shouldRewritePopupHtml(html: string): boolean {
+  return !isCompactPopupHtml(html);
 }
 
 export function looksLikeSessionToken(raw: string | null | undefined): boolean {

@@ -13,32 +13,30 @@ HOSTED = "https://app.ks.aileena.xyz"
 MARK_JS = "/* KS-SIGNED-1.2.4 */"
 MARK_BG = "/* KS-LIST-SAVED-1.2.4 */"
 
-HTML = """<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>
-body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}
-h1{margin:0 0 10px;font-size:14px;font-weight:600;word-spacing:.08em}
-button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px;font-size:13px;word-spacing:.08em}
-button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}
-.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}
-.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}
-.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}
-.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}
-.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}
-.sub{margin:0 0 10px;color:#71717a;font-size:12px}
-body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}
-body.signed-in #detect-ready{display:none!important}.extra{display:none!important}
-</style></head>
+HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.line.err{color:#f87171}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
-<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
-<button id="signin" class="guest-only">Sign in to KeyShield</button>
-<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
+<section class="row" id="row-detect"><p id="detect-line" class="line">detect · checking…</p><div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div><button id="allow-detect" class="secondary guest-only">Turn detect on</button></section>
+<section class="row" id="row-copy"><p id="copy-status" class="line">copy · idle</p><button id="copy-cursor-key" class="secondary">Copy Cursor key</button></section>
 <div id="status" class="status"></div>
-<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div></div>
 <script src="popup.js"></script></body></html>
 """
+
+
+def popup_is_three_line(html: str) -> bool:
+    return (
+        'data-ui="three-line"' in html
+        and 'id="row-auth"' in html
+        and 'id="detect-line"' in html
+        and 'id="copy-status"' in html
+        and 'id="saved-apis"' in html
+        and "<details" not in html
+        and "Register token" not in html
+        and "Fill this tab" not in html
+    )
 
 JS = r"""
 /* KS-SIGNED-1.2.4 */
@@ -128,6 +126,8 @@ async function ksBootSignedPane() {
       await refreshSavedApis();
     }
     const ready = document.getElementById("detect-ready");
+    const line = document.getElementById("detect-line");
+    const copy = document.getElementById("copy-status");
     if (ready) {
       const ver = String((chrome.runtime.getManifest() || {}).version || "");
       let has = false;
@@ -136,6 +136,11 @@ async function ksBootSignedPane() {
       ready.textContent = ok ? "ok 1.2.4 <all_urls>" : ("need Remove + Load unpacked · v" + (ver || "?"));
       ready.className = "status " + (ok ? "ok" : "err");
       ready.style.display = "block";
+      if (line) {
+        line.textContent = ok ? (ks_token ? "detect on · ok 1.2.4" : "detect ready · ok 1.2.4") : ("detect · " + ready.textContent);
+        line.className = "line " + (ok ? "ok" : "err");
+      }
+      if (copy) copy.textContent = ks_token ? "copy · ready" : "copy · sign in first";
     }
     const build = document.getElementById("build");
     if (build) build.textContent = "v" + ((chrome.runtime.getManifest() || {}).version || "?") + " · KeyShield — Sovereign Vault";
@@ -483,19 +488,11 @@ def main(argv: list[str] | None = None) -> None:
     stamp_manifest(ext)
     html_path = ext / "popup.html"
     html_now = html_path.read_text() if html_path.exists() else ""
-    compact = (
-        'data-ui="three-line"' not in html_now
-        or 'id="signed-pane"' not in html_now
-        or 'id="saved-count"' not in html_now
-        or 'id="saved-apis"' not in html_now
-    )
-    if compact:
+    if not popup_is_three_line(html_now):
         here = globals().get("__file__")
         sibling = Path(here).resolve().parent / "popup.html" if here else None
-        if sibling and sibling.is_file() and 'data-ui="three-line"' in sibling.read_text(encoding="utf-8"):
-            html_path.write_text(sibling.read_text(encoding="utf-8"))
-        else:
-            html_path.write_text(HTML)
+        sibling_html = sibling.read_text(encoding="utf-8") if sibling and sibling.is_file() else ""
+        html_path.write_text(sibling_html if popup_is_three_line(sibling_html) else HTML)
     splice(ext / "popup.js", MARK_JS, JS)
     splice(ext / "background.js", MARK_BG, BG)
     man = json.loads((ext / "manifest.json").read_text())
@@ -505,8 +502,10 @@ def main(argv: list[str] | None = None) -> None:
     print("ver", man["version"])
     print("signed-pane", 'id="signed-pane"' in html)
     print("saved-count", 'id="saved-count"' in html)
-    print("three-line", 'data-ui="three-line"' in html)
-    print("full-ui", 'data-ui="three-line"' in html and 'id="saved-apis"' in html)
+    print("three-line", popup_is_three_line(html))
+    print("detect-line", 'id="detect-line"' in html)
+    print("copy-status", 'id="copy-status"' in html)
+    print("full-ui", popup_is_three_line(html))
     print("session-bridge", manifest_has_session_bridge(man))
     print("hosted", HOSTED)
     print("next: chrome://extensions → Remove → Load unpacked this folder")

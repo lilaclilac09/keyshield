@@ -76,6 +76,14 @@ function setStatus(text, kind = "ok", ms = 1500) {
   if (ms > 0) setTimeout(() => { s.className = "status"; }, ms);
 }
 
+function paintCopyStatus(text, kind = "") {
+  const el = $("copy-status");
+  if (el) {
+    el.textContent = text;
+    el.className = `line ${kind}`.trim();
+  }
+}
+
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
   if (ver === "1.2.4" && hasAllUrls) return { ok: true, text: "ok 1.2.4 <all_urls>" };
@@ -96,13 +104,26 @@ async function hasAllUrlsPermission() {
 
 async function refreshDetectReady() {
   const el = $("detect-ready");
-  if (!el) return { ok: false, text: "" };
   const ver = chrome.runtime.getManifest().version;
   const hasAllUrls = await hasAllUrlsPermission();
   const ready = formatDetectReadyLine(ver, hasAllUrls);
-  el.textContent = ready.text;
-  el.className = `status ${ready.ok ? "ok" : "err"}`;
-  el.style.display = "block";
+  if (el) {
+    el.textContent = ready.text;
+    el.className = `status ${ready.ok ? "ok" : "err"}`;
+    el.style.display = "block";
+  }
+  let auto = false;
+  try {
+    const stored = await chrome.storage.local.get("ks_auto_store");
+    auto = !!stored.ks_auto_store;
+  } catch { /* noop */ }
+  const line = $("detect-line");
+  if (line) {
+    line.textContent = ready.ok
+      ? (auto ? "detect on · ok 1.2.4" : "detect ready · ok 1.2.4")
+      : `detect · ${ready.text}`;
+    line.className = `line ${ready.ok ? "ok" : "err"}`;
+  }
   return ready;
 }
 
@@ -289,8 +310,10 @@ async function loadSettings() {
   if (signed) {
     await armLiveScanAfterLogin();
     await refreshSavedApis();
+    paintCopyStatus("copy · ready");
   } else {
     paintSavedCount(0);
+    paintCopyStatus("copy · sign in first");
   }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
@@ -328,7 +351,7 @@ async function loadSettings() {
       badge.textContent = "no token";
       badge.title = "Sign in on app.ks.aileena.xyz — this popup reads that tab.";
     }
-    if (signinBtn) signinBtn.textContent = "Sign in to KeyShield";
+    if (signinBtn) signinBtn.textContent = "Sign in";
   }
 }
 
@@ -441,10 +464,12 @@ async function copyPreferredCursorKey() {
       pathname: "/settings",
     });
   } catch (e) {
+    paintCopyStatus("copy · failed", "err");
     setStatus(`Copy failed: ${String(e)}`, "err", 3000);
     return;
   }
   if (!resp || !resp.ok || !Array.isArray(resp.keys) || !resp.keys.length) {
+    paintCopyStatus("copy · no saved key", "err");
     setStatus("No saved Cursor/OpenAI key. Sign in and save a key first.", "err", 4000);
     return;
   }
@@ -458,9 +483,12 @@ async function copyPreferredCursorKey() {
   try {
     await navigator.clipboard.writeText(key.value);
   } catch (e) {
+    paintCopyStatus("copy · clipboard blocked", "err");
     setStatus(`Clipboard blocked: ${String(e)}`, "err", 3500);
     return;
   }
+  const copied = `copy · Copied ${key.upstream}`;
+  paintCopyStatus(copied, "ok");
   setStatus(`Copied ${key.upstream} key — paste into the Cursor API black box (click Show first).`, "ok", 5000);
 }
 
@@ -493,6 +521,7 @@ async function allowDetectAndStore() {
     "ok",
     5000,
   );
+  await refreshDetectReady();
 }
 
 async function registerManualToken() {

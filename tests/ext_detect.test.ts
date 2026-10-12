@@ -10,6 +10,7 @@ import {
   formatBulkSaveFailure,
   formatSavedCount,
   isCompactPopupHtml,
+  shouldRewritePopupHtml,
   isExtensionContextDead,
   isLeftoverContentOnlyManifest,
   looksLikeSessionToken,
@@ -124,10 +125,21 @@ describe("formatDetectReadyLine", () => {
     expect(html).toContain('id="saved-count"');
     expect(html).toContain('id="saved-apis"');
     expect(html).toContain('data-ui="three-line"');
+    expect(html).toContain('id="row-auth"');
+    expect(html).toContain('id="row-detect"');
+    expect(html).toContain('id="row-copy"');
+    expect(html).toContain('id="detect-line"');
+    expect(html).toContain('id="copy-status"');
+    expect(html).toContain("Copy Cursor key");
     expect(html).toContain('id="fingerprint"');
     expect(html).not.toContain("<details");
+    expect(html).not.toContain("Register token");
+    expect(html).not.toContain("Fill this tab");
     expect(isCompactPopupHtml(html)).toBe(true);
+    expect(shouldRewritePopupHtml(html)).toBe(false);
     expect(isCompactPopupHtml('<h1>KeyShield — Sovereign Vault</h1><details><summary>Settings</summary></details>')).toBe(false);
+    expect(shouldRewritePopupHtml('<h1>KeyShield — Sovereign Vault<span id="conn">no token</span></h1><button>Fill this tab</button><button>Register token</button><details><summary>Settings</summary></details>')).toBe(true);
+    expect(shouldRewritePopupHtml('<body data-ui="three-line"><div id="signed-pane"></div><p id="saved-count"></p><div id="saved-apis"></div></body>')).toBe(true);
     expect(html).toContain("KeyShield — Sovereign Vault");
     expect(popup).toContain("function harvestTokenFromDashboardTabs");
     expect(popup).toContain("function formatSavedCount");

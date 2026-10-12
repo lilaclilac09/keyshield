@@ -58,8 +58,12 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("capturePageToken");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("session-bridge.js");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain('data-ui="three-line"');
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('id="detect-line"');
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('id="copy-status"');
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("<!DOCTYPE html>");
     expect(ZSH_SAFE_STAMP_PY).toContain('data-ui="three-line"');
+    expect(ZSH_SAFE_STAMP_PY).toContain('id="detect-line"');
+    expect(ZSH_SAFE_STAMP_PY).toContain('id="copy-status"');
     expect(ZSH_SAFE_STAMP_PY).toContain("ensure_three_line_popup");
   });
 
@@ -75,6 +79,8 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).toContain('print("session-bridge"');
     expect(OFFLINE_PATCH_PY).toContain("https://*.vercel.app/*");
     expect(OFFLINE_PATCH_PY).toContain('data-ui="three-line"');
+    expect(OFFLINE_PATCH_PY).toContain('id="detect-line"');
+    expect(OFFLINE_PATCH_PY).toContain('id="copy-status"');
     expect(OFFLINE_PATCH_PY).not.toContain("<summary>Settings");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
@@ -142,7 +148,12 @@ describe("leftover 1.2.1 Trouble case", () => {
     const popup = readFileSync(join(tmp, "popup.html"), "utf8");
     expect(popup).toContain('data-ui="three-line"');
     expect(popup).toContain('id="saved-apis"');
+    expect(popup).toContain('id="detect-line"');
+    expect(popup).toContain('id="copy-status"');
+    expect(popup).toContain("Copy Cursor key");
     expect(popup).not.toContain("<details");
+    expect(popup).not.toContain("Fill this tab");
+    expect(popup).not.toContain("Register token");
   });
 
   it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {
@@ -174,7 +185,13 @@ assert "capturePageToken" in (tmp / "session-bridge.js").read_text()
 html = (tmp / "popup.html").read_text()
 assert 'data-ui="three-line"' in html
 assert 'id="saved-apis"' in html
+assert 'id="detect-line"' in html
+assert 'id="copy-status"' in html
+assert "Copy Cursor key" in html
 assert "<details" not in html
+assert "Fill this tab" not in html
+assert "LIST_SAVED_APIS" in (tmp / "popup.js").read_text()
+assert "LIST_SAVED_APIS" in (tmp / "background.js").read_text()
 print("session-bridge", True)
 print("three-line", True)
 `;
@@ -183,6 +200,40 @@ print("three-line", True)
     const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
     expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
     expect(stamped.content_scripts[0].run_at).toBe("document_start");
+  });
+
+  it("rewrites leftover old three-line that hid copy in extra", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const tmp = mkdtempSync(join(tmpdir(), "ks-old-three-line-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    writeFileSync(
+      join(tmp, "popup.html"),
+      `<body data-ui="three-line"><div id="signed-pane"></div><p id="saved-count">0 saved</p><div id="saved-apis"></div><button id="signin">Sign in to KeyShield</button><button id="allow-detect">Allow detect + auto-save</button><div class="extra"><button id="copy-cursor-key">Copy key for Cursor API box</button></div></body>\n`,
+    );
+    const py = `
+import importlib.util
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.popup_is_three_line((tmp / "popup.html").read_text()) is False
+mod.ensure_three_line_popup(tmp)
+html = (tmp / "popup.html").read_text()
+assert mod.popup_is_three_line(html) is True
+assert 'id="detect-line"' in html
+assert 'id="copy-status"' in html
+assert "Copy Cursor key" in html
+assert "Copy key for Cursor" not in html
+print("rewrote-old-three-line", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("rewrote-old-three-line True");
   });
 
   it("stamp_manifest restores session-bridge on leftover 1.2.4 content.js-only", () => {

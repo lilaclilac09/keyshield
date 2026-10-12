@@ -326,17 +326,16 @@ if (not bridge.is_file()) or ("capturePageToken" not in bridge.read_text(encodin
 '''.lstrip())
 (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
 html_now = (ext / "popup.html").read_text() if (ext / "popup.html").exists() else ""
-if 'data-ui="three-line"' not in html_now or 'id="saved-apis"' not in html_now or "<details" in html_now:
+if 'data-ui="three-line"' not in html_now or 'id="detect-line"' not in html_now or 'id="copy-status"' not in html_now or 'id="saved-apis"' not in html_now or "<details" in html_now or "Fill this tab" in html_now:
     (ext / "popup.html").write_text("""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px;font-weight:600}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px;font-size:13px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
-<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
-<button id="signin" class="guest-only">Sign in to KeyShield</button>
-<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
+<section class="row" id="row-detect"><p id="detect-line" class="line">detect · checking…</p><div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div><button id="allow-detect" class="secondary guest-only">Turn detect on</button></section>
+<section class="row" id="row-copy"><p id="copy-status" class="line">copy · idle</p><button id="copy-cursor-key" class="secondary">Copy Cursor key</button></section>
 <div id="status" class="status"></div>
-<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div><input id="remote"/><button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button><button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button><div id="backup-status"></div></div>
 <script src="popup.js"></script></body></html>
 """)
 js = r'''
@@ -387,15 +386,14 @@ BRIDGE = (
     "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\\n"
 )
 THREE_LINE_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
-<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
-<button id="signin" class="guest-only">Sign in to KeyShield</button>
-<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
+<section class="row" id="row-detect"><p id="detect-line" class="line">detect · checking…</p><div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div><button id="allow-detect" class="secondary guest-only">Turn detect on</button></section>
+<section class="row" id="row-copy"><p id="copy-status" class="line">copy · idle</p><button id="copy-cursor-key" class="secondary">Copy Cursor key</button></section>
 <div id="status" class="status"></div>
-<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
 <script src="popup.js"></script></body></html>
 """
 SCRIPTS = [
@@ -405,7 +403,7 @@ SCRIPTS = [
 def ensure_three_line_popup(ext):
     dest = ext / "popup.html"
     now = dest.read_text(encoding="utf-8") if dest.is_file() else ""
-    if 'data-ui="three-line"' in now and 'id="saved-apis"' in now and "<details" not in now:
+    if 'data-ui="three-line"' in now and 'id="detect-line"' in now and 'id="copy-status"' in now and 'id="saved-apis"' in now and "<details" not in now and "Fill this tab" not in now:
         return
     dest.write_text(THREE_LINE_HTML)
 def stamp(ext):
@@ -426,10 +424,31 @@ def stamp(ext):
     dest = ext / "session-bridge.js"
     if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
         dest.write_text(BRIDGE)
+    def splice(path, mark, block):
+        t = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if mark in t:
+            t = t.split(mark)[0].rstrip() + "\\n"
+        path.write_text((t.rstrip() + "\\n" if t.strip() else "") + block.lstrip() + "\\n")
+    splice(ext / "popup.js", "/* KS-SIGNED-1.2.4 */", r'''
+/* KS-SIGNED-1.2.4 */
+function applySignedInChrome(signed){try{document.body.classList.toggle("signed-in",!!signed);}catch(e){}}
+function paintCopyStatus(text,kind){const el=document.getElementById("copy-status");if(el){el.textContent=text;el.className=("line "+(kind||"")).trim();}}
+function paintSavedCount(n){const hero=document.getElementById("saved-count");if(hero)hero.textContent=(Math.max(0,Math.floor(Number(n)||0))===1?"1 saved":Math.max(0,Math.floor(Number(n)||0))+" saved");}
+async function harvestTokenFromDashboardTabs(){if(!chrome.scripting||!chrome.tabs)return null;let tabs=[];try{tabs=await chrome.tabs.query({url:["https://app.ks.aileena.xyz/*","http://127.0.0.1:5173/*"]});}catch(e){return null;}for(const tab of tabs){if(!tab.id||!tab.url)continue;try{const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>({token:localStorage.getItem("ks_token")||"",user:localStorage.getItem("ks_wallet")||""})});const result=injected&&injected[0]&&injected[0].result;if(result&&String(result.token||"").trim().length>=12){await chrome.storage.local.set({ks_token:result.token,ks_user:result.user||null,ks_auto_store:true});return result.token;}}catch(e){}}return null;}
+async function refreshSavedApis(){const box=document.getElementById("saved-apis");const empty=document.getElementById("saved-empty");let resp={apis:[]};try{resp=await chrome.runtime.sendMessage({type:"LIST_SAVED_APIS"});}catch(e){}const apis=resp&&Array.isArray(resp.apis)?resp.apis:[];if(box){box.replaceChildren();for(const api of apis){const row=document.createElement("div");row.className="api-row";const name=document.createElement("strong");name.textContent=api.upstream;const mask=document.createElement("code");mask.textContent=api.masked;row.append(name,mask);box.appendChild(row);}}if(empty)empty.style.display=apis.length?"none":"block";paintSavedCount(apis.length);return apis;}
+async function ksBootSignedPane(){try{let {ks_token}=await chrome.storage.local.get("ks_token");if(!ks_token||String(ks_token).trim().length<12)ks_token=await harvestTokenFromDashboardTabs();applySignedInChrome(!!ks_token);if(ks_token){try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}try{await chrome.runtime.sendMessage({type:"INJECT_DETECT"});}catch(e){}await refreshSavedApis();paintCopyStatus("copy · ready");}else{paintCopyStatus("copy · sign in first");}const ready=document.getElementById("detect-ready");const line=document.getElementById("detect-line");const ver=String((chrome.runtime.getManifest()||{}).version||"");let has=false;try{has=await chrome.permissions.contains({origins:["<all_urls>"]});}catch(e){}const ok=ver==="1.2.4"&&has;if(ready){ready.textContent=ok?"ok 1.2.4 <all_urls>":("need Remove + Load unpacked · v"+(ver||"?"));ready.className="status "+(ok?"ok":"err");ready.style.display="block";}if(line){line.textContent=ok?(ks_token?"detect on · ok 1.2.4":"detect ready · ok 1.2.4"):("detect · "+(ready&&ready.textContent||""));line.className="line "+(ok?"ok":"err");}}catch(e){}}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ksBootSignedPane);else ksBootSignedPane();
+''')
+    splice(ext / "background.js", "/* KS-LIST-SAVED-1.2.4 */", r'''
+/* KS-LIST-SAVED-1.2.4 */
+async function listSavedApis(){let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\\/+$/,"");}catch(e){}if(!token)return{ok:false,apis:[]};try{const r=await fetch(apiBase+"/manage/vault",{headers:{Authorization:"Bearer "+token}});if(!r.ok)return{ok:false,apis:[]};const data=await r.json();const rows=Array.isArray(data)?data:data&&Array.isArray(data.items)?data.items:[];const apis=[];for(const it of rows){if(!it||!it.upstream)continue;apis.push({id:String(it.id||it.upstream),upstream:String(it.upstream).toLowerCase(),masked:String(it.masked_value||(it.cipher?"encrypted":"saved"))});}return{ok:true,apis};}catch(e){return{ok:false,apis:[]};}}
+chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="LIST_SAVED_APIS")return;listSavedApis().then(sendResponse).catch(()=>sendResponse({ok:false,apis:[]}));return true;});
+''')
     (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
     ok = any("session-bridge.js" in (row.get("js") or []) for row in (man.get("content_scripts") or []) if isinstance(row, dict))
+    html = (ext / "popup.html").read_text(encoding="utf-8")
     print("stamped", ext, "session-bridge", ok)
-    print("three-line", 'data-ui="three-line"' in (ext / "popup.html").read_text(encoding="utf-8"))
+    print("three-line", 'data-ui="three-line"' in html and 'id="detect-line"' in html and 'id="copy-status"' in html)
     return man
 targets = []
 env = Path(os.environ.get("KS_EXT") or "").expanduser()
@@ -484,15 +503,14 @@ BRIDGE = (
     "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\\n"
 )
 THREE_LINE_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>body{width:280px;margin:0;padding:14px 16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif;word-spacing:.06em}h1{margin:0 0 10px;font-size:14px}button{display:block;width:100%;margin:0 0 10px;padding:10px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin:0 0 10px;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.saved-count{margin:0 0 10px;font-size:28px;font-weight:700}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin:0 0 8px;background:#020408;border:1px solid #1c2238;border-radius:8px}.sub{margin:0 0 10px;color:#71717a;font-size:12px}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}body.signed-in #detect-ready{display:none!important}.extra{display:none!important}</style></head>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
-<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
-<button id="signin" class="guest-only">Sign in to KeyShield</button>
-<button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
+<section class="row" id="row-detect"><p id="detect-line" class="line">detect · checking…</p><div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div><button id="allow-detect" class="secondary guest-only">Turn detect on</button></section>
+<section class="row" id="row-copy"><p id="copy-status" class="line">copy · idle</p><button id="copy-cursor-key" class="secondary">Copy Cursor key</button></section>
 <div id="status" class="status"></div>
-<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="copy-cursor-key"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
+<div class="extra" hidden><span id="conn"></span><div id="build"></div><button id="fill-tab"></button><button id="fill-tab-signed"></button><button id="copy-cursor-key-signed"></button><button id="use-hosted-top"></button><textarea id="manual"></textarea><button id="register"></button><button id="clear"></button><input id="api"/><input id="dash"/><button id="save"></button><div id="fingerprint"></div></div>
 <script src="popup.js"></script></body></html>
 """
 SCRIPTS = [
@@ -531,7 +549,7 @@ def walk(root, max_depth=5):
 def ensure_three_line_popup(ext):
     dest = ext / "popup.html"
     now = dest.read_text(encoding="utf-8") if dest.is_file() else ""
-    if 'data-ui="three-line"' in now and 'id="saved-apis"' in now and "<details" not in now:
+    if 'data-ui="three-line"' in now and 'id="detect-line"' in now and 'id="copy-status"' in now and 'id="saved-apis"' in now and "<details" not in now and "Fill this tab" not in now:
         return
     dest.write_text(THREE_LINE_HTML)
 def stamp(ext):
@@ -552,10 +570,31 @@ def stamp(ext):
     dest = ext / "session-bridge.js"
     if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
         dest.write_text(BRIDGE)
+    def splice(path, mark, block):
+        t = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if mark in t:
+            t = t.split(mark)[0].rstrip() + "\\n"
+        path.write_text((t.rstrip() + "\\n" if t.strip() else "") + block.lstrip() + "\\n")
+    splice(ext / "popup.js", "/* KS-SIGNED-1.2.4 */", r'''
+/* KS-SIGNED-1.2.4 */
+function applySignedInChrome(signed){try{document.body.classList.toggle("signed-in",!!signed);}catch(e){}}
+function paintCopyStatus(text,kind){const el=document.getElementById("copy-status");if(el){el.textContent=text;el.className=("line "+(kind||"")).trim();}}
+function paintSavedCount(n){const hero=document.getElementById("saved-count");if(hero)hero.textContent=(Math.max(0,Math.floor(Number(n)||0))===1?"1 saved":Math.max(0,Math.floor(Number(n)||0))+" saved");}
+async function harvestTokenFromDashboardTabs(){if(!chrome.scripting||!chrome.tabs)return null;let tabs=[];try{tabs=await chrome.tabs.query({url:["https://app.ks.aileena.xyz/*","http://127.0.0.1:5173/*"]});}catch(e){return null;}for(const tab of tabs){if(!tab.id||!tab.url)continue;try{const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>({token:localStorage.getItem("ks_token")||"",user:localStorage.getItem("ks_wallet")||""})});const result=injected&&injected[0]&&injected[0].result;if(result&&String(result.token||"").trim().length>=12){await chrome.storage.local.set({ks_token:result.token,ks_user:result.user||null,ks_auto_store:true});return result.token;}}catch(e){}}return null;}
+async function refreshSavedApis(){const box=document.getElementById("saved-apis");const empty=document.getElementById("saved-empty");let resp={apis:[]};try{resp=await chrome.runtime.sendMessage({type:"LIST_SAVED_APIS"});}catch(e){}const apis=resp&&Array.isArray(resp.apis)?resp.apis:[];if(box){box.replaceChildren();for(const api of apis){const row=document.createElement("div");row.className="api-row";const name=document.createElement("strong");name.textContent=api.upstream;const mask=document.createElement("code");mask.textContent=api.masked;row.append(name,mask);box.appendChild(row);}}if(empty)empty.style.display=apis.length?"none":"block";paintSavedCount(apis.length);return apis;}
+async function ksBootSignedPane(){try{let {ks_token}=await chrome.storage.local.get("ks_token");if(!ks_token||String(ks_token).trim().length<12)ks_token=await harvestTokenFromDashboardTabs();applySignedInChrome(!!ks_token);if(ks_token){try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}try{await chrome.runtime.sendMessage({type:"INJECT_DETECT"});}catch(e){}await refreshSavedApis();paintCopyStatus("copy · ready");}else{paintCopyStatus("copy · sign in first");}const ready=document.getElementById("detect-ready");const line=document.getElementById("detect-line");const ver=String((chrome.runtime.getManifest()||{}).version||"");let has=false;try{has=await chrome.permissions.contains({origins:["<all_urls>"]});}catch(e){}const ok=ver==="1.2.4"&&has;if(ready){ready.textContent=ok?"ok 1.2.4 <all_urls>":("need Remove + Load unpacked · v"+(ver||"?"));ready.className="status "+(ok?"ok":"err");ready.style.display="block";}if(line){line.textContent=ok?(ks_token?"detect on · ok 1.2.4":"detect ready · ok 1.2.4"):("detect · "+(ready&&ready.textContent||""));line.className="line "+(ok?"ok":"err");}}catch(e){}}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ksBootSignedPane);else ksBootSignedPane();
+''')
+    splice(ext / "background.js", "/* KS-LIST-SAVED-1.2.4 */", r'''
+/* KS-LIST-SAVED-1.2.4 */
+async function listSavedApis(){let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\\/+$/,"");}catch(e){}if(!token)return{ok:false,apis:[]};try{const r=await fetch(apiBase+"/manage/vault",{headers:{Authorization:"Bearer "+token}});if(!r.ok)return{ok:false,apis:[]};const data=await r.json();const rows=Array.isArray(data)?data:data&&Array.isArray(data.items)?data.items:[];const apis=[];for(const it of rows){if(!it||!it.upstream)continue;apis.push({id:String(it.id||it.upstream),upstream:String(it.upstream).toLowerCase(),masked:String(it.masked_value||(it.cipher?"encrypted":"saved"))});}return{ok:true,apis};}catch(e){return{ok:false,apis:[]};}}
+chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="LIST_SAVED_APIS")return;listSavedApis().then(sendResponse).catch(()=>sendResponse({ok:false,apis:[]}));return true;});
+''')
     (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
     ok = any("session-bridge.js" in (row.get("js") or []) for row in (man.get("content_scripts") or []) if isinstance(row, dict))
+    html = (ext / "popup.html").read_text(encoding="utf-8")
     print("stamped", ext, "session-bridge", ok)
-    print("three-line", 'data-ui="three-line"' in (ext / "popup.html").read_text(encoding="utf-8"))
+    print("three-line", 'data-ui="three-line"' in html and 'id="detect-line"' in html and 'id="copy-status"' in html)
     return man
 hits = []
 here = Path.cwd().resolve()
@@ -637,9 +676,9 @@ export const DETECT_AFTER_PATCH = [
   'Load unpacked → the KS_EXT / src/extension folder the terminal printed',
   'Card name KeyShield — Sovereign Vault, version 1.2.4',
   'Details → loaded manifest.json must list session-bridge.js at document_start on app.ks.aileena.xyz — only content.js on <all_urls> stays no token',
-  'Open popup: three lines only — green ok 1.2.4 <all_urls>, Sign in, Allow detect. No Settings / token box / URL fields',
-  'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup shows N saved',
-  'Already signed: N saved + masked key list + Sign out. Vault page shows the same rows.',
+  'Open popup: three rows only — Sign in (or N saved + vault list), detect on · ok 1.2.4 <all_urls>, Copy Cursor key. No Settings / Register token / URL fields',
+  'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup keeps the signed-in row',
+  'Already signed: N saved + masked key list + Sign out, detect status, copy status. Vault page shows the same rows.',
   'Keep cursor.com / openai / openrouter / dashboard.helius.dev open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_ / Helius UUID keys (SOL badge)',
   'Save never asks Face ID / passkey. That prompt is only when you paste a secret into another site (Cursor box, fill, reveal). Detect + Save uses the session token only.',
   'If the toast says Extension context invalidated / Saved 0, N failed: refresh that tab. Remove + Load unpacked kills the old content.js; Retry on the stale panel cannot save.',

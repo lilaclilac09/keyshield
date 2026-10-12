@@ -9,57 +9,62 @@
     body {
       width: 280px;
       margin: 0;
-      padding: 14px 16px 16px;
+      padding: 12px 14px 14px;
       background: #0a0d1a;
       color: #e4e4e7;
       font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
       font-size: 13px;
       line-height: 1.45;
-      word-spacing: 0.06em;
     }
     h1 {
       margin: 0 0 10px;
       font-size: 14px;
       font-weight: 600;
-      letter-spacing: 0.01em;
-      word-spacing: 0.08em;
     }
-    .status {
+    .row {
       margin: 0 0 10px;
-      padding: 7px 10px;
+      padding: 10px;
+      border: 1px solid #1c2238;
       border-radius: 8px;
+      background: #020408;
+    }
+    .row:last-of-type { margin-bottom: 0; }
+    .line {
+      margin: 0 0 8px;
       font-size: 12px;
-      word-spacing: 0.08em;
-      display: none;
+      color: #a1a1aa;
     }
-    .status.ok {
-      display: block;
-      background: rgba(16, 185, 129, 0.12);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
+    .line.ok { color: #34d399; }
+    .line.err { color: #f87171; }
+    .saved-count {
+      margin: 0 0 8px;
+      font-size: 22px;
+      font-weight: 700;
+      color: #fafafa;
+      line-height: 1.1;
     }
-    .status.err {
-      display: block;
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
+    .api-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 0;
     }
+    .api-row strong { font-size: 12px; color: #e4e4e7; }
+    .api-row code { font-size: 11px; color: #93b4ff; word-break: break-all; }
+    .sub { margin: 0 0 8px; color: #71717a; font-size: 12px; }
     button {
       cursor: pointer;
       display: block;
       width: 100%;
-      margin: 0 0 10px;
-      padding: 10px 12px;
+      margin: 0;
+      padding: 8px 10px;
       background: #5b8cff;
       color: #fff;
       border: 1px solid #5b8cff;
       border-radius: 8px;
       font-size: 13px;
       font-weight: 500;
-      word-spacing: 0.08em;
-      letter-spacing: 0.01em;
     }
-    button:last-child { margin-bottom: 0; }
     button.secondary {
       background: transparent;
       color: #e4e4e7;
@@ -69,49 +74,53 @@
       background: transparent;
       color: #f87171;
       border-color: rgba(239, 68, 68, 0.3);
+      margin-top: 8px;
     }
-    .saved-count {
-      margin: 0 0 10px;
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      word-spacing: 0.06em;
-      color: #fafafa;
-      line-height: 1.1;
-    }
-    .api-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 8px 10px;
-      margin: 0 0 8px;
-      background: #020408;
-      border: 1px solid #1c2238;
+    .status {
+      margin: 10px 0 0;
+      padding: 7px 10px;
       border-radius: 8px;
-      word-spacing: 0.06em;
+      font-size: 12px;
+      display: none;
     }
-    .api-row strong { font-size: 12px; color: #e4e4e7; }
-    .api-row code { font-size: 11px; color: #93b4ff; word-break: break-all; }
-    .sub { margin: 0 0 10px; color: #71717a; font-size: 12px; word-spacing: 0.06em; }
+    .status.ok {
+      display: block;
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+    }
+    .status.err {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+    }
     body.signed-in .guest-only { display: none !important; }
     body:not(.signed-in) .signed-only { display: none !important; }
-    body.signed-in #detect-ready { display: none !important; }
     .extra { display: none !important; }
   </style>
 </head>
 <body data-ui="three-line">
   <h1>KeyShield — Sovereign Vault</h1>
-  <div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
 
-  <div id="signed-pane" class="signed-only">
-    <p id="saved-count" class="saved-count">0 saved</p>
-    <div id="saved-apis"></div>
-    <p id="saved-empty" class="sub">None yet. Detect stays on.</p>
-    <button id="clear-top" class="danger">Sign out</button>
-  </div>
+  <section class="row" id="row-auth">
+    <button id="signin" class="guest-only">Sign in</button>
+    <div id="signed-pane" class="signed-only">
+      <p id="saved-count" class="saved-count">0 saved</p>
+      <div id="saved-apis"></div>
+      <p id="saved-empty" class="sub">None yet. Detect stays on.</p>
+      <button id="clear-top" class="danger">Sign out</button>
+    </div>
+  </section>
 
-  <button id="signin" class="guest-only">Sign in to KeyShield</button>
-  <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+  <section class="row" id="row-detect">
+    <p id="detect-line" class="line">detect · checking…</p>
+    <div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
+    <button id="allow-detect" class="secondary guest-only">Turn detect on</button>
+  </section>
+
+  <section class="row" id="row-copy">
+    <p id="copy-status" class="line">copy · idle</p>
+    <button id="copy-cursor-key" class="secondary">Copy Cursor key</button>
+  </section>
 
   <div id="status" class="status"></div>
 
@@ -121,7 +130,6 @@
     <button id="fill-tab-signed"></button>
     <button id="copy-cursor-key-signed"></button>
     <button id="fill-tab"></button>
-    <button id="copy-cursor-key"></button>
     <button id="use-hosted-top"></button>
     <textarea id="manual"></textarea>
     <button id="register"></button>
