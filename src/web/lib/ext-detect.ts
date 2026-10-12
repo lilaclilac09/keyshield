@@ -128,6 +128,22 @@ export function formatCollectedCount(n: number): string {
   return count === 1 ? '1 collected' : `${count} collected`;
 }
 
+/** Vault list length wins over a stale detect-session 0. */
+export function listedVaultCount(apis: unknown, listedDomRows = 0): number {
+  const fromApis = Array.isArray(apis) ? apis.length : 0;
+  const fromDom = Math.max(0, Math.floor(Number(listedDomRows) || 0));
+  return Math.max(fromApis, fromDom);
+}
+
+export function popupVaultHero(n: number): { saved: string; collected: string } {
+  return { saved: formatSavedCount(n), collected: formatCollectedCount(n) };
+}
+
+/** Leftover 1.2.4 painted LIST_SAVED_APIS rows but left the 22px hero at "0 saved". */
+export function popupHeroAgreesWithListed(hero: string, listedCount: number): boolean {
+  return String(hero || '').trim() === formatSavedCount(listedCount);
+}
+
 export function formatFilledCount(n: number): string {
   const count = Math.max(0, Math.floor(Number(n) || 0));
   return count === 1 ? '1 filled' : `${count} filled`;

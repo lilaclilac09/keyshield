@@ -121,7 +121,9 @@ function paintFilledLine(filled, ms, kind = "ok") {
 
 function paintSignedStatus(signed) {
   const el = $("signed-status");
-  if (el) el.textContent = formatSignedStatus(signed);
+  if (!el) return;
+  // Signed-in hero is the vault count ("5 saved"), not the word "signed".
+  if (!signed) el.textContent = formatSignedStatus(false);
 }
 
 function formatDetectReadyLine(version, hasAllUrls) {
@@ -205,7 +207,14 @@ function applySignedInChrome(signed) {
 }
 
 function formatSavedCount(n) {
-  return formatCollectedCount(n);
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 saved" : `${count} saved`;
+}
+
+function listedApiCount(box, apis) {
+  const fromApis = Array.isArray(apis) ? apis.length : 0;
+  const fromDom = box && box.querySelectorAll ? box.querySelectorAll(".api-row").length : 0;
+  return Math.max(fromApis, fromDom);
 }
 
 function looksLikeSessionToken(raw) {
@@ -213,19 +222,33 @@ function looksLikeSessionToken(raw) {
 }
 
 function paintSavedCount(n) {
-  const label = formatCollectedCount(n);
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  const saved = formatSavedCount(count);
+  const collected = formatCollectedCount(count);
+  const signedIn = count > 0 || document.body.classList.contains("signed-in");
+  const signedEl = $("signed-status");
+  if (signedEl) signedEl.textContent = signedIn ? saved : formatSignedStatus(false);
   const hero = $("saved-count");
-  if (hero) hero.textContent = label;
-  const collected = $("collected-line");
-  if (collected) {
-    collected.textContent = label;
-    collected.className = "line ok";
+  if (hero) hero.textContent = saved;
+  const collectedEl = $("collected-line");
+  if (collectedEl) {
+    collectedEl.textContent = collected;
+    collectedEl.className = "line ok";
   }
   const badge = $("conn");
   if (badge && document.body.classList.contains("signed-in")) {
-    badge.textContent = label;
-    badge.title = label;
+    badge.textContent = saved;
+    badge.title = saved;
   }
+}
+
+function hideLeftoverCopyButtons() {
+  ["copy-cursor-key", "copy-cursor-key-signed"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.hidden = true;
+    try { el.style.display = "none"; } catch { /* leftover node */ }
+  });
 }
 
 const DASHBOARD_HARVEST_URLS = [
@@ -292,7 +315,7 @@ async function refreshSavedApis() {
     }
   }
   if (empty) empty.style.display = apis.length ? "none" : "block";
-  paintSavedCount(apis.length);
+  paintSavedCount(listedApiCount(box, apis));
   return apis;
 }
 
@@ -787,6 +810,7 @@ function onClick(id, handler) {
 function bootPopup() {
   if (bootPopup._done) return;
   bootPopup._done = true;
+  hideLeftoverCopyButtons();
   paintLoadedBuild();
   Promise.resolve(refreshDetectReady()).catch(() => {});
   Promise.resolve(loadSettings()).catch((e) => {

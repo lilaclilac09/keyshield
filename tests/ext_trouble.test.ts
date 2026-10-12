@@ -84,6 +84,12 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).not.toContain("<summary>Settings");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
+    expect(OFFLINE_PATCH_PY).toContain("function paintSavedCount");
+    expect(OFFLINE_PATCH_PY).toContain("1 saved");
+    expect(OFFLINE_PATCH_PY).toContain("paintSavedCount(Math.max");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("1 saved");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("signed-status");
+    expect(ZSH_SAFE_STAMP_PY).toContain("1 saved");
     expect(OFFLINE_PATCH_PY).toContain("Library/Application Support/Google/Chrome");
     expect(OFFLINE_PATCH_PY).toContain("*/Preferences");
     expect(OFFLINE_PATCH_PY).toContain('print("ver"');
@@ -259,6 +265,45 @@ print("one-panel", True)
 `;
     const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
     expect(out).toContain("one-panel True");
+  });
+
+  it("rewrites leftover 0 saved over listed helius rows", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-zero-saved-popup.html"),
+      "utf8",
+    );
+    expect(leftover).toContain(">0 saved<");
+    expect(leftover.match(/class="api-row"/g)?.length).toBe(5);
+    const tmp = mkdtempSync(join(tmpdir(), "ks-zero-saved-"));
+    writeFileSync(
+      join(tmp, "manifest.json"),
+      readFileSync(resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"), "utf8"),
+    );
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "popup.html"), leftover);
+    const py = `
+import importlib.util
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.popup_is_three_line((tmp / "popup.html").read_text()) is False
+mod.stamp(tmp)
+html = (tmp / "popup.html").read_text()
+js = (tmp / "popup.js").read_text()
+assert mod.popup_is_three_line(html) is True
+assert 'id="signed-status" class="saved-count">0 saved' in html
+assert "1 saved" in js
+assert "paintSavedCount" in js
+assert "api-row" in js
+print("rewrote-zero-saved", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("rewrote-zero-saved True");
+    expect(readFileSync(join(tmp, "popup.html"), "utf8")).toContain("0 saved");
+    expect(readFileSync(join(tmp, "popup.html"), "utf8")).not.toContain("Copy Cursor key</button></body>");
   });
 
   it("rewrites leftover old three-line that hid copy in extra", () => {

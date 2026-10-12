@@ -12,6 +12,9 @@ import {
   formatBulkSaveFailure,
   formatSavedCount,
   formatCollectedCount,
+  listedVaultCount,
+  popupVaultHero,
+  popupHeroAgreesWithListed,
   formatFilledLine,
   formatPopupMs,
   formatSignedStatus,
@@ -116,6 +119,34 @@ describe("formatSavedCount", () => {
     expect(formatSavedCount(3)).toBe("3 saved");
     expect(looksLikeSessionToken("ksv2_abcdefghij")).toBe(true);
     expect(looksLikeSessionToken("short")).toBe(false);
+  });
+
+  it("hero matches listed vault rows — leftover 0 saved over 5 helius is wrong", () => {
+    const helius = [
+      { upstream: "helius", masked: "396e9e••••e555" },
+      { upstream: "helius", masked: "e38b4e••••736a" },
+      { upstream: "helius", masked: "ba5bbc••••3876" },
+      { upstream: "helius", masked: "104705••••7761" },
+      { upstream: "helius", masked: "encrypted" },
+    ];
+    expect(listedVaultCount(helius, 5)).toBe(5);
+    expect(listedVaultCount([], 5)).toBe(5);
+    expect(popupVaultHero(5)).toEqual({ saved: "5 saved", collected: "5 collected" });
+    expect(popupHeroAgreesWithListed("0 saved", 5)).toBe(false);
+    expect(popupHeroAgreesWithListed("5 saved", 5)).toBe(true);
+    const popup = readFileSync(resolve(__dirname, "../src/extension/popup.js"), "utf8");
+    const html = readFileSync(resolve(__dirname, "../src/extension/popup.html"), "utf8");
+    expect(popup).toContain("function listedApiCount");
+    expect(popup).toContain("hideLeftoverCopyButtons");
+    expect(popup).toContain("signedEl.textContent = signedIn ? saved");
+    expect(popup).not.toContain("return formatCollectedCount(n)");
+    expect(html).toContain('id="signed-status" class="saved-count">0 saved');
+    expect(html).toContain('id="saved-count" class="sub">0 saved');
+    const leftover = readFileSync(resolve(__dirname, "fixtures/leftover-zero-saved-popup.html"), "utf8");
+    expect(leftover).toContain(">0 saved<");
+    expect(leftover.match(/class="api-row"/g)?.length).toBe(5);
+    expect(popupHeroAgreesWithListed("0 saved", leftover.match(/class="api-row"/g)?.length || 0)).toBe(false);
+    expect(shouldRewritePopupHtml(leftover)).toBe(true);
   });
 });
 
@@ -320,7 +351,9 @@ describe("extension context after Remove + Load unpacked", () => {
     expect(background).toContain("function collectPageSecrets");
     expect(background).toContain("function paintLiveDetectPanel");
     expect(background).toContain("dashboard.helius.dev");
-    expect(background).toContain("directStore({ upstream: hit.upstream, value: hit.key })");
+    expect(background).toContain("directStore({");
+    expect(background).toContain("upstream: hit.upstream");
+    expect(background).toContain("value: hit.key");
     expect(background).not.toContain("function stripStaleDetectPanel");
   });
 });
