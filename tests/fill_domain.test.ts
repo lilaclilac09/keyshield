@@ -7,11 +7,15 @@ import {
   isCursorKeyFetchContext,
   isCursorSettingsPath,
   isFillablePageUrl,
+  isKiloFillHost,
+  isKiloKeyFetchContext,
   isLocalFillDemoPath,
   looksLikeCursorApiBlank,
+  looksLikeKiloApiBlank,
   matchInputToUpstream,
   pickKeyForInput,
   preferredCursorFillKey,
+  preferredKiloFillKey,
   shouldAutoFillInput,
   upstreamsForHostname,
 } from "../src/web/lib/fill-domain";
@@ -30,6 +34,13 @@ describe("upstreamsForHostname", () => {
 
   it("keeps openai.com on openai only", () => {
     expect(upstreamsForHostname("platform.openai.com")).toEqual(["openai"]);
+  });
+
+  it("maps Kilo BYOK hosts to a saved OpenRouter key", () => {
+    expect(upstreamsForHostname("app.kilo.ai")).toEqual(["openrouter"]);
+    expect(upstreamsForHostname("kilo.ai")).toEqual(["openrouter"]);
+    expect(upstreamsForHostname("www.kilo.ai")).toEqual(["openrouter"]);
+    expect(upstreamsForHostname("kilo.demo.localhost")).toEqual(["openrouter"]);
   });
 });
 
@@ -101,6 +112,8 @@ describe("pickKeyForInput", () => {
     })).toBe(true);
     expect(isFillablePageUrl("http://127.0.0.1:5173/cursor-settings-fill-demo.html")).toBe(true);
     expect(isFillablePageUrl("chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/cursor-settings-fill-demo.html")).toBe(true);
+    expect(isFillablePageUrl("http://127.0.0.1:5173/kilo-byok-fill-demo.html")).toBe(true);
+    expect(isFillablePageUrl("chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/kilo-byok-fill-demo.html")).toBe(true);
     expect(isFillablePageUrl("chrome://extensions")).toBe(false);
   });
 
@@ -127,6 +140,43 @@ describe("pickKeyForInput", () => {
     expect(assigned[1]?.value).toBe("sk-ant-api03-LOCALONLY");
     expect(assigned[2]?.value).toBe("sk-or-v1-LOCALONLY");
     expect(assigned[3]).toBeNull();
+  });
+
+  it("pastes the saved OpenRouter key into Kilo BYOK API Key blanks", () => {
+    expect(isKiloFillHost("app.kilo.ai")).toBe(true);
+    expect(isKiloKeyFetchContext({ hostname: "app.kilo.ai", pathname: "/byok" })).toBe(true);
+    expect(isKiloKeyFetchContext({ hostname: "evil.example", pathname: "/byok" })).toBe(false);
+    expect(isKiloKeyFetchContext({
+      hostname: "127.0.0.1",
+      pathname: "/kilo-byok-fill-demo.html",
+    })).toBe(true);
+    expect(preferredKiloFillKey(keys)?.upstream).toBe("openrouter");
+    expect(pickKeyForInput("API Key", keys, {
+      hostname: "app.kilo.ai",
+      pathname: "/byok",
+      inputType: "password",
+    })?.value).toBe("sk-or-v1-LOCALONLY");
+    expect(pickKeyForInput("OpenRouter API Key", keys)?.upstream).toBe("openrouter");
+    expect(looksLikeKiloApiBlank({
+      haystack: "API Key",
+      hostname: "app.kilo.ai",
+      pathname: "/byok",
+      inputType: "password",
+    })).toBe(true);
+    expect(pickKeyForInput("Password", keys, {
+      hostname: "app.kilo.ai",
+      pathname: "/byok",
+    })).toBeNull();
+    const assigned = assignKeysToInputs(
+      [
+        { haystack: "OpenRouter API Key", inputType: "password" },
+        { haystack: "Password", inputType: "password" },
+      ],
+      keys,
+      { hostname: "app.kilo.ai", pathname: "/byok", title: "Bring Your Own Key (BYOK)" },
+    );
+    expect(assigned[0]?.value).toBe("sk-or-v1-LOCALONLY");
+    expect(assigned[1]).toBeNull();
   });
 
   it("falls through to the leftover key when the labeled upstream was already used", () => {
@@ -162,6 +212,14 @@ describe("extension fill uses queued vault keys", () => {
     const demo = readFileSync(resolve(__dirname, "../src/web/public/cursor-settings-fill-demo.html"), "utf8");
     expect(demo).toContain("OpenAI API Key");
     expect(demo).toContain("127.0.0.1:5173/cursor-settings-fill-demo.html");
-    expect(content).toContain("ksIsCursorFillContext() ? remaining[0]");
+    expect(content).toContain("(ksIsKiloFillContext() || ksIsCursorFillContext()) ? remaining[0]");
+    expect(bg).toContain("'app.kilo.ai'");
+    expect(bg).toContain("function _isKiloKeyFetchContext");
+    expect(content).toContain("function ksIsKiloFillContext");
+    expect(content).toContain("function ksPreferredKiloFillKey");
+    const kiloDemo = readFileSync(resolve(__dirname, "../src/web/public/kilo-byok-fill-demo.html"), "utf8");
+    expect(kiloDemo).toContain("OpenRouter API Key");
+    expect(kiloDemo).toContain("127.0.0.1:5173/kilo-byok-fill-demo.html");
+    expect(kiloDemo).toContain("data-testid=\"kilo-openrouter-key\"");
   });
 });

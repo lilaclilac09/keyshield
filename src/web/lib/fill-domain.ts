@@ -1,6 +1,7 @@
 /**
  * Domain → vault upstreams for extension auto-fill.
  * cursor.com Settings blanks take OpenAI / Anthropic / OpenRouter / Groq / Cursor.
+ * app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
  */
 
 export const CURSOR_FILL_UPSTREAMS = [
@@ -11,9 +12,15 @@ export const CURSOR_FILL_UPSTREAMS = [
   'groq',
 ] as const;
 
+export const KILO_FILL_UPSTREAMS = ['openrouter'] as const;
+
 const DOMAIN_TO_UPSTREAMS: Record<string, readonly string[]> = {
   'openrouter.ai': ['openrouter'],
   'scvd.store': ['openrouter'],
+  'kilo.ai': KILO_FILL_UPSTREAMS,
+  'app.kilo.ai': KILO_FILL_UPSTREAMS,
+  'www.kilo.ai': KILO_FILL_UPSTREAMS,
+  'kilo.demo.localhost': KILO_FILL_UPSTREAMS,
   'platform.openai.com': ['openai'],
   'openai.com': ['openai'],
   'console.anthropic.com': ['anthropic'],
@@ -53,6 +60,7 @@ const INPUT_UPSTREAM_HINTS: Array<{ re: RegExp; upstream: string }> = [
   { re: /\bhelius\b/, upstream: 'helius' },
   { re: /\bvercel\b/, upstream: 'vercel' },
   { re: /\bgithub\b|\bghp_|\bgithub_pat_/, upstream: 'github' },
+  { re: /\bkilo\b|\bbyok\b/, upstream: 'openrouter' },
 ];
 
 export function normalizeHostname(input: string): string {
@@ -101,13 +109,39 @@ export function isLocalFillDemoPath(pathname: string): boolean {
   );
 }
 
+export function isKiloFillHost(domain: string): boolean {
+  const host = normalizeHostname(domain);
+  return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
+}
+
+export function isKiloByokPath(pathname: string): boolean {
+  const path = String(pathname || '').toLowerCase();
+  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+/** Unlock OpenRouter keys for Kilo BYOK hosts or the local BYOK fixture — never a spoofed title. */
+export function isKiloKeyFetchContext(opts?: { hostname?: string; pathname?: string }): boolean {
+  if (isKiloFillHost(opts?.hostname || '')) return true;
+  const host = normalizeHostname(opts?.hostname || '');
+  const local = host === '127.0.0.1' || host === 'localhost';
+  return local && isKiloByokPath(opts?.pathname || '');
+}
+
+export function isKiloFillContext(opts?: { hostname?: string; pathname?: string; title?: string }): boolean {
+  if (isKiloKeyFetchContext(opts)) return true;
+  const host = normalizeHostname(opts?.hostname || '');
+  if (host && !isKiloFillHost(host) && host !== '127.0.0.1' && host !== 'localhost') return false;
+  return isKiloByokPath(opts?.pathname || '');
+}
+
 /** http(s) pages plus our own chrome-extension fill demo. */
 export function isFillablePageUrl(url: string): boolean {
   const raw = String(url || '');
   if (/^https?:/i.test(raw)) return true;
   try {
     const parsed = new URL(raw);
-    return parsed.protocol === 'chrome-extension:' && isLocalFillDemoPath(parsed.pathname);
+    return parsed.protocol === 'chrome-extension:'
+      && (isLocalFillDemoPath(parsed.pathname) || isKiloByokPath(parsed.pathname));
   } catch {
     return false;
   }
@@ -137,7 +171,7 @@ export function isCursorFillContext(opts?: { hostname?: string; pathname?: strin
   return title.includes('cursor') && isCursorSettingsPath(path, title);
 }
 
-const KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b/;
+const KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
 export function looksLikeKeyField(haystack: string): boolean {
   return KEY_FIELD_RE.test(String(haystack || '').toLowerCase());
@@ -184,6 +218,34 @@ export function preferredCursorFillKey(keys: FillKey[]): FillKey | null {
   return keys.find((k) => k.value) ?? null;
 }
 
+export function preferredKiloFillKey(keys: FillKey[]): FillKey | null {
+  const order = ['openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
+  for (const upstream of order) {
+    const hit = keys.find((k) => k.upstream === upstream && k.value);
+    if (hit) return hit;
+  }
+  return keys.find((k) => k.value) ?? null;
+}
+
+export function looksLikeKiloApiBlank(opts: {
+  haystack?: string;
+  hostname?: string;
+  pathname?: string;
+  title?: string;
+  inputType?: string;
+}): boolean {
+  if (!isKiloFillContext(opts)) return false;
+  const hay = String(opts.haystack || '');
+  if (looksLikeLoginPassword(hay)) return false;
+  if (looksLikeKeyNameField(hay)) return false;
+  if (looksLikeKeyField(hay)) return true;
+  const type = String(opts.inputType || '').toLowerCase();
+  const onByok = isKiloByokPath(opts.pathname || '')
+    || isKiloFillHost(opts.hostname || '');
+  if (!onByok) return false;
+  return type === 'password' || !hay.trim();
+}
+
 export type FillInputHint = { haystack: string; inputType?: string };
 
 export function pickKeyForInput(
@@ -199,6 +261,9 @@ export function pickKeyForInput(
     if (labeled) return labeled;
   }
   if (looksLikeLoginPassword(haystack)) return null;
+  if (isKiloFillContext(opts) || looksLikeKiloApiBlank({ ...opts, haystack })) {
+    return preferredKiloFillKey(keys);
+  }
   if (isCursorFillContext(opts) || looksLikeCursorApiBlank({ ...opts, haystack })) {
     return preferredCursorFillKey(keys);
   }

@@ -66,7 +66,7 @@ const PROVIDERS = [
     patterns: [
       /sk-or-[A-Za-z0-9_-]{12,}/g,
     ],
-    domains:  ['openrouter.ai', 'openrouter.demo.localhost'],
+    domains:  ['openrouter.ai', 'openrouter.demo.localhost', 'kilo.ai', 'app.kilo.ai', 'www.kilo.ai', 'kilo.demo.localhost'],
     minLen:   16,
   },
   {
@@ -685,7 +685,7 @@ const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([ty
   + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
   + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
 
-const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b/;
+const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
 function ksIsCursorFillHost(domain) {
   const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
@@ -715,6 +715,26 @@ function ksIsCursorFillContext() {
   if (ksIsCursorFillHost(host)) return true;
   if (ksIsLocalFillDemo()) return true;
   return title.includes('cursor') && /setting|api key|models/.test(`${path} ${title}`);
+}
+
+function ksIsKiloFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
+}
+
+function ksIsKiloByokPath(pathname) {
+  const path = String(pathname || location.pathname || '').toLowerCase();
+  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+function ksIsKiloFillContext() {
+  const host = location.hostname;
+  if (ksIsKiloFillHost(host)) return true;
+  const local = host === '127.0.0.1' || host === 'localhost';
+  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+    return ksIsKiloByokPath(location.pathname);
+  }
+  return local && ksIsKiloByokPath(location.pathname);
 }
 
 function ksAncestorHaystack(el) {
@@ -779,6 +799,7 @@ function ksMatchUpstreamForHaystack(hay) {
   if (/\bhelius\b/.test(hay)) return 'helius';
   if (/\bvercel\b/.test(hay)) return 'vercel';
   if (/\bgithub\b|\bghp_|\bgithub_pat_/.test(hay)) return 'github';
+  if (/\bkilo\b|\bbyok\b/.test(hay)) return 'openrouter';
   return null;
 }
 
@@ -802,6 +823,15 @@ function ksPreferredCursorFillKey(keys) {
   return keys.find((k) => k.value) || null;
 }
 
+function ksPreferredKiloFillKey(keys) {
+  const order = ['openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
+  for (const upstream of order) {
+    const hit = keys.find((k) => k.upstream === upstream && k.value);
+    if (hit) return hit;
+  }
+  return keys.find((k) => k.value) || null;
+}
+
 function ksPickKeyForInput(el, keys) {
   if (!keys || !keys.length) return null;
   const hay = ksInputHaystack(el);
@@ -813,6 +843,9 @@ function ksPickKeyForInput(el, keys) {
     if (labeled) return labeled;
   }
   if (ksLooksLikeLoginPassword(hay)) return null;
+  if (ksIsKiloFillContext() || (ksIsKiloFillHost(location.hostname) && type === 'password')) {
+    return ksPreferredKiloFillKey(keys);
+  }
   if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
     return ksPreferredCursorFillKey(keys);
   }
@@ -824,6 +857,14 @@ function ksPickKeyForInput(el, keys) {
 
 function ksLooksLikeCursorApiBlank(el, hay, type) {
   if (!ksIsCursorFillContext()) return false;
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return type === 'password' || !String(hay || '').trim();
+}
+
+function ksLooksLikeKiloApiBlank(el, hay, type) {
+  if (!ksIsKiloFillContext()) return false;
   if (ksLooksLikeLoginPassword(hay)) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
@@ -843,14 +884,14 @@ function ksLooksLikeKeyInput(el) {
   const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
   if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
-  if (ksIsCursorFillContext()) {
+  if (ksIsKiloFillContext() || ksIsCursorFillContext()) {
     if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(hay)) return false;
     if (KS_KEY_FIELD_RE.test(hay)) return true;
     return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA';
   }
   if (ksLooksLikeLoginPassword(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
-  return ksLooksLikeCursorApiBlank(el, hay, type);
+  return ksLooksLikeCursorApiBlank(el, hay, type) || ksLooksLikeKiloApiBlank(el, hay, type);
 }
 
 function ksIsFillableInput(el) {
@@ -909,7 +950,7 @@ function ksAutoFillEmptyInputs(keys) {
   for (const input of candidates) {
     if (String(input.value || '').trim()) continue;
     const key = ksPickKeyForInput(input, remaining)
-      || (ksIsCursorFillContext() ? remaining[0] : null);
+      || ((ksIsKiloFillContext() || ksIsCursorFillContext()) ? remaining[0] : null);
     if (key) take(input, key);
   }
   return filled;

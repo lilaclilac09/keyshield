@@ -67,10 +67,16 @@ async function _getVaultKeyBytes() {
 
 // ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
 // cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
+// app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
 const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'groq'];
+const KILO_FILL_UPSTREAMS = ['openrouter'];
 const DOMAIN_TO_UPSTREAMS = {
   'openrouter.ai':         ['openrouter'],
   'scvd.store':            ['openrouter'],
+  'kilo.ai':               KILO_FILL_UPSTREAMS,
+  'app.kilo.ai':           KILO_FILL_UPSTREAMS,
+  'www.kilo.ai':           KILO_FILL_UPSTREAMS,
+  'kilo.demo.localhost':   KILO_FILL_UPSTREAMS,
   'platform.openai.com':   ['openai'],
   'openai.com':            ['openai'],
   'console.anthropic.com': ['anthropic'],
@@ -133,6 +139,29 @@ function _isLocalFillDemoPath(pathname) {
     || path.startsWith('/story/');
 }
 
+function _isKiloFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
+}
+
+function _isKiloByokPath(pathname) {
+  const path = String(pathname || '').toLowerCase();
+  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+function _isKiloKeyFetchContext(domain, pathname, url) {
+  if (_isKiloFillHost(domain)) return true;
+  try {
+    if (url) {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'chrome-extension:' && _isKiloByokPath(parsed.pathname || pathname)) return true;
+    }
+  } catch { /* noop */ }
+  const host = _normalizeHostname(domain);
+  const local = host === '127.0.0.1' || host === 'localhost';
+  return local && _isKiloByokPath(pathname);
+}
+
 function _isOwnExtensionFillDemo(url) {
   const raw = String(url || '');
   if (!raw) return false;
@@ -141,7 +170,7 @@ function _isOwnExtensionFillDemo(url) {
     if (parsed.protocol !== 'chrome-extension:') return false;
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id
       && parsed.host !== chrome.runtime.id) return false;
-    return _isLocalFillDemoPath(parsed.pathname);
+    return _isLocalFillDemoPath(parsed.pathname) || _isKiloByokPath(parsed.pathname);
   } catch {
     return false;
   }
@@ -156,7 +185,7 @@ function _isFillableTabUrl(url) {
 /** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
 function _isCursorKeyFetchContext(domain, pathname, url) {
   if (_isCursorFillHost(domain)) return true;
-  if (_isOwnExtensionFillDemo(url)) return true;
+  if (_isOwnExtensionFillDemo(url) && !_isKiloByokPath(pathname) && !_isKiloByokPath(url)) return true;
   const host = _normalizeHostname(domain);
   const local = host === '127.0.0.1' || host === 'localhost';
   return local && _isLocalFillDemoPath(pathname);
@@ -230,6 +259,9 @@ async function pendingKeysForUpstreams(upstreams) {
 async function getKeysForDomain(domain, extra) {
   extra = extra || {};
   let upstreams = _upstreamsForDomain(domain);
+  if (!upstreams.length && _isKiloKeyFetchContext(domain, extra.pathname, extra.url)) {
+    upstreams = KILO_FILL_UPSTREAMS.slice();
+  }
   if (!upstreams.length && _isCursorKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = CURSOR_FILL_UPSTREAMS.slice();
   }
@@ -1163,6 +1195,7 @@ function injectedAutoFill(keys) {
   const href = String(location.href || '');
   const cursorish = /cursor\.com|cursor\.sh|cursor-settings-fill-demo|\/journey\/cursor|cursor\.html|\/story/i.test(href)
     || location.hostname === 'cursor.demo.localhost';
+  const kiloish = /(?:^|\.)kilo\.ai(?:[:/]|$)|kilo-byok-fill-demo|kilo\.demo\.localhost/i.test(href);
   function hay(el) {
     const bits = [
       el.getAttribute('name') || '',
@@ -1187,6 +1220,7 @@ function injectedAutoFill(keys) {
     if (/openai|chatgpt|gpt|sk-proj/.test(h)) return 'openai';
     if (/groq|gsk_/.test(h)) return 'groq';
     if (/cursor|crsr/.test(h)) return 'cursor';
+    if (/kilo|byok/.test(h)) return 'openrouter';
     return null;
   }
   function login(h) {
@@ -1194,7 +1228,7 @@ function injectedAutoFill(keys) {
     return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(h);
   }
   function looksKey(h) {
-    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b|\bclaude\b/.test(h);
+    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/.test(h);
   }
   function setVal(el, value) {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -1225,14 +1259,16 @@ function injectedAutoFill(keys) {
     if (login(h)) return;
     const wanted = match(h);
     let key = wanted ? remaining.find((k) => k.upstream === wanted) : null;
-    if (!key && (cursorish || looksKey(h))) {
-      const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+    if (!key && (cursorish || kiloish || looksKey(h))) {
+      const order = kiloish
+        ? ['openrouter', 'openai', 'anthropic', 'groq', 'cursor']
+        : ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
       for (const u of order) {
         key = remaining.find((k) => k.upstream === u);
         if (key) break;
       }
     }
-    if (!key && cursorish) key = remaining[0];
+    if (!key && (cursorish || kiloish)) key = remaining[0];
     if (!key) return;
     setVal(el, key.value);
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
@@ -1269,14 +1305,17 @@ async function fillCursorTabsFromPending() {
     } catch { continue; }
     const mapped = _upstreamsForDomain(host);
     const cursorish = isCursorFillTabUrl(tab.url) || _isCursorKeyFetchContext(host, path, tab.url);
-    if (!cursorish && !mapped.length) continue;
+    const kiloish = _isKiloKeyFetchContext(host, path, tab.url);
+    if (!cursorish && !kiloish && !mapped.length) continue;
     let keys = [];
     try {
       const fetched = await getKeysForDomain(host, { pathname: path, title: tab.title || '', url: tab.url });
       if (fetched && fetched.ok && Array.isArray(fetched.keys)) keys = fetched.keys;
     } catch { keys = []; }
     if (!keys.length) {
-      keys = await pendingKeysForUpstreams(mapped.length ? mapped : CURSOR_FILL_UPSTREAMS);
+      keys = await pendingKeysForUpstreams(
+        mapped.length ? mapped : (kiloish ? KILO_FILL_UPSTREAMS : CURSOR_FILL_UPSTREAMS),
+      );
     }
     if (!keys.length) continue;
     try {
