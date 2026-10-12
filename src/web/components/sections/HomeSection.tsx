@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
+import { ExtTroubleCase } from '../ExtTroubleCase';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
@@ -117,6 +118,7 @@ export const HomeSection: React.FC<Props> = ({
 
       <ExtensionTokenCopy />
       <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
+      <ExtTroubleCase variant="home" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
@@ -397,7 +399,7 @@ export const HomeSection: React.FC<Props> = ({
           {[
             { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Links & troubleshooting', sub: 'Extension, proxy, RPC cache' },
+            { id: 'docs', title: 'Links & troubleshooting', sub: 'Leftover 1.2.1 · github.com DNS · find path' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
           ].map((row) => (
             <button

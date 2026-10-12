@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 
 NAME = "KeyShield — Sovereign Vault"
@@ -195,12 +197,154 @@ chrome.runtime.onMessage.addListener((message, _s, sendResponse) => {
 """
 
 
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", "Library", "AppData"}
+
+CHROME_PREF_ROOTS = (
+    "Library/Application Support/Google/Chrome",
+    "Library/Application Support/Google/Chrome Beta",
+    "Library/Application Support/Google/Chrome Canary",
+    "Library/Application Support/Chromium",
+    "Library/Application Support/Microsoft Edge",
+    "Library/Application Support/BraveSoftware/Brave-Browser",
+    "Library/Application Support/Arc/User Data",
+    ".config/google-chrome",
+    ".config/chromium",
+    ".config/microsoft-edge",
+    ".config/BraveSoftware/Brave-Browser",
+    "snap/chromium/common/chromium",
+)
+
+WALK_ROOTS = ("Downloads", "Documents", "Desktop", "src", "code", "dev", "work", "privacy_hack")
+
+
+def looks_ext(path: Path) -> bool:
+    return (path / "manifest.json").is_file() and (path / "popup.js").is_file()
+
+
+def keyshield_name(path: Path) -> bool:
+    try:
+        name = str(json.loads((path / "manifest.json").read_text(encoding="utf-8")).get("name") or "")
+    except Exception:
+        return False
+    return "KeyShield" in name or "Sovereign Vault" in name
+
+
+def repo_root(ext: Path) -> Path:
+    if ext.name == "extension" and ext.parent.name == "src":
+        return ext.parent.parent
+    if ext.name == "extension":
+        return ext.parent
+    return ext
+
+
+def walk_exts(root: Path, max_depth: int = 5):
+    if not root.is_dir():
+        return
+    stack = [(root, 0)]
+    while stack:
+        path, depth = stack.pop()
+        if depth > max_depth:
+            continue
+        try:
+            kids = list(path.iterdir())
+        except OSError:
+            continue
+        names = {child.name for child in kids}
+        if "manifest.json" in names and "popup.js" in names:
+            yield path
+            continue
+        if depth == max_depth:
+            continue
+        for child in kids:
+            if child.is_dir() and child.name not in SKIP_DIRS and not child.name.startswith("."):
+                stack.append((child, depth + 1))
+
+
+def chrome_unpacked_exts() -> list[Path]:
+    home = Path.home()
+    found: list[Path] = []
+    for rel in CHROME_PREF_ROOTS:
+        base = home / rel
+        if not base.is_dir():
+            continue
+        for pref in base.glob("*/Preferences"):
+            try:
+                data = json.loads(pref.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            settings = (data.get("extensions") or {}).get("settings") or {}
+            if not isinstance(settings, dict):
+                continue
+            for row in settings.values():
+                if not isinstance(row, dict):
+                    continue
+                raw = row.get("path")
+                if not raw or not isinstance(raw, str):
+                    continue
+                cand = Path(raw).expanduser()
+                if not cand.is_absolute() or not looks_ext(cand):
+                    continue
+                man = row.get("manifest") if isinstance(row.get("manifest"), dict) else {}
+                name = str(man.get("name") or "")
+                if name and "KeyShield" not in name and "Sovereign Vault" not in name:
+                    if not keyshield_name(cand):
+                        continue
+                elif not name and not keyshield_name(cand):
+                    continue
+                found.append(cand)
+    return found
+
+
+def collect_hits() -> list[tuple[str, Path]]:
+    hits: list[tuple[str, Path]] = []
+    here = Path.cwd().resolve()
+    for parent in (here, *here.parents):
+        for cand in (parent / "src/extension", parent, parent / "extension"):
+            if looks_ext(cand) and keyshield_name(cand):
+                hits.append(("cwd", cand))
+    for cand in chrome_unpacked_exts():
+        hits.append(("chrome-internals", cand))
+    home = Path.home()
+    for rel in WALK_ROOTS:
+        for cand in walk_exts(home / rel):
+            if keyshield_name(cand):
+                hits.append(("walk", cand))
+    seen: set[Path] = set()
+    ordered: list[tuple[str, Path]] = []
+    rank = {"cwd": 0, "chrome-internals": 1, "walk": 2}
+    for src, path in hits:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not looks_ext(resolved):
+            continue
+        seen.add(resolved)
+        ordered.append((src, resolved))
+    ordered.sort(key=lambda item: rank.get(item[0], 9))
+    return ordered
+
+
 def find_ext() -> Path:
-    here = Path.cwd()
-    for cand in (here / "src/extension", here, here / "extension"):
-        if (cand / "manifest.json").exists() and (cand / "popup.js").exists():
-            return cand
-    raise SystemExit("cd to ~/Downloads/privacy_hack/keyshield first (need src/extension/manifest.json)")
+    hits = collect_hits()
+    if not hits:
+        raise SystemExit(
+            "no KeyShield folder (Chrome internals + home walk + cwd). "
+            "chrome://extensions → Details → Loaded from, then run from that folder."
+        )
+    return hits[0][1]
+
+
+def print_find(hits: list[tuple[str, Path]], ext: Path) -> None:
+    for src, path in hits:
+        ver = ""
+        try:
+            ver = str(json.loads((path / "manifest.json").read_text(encoding="utf-8")).get("version") or "")
+        except Exception:
+            pass
+        print("#", src, path, "v" + ver)
+    print("export KS_ROOT=" + shlex.quote(str(repo_root(ext))))
+    print("export KS_EXT=" + shlex.quote(str(ext)))
 
 
 def stamp_manifest(ext: Path) -> None:
@@ -227,8 +371,18 @@ def splice(path: Path, mark: str, block: str) -> None:
     path.write_text(text.rstrip() + "\n" + block.lstrip() + "\n")
 
 
-def main() -> None:
-    ext = find_ext()
+def main(argv: list[str] | None = None) -> None:
+    args = argv if argv is not None else sys.argv[1:]
+    hits = collect_hits()
+    if not hits:
+        raise SystemExit(
+            "no KeyShield folder (Chrome internals + home walk + cwd). "
+            "chrome://extensions → Details → Loaded from, then run from that folder."
+        )
+    ext = hits[0][1]
+    if "--find" in args:
+        print_find(hits, ext)
+        return
     stamp_manifest(ext)
     html_path = ext / "popup.html"
     html_now = html_path.read_text() if html_path.exists() else ""

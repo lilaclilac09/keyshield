@@ -10,24 +10,34 @@ If already signed, popup must show **only saved APIs**.
 
 ## 0. Try pull, then offline signed-in patch
 
+Do **not** hardcode `~/Downloads/privacy_hack/keyshield`. Home / Docs →
+Trouble finds the clone from Chrome internals (`Preferences` unpacked
+`path`, Details → Loaded from) plus a home walk.
+
+1. Paste the **find local path** python from the Trouble card.
+2. Try pull on `cursor/cursor-api-autofill-b48a`.
+3. If `github.com` does not resolve, skip git and run python3.
+
 ```bash
-cd ~/Downloads/privacy_hack/keyshield
+# find path first (Chrome internals + home walk) — then:
 git fetch origin cursor/cursor-api-autofill-b48a
 git checkout cursor/cursor-api-autofill-b48a
 git pull origin cursor/cursor-api-autofill-b48a
 python3 src/extension/patch-signed-popup.py
+# or: python3 src/extension/patch-signed-popup.py --find
 ```
 
 If `github.com` does not resolve, skip git. Run
 `python3 src/extension/patch-signed-popup.py` if that file exists, else
-paste the python3 block from the agent (it writes `popup.html` with
-`id="signed-pane"`, stamps `man["version"] = "1.2.4"`, and injects
-`KS-SIGNED-1.2.4`). Then chrome://extensions → **Remove** → **Load unpacked**.
+paste the python3 block from Home / Docs → Trouble (it writes `popup.html`
+with `id="signed-pane"`, stamps `man["version"] = "1.2.4"`, and injects
+`KS-SIGNED-1.2.4`). Terminal must print `ver 1.2.4` and `signed-pane True`.
+Then chrome://extensions → **Remove** → **Load unpacked**.
 
 ## 1. Patch 1.1.3 → 1.2.4 on disk (python3 only)
 
 ```bash
-cd ~/Downloads/privacy_hack/keyshield
+# cwd / Chrome internals / home walk — no hardcoded Downloads path
 python3 - <<'PY'
 from pathlib import Path
 import json, re
@@ -38,7 +48,7 @@ if (root / "src/extension/manifest.json").exists():
 elif (root / "manifest.json").exists() and (root / "popup.js").exists():
     ext = root
 else:
-    raise SystemExit("cd to ~/Downloads/privacy_hack/keyshield first")
+    raise SystemExit("run find-path from Home / Docs Trouble first")
 
 HOSTED = "https://app.ks.aileena.xyz"
 man_path = ext / "manifest.json"

@@ -46,7 +46,9 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>.
             Old <strong className="text-white">v1.1.1</strong> still opens dead <code className="text-white">keyshield.dev</code>
             — stay on the hosted app, copy token → <strong className="text-white">Register token</strong>.
-            This Cloud agent cannot write <code className="text-white">~/Downloads/privacy_hack/keyshield</code>.
+            Leftover <strong className="text-white">1.2.1</strong>: Home / Docs → Trouble — find your clone from
+            Chrome internals (Details → Loaded from), try pull, skip if github.com DNS fails, then python3.
+            Do not hardcode a Downloads path.
           </p>
         </div>
       </div>

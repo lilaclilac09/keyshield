@@ -7,12 +7,22 @@ import { Button } from '../ui/Button';
 import { API_BASE, getToken } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
+import { ExtTroubleCase } from '../ExtTroubleCase';
 
 export const DocsSection: React.FC = () => {
   const installCmd = `curl -fsSL ${API_BASE}/install.sh | bash`;
 
   return (
     <div className="space-y-8">
+      <div>
+        <div className="flex items-center gap-2 text-[11px] text-white mb-1"><AlertCircle size={12} />TROUBLE</div>
+        <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Leftover 1.2.1</h2>
+        <p className="text-[14px] text-[#a8b3d8] mt-1">
+          Links &amp; troubleshooting — find your local clone from Chrome internals, try pull, skip github.com DNS, then python3.
+        </p>
+      </div>
+      <ExtTroubleCase variant="docs" />
+
       {/* Quickstart */}
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
