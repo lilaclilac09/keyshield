@@ -163,7 +163,11 @@ def parse_usdc_micro(rpc_result: Any) -> int | None:
 
 
 def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
-    """Names + prefixes only. Never returns the raw key."""
+    """Names + prefixes only. Never returns the raw key.
+
+    One card per vault row. Five Helius keys stay five rows — do not
+    collapse by upstream or Vault looks empty after detect.
+    """
     from ..routes import vault as vault_mod
 
     out: list[dict[str, str]] = []
@@ -176,9 +180,12 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
     seen: set[str] = set()
     for row in rows:
         upstream = str(row["upstream"] or row["id"] or "").strip()
-        if not upstream or upstream in seen:
+        item_id = str(row["id"] or "")
+        if not upstream or not item_id:
             continue
-        seen.add(upstream)
+        if item_id in seen:
+            continue
+        seen.add(item_id)
         raw = str(row["value"] or "")
         prefix = (
             "encrypted"
@@ -187,7 +194,7 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
         )
         out.append(
             {
-                "id": str(row["id"]),
+                "id": item_id,
                 "name": str(row["name"] or upstream),
                 "upstream": upstream,
                 "prefix": prefix,

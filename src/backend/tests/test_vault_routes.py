@@ -105,6 +105,42 @@ def test_empty_session_claims_local_default_rows(tmp_path, monkeypatch):
     assert leftover == []
 
 
+def test_five_helius_manage_store_lists_five_rows(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+    secrets = [
+        "10470584-67a9-4abc-8def-123456787761",
+        "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+        "310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2",
+        "410e4c2a-91b0-4c3d-a333-ccccccccccc3",
+        "510e4c2a-91b0-4c3d-a444-ddddddddddd4",
+    ]
+    ids = []
+    for secret in secrets:
+        stored = client.post(
+            "/manage/store",
+            headers=headers,
+            json={"upstream": "helius", "apiKey": secret, "name": "helius key"},
+        )
+        assert stored.status_code == 200
+        ids.append(stored.json()["id"])
+    again = client.post(
+        "/manage/store",
+        headers=headers,
+        json={"upstream": "helius", "apiKey": secrets[0], "name": "helius key"},
+    )
+    assert again.status_code == 200
+    assert again.json()["id"] == ids[0]
+    listed = client.get("/manage/vault", headers=headers).json()
+    helius = [row for row in listed if row.get("upstream") == "helius"]
+    assert len(helius) == 5
+    dumped = str(listed)
+    for secret in secrets:
+        assert secret not in dumped
+
+
 def test_hosted_empty_session_does_not_claim_default(tmp_path, monkeypatch):
     """Shared Railway must not give every signed-in user the default bucket."""
     _iso(tmp_path, monkeypatch)

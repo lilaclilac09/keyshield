@@ -217,6 +217,18 @@ async def vault_store(request: Request):
         tags_json = "[]"
     # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
     stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
+    upstream = body.get("upstream") or ""
+
+    # Same plaintext key → same row. A second Helius UUID stays a new row.
+    if not body.get("id") and stored_value:
+        with _db() as conn:
+            existing = conn.execute(
+                "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? AND value = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (uid, upstream, stored_value),
+            ).fetchone()
+            if existing:
+                item_id = existing[0]
 
     with _db() as conn:
         conn.execute(
@@ -243,7 +255,7 @@ async def vault_store(request: Request):
                 uid,
                 body.get("name") or "unnamed",
                 body.get("type") or "api_key",
-                body.get("upstream") or "",
+                upstream,
                 stored_value,
                 tags_json,
                 now,

@@ -1,6 +1,7 @@
 /** Shared keychain detect + framework snippets. Matches extension + backend. */
 
 import { API_BASE, apiFetch } from './auth';
+import { emitVaultChanged } from './vault-list';
 
 export interface DetectedKey {
   upstream: string | null;
@@ -103,6 +104,27 @@ export function extractDetectedKey(raw: string): string {
   return text;
 }
 
+export function extractDetectedKeys(raw: string): { upstream: string; key: string }[] {
+  const text = raw.trim();
+  if (!text) return [];
+  const out: { upstream: string; key: string }[] = [];
+  const seen = new Set<string>();
+  for (const row of DETECTORS) {
+    const flags = row.re.flags.includes('g') ? row.re.flags : `${row.re.flags}g`;
+    const re = new RegExp(row.re.source, flags);
+    let found: RegExpExecArray | null;
+    while ((found = re.exec(text)) !== null) {
+      const key = found[0];
+      if (!key) continue;
+      const id = `${row.upstream}:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ upstream: row.upstream, key });
+    }
+  }
+  return out;
+}
+
 export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
   const up = upstream || 'openrouter';
   const path = up === 'helius' ? '' : up === 'openai' ? 'v1/models' : up === 'openrouter' ? 'api/v1/chat/completions' : 'v1/models';
@@ -164,7 +186,42 @@ export async function storeDetectedKey(value: string, upstream?: string): Promis
   });
   const body = await r.json().catch(() => ({ detail: 'store failed' }));
   if (!r.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
-  return body;
+  const saved = body as { stored: boolean; id: string; upstream: string; prefix: string };
+  // Same session /manage/vault the Vault page lists. Upsert-by-value, no extra row.
+  try {
+    await apiFetch('/manage/store', {
+      method: 'POST',
+      body: JSON.stringify({
+        upstream: saved.upstream || upstream || 'custom',
+        apiKey: value,
+        name: `${saved.upstream || upstream || 'custom'} key`,
+      }),
+    });
+  } catch {
+    /* keychain row is already in vault_shim */
+  }
+  emitVaultChanged();
+  return saved;
+}
+
+export async function storeDetectedKeys(
+  raw: string,
+  forcedUpstream?: string,
+): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }[]> {
+  const hits = extractDetectedKeys(raw);
+  if (!hits.length) {
+    const fallback = extractDetectedKey(raw);
+    if (!fallback) throw new Error('Paste a key first');
+    hits.push({
+      upstream: forcedUpstream || detectUpstream(fallback).upstream || 'custom',
+      key: fallback,
+    });
+  }
+  const stored = [];
+  for (const hit of hits) {
+    stored.push(await storeDetectedKey(hit.key, forcedUpstream || hit.upstream));
+  }
+  return stored;
 }
 
 export async function callKeychain(upstream: string, prompt = 'KeyShield keychain ping'): Promise<KeychainCallResult> {

@@ -14,9 +14,9 @@ import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openroute
 import {
   callKeychain,
   detectUpstream,
-  extractDetectedKey,
+  extractDetectedKeys,
   fetchKeychainHome,
-  storeDetectedKey,
+  storeDetectedKeys,
   type KeychainCallResult,
   type KeychainHome,
 } from '../../lib/keychain';
@@ -69,13 +69,13 @@ export const HomeSection: React.FC<Props> = ({
   const conn = home?.connection;
 
   const savePaste = async () => {
-    const raw = extractDetectedKey(paste);
-    if (!raw) { setOk(false); setMsg('Paste a key first'); return; }
+    const hits = extractDetectedKeys(paste);
+    if (!hits.length) { setOk(false); setMsg('Paste a key first'); return; }
     setBusy('save'); setMsg(null);
     try {
-      const stored = await storeDetectedKey(raw, detected.upstream ?? undefined);
+      const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       setOk(true);
-      setMsg(`Saved ${stored.upstream} ${stored.prefix}`);
+      setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
       setPaste('');
       onRefresh();
     } catch (err) {

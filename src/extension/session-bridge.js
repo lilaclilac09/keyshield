@@ -68,21 +68,41 @@
     try { window.postMessage({ __ks_vault_changed: true }, location.origin); } catch { /* noop */ }
   }
 
+  function pushPendingVault() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    chrome.storage.local.get(['ks_pending_vault'], (stored) => {
+      const pending = stored && stored.ks_pending_vault;
+      if (!Array.isArray(pending) || !pending.length) return;
+      try { window.postMessage({ __ks_pending_vault: pending }, location.origin); } catch { /* noop */ }
+    });
+  }
+
   announce();
   shareSession();
   capturePageToken();
-  [400, 1200, 3000, 8000].forEach((ms) => setTimeout(capturePageToken, ms));
+  pushPendingVault();
+  [400, 1200, 3000, 8000].forEach((ms) => {
+    setTimeout(capturePageToken, ms);
+    setTimeout(pushPendingVault, ms);
+  });
   window.addEventListener('ks-auth-changed', capturePageToken);
   window.addEventListener('storage', capturePageToken);
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.__ks_ext_request) announce();
     if (e.data.__ks_ext_request_session) shareSession();
+    if (e.data.__ks_ext_request_pending_vault) pushPendingVault();
     if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
+    if (e.data.__ks_pending_vault_cleared && chrome.storage && chrome.storage.local) {
+      try { chrome.storage.local.set({ ks_pending_vault: [] }); } catch { /* noop */ }
+    }
   });
   try {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg && msg.type === 'KS_VAULT_SAVED') announceVaultSaved();
+      if (msg && msg.type === 'KS_VAULT_SAVED') {
+        announceVaultSaved();
+        pushPendingVault();
+      }
     });
   } catch { /* noop */ }
 })();

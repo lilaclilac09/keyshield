@@ -332,6 +332,20 @@ async function notifyDashboardVaultSaved() {
   }
 }
 
+async function queuePendingVault(hit) {
+  const upstream = String((hit && hit.upstream) || '').toLowerCase().trim();
+  const value = String((hit && hit.value) || '');
+  if (!upstream || !value) return;
+  try {
+    const stored = await chrome.storage.local.get(['ks_pending_vault']);
+    const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+    const id = `${upstream}:${value}`;
+    if (rows.some((row) => `${row.upstream}:${row.value}` === id)) return;
+    rows.push({ upstream, value, at: Date.now() });
+    await chrome.storage.local.set({ ks_pending_vault: rows.slice(-40) });
+  } catch { /* noop */ }
+}
+
 async function directStore({ upstream, value }) {
   try {
     const { token } = await getStoredToken();
@@ -374,8 +388,10 @@ async function directStore({ upstream, value }) {
         return { ok: false, reason: 'token-expired' };
       }
       if (!r.ok) {
+        try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
         return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
       }
+      try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
       try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
       return { ok: true };
     } catch (e) {

@@ -56,3 +56,29 @@ export function emitVaultChanged(): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(VAULT_CHANGED_EVENT));
 }
+
+export type PendingVaultHit = { upstream?: string; value?: string; key?: string };
+
+export async function flushPendingVaultHits(hits: PendingVaultHit[]): Promise<number> {
+  const { apiFetch } = await import('./auth');
+  let saved = 0;
+  const seen = new Set<string>();
+  for (const hit of hits || []) {
+    const upstream = String(hit?.upstream || '').toLowerCase().trim();
+    const value = String(hit?.value || hit?.key || '').trim();
+    if (!upstream || !value) continue;
+    const id = `${upstream}:${value}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const r = await apiFetch('/manage/store', {
+      method: 'POST',
+      body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
+    });
+    if (r.ok) saved += 1;
+  }
+  if (saved > 0) emitVaultChanged();
+  if (typeof window !== 'undefined') {
+    try { window.postMessage({ __ks_pending_vault_cleared: true }, window.location.origin); } catch { /* noop */ }
+  }
+  return saved;
+}

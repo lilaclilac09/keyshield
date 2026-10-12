@@ -167,6 +167,53 @@ def test_store_helius_dashboard_uuid_without_passkey(tmp_path, monkeypatch):
     assert secret not in str(body)
 
 
+def test_five_helius_keys_store_then_manage_vault_lists_all(tmp_path, monkeypatch):
+    """Detect used to overwrite one helius row — Vault then looked empty/wrong."""
+    client, token = _token(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async def _no_rpc(address: str, helius_key: str | None):
+        return {
+            "address": address or None,
+            "sol": None,
+            "sol_lamports": None,
+            "usdc": None,
+            "usdc_micro": None,
+            "cache": "skip",
+            "rpc": "none",
+            "lowest_ttl_sec": 2,
+            "error": None,
+        }
+
+    monkeypatch.setattr(kc, "fetch_wallet_balances", _no_rpc)
+    secrets = [
+        "10470584-67a9-4abc-8def-123456787761",
+        "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+        "310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2",
+        "410e4c2a-91b0-4c3d-a333-ccccccccccc3",
+        "510e4c2a-91b0-4c3d-a444-ddddddddddd4",
+    ]
+    for secret in secrets:
+        stored = client.post("/keychain/store", headers=headers, json={"value": secret})
+        assert stored.status_code == 200
+        assert stored.json()["upstream"] == "helius"
+        assert secret not in str(stored.json())
+
+    listed = client.get("/manage/vault", headers=headers).json()
+    helius = [row for row in listed if row.get("upstream") == "helius"]
+    assert len(helius) == 5
+    dumped = str(listed)
+    for secret in secrets:
+        assert secret not in dumped
+        assert secret[:6] in dumped or secret[-4:] in dumped
+
+    home = client.get("/keychain/home", headers=headers)
+    assert home.status_code == 200
+    apis = [row for row in home.json()["apis"] if row["upstream"] == "helius"]
+    assert len(apis) == 5
+    assert secrets[0] not in str(home.json())
+
+
 def test_home_unauthorized():
     client = TestClient(app)
     assert client.get("/keychain/home").status_code == 401

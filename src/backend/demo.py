@@ -193,7 +193,11 @@ def resolve_upstream_key(user_id: str, upstream: str) -> tuple[str | None, str]:
 
 
 def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
-    """Write a pasted key into vault_items. Returns the row id only."""
+    """Write a pasted key into vault_items. Returns the row id only.
+
+    Same (user, upstream, value) upserts. A new Helius UUID is a new row
+    so Vault can list all five dashboard keys instead of overwriting one.
+    """
     import time
     import uuid
 
@@ -203,18 +207,18 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
     vault_mod._DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with vault_mod._db() as conn:
         existing = conn.execute(
-            "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? "
+            "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? AND value = ? "
             "ORDER BY created_at DESC LIMIT 1",
-            (user_id, upstream),
+            (user_id, upstream, api_key),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE vault_items SET value = ?, updated_at = ?, name = ? "
+                "UPDATE vault_items SET updated_at = ?, name = ? "
                 "WHERE id = ? AND user_id = ?",
-                (api_key, now, f"{upstream} key", existing[0], user_id),
+                (now, f"{upstream} key", existing[0], user_id),
             )
             return str(existing[0])
-        item_id = f"ks_demo_{upstream}_{uuid.uuid4().hex[:8]}"
+        item_id = f"ks_{upstream}_{uuid.uuid4().hex[:8]}"
         conn.execute(
             """
             INSERT INTO vault_items
@@ -226,11 +230,11 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
             (
                 item_id,
                 user_id,
-                f"{upstream} demo",
+                f"{upstream} key",
                 "api_key",
                 upstream,
                 api_key,
-                '["demo","ai"]',
+                '["keychain"]',
                 now,
                 now,
                 None,

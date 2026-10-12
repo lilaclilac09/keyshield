@@ -8,7 +8,8 @@ import {
   shouldRefreshVaultOnVisit,
 } from "../src/web/lib/vault-list";
 import { needsPasskey } from "../src/web/lib/zk-verify";
-import { detectUpstream } from "../src/web/lib/keychain";
+import { detectUpstream, extractDetectedKeys } from "../src/web/lib/keychain";
+import { flushPendingVaultHits } from "../src/web/lib/vault-list";
 
 const root = resolve(__dirname, "..");
 
@@ -57,6 +58,19 @@ describe("passkey is not required to save", () => {
     expect(detectUpstream("10470584-67a9-4abc-8def-123456787761").upstream).toBe("helius");
   });
 
+  it("extracts all five Helius UUIDs from one paste so Save writes five rows", () => {
+    const blob = [
+      "10470584-67a9-4abc-8def-123456787761",
+      "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+      "310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2",
+      "410e4c2a-91b0-4c3d-a333-ccccccccccc3",
+      "510e4c2a-91b0-4c3d-a444-ddddddddddd4",
+    ].join("\n");
+    const hits = extractDetectedKeys(blob);
+    expect(hits).toHaveLength(5);
+    expect(hits.every((hit) => hit.upstream === "helius")).toBe(true);
+  });
+
   it("Vault / Home save and addItem do not prompt passkey", () => {
     const vault = readFileSync(resolve(root, "src/web/components/sections/VaultSection.tsx"), "utf8");
     const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
@@ -79,6 +93,22 @@ describe("Vault page saved-key hero", () => {
     expect(src).toContain("item.value");
     expect(src).toContain("item.name");
     expect(src).toContain("/manage/vault");
+    expect(src).toContain("storeDetectedKeys");
+    expect(src).toContain("extractDetectedKeys");
+  });
+});
+
+describe("flushPendingVaultHits", () => {
+  it("is the dashboard write path for extension-queued keys", () => {
+    expect(flushPendingVaultHits).toBeTypeOf("function");
+    const hook = readFileSync(resolve(root, "src/web/App.tsx"), "utf8");
+    expect(hook).toContain("flushPendingVaultHits");
+    expect(hook).toContain("__ks_pending_vault");
+    const bridge = readFileSync(resolve(root, "src/extension/session-bridge.js"), "utf8");
+    expect(bridge).toContain("__ks_pending_vault");
+    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
+    expect(bg).toContain("queuePendingVault");
+    expect(bg).toContain("ks_pending_vault");
   });
 });
 
