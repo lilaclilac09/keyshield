@@ -529,40 +529,8 @@ async function fillActiveTab() {
 }
 
 async function copyPreferredCursorKey() {
-  let resp;
-  try {
-    resp = await chrome.runtime.sendMessage({
-      type: "GET_KEYS_FOR_DOMAIN",
-      domain: "cursor.com",
-      pathname: "/settings",
-    });
-  } catch (e) {
-    paintCopyStatus("copy · failed", "err");
-    setStatus(`Copy failed: ${String(e)}`, "err", 3000);
-    return;
-  }
-  if (!resp || !resp.ok || !Array.isArray(resp.keys) || !resp.keys.length) {
-    paintCopyStatus("copy · no saved key", "err");
-    setStatus("No saved Cursor/OpenAI key. Sign in and save a key first.", "err", 4000);
-    return;
-  }
-  const order = ["cursor", "openai", "openrouter", "anthropic", "groq"];
-  let key = null;
-  for (const upstream of order) {
-    key = resp.keys.find((k) => k.upstream === upstream && k.value);
-    if (key) break;
-  }
-  key = key || resp.keys[0];
-  try {
-    await navigator.clipboard.writeText(key.value);
-  } catch (e) {
-    paintCopyStatus("copy · clipboard blocked", "err");
-    setStatus(`Clipboard blocked: ${String(e)}`, "err", 3500);
-    return;
-  }
-  const copied = `copy · Copied ${key.upstream}`;
-  paintCopyStatus(copied, "ok");
-  setStatus(`Copied ${key.upstream} key — paste into the Cursor API black box (click Show first).`, "ok", 5000);
+  // Leftover "Copy Cursor key" must paste into the tab, not the clipboard.
+  return fillActiveTab();
 }
 
 async function allowDetectAndStore() {

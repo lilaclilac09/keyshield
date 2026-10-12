@@ -773,6 +773,11 @@ function ksLooksLikeLoginPassword(hay) {
   return /\bpassword\b/.test(text) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(text);
 }
 
+function ksLooksLikeKeyNameField(hay) {
+  const text = String(hay || '').toLowerCase();
+  return /api[\s_-]?key[\s_-]?name|key[\s_-]?name|name[\s_-]?your[\s_-]?key|display[\s_-]?name/.test(text);
+}
+
 function ksPreferredCursorFillKey(keys) {
   const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
   for (const upstream of order) {
@@ -786,6 +791,7 @@ function ksPickKeyForInput(el, keys) {
   if (!keys || !keys.length) return null;
   const hay = ksInputHaystack(el);
   const type = (el.getAttribute('type') || '').toLowerCase();
+  if (ksLooksLikeKeyNameField(hay)) return null;
   const wanted = ksMatchUpstreamForHaystack(hay);
   if (wanted) {
     const labeled = keys.find((k) => k.upstream === wanted);
@@ -802,6 +808,7 @@ function ksPickKeyForInput(el, keys) {
 function ksLooksLikeCursorApiBlank(el, hay, type) {
   if (!ksIsCursorFillContext()) return false;
   if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
   return type === 'password' || !String(hay || '').trim();
 }
@@ -817,6 +824,7 @@ function ksLooksLikeKeyInput(el) {
   }
   const hay = ksInputHaystack(el);
   if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
   return ksLooksLikeCursorApiBlank(el, hay, type);
 }
@@ -1091,6 +1099,23 @@ function isKeyShieldDashboardHost() {
       }
     });
   };
+  function ksCaptureSecretFromText(raw) {
+    const text = String(raw || '').trim();
+    if (!text || /[•…]|\.{3}/.test(text)) return;
+    for (const provider of PROVIDERS) {
+      for (const re of provider.patterns) {
+        re.lastIndex = 0;
+        const found = text.match(re);
+        if (!found || !found[0] || found[0].length < (provider.minLen || 12)) continue;
+        sendToBackground({
+          type: 'SAVE_KEY',
+          silent: true,
+          payload: { upstream: provider.id, name: `${provider.name} key`, value: found[0], domain: HOST },
+        }).then(() => refresh()).catch(() => {});
+        return;
+      }
+    }
+  }
   refresh();
   setInterval(() => {
     if (!ksCachedKeys || !ksCachedKeys.length) refresh();
@@ -1098,10 +1123,31 @@ function isKeyShieldDashboardHost() {
   }, 2000);
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
-      if (area === 'local' && changes.ks_token && changes.ks_token.newValue) refresh();
+      if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();
       if (area === 'session' && changes.ks_vault_key && changes.ks_vault_key.newValue) refresh();
     });
   } catch { /* noop */ }
+  try {
+    document.addEventListener('copy', () => {
+      let t = '';
+      try { t = String(window.getSelection ? window.getSelection() : ''); } catch { t = ''; }
+      if (t) ksCaptureSecretFromText(t);
+      else if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(ksCaptureSecretFromText).catch(() => {});
+      }
+    });
+  } catch { /* noop */ }
+  if (ksIsCursorFillHost(location.hostname)) {
+    document.addEventListener('click', (ev) => {
+      const hit = ev.target && ev.target.closest && ev.target.closest('button, [role="button"], [aria-label*="copy" i]');
+      if (!hit) return;
+      setTimeout(() => {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          navigator.clipboard.readText().then(ksCaptureSecretFromText).catch(() => {});
+        }
+      }, 250);
+    }, true);
+  }
   try {
     chrome.runtime?.onMessage?.addListener?.((msg, _sender, sendResponse) => {
       if (!msg) return false;

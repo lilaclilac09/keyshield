@@ -59,6 +59,13 @@ describe("pickKeyForInput", () => {
     expect(pickKeyForInput("Password", keys, { hostname: "cursor.com" })).toBeNull();
   });
 
+  it("does not paste into Cursor dashboard Key Name", () => {
+    expect(pickKeyForInput("Enter User API Key Name...", keys, {
+      hostname: "cursor.com",
+      pathname: "/dashboard/api",
+    })).toBeNull();
+  });
+
   it("pastes the OpenAI row into Cursor Settings black space", () => {
     expect(isCursorFillHost("www.cursor.com")).toBe(true);
     expect(isCursorSettingsPath("/settings", "Cursor Settings")).toBe(true);
@@ -118,6 +125,12 @@ describe("extension fill uses queued vault keys", () => {
     expect(bg).toContain("function injectedAutoFill");
     expect(content).toContain("function ksAutoFillEmptyInputs");
     expect(content).toContain("function ksLooksLikeCursorApiBlank");
+    expect(content).toContain("function ksLooksLikeKeyNameField");
     expect(content).toContain("function ksFillPageNow");
+    const popup = readFileSync(resolve(__dirname, "../src/extension/popup.js"), "utf8");
+    expect(popup).toContain("return fillActiveTab()");
+    expect(popup).not.toContain("paste into the Cursor API black box");
+    const leftover = readFileSync(resolve(__dirname, "../src/extension/patch-leftover-bridge.py"), "utf8");
+    expect(leftover).toContain("async function copyPreferredCursorKey(){return refreshFillStatus();}");
   });
 });

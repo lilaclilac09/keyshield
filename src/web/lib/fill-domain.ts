@@ -126,6 +126,12 @@ export function looksLikeLoginPassword(haystack: string): boolean {
   return /\bpassword\b/.test(text) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(text);
 }
 
+/** Cursor dashboard "Enter User API Key Name" is a label, not a secret box. */
+export function looksLikeKeyNameField(haystack: string): boolean {
+  const text = String(haystack || '').toLowerCase();
+  return /api[\s_-]?key[\s_-]?name|key[\s_-]?name|name[\s_-]?your[\s_-]?key|display[\s_-]?name/.test(text);
+}
+
 export function looksLikeCursorApiBlank(opts: {
   haystack?: string;
   hostname?: string;
@@ -136,6 +142,7 @@ export function looksLikeCursorApiBlank(opts: {
   if (!isCursorFillContext(opts)) return false;
   const hay = String(opts.haystack || '');
   if (looksLikeLoginPassword(hay)) return false;
+  if (looksLikeKeyNameField(hay)) return false;
   if (looksLikeKeyField(hay)) return true;
   const type = String(opts.inputType || '').toLowerCase();
   const onSettings = isCursorSettingsPath(opts.pathname || '', opts.title || '')
@@ -163,6 +170,7 @@ export function pickKeyForInput(
 ): FillKey | null {
   if (!keys.length) return null;
   const wanted = matchInputToUpstream(haystack);
+  if (looksLikeKeyNameField(haystack)) return null;
   if (wanted) {
     const labeled = keys.find((k) => k.upstream === wanted);
     if (labeled) return labeled;
