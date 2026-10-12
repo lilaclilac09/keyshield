@@ -71,6 +71,7 @@ describe("classifyDetectedKey", () => {
       hostname: "dashboard.helius.dev",
     })).toEqual([]);
     expect(formatHarvestSaveResult({ saved: 5, failed: 0 })).toBe("Saved 5 keys to KeyShield vault.");
+    expect(formatHarvestSaveResult({ saved: 0, failed: 5, queued: 5 })).toBe("Saved 5 keys to KeyShield vault.");
   });
 
   it("ignores ordinary sentences", () => {

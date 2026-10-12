@@ -23,7 +23,13 @@ import {
   getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
-import { isVaultListPayload, parseVaultListPayload, VAULT_CHANGED_EVENT } from '../lib/vault-list';
+import {
+  isVaultListPayload,
+  parseVaultListPayload,
+  previewPendingVaultHits,
+  VAULT_CHANGED_EVENT,
+  type PendingVaultHit,
+} from '../lib/vault-list';
 
 const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
   openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
@@ -97,6 +103,7 @@ function entryToVault(entry: VaultEntry): VaultItem {
 
 export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
+  const [pendingHits, setPendingHits] = useState<PendingVaultHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
@@ -168,16 +175,38 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || !e.data) return;
+      if (Array.isArray(e.data.__ks_pending_vault)) {
+        setPendingHits(e.data.__ks_pending_vault as PendingVaultHit[]);
+      }
+      if (e.data.__ks_pending_vault_cleared) setPendingHits([]);
+      if (e.data.__ks_vault_changed) refresh();
+    };
+    window.addEventListener('message', onMsg);
+    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
+    return () => window.removeEventListener('message', onMsg);
+  }, [refresh]);
+
+  const mergedItems = useMemo(() => {
+    if (!pendingHits.length) return vaultItems;
+    const pendingItems = previewPendingVaultHits(pendingHits).map(serverRowToVault);
+    const seen = new Set(vaultItems.map((item) => `${item.name}:${item.value}`));
+    const extra = pendingItems.filter((item) => !seen.has(`${item.name}:${item.value}`));
+    return extra.length ? vaultItems.concat(extra) : vaultItems;
+  }, [vaultItems, pendingHits]);
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    if (!q) return vaultItems;
-    return vaultItems.filter(
+    if (!q) return mergedItems;
+    return mergedItems.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.domain?.toLowerCase().includes(q) ||
         item.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [vaultItems, searchQuery]);
+  }, [mergedItems, searchQuery]);
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
@@ -235,7 +264,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   return {
     items: filteredItems,
-    allItems: vaultItems,
+    allItems: mergedItems,
     loading,
     error,
     unlocked,

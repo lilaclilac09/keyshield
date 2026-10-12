@@ -72,7 +72,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <p className="text-[13px] text-[#8a96c2]">
           {searchQuery
             ? 'No secrets match your search'
-            : 'Sign in, then detect. Popup and this Vault list the same /manage/vault rows.'}
+            : 'No keys in this session yet. Detect writes this list.'}
         </p>
       )}
     </div>
@@ -94,7 +94,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
         <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
-        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Paste the keys here or detect. Save writes /manage/store — five Helius UUIDs stay five rows on this list.'}</p>
+        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Detect on a key page. This block is where saved keys show.'}</p>
         {!searchQuery && (
           <>
             <button onClick={onAdd} className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors">

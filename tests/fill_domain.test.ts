@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assignKeysToInputs,
@@ -103,5 +105,19 @@ describe("pickKeyForInput", () => {
       { upstream: "openrouter", value: "sk-or-v1-LOCALONLY" },
     ], { hostname: "cursor.com", inputType: "password" });
     expect(leftover?.upstream).toBe("openrouter");
+  });
+});
+
+describe("extension fill uses queued vault keys", () => {
+  it("background returns pending keys so Cursor blanks get pasted", () => {
+    const bg = readFileSync(resolve(__dirname, "../src/extension/background.js"), "utf8");
+    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
+    expect(bg).toContain("function pendingKeysForUpstreams");
+    expect(bg).toContain("function getKeysForDomain");
+    expect(bg).toContain("function fillCursorTabsFromPending");
+    expect(bg).toContain("function injectedAutoFill");
+    expect(content).toContain("function ksAutoFillEmptyInputs");
+    expect(content).toContain("function ksLooksLikeCursorApiBlank");
+    expect(content).toContain("function ksFillPageNow");
   });
 });

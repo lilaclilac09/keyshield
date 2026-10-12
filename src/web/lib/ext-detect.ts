@@ -75,9 +75,15 @@ export function harvestKeysFromPageText(opts: {
 export function formatHarvestSaveResult(opts: {
   saved: number;
   failed: number;
+  queued?: number;
 }): string {
   const saved = Math.max(0, Math.floor(Number(opts.saved) || 0));
   const failed = Math.max(0, Math.floor(Number(opts.failed) || 0));
+  const queued = Math.max(0, Math.floor(Number(opts.queued) || 0));
+  const inVault = saved + queued;
+  if (inVault > 0) {
+    return `Saved ${inVault} key${inVault === 1 ? '' : 's'} to KeyShield vault.`;
+  }
   if (saved > 0 && failed === 0) {
     return `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`;
   }
@@ -171,6 +177,7 @@ export function buildDetectPanelModel(opts: {
   collected: Array<{ upstream: string; masked: string; saved?: boolean }>;
   saved: number;
   failed: number;
+  queued?: number;
   filled: number;
   ms?: number | null;
 }): {
@@ -183,11 +190,12 @@ export function buildDetectPanelModel(opts: {
   const rows = Array.isArray(opts.collected) ? opts.collected : [];
   const saved = Math.max(0, Math.floor(Number(opts.saved) || 0));
   const failed = Math.max(0, Math.floor(Number(opts.failed) || 0));
+  const queued = Math.max(0, Math.floor(Number(opts.queued) || 0));
   return {
     signed: formatSignedStatus(!!opts.signed),
     collected: formatCollectedCount(rows.length),
     filled: formatFilledLine({ filled: opts.filled, ms: opts.ms }),
-    save: formatHarvestSaveResult({ saved, failed }),
+    save: formatHarvestSaveResult({ saved, failed, queued }),
     showSignin: shouldShowDetectSignin(!!opts.signed),
   };
 }

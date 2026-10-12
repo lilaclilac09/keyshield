@@ -9,7 +9,13 @@ import {
 } from "../src/web/lib/vault-list";
 import { needsPasskey } from "../src/web/lib/zk-verify";
 import { detectUpstream, extractDetectedKeys } from "../src/web/lib/keychain";
-import { flushPendingVaultHits } from "../src/web/lib/vault-list";
+import {
+  flushPendingVaultHits,
+  previewPendingVaultHits,
+  mergeVaultRows,
+  pendingHitsToFillKeys,
+  maskVaultPreview,
+} from "../src/web/lib/vault-list";
 
 const root = resolve(__dirname, "..");
 
@@ -98,6 +104,33 @@ describe("Vault page saved-key hero", () => {
   });
 });
 
+describe("pending vault preview", () => {
+  it("turns queued detect hits into Vault rows and Cursor fill keys", () => {
+    const hits = [
+      { upstream: "helius", value: "10470584-67a9-4abc-8def-123456787761" },
+      { upstream: "openai", value: "sk-proj-LOCALONLYFILLTEST123456" },
+      { upstream: "helius", value: "10470584-67a9-4abc-8def-123456787761" },
+    ];
+    const rows = previewPendingVaultHits(hits);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].upstream).toBe("helius");
+    expect(rows[0].masked_value).toBe(maskVaultPreview(hits[0].value));
+    expect(JSON.stringify(rows)).not.toContain("123456787761");
+    const merged = mergeVaultRows([], rows);
+    expect(merged).toHaveLength(2);
+    const fill = pendingHitsToFillKeys(hits, ["openai", "anthropic"]);
+    expect(fill).toEqual([
+      { id: "pending-openai", upstream: "openai", name: "openai key", value: "sk-proj-LOCALONLYFILLTEST123456" },
+    ]);
+    const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
+    expect(hook).toContain("previewPendingVaultHits");
+    expect(hook).toContain("__ks_pending_vault");
+    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
+    expect(bg).toContain("function pendingKeysForUpstreams");
+    expect(bg).toContain("ks_pending_vault");
+  });
+});
+
 describe("flushPendingVaultHits", () => {
   it("is the dashboard write path for extension-queued keys", () => {
     expect(flushPendingVaultHits).toBeTypeOf("function");
@@ -109,6 +142,18 @@ describe("flushPendingVaultHits", () => {
     const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
     expect(bg).toContain("queuePendingVault");
     expect(bg).toContain("ks_pending_vault");
+    expect(bg).toContain("pendingApis");
+  });
+});
+
+describe("leftover harvest still queues when HTTP store fails", () => {
+  it("does not bail before writing ks_pending_vault", () => {
+    const leftover = readFileSync(resolve(root, "src/extension/patch-leftover-bridge.py"), "utf8");
+    expect(leftover).not.toContain("if(!token)return{saved:0}");
+    expect(leftover).toContain("leftoverQueuePending");
+    expect(leftover).toContain("leftoverFillCursorTabs");
+    expect(leftover).toContain("sk-(?:proj-|svcacct-|admin-)?");
+    expect(leftover).toContain("ks_pending_vault");
   });
 });
 

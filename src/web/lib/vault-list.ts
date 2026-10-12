@@ -59,6 +59,67 @@ export function emitVaultChanged(): void {
 
 export type PendingVaultHit = { upstream?: string; value?: string; key?: string };
 
+export function maskVaultPreview(value: string): string {
+  const raw = String(value || '');
+  if (raw.length <= 18) return raw;
+  return `${raw.slice(0, 8)}••••${raw.slice(-4)}`;
+}
+
+/** Show queued detect hits on Vault before /manage/vault catches up. */
+export function previewPendingVaultHits(hits: PendingVaultHit[]): VaultListRow[] {
+  const out: VaultListRow[] = [];
+  const seen = new Set<string>();
+  for (const hit of hits || []) {
+    const upstream = String(hit?.upstream || '').toLowerCase().trim();
+    const value = String(hit?.value || hit?.key || '').trim();
+    if (!upstream || !value) continue;
+    const id = `${upstream}:${value}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id: `pending-${out.length}-${upstream}`,
+      name: `${upstream} key`,
+      upstream,
+      masked_value: maskVaultPreview(value),
+    });
+  }
+  return out;
+}
+
+export function mergeVaultRows(server: VaultListRow[], pending: VaultListRow[]): VaultListRow[] {
+  const rows = Array.isArray(server) ? server.slice() : [];
+  const seen = new Set(
+    rows.map((row) => `${String(row.upstream || '').toLowerCase()}:${String(row.masked_value || row.id || '')}`),
+  );
+  for (const row of pending || []) {
+    const key = `${String(row.upstream || '').toLowerCase()}:${String(row.masked_value || row.id || '')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** Cursor / site fill uses these raw values when /manage/vault is on another host. */
+export function pendingHitsToFillKeys(
+  hits: PendingVaultHit[],
+  upstreams: string[],
+): Array<{ id: string; upstream: string; name: string; value: string }> {
+  const wanted = new Set((upstreams || []).map((u) => String(u || '').toLowerCase().trim()).filter(Boolean));
+  const out: Array<{ id: string; upstream: string; name: string; value: string }> = [];
+  const seen = new Set<string>();
+  for (const hit of hits || []) {
+    const upstream = String(hit?.upstream || '').toLowerCase().trim();
+    const value = String(hit?.value || hit?.key || '').trim();
+    if (!upstream || !value) continue;
+    if (wanted.size && !wanted.has(upstream)) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push({ id: `pending-${upstream}`, upstream, name: `${upstream} key`, value });
+  }
+  return out;
+}
+
 export async function flushPendingVaultHits(hits: PendingVaultHit[]): Promise<number> {
   const { apiFetch } = await import('./auth');
   let saved = 0;
