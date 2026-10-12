@@ -6,6 +6,8 @@ import {
   isCursorFillHost,
   isCursorKeyFetchContext,
   isCursorSettingsPath,
+  isFillablePageUrl,
+  isLocalFillDemoPath,
   looksLikeCursorApiBlank,
   matchInputToUpstream,
   pickKeyForInput,
@@ -90,6 +92,26 @@ describe("pickKeyForInput", () => {
     })).toBe(true);
   });
 
+  it("treats local journey / story fixtures as Cursor fill demos", () => {
+    expect(isLocalFillDemoPath("/journey/cursor.html")).toBe(true);
+    expect(isLocalFillDemoPath("/story")).toBe(true);
+    expect(isCursorKeyFetchContext({
+      hostname: "127.0.0.1",
+      pathname: "/journey/cursor.html",
+    })).toBe(true);
+    expect(isFillablePageUrl("http://127.0.0.1:5173/cursor-settings-fill-demo.html")).toBe(true);
+    expect(isFillablePageUrl("chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/cursor-settings-fill-demo.html")).toBe(true);
+    expect(isFillablePageUrl("chrome://extensions")).toBe(false);
+  });
+
+  it("auto-fills an API Key blank when several stored keys exist", () => {
+    expect(pickKeyForInput("API Key", keys)?.value).toBe("sk-proj-LOCALONLY");
+    expect(pickKeyForInput("API Key", keys, {
+      hostname: "127.0.0.1",
+      pathname: "/journey/cursor.html",
+    })?.upstream).toBe("openai");
+  });
+
   it("assigns leftover keys to extra unlabeled Cursor black spaces", () => {
     const assigned = assignKeysToInputs(
       [
@@ -127,10 +149,19 @@ describe("extension fill uses queued vault keys", () => {
     expect(content).toContain("function ksLooksLikeCursorApiBlank");
     expect(content).toContain("function ksLooksLikeKeyNameField");
     expect(content).toContain("function ksFillPageNow");
+    expect(content).toContain("function ksIsLocalFillDemo");
+    expect(bg).toContain("function _isFillableTabUrl");
+    expect(bg).toContain("fillCursorTabsFromPending");
+    expect(bg).toContain("/journey/cursor");
+    expect(bg).toContain("GET_KEYS_FOR_DOMAIN");
     const popup = readFileSync(resolve(__dirname, "../src/extension/popup.js"), "utf8");
     expect(popup).toContain("return fillActiveTab()");
     expect(popup).not.toContain("paste into the Cursor API black box");
     const leftover = readFileSync(resolve(__dirname, "../src/extension/patch-leftover-bridge.py"), "utf8");
     expect(leftover).toContain("async function copyPreferredCursorKey(){return refreshFillStatus();}");
+    const demo = readFileSync(resolve(__dirname, "../src/web/public/cursor-settings-fill-demo.html"), "utf8");
+    expect(demo).toContain("OpenAI API Key");
+    expect(demo).toContain("127.0.0.1:5173/cursor-settings-fill-demo.html");
+    expect(content).toContain("ksIsCursorFillContext() ? remaining[0]");
   });
 });

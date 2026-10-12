@@ -615,6 +615,7 @@ async function bulkSave() {
         name:     `${info.provider.name} (${HOST})`,
         value:    key,
         domain:   HOST,
+        pageTitle: document.title || '',
       },
     });
 
@@ -693,12 +694,26 @@ function ksIsCursorFillHost(domain) {
     || host === 'cursor.demo.localhost';
 }
 
+function ksIsLocalFillDemo() {
+  const path = String(location.pathname || '').toLowerCase();
+  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+    return path.includes('cursor-settings-fill-demo')
+      || path.includes('/journey/cursor')
+      || /(?:^|\/)cursor\.html$/.test(path);
+  }
+  return path.includes('cursor-settings-fill-demo')
+    || path.includes('/journey/cursor')
+    || /(?:^|\/)cursor\.html$/.test(path)
+    || path === '/story'
+    || path.startsWith('/story/');
+}
+
 function ksIsCursorFillContext() {
   const host = location.hostname;
   const path = String(location.pathname || '').toLowerCase();
   const title = String(document.title || '').toLowerCase();
   if (ksIsCursorFillHost(host)) return true;
-  if (path.includes('cursor-settings-fill-demo')) return true;
+  if (ksIsLocalFillDemo()) return true;
   return title.includes('cursor') && /setting|api key|models/.test(`${path} ${title}`);
 }
 
@@ -801,7 +816,9 @@ function ksPickKeyForInput(el, keys) {
   if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
     return ksPreferredCursorFillKey(keys);
   }
-  if (keys.length === 1) return keys[0];
+  if (KS_KEY_FIELD_RE.test(hay)) return keys.find((k) => k.value) || null;
+  const unique = new Set(keys.map((k) => k.upstream));
+  if (unique.size === 1 || keys.length === 1) return keys.find((k) => k.value) || null;
   return null;
 }
 
@@ -823,8 +840,15 @@ function ksLooksLikeKeyInput(el) {
     return false;
   }
   const hay = ksInputHaystack(el);
-  if (ksLooksLikeLoginPassword(hay)) return false;
+  const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+  if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
+  if (ksIsCursorFillContext()) {
+    if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(hay)) return false;
+    if (KS_KEY_FIELD_RE.test(hay)) return true;
+    return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA';
+  }
+  if (ksLooksLikeLoginPassword(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
   return ksLooksLikeCursorApiBlank(el, hay, type);
 }
@@ -865,14 +889,28 @@ function ksAutoFillEmptyInputs(keys) {
   });
   const remaining = keys.filter((k) => k && k.value);
   let filled = 0;
-  for (const input of candidates) {
-    const key = ksPickKeyForInput(input, remaining);
-    if (!key || !key.value) continue;
+  const take = (input, key) => {
+    if (!key || !key.value) return false;
     ksSetValue(input, key.value);
     if (input.dataset) input.dataset.ksAutofilled = '1';
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
     if (idx >= 0) remaining.splice(idx, 1);
     filled += 1;
+    return true;
+  };
+  for (const input of candidates) {
+    if (String(input.value || '').trim()) continue;
+    const hay = ksInputHaystack(input);
+    const wanted = ksMatchUpstreamForHaystack(hay);
+    if (!wanted) continue;
+    const key = remaining.find((k) => k.upstream === wanted);
+    take(input, key);
+  }
+  for (const input of candidates) {
+    if (String(input.value || '').trim()) continue;
+    const key = ksPickKeyForInput(input, remaining)
+      || (ksIsCursorFillContext() ? remaining[0] : null);
+    if (key) take(input, key);
   }
   return filled;
 }
@@ -897,9 +935,18 @@ function ksSetValue(el, value) {
   // React/Vue use a native value setter that bypasses property descriptors.
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value');
+  const last = el.value;
+  try {
+    const tracker = el._valueTracker;
+    if (tracker && typeof tracker.setValue === 'function') tracker.setValue(last);
+  } catch { /* noop */ }
   if (setter && setter.set) setter.set.call(el, value);
   else el.value = value;
-  el.dispatchEvent(new Event('input',  { bubbles: true }));
+  try {
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: value, inputType: 'insertFromPaste' }));
+  } catch {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
   el.dispatchEvent(new Event('change', { bubbles: true }));
   ksFlashGreen(el);
 }
@@ -910,6 +957,7 @@ function ksRequestKeys() {
     domain: location.hostname,
     pathname: location.pathname,
     title: document.title,
+    url: location.href,
   }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
@@ -926,7 +974,12 @@ async function ksFillPageNow() {
   ksFillEnabled = true;
   ksCachedKeys = resp.keys;
   ksScanForInputs();
-  const filled = ksAutoFillEmptyInputs(resp.keys);
+  let filled = ksAutoFillEmptyInputs(resp.keys);
+  if (!filled) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    ksScanForInputs();
+    filled = ksAutoFillEmptyInputs(resp.keys);
+  }
   return { ok: true, filled, keys: resp.keys.length };
 }
 
@@ -1085,7 +1138,7 @@ function isKeyShieldDashboardHost() {
 // On load: ping background. Retry after login — a first miss used to disable
 // fill forever, which left the Cursor Settings black space empty.
 (function ksInitFillUI() {
-  if (isKeyShieldDashboardHost()) {
+  if (isKeyShieldDashboardHost() && !ksIsLocalFillDemo()) {
     ksFillEnabled = false;
     return;
   }
@@ -1110,7 +1163,7 @@ function isKeyShieldDashboardHost() {
         sendToBackground({
           type: 'SAVE_KEY',
           silent: true,
-          payload: { upstream: provider.id, name: `${provider.name} key`, value: found[0], domain: HOST },
+          payload: { upstream: provider.id, name: `${provider.name} (${HOST})`, value: found[0], domain: HOST, pageTitle: document.title || '' },
         }).then(() => refresh()).catch(() => {});
         return;
       }
@@ -1120,7 +1173,19 @@ function isKeyShieldDashboardHost() {
   setInterval(() => {
     if (!ksCachedKeys || !ksCachedKeys.length) refresh();
     else ksScanForInputs();
-  }, 2000);
+  }, 1500);
+  try {
+    let scanTimer = 0;
+    const mo = new MutationObserver(() => {
+      if (!ksCachedKeys || !ksCachedKeys.length) return;
+      if (scanTimer) return;
+      scanTimer = window.setTimeout(() => {
+        scanTimer = 0;
+        ksScanForInputs();
+      }, 80);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch { /* noop */ }
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
       if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();

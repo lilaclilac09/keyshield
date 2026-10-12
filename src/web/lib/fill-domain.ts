@@ -89,6 +89,30 @@ export function isCursorFillHost(domain: string): boolean {
   );
 }
 
+/** Local Vite / extension fixtures that stand in for Cursor Settings blanks. */
+export function isLocalFillDemoPath(pathname: string): boolean {
+  const path = String(pathname || '').toLowerCase();
+  return (
+    path.includes('cursor-settings-fill-demo')
+    || path.includes('/journey/cursor')
+    || /(?:^|\/)cursor\.html$/.test(path)
+    || path === '/story'
+    || path.startsWith('/story/')
+  );
+}
+
+/** http(s) pages plus our own chrome-extension fill demo. */
+export function isFillablePageUrl(url: string): boolean {
+  const raw = String(url || '');
+  if (/^https?:/i.test(raw)) return true;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'chrome-extension:' && isLocalFillDemoPath(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function isCursorSettingsPath(pathname: string, title = ''): boolean {
   const path = String(pathname || '').toLowerCase();
   const head = String(title || '').toLowerCase();
@@ -100,9 +124,8 @@ export function isCursorSettingsPath(pathname: string, title = ''): boolean {
 export function isCursorKeyFetchContext(opts?: { hostname?: string; pathname?: string }): boolean {
   if (isCursorFillHost(opts?.hostname || '')) return true;
   const host = normalizeHostname(opts?.hostname || '');
-  const path = String(opts?.pathname || '').toLowerCase();
   const local = host === '127.0.0.1' || host === 'localhost';
-  return local && path.includes('cursor-settings-fill-demo');
+  return local && isLocalFillDemoPath(opts?.pathname || '');
 }
 
 /** Which blanks on an already-authorized page should take a Cursor/model key. */
@@ -110,7 +133,7 @@ export function isCursorFillContext(opts?: { hostname?: string; pathname?: strin
   if (isCursorKeyFetchContext(opts)) return true;
   const path = String(opts?.pathname || '').toLowerCase();
   const title = String(opts?.title || '').toLowerCase();
-  if (path.includes('cursor-settings-fill-demo')) return true;
+  if (isLocalFillDemoPath(path)) return true;
   return title.includes('cursor') && isCursorSettingsPath(path, title);
 }
 
@@ -147,7 +170,7 @@ export function looksLikeCursorApiBlank(opts: {
   const type = String(opts.inputType || '').toLowerCase();
   const onSettings = isCursorSettingsPath(opts.pathname || '', opts.title || '')
     || isCursorFillHost(opts.hostname || '')
-    || String(opts.pathname || '').toLowerCase().includes('cursor-settings-fill-demo');
+    || isLocalFillDemoPath(opts.pathname || '');
   if (!onSettings) return false;
   return type === 'password' || !hay.trim();
 }
@@ -179,7 +202,9 @@ export function pickKeyForInput(
   if (isCursorFillContext(opts) || looksLikeCursorApiBlank({ ...opts, haystack })) {
     return preferredCursorFillKey(keys);
   }
-  if (keys.length === 1) return keys[0];
+  if (looksLikeKeyField(haystack)) return keys.find((k) => k.value) ?? null;
+  const unique = new Set(keys.map((k) => k.upstream));
+  if (unique.size === 1 || keys.length === 1) return keys.find((k) => k.value) ?? null;
   return null;
 }
 

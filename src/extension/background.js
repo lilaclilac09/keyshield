@@ -124,13 +124,60 @@ function _isCursorFillHost(domain) {
     || host === 'cursor.demo.localhost';
 }
 
-/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
-function _isCursorKeyFetchContext(domain, pathname) {
-  if (_isCursorFillHost(domain)) return true;
-  const host = _normalizeHostname(domain);
+function _isLocalFillDemoPath(pathname) {
   const path = String(pathname || '').toLowerCase();
+  return path.includes('cursor-settings-fill-demo')
+    || path.includes('/journey/cursor')
+    || /(?:^|\/)cursor\.html$/.test(path)
+    || path === '/story'
+    || path.startsWith('/story/');
+}
+
+function _isOwnExtensionFillDemo(url) {
+  const raw = String(url || '');
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'chrome-extension:') return false;
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id
+      && parsed.host !== chrome.runtime.id) return false;
+    return _isLocalFillDemoPath(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function _isFillableTabUrl(url) {
+  const raw = String(url || '');
+  if (/^https?:/i.test(raw)) return true;
+  return _isOwnExtensionFillDemo(raw);
+}
+
+/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
+function _isCursorKeyFetchContext(domain, pathname, url) {
+  if (_isCursorFillHost(domain)) return true;
+  if (_isOwnExtensionFillDemo(url)) return true;
+  const host = _normalizeHostname(domain);
   const local = host === '127.0.0.1' || host === 'localhost';
-  return local && path.includes('cursor-settings-fill-demo');
+  return local && _isLocalFillDemoPath(pathname);
+}
+
+function distinguishStoreName({ upstream, value, name, domain, pageTitle }) {
+  const raw = String(value || '');
+  const prefix = raw.length < 10 ? '••••' : `${raw.slice(0, 6)}…${raw.slice(-4)}`;
+  const given = String(name || '').trim();
+  const up = String(upstream || '').toLowerCase();
+  const generic = !given
+    || given.toLowerCase() === up
+    || given.toLowerCase() === `${up} key`
+    || given.toLowerCase() === `${up}key`;
+  if (given && !generic) return given.includes(prefix) ? given : `${given} · ${prefix}`;
+  const parts = [upstream || 'API', prefix];
+  const host = String(domain || '').trim();
+  if (host) parts.push(host);
+  const title = String(pageTitle || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+  if (title) parts.push(title);
+  return parts.filter(Boolean).join(' · ');
 }
 
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
@@ -181,13 +228,14 @@ async function pendingKeysForUpstreams(upstreams) {
 }
 
 async function getKeysForDomain(domain, extra) {
+  extra = extra || {};
   let upstreams = _upstreamsForDomain(domain);
-  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra && extra.pathname)) {
+  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = CURSOR_FILL_UPSTREAMS.slice();
   }
   if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
 
-  const wanted = new Set(upstreams);
+  const wanted = new Set(upstreams.map((u) => String(u || '').toLowerCase()));
   const pending = await pendingKeysForUpstreams(upstreams);
   const { token } = await getStoredToken();
   if (!token) {
@@ -212,7 +260,7 @@ async function getKeysForDomain(domain, extra) {
     }
   } catch { /* pending fill still runs */ }
 
-  const matched = items.filter((it) => it && wanted.has(it.upstream));
+  const matched = items.filter((it) => it && wanted.has(String(it.upstream || '').toLowerCase()));
   const out = [];
   for (const it of matched) {
     let value = '';
@@ -377,7 +425,7 @@ async function queuePendingVault(hit) {
   } catch { /* noop */ }
 }
 
-async function directStore({ upstream, value }) {
+async function directStore({ upstream, value, name, domain, pageTitle }) {
   try {
     const { token } = await getStoredToken();
     if (!token) {
@@ -390,11 +438,17 @@ async function directStore({ upstream, value }) {
 
     // Vault page reveal reads SQLite `value`. Cipher-only rows showed
     // "hides in Ns" with an empty RAW field. Always send plaintext.
+    const storedName = distinguishStoreName({
+      upstream, value, name, domain, pageTitle,
+    });
     const body = JSON.stringify({
       upstream,
       apiKey: String(value ?? ''),
       value: String(value ?? ''),
-      name: `${upstream} key`,
+      name: storedName,
+      domain: domain || '',
+      origin: domain || '',
+      pageTitle: pageTitle || '',
     });
 
     try {
@@ -410,6 +464,7 @@ async function directStore({ upstream, value }) {
       }
       try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
       try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
+      try { await fillCursorTabsFromPending(); } catch { /* empty boxes on other tabs */ }
       return { ok: true };
     } catch (e) {
       try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
@@ -676,6 +731,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = await getKeysForDomain(message.domain || '', {
           pathname: message.pathname || '',
           title: message.title || '',
+          url: message.url || '',
         });
         sendResponse(result);
       } catch (e) {
@@ -705,8 +761,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabUrl = (tab && tab.url) || '';
           } catch { /* noop */ }
         }
-        if (tabUrl && !/^https?:/i.test(tabUrl)) {
-          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or the fill demo.' });
+        if (tabUrl && !_isFillableTabUrl(tabUrl)) {
+          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or http://127.0.0.1:5173/cursor-settings-fill-demo.html.' });
           return;
         }
         try {
@@ -817,7 +873,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       const { upstream, name, value, domain } = payload;
 
-      const result = await directStore({ upstream, value });
+      const result = await directStore({
+        upstream,
+        value,
+        name,
+        domain,
+        pageTitle: payload.pageTitle || '',
+      });
       if (result.ok) {
         notify('KeyShield', `Saved ${upstream} key to KeyShield`);
         sendResponse({ ok: true, mode: 'direct' });
@@ -1005,6 +1067,7 @@ function collectPageSecrets() {
   return {
     text: chunks.join('\n'),
     hostname: location.hostname,
+    title: document.title || '',
     href: location.href,
     stalePanel: !!(
       document.getElementById('keyshield-detection-notice')
@@ -1091,6 +1154,9 @@ async function pushDetectState(tabId, state) {
 
 function injectedAutoFill(keys) {
   if (!keys || !keys.length) return 0;
+  const href = String(location.href || '');
+  const cursorish = /cursor\.com|cursor\.sh|cursor-settings-fill-demo|\/journey\/cursor|cursor\.html|\/story/i.test(href)
+    || location.hostname === 'cursor.demo.localhost';
   function hay(el) {
     const bits = [
       el.getAttribute('name') || '',
@@ -1103,6 +1169,10 @@ function injectedAutoFill(keys) {
       const lab = item.querySelector('.setting-item-label, .setting-item-title, label');
       if (lab) bits.push(lab.textContent || '');
     }
+    const wrapped = el.closest && el.closest('label');
+    if (wrapped) bits.push(wrapped.textContent || '');
+    const prev = el.previousElementSibling;
+    if (prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) bits.push(prev.textContent || '');
     return bits.join(' ').toLowerCase();
   }
   function match(h) {
@@ -1117,12 +1187,24 @@ function injectedAutoFill(keys) {
     if (/(sign[\s-]?in|log[\s-]?in|email|username|account password)/.test(h)) return true;
     return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(h);
   }
+  function looksKey(h) {
+    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b|\bclaude\b/.test(h);
+  }
   function setVal(el, value) {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    const last = el.value;
+    try {
+      const tracker = el._valueTracker;
+      if (tracker && typeof tracker.setValue === 'function') tracker.setValue(last);
+    } catch { /* noop */ }
     if (desc && desc.set) desc.set.call(el, value);
     else el.value = value;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    try {
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: value, inputType: 'insertFromPaste' }));
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
   const remaining = keys.filter((k) => k && k.value);
@@ -1131,17 +1213,20 @@ function injectedAutoFill(keys) {
   nodes.forEach((el) => {
     if (el.disabled || el.readOnly) return;
     if (String(el.value || '').trim()) return;
+    const ac = String(el.getAttribute('autocomplete') || '').toLowerCase();
+    if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return;
     const h = hay(el);
     if (login(h)) return;
     const wanted = match(h);
     let key = wanted ? remaining.find((k) => k.upstream === wanted) : null;
-    if (!key) {
+    if (!key && (cursorish || looksKey(h))) {
       const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
       for (const u of order) {
         key = remaining.find((k) => k.upstream === u);
         if (key) break;
       }
     }
+    if (!key && cursorish) key = remaining[0];
     if (!key) return;
     setVal(el, key.value);
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
@@ -1152,18 +1237,48 @@ function injectedAutoFill(keys) {
 }
 
 function isCursorFillTabUrl(url) {
-  return /cursor\.com|cursor\.sh|cursor-settings-fill-demo/i.test(String(url || ''));
+  const raw = String(url || '');
+  if (/cursor\.com|cursor\.sh|cursor-settings-fill-demo|\/journey\/cursor|cursor\.html/i.test(raw)) return true;
+  try {
+    const parsed = new URL(raw);
+    const local = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+    const dash = /ks\.aileena\.xyz|keyshield\.dev|up\.railway\.app|vercel\.app/.test(parsed.hostname);
+    if ((local || dash) && (parsed.pathname === '/story' || parsed.pathname.startsWith('/story/'))) return true;
+  } catch { /* noop */ }
+  return false;
 }
 
 async function fillCursorTabsFromPending() {
-  const keys = await pendingKeysForUpstreams(CURSOR_FILL_UPSTREAMS);
-  if (!keys.length) return 0;
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch { return 0; }
   let filled = 0;
   for (const tab of tabs) {
-    if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
-    if (!isCursorFillTabUrl(tab.url)) continue;
+    if (!tab.id || !tab.url || !_isFillableTabUrl(tab.url)) continue;
+    let host = '';
+    let path = '';
+    try {
+      const parsed = new URL(tab.url);
+      host = parsed.hostname;
+      path = parsed.pathname;
+    } catch { continue; }
+    const mapped = _upstreamsForDomain(host);
+    const cursorish = isCursorFillTabUrl(tab.url) || _isCursorKeyFetchContext(host, path, tab.url);
+    if (!cursorish && !mapped.length) continue;
+    let keys = [];
+    try {
+      const fetched = await getKeysForDomain(host, { pathname: path, title: tab.title || '', url: tab.url });
+      if (fetched && fetched.ok && Array.isArray(fetched.keys)) keys = fetched.keys;
+    } catch { keys = []; }
+    if (!keys.length) {
+      keys = await pendingKeysForUpstreams(mapped.length ? mapped : CURSOR_FILL_UPSTREAMS);
+    }
+    if (!keys.length) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js'],
+      });
+    } catch { /* already injected or restricted */ }
     try {
       const injected = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
@@ -1171,7 +1286,7 @@ async function fillCursorTabsFromPending() {
         args: [keys],
       });
       for (const row of injected || []) {
-        if (typeof row.result === 'number') filled += row.result;
+        if (typeof row.result === 'number' && row.result > filled) filled = row.result;
       }
     } catch { /* restricted */ }
     try {
@@ -1217,7 +1332,12 @@ async function injectDetectOnAllTabs(opts) {
         } catch { /* dashboard flush */ }
         let ok = false;
         if (again.token) {
-          const result = await directStore({ upstream: hit.upstream, value: hit.key });
+          const result = await directStore({
+            upstream: hit.upstream,
+            value: hit.key,
+            domain: page.hostname,
+            pageTitle: page.title || tab.title || '',
+          });
           ok = !!(result && result.ok);
           if (ok) saved += 1;
           else failed += 1;
@@ -1269,12 +1389,14 @@ async function injectDetectOnAllTabs(opts) {
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     if (info.status !== 'complete') return;
-    if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return;
-    chrome.storage.local.get(['ks_token', 'ks_auto_store'], (out) => {
-      if (!out || (!out.ks_token && !out.ks_auto_store)) return;
+    if (!tab || !tab.url || !_isFillableTabUrl(tab.url)) return;
+    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_vault'], (out) => {
+      if (!out || (!out.ks_token && !out.ks_auto_store && !(out.ks_pending_vault || []).length)) return;
       chrome.scripting.executeScript({
         target: { tabId, allFrames: true },
         files: ['content.js'],
+      }).then(() => {
+        chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' }).catch(() => {});
       }).catch(() => {});
     });
   });
