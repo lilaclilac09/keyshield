@@ -137,8 +137,7 @@ path is on your Mac; this repo cannot write it):
 3. Wallet / passkey. Home shows **Copy token for extension**.
 4. Popup → paste → **Register token**. Badge leaves `no token`.
 
-GitHub `main` still ships 1.1.1 / `keyshield.dev` until this PR merges.
-After merge: pull, **Remove**, **Load unpacked** — card must read **1.1.7**.
+After pull: **Remove**, **Load unpacked** `src/extension` — card must read **1.2.4** (not 1.1.7). Do not only Reload. Popup first line must be `ok 1.2.4 <all_urls>`.
 
 ### 3. Pay for a stream (optional)
 

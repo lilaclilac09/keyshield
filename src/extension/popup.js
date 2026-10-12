@@ -48,10 +48,29 @@ function isDeadDashboardUrl(url) {
 // the migration logic in loadSettings() doesn't fight them on every open.
 const PIN_PREF_KEY = "ks_url_pref_pinned";
 
-const $ = (id) => document.getElementById(id);
+function $(id) {
+  try { return document.getElementById(id); } catch { return null; }
+}
+
+function manifestVersion() {
+  try { return String(chrome.runtime.getManifest().version || "").trim(); }
+  catch { return ""; }
+}
+
+function paintLoadedBuild() {
+  const ver = manifestVersion() || "?";
+  const build = $("build");
+  if (build) build.textContent = `v${ver} · KeyShield — Sovereign Vault`;
+  const ready = $("detect-ready");
+  if (ready && !/ok 1\.2\.4/.test(ready.textContent || "")) {
+    ready.textContent = `checking ${ver} + <all_urls>…`;
+    ready.style.display = "block";
+  }
+}
 
 function setStatus(text, kind = "ok", ms = 1500) {
   const s = $("status");
+  if (!s) return;
   s.textContent = text;
   s.className = `status ${kind}`;
   if (ms > 0) setTimeout(() => { s.className = "status"; }, ms);
@@ -130,11 +149,13 @@ async function loadSettings() {
     try { await chrome.storage.local.set({ ks_api_base: api }); } catch { /* noop */ }
   }
 
-  $("api").value  = api;
-  $("dash").value = dash;
+  const apiEl = $("api");
+  const dashEl = $("dash");
+  if (apiEl) apiEl.value = api;
+  if (dashEl) dashEl.value = dash;
   const build = $("build");
   if (build) {
-    const ver = chrome.runtime.getManifest().version;
+    const ver = manifestVersion() || "?";
     build.textContent = `v${ver} · Sign-in opens ${dash}`;
   }
   await refreshDetectReady();
@@ -161,21 +182,25 @@ async function loadSettings() {
   const signinBtn = $("signin");
   if (ks_token) {
     const short = ks_user ? `${ks_user.slice(0, 4)}…${ks_user.slice(-4)}` : "signed in";
-    badge.textContent = hasVault ? `${short} · 🔒` : short;
-    badge.title = hasVault
-      ? "Token registered. Vault key registered — saves are encrypted client-side."
-      : "Token registered, but no vault key yet. Saves go in plaintext until you sign the vault-unlock message in the dashboard.";
+    if (badge) {
+      badge.textContent = hasVault ? `${short} · 🔒` : short;
+      badge.title = hasVault
+        ? "Token registered. Vault key registered — saves are encrypted client-side."
+        : "Token registered, but no vault key yet. Saves go in plaintext until you sign the vault-unlock message in the dashboard.";
+    }
     if (signinBtn) signinBtn.textContent = "→ Open KeyShield";
   } else {
-    badge.textContent = "no token";
-    badge.title = "Click Sign in to open the dashboard.";
+    if (badge) {
+      badge.textContent = "no token";
+      badge.title = "Click Sign in to open the dashboard.";
+    }
     if (signinBtn) signinBtn.textContent = "→ Sign in to KeyShield";
   }
 }
 
 async function saveSettings() {
-  const apiBase      = ($("api").value  || "").trim() || DEFAULT_API_BASE;
-  const dashboardUrl = ($("dash").value || "").trim() || DEFAULT_DASHBOARD_URL;
+  const apiBase      = (($("api") && $("api").value)  || "").trim() || DEFAULT_API_BASE;
+  const dashboardUrl = (($("dash") && $("dash").value) || "").trim() || DEFAULT_DASHBOARD_URL;
   // If the user typed a non-production URL by hand, treat that as a pin so
   // we don't silently revert it to production on the next popup open.
   const isProd =
@@ -337,14 +362,15 @@ async function allowDetectAndStore() {
 }
 
 async function registerManualToken() {
-  const raw = ($("manual").value || "").trim();
+  const manual = $("manual");
+  const raw = ((manual && manual.value) || "").trim();
   if (!raw) {
     setStatus("Paste a token first.", "err", 2000);
     return;
   }
   // Token format check: <base64>.<sig>.<...>  — be lenient, just non-empty.
   await chrome.storage.local.set({ ks_token: raw, ks_user: null });
-  $("manual").value = "";
+  if (manual) manual.value = "";
   setStatus("Token registered. Save flow now uses Authorization header.", "ok", 3000);
   loadSettings();
 }
@@ -533,39 +559,50 @@ async function importVaultFromFile() {
 
 // Re-render whenever background storage changes (token push from dashboard,
 // vault key registration, etc.) — gives the popup live status without polling.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) loadSettings();
-  if (area === "session" && changes.ks_vault_key) {
-    loadSettings();
-    refreshFingerprint();
-  }
-});
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) loadSettings();
+    if (area === "session" && changes.ks_vault_key) {
+      loadSettings();
+      refreshFingerprint();
+    }
+  });
+} catch { /* bootPopup still paints Sign-in / Fill */ }
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadSettings();
-  refreshFingerprint();
-  refreshDetectReady();
-  $("signin"      ).addEventListener("click", openDashboardForSignin);
-  const allowDetect = $("allow-detect");
-  if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);
-  const fillTab = $("fill-tab");
-  if (fillTab) fillTab.addEventListener("click", fillActiveTab);
-  const copyCursor = $("copy-cursor-key");
-  if (copyCursor) copyCursor.addEventListener("click", copyPreferredCursorKey);
-  const useHostedTop = $("use-hosted-top");
-  if (useHostedTop) useHostedTop.addEventListener("click", pointAtProduction);
-  $("save"        ).addEventListener("click", saveSettings);
-  $("register"    ).addEventListener("click", registerManualToken);
-  $("clear"       ).addEventListener("click", clearSession);
-  const ptRemote = $("point-remote");
-  const ptLocal  = $("point-local");
-  const ptProd   = $("point-prod");
-  if (ptRemote) ptRemote.addEventListener("click", pointAtRemote);
-  if (ptLocal)  ptLocal.addEventListener("click",  pointAtLocal);
-  if (ptProd)   ptProd.addEventListener("click",   pointAtProduction);
+function onClick(id, handler) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("click", () => {
+    Promise.resolve(handler()).catch((e) => setStatus(String(e), "err", 3500));
+  });
+}
 
-  const expBtn = $("export-vault");
-  const impBtn = $("import-vault");
-  if (expBtn) expBtn.addEventListener("click", exportVaultToFile);
-  if (impBtn) impBtn.addEventListener("click", importVaultFromFile);
-});
+function bootPopup() {
+  if (bootPopup._done) return;
+  bootPopup._done = true;
+  paintLoadedBuild();
+  Promise.resolve(refreshDetectReady()).catch(() => {});
+  Promise.resolve(loadSettings()).catch((e) => {
+    setStatus(`Popup load failed: ${String(e)}`, "err", 4000);
+  });
+  Promise.resolve(refreshFingerprint()).catch(() => {});
+  onClick("signin", openDashboardForSignin);
+  onClick("allow-detect", allowDetectAndStore);
+  onClick("fill-tab", fillActiveTab);
+  onClick("copy-cursor-key", copyPreferredCursorKey);
+  onClick("use-hosted-top", pointAtProduction);
+  onClick("save", saveSettings);
+  onClick("register", registerManualToken);
+  onClick("clear", clearSession);
+  onClick("point-remote", pointAtRemote);
+  onClick("point-local", pointAtLocal);
+  onClick("point-prod", pointAtProduction);
+  onClick("export-vault", exportVaultToFile);
+  onClick("import-vault", importVaultFromFile);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootPopup);
+} else {
+  bootPopup();
+}

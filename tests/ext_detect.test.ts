@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   classifyDetectedKey,
   DETECT_READY_OK,
+  DETECT_READY_VERSION,
   formatDetectReadyLine,
   shouldArmLiveScan,
   shouldPopupForKey,
@@ -55,6 +58,27 @@ describe("formatDetectReadyLine", () => {
       "Remove + Load unpacked",
     );
     expect(formatDetectReadyLine({ version: "1.1.3", hasAllUrls: true }).ok).toBe(false);
+  });
+
+  it("Load unpacked src/extension is 1.2.4 and popup.js parses without merge markers", () => {
+    const root = resolve(__dirname, "..");
+    const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
+    const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
+    const popup = readFileSync(resolve(root, "src/extension/popup.js"), "utf8");
+    const html = readFileSync(resolve(root, "src/extension/popup.html"), "utf8");
+    const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
+    const localSignin = readFileSync(resolve(root, "src/extension/LOCAL-SIGNIN.md"), "utf8");
+    expect(man.name).toBe("KeyShield — Sovereign Vault");
+    expect(man.version).toBe(DETECT_READY_VERSION);
+    expect(firefox.version).toBe(DETECT_READY_VERSION);
+    expect(DETECT_READY_VERSION).toBe("1.2.4");
+    expect(popup).not.toMatch(/<<<<<<<|>>>>>>>/);
+    expect(popup).toContain('if (ver === "1.2.4" && hasAllUrls)');
+    expect(popup).toContain("ok 1.2.4 <all_urls>");
+    expect(popup).toContain("function bootPopup");
+    expect(html).toContain("ok 1.2.4");
+    expect(localDetect).toContain('man["version"] = "1.2.4"');
+    expect(localSignin).toContain('"version": "1.2.4"');
   });
 });
 

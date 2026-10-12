@@ -68,6 +68,7 @@ export function signinDashboardHref(base: string = PROD_DASHBOARD_URL): string {
   return u.toString();
 }
 
+
 /** Returns true when this page is leaving for the hosted Sign-in. */
 export function redirectLocalViteToHostedDashboard(): boolean {
   if (typeof window === 'undefined') return false;
