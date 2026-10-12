@@ -254,9 +254,7 @@ async def vault_store(request: Request):
         return JSONResponse({"detail": "Paste the API key"}, status_code=400)
     from ..proxy import keychain as kc
 
-    host = str(
-        body.get("origin") or body.get("domain") or body.get("host") or ""
-    ).strip()
+    host = str(body.get("origin") or body.get("domain") or body.get("host") or "").strip()
     page_title = str(body.get("pageTitle") or body.get("page_title") or "").strip()
     stored_name = kc.distinguish_name(
         upstream=str(upstream),

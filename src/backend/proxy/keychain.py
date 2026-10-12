@@ -176,9 +176,7 @@ def infer_product(upstream: str, raw: str = "") -> str:
         return "GitHub PAT"
     if text.startswith("vercel_") or text.startswith("vcp_"):
         return "Vercel"
-    if text.startswith("helius_auth_") or (
-        len(text) == 36 and text.count("-") == 4
-    ):
+    if text.startswith("helius_auth_") or (len(text) == 36 and text.count("-") == 4):
         return "Solana RPC"
     return str(provider_meta(upstream)["product"])
 
@@ -408,7 +406,13 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
         host = tag_value(parsed_tags, "host")
         page_title = tag_value(parsed_tags, "page")
         expiry_label = f"expires {expires_at[:10]}" if expires_at else "no expiry"
-        note_bits = [str(meta["family"]), product, prefix, host or str(meta["domain"]), expiry_label]
+        note_bits = [
+            str(meta["family"]),
+            product,
+            prefix,
+            host or str(meta["domain"]),
+            expiry_label,
+        ]
         if page_title:
             note_bits.append(page_title)
         out.append(
