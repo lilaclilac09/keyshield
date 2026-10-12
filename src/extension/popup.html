@@ -34,6 +34,7 @@
       font-size: 12px;
       color: #a1a1aa;
     }
+    .line:last-child { margin-bottom: 0; }
     .line.ok { color: #34d399; }
     .line.err { color: #f87171; }
     .saved-count {
@@ -96,6 +97,7 @@
     body.signed-in .guest-only { display: none !important; }
     body:not(.signed-in) .signed-only { display: none !important; }
     .extra { display: none !important; }
+    #copy-status, #fill-ms, #saved-count { display: none; }
   </style>
 </head>
 <body data-ui="three-line">
@@ -104,7 +106,9 @@
   <section class="row" id="row-auth">
     <button id="signin" class="guest-only">Sign in</button>
     <div id="signed-pane" class="signed-only">
-      <p id="saved-count" class="saved-count">0 saved</p>
+      <p id="signed-status" class="saved-count">signed</p>
+      <p id="collected-line" class="line ok">0 collected</p>
+      <p id="saved-count" class="sub">0 collected</p>
       <div id="saved-apis"></div>
       <p id="saved-empty" class="sub">None yet. Detect stays on.</p>
       <button id="clear-top" class="danger">Sign out</button>
@@ -114,12 +118,12 @@
   <section class="row" id="row-detect">
     <p id="detect-line" class="line">detect · checking…</p>
     <div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
-    <button id="allow-detect" class="secondary guest-only">Turn detect on</button>
   </section>
 
   <section class="row" id="row-copy">
-    <p id="copy-status" class="line">copy · idle</p>
-    <button id="copy-cursor-key" class="secondary">Copy Cursor key</button>
+    <p id="filled-line" class="line">0 filled · —</p>
+    <p id="copy-status" class="line">0 filled · —</p>
+    <p id="fill-ms" class="line">—</p>
   </section>
 
   <div id="status" class="status"></div>
@@ -127,7 +131,9 @@
   <div class="extra" hidden>
     <span id="conn"></span>
     <div id="build"></div>
+    <button id="allow-detect"></button>
     <button id="fill-tab-signed"></button>
+    <button id="copy-cursor-key">Copy Cursor key</button>
     <button id="copy-cursor-key-signed"></button>
     <button id="fill-tab"></button>
     <button id="use-hosted-top"></button>

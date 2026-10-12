@@ -150,10 +150,16 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(popup).toContain('id="saved-apis"');
     expect(popup).toContain('id="detect-line"');
     expect(popup).toContain('id="copy-status"');
+    expect(popup).toContain('id="signed-status"');
+    expect(popup).toContain('id="collected-line"');
+    expect(popup).toContain('id="filled-line"');
+    expect(popup).toContain('id="fill-ms"');
     expect(popup).toContain("Copy Cursor key");
     expect(popup).not.toContain("<details");
     expect(popup).not.toContain("Fill this tab");
     expect(popup).not.toContain("Register token");
+    expect(popup).not.toContain("Sign in to KeyShield");
+    expect(popup).not.toContain("Allow detect + auto-save");
   });
 
   it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {
@@ -187,6 +193,10 @@ assert 'data-ui="three-line"' in html
 assert 'id="saved-apis"' in html
 assert 'id="detect-line"' in html
 assert 'id="copy-status"' in html
+assert 'id="signed-status"' in html
+assert 'id="collected-line"' in html
+assert 'id="filled-line"' in html
+assert 'id="fill-ms"' in html
 assert "Copy Cursor key" in html
 assert "<details" not in html
 assert "Fill this tab" not in html
@@ -228,8 +238,13 @@ html = (tmp / "popup.html").read_text()
 assert mod.popup_is_three_line(html) is True
 assert 'id="detect-line"' in html
 assert 'id="copy-status"' in html
+assert 'id="signed-status"' in html
+assert 'id="collected-line"' in html
+assert 'id="filled-line"' in html
+assert 'id="fill-ms"' in html
 assert "Copy Cursor key" in html
 assert "Copy key for Cursor" not in html
+assert "Sign in to KeyShield" not in html
 print("rewrote-old-three-line", True)
 `;
     const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
@@ -288,6 +303,43 @@ finally:
     expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
     expect(stamped.content_scripts[0].run_at).toBe("document_start");
     expect(stamped.content_scripts[0].matches).toContain("https://app.ks.aileena.xyz/*");
+  });
+
+  it("always overwrites leftover ugly Sign-in/Register/URL popup", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const ugly = readFileSync(resolve(root, "tests/fixtures/leftover-ugly-popup.html"), "utf8");
+    const tmp = mkdtempSync(join(tmpdir(), "ks-leftover-ugly-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "popup.html"), ugly);
+    const py = `
+import importlib.util
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.popup_is_three_line((tmp / "popup.html").read_text()) is False
+mod.ensure_three_line_popup(tmp)
+html = (tmp / "popup.html").read_text()
+assert mod.popup_is_three_line(html) is True
+assert "signed" in html
+assert "collected" in html
+assert "filled" in html
+assert 'id="fill-ms"' in html
+assert "Register token" not in html
+assert "Fill this tab" not in html
+assert "Sign in to KeyShield" not in html
+assert "Allow detect + auto-save" not in html
+assert "https://keyshield-production" not in html
+print("rewrote-ugly", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("rewrote-ugly True");
   });
 
   it("patch-signed-popup.py --find prints this checkout", () => {

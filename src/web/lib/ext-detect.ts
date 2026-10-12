@@ -116,6 +116,30 @@ export function formatSavedCount(n: number): string {
   return count === 1 ? '1 saved' : `${count} saved`;
 }
 
+/** Popup collected row: "0 collected" / "1 collected" / "N collected". */
+export function formatCollectedCount(n: number): string {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? '1 collected' : `${count} collected`;
+}
+
+export function formatFilledCount(n: number): string {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? '1 filled' : `${count} filled`;
+}
+
+export function formatPopupMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(Number(ms)) || Number(ms) < 0) return '—';
+  return `${Math.max(0, Math.round(Number(ms)))}ms`;
+}
+
+export function formatFilledLine(opts: { filled: number; ms?: number | null }): string {
+  return `${formatFilledCount(opts.filled)} · ${formatPopupMs(opts.ms)}`;
+}
+
+export function formatSignedStatus(signed: boolean): string {
+  return signed ? 'signed' : 'Sign in';
+}
+
 export const THREE_LINE_UI_MARK = 'data-ui="three-line"';
 
 const LEFTOVER_POPUP_CLUTTER = [
@@ -124,9 +148,11 @@ const LEFTOVER_POPUP_CLUTTER = [
   'Fill this tab',
   'Use hosted',
   'Copy key for Cursor',
+  'Sign in to KeyShield',
+  'Allow detect + auto-save',
 ];
 
-/** True when the popup is the 3-row UI (auth/vault, detect, copy). */
+/** True when the popup is the 3-row UI (signed/collected, detect, filled + ms). */
 export function isCompactPopupHtml(html: string): boolean {
   const text = String(html || '');
   if (LEFTOVER_POPUP_CLUTTER.some((mark) => text.includes(mark))) return false;
@@ -136,10 +162,14 @@ export function isCompactPopupHtml(html: string): boolean {
     text.includes('id="row-detect"') &&
     text.includes('id="row-copy"') &&
     text.includes('id="signed-pane"') &&
+    text.includes('id="signed-status"') &&
     text.includes('id="saved-count"') &&
     text.includes('id="saved-apis"') &&
+    text.includes('id="collected-line"') &&
     text.includes('id="detect-line"') &&
     text.includes('id="copy-status"') &&
+    text.includes('id="filled-line"') &&
+    text.includes('id="fill-ms"') &&
     !text.includes('<details')
   );
 }

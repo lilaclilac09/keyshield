@@ -76,12 +76,52 @@ function setStatus(text, kind = "ok", ms = 1500) {
   if (ms > 0) setTimeout(() => { s.className = "status"; }, ms);
 }
 
+function formatCollectedCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 collected" : `${count} collected`;
+}
+
+function formatFilledCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 filled" : `${count} filled`;
+}
+
+function formatPopupMs(ms) {
+  if (ms == null || !Number.isFinite(Number(ms)) || Number(ms) < 0) return "—";
+  return `${Math.max(0, Math.round(Number(ms)))}ms`;
+}
+
+function formatFilledLine(filled, ms) {
+  return `${formatFilledCount(filled)} · ${formatPopupMs(ms)}`;
+}
+
+function formatSignedStatus(signed) {
+  return signed ? "signed" : "Sign in";
+}
+
 function paintCopyStatus(text, kind = "") {
   const el = $("copy-status");
   if (el) {
     el.textContent = text;
     el.className = `line ${kind}`.trim();
   }
+  const filled = $("filled-line");
+  if (filled && text) {
+    filled.textContent = text;
+    filled.className = `line ${kind}`.trim();
+  }
+}
+
+function paintFilledLine(filled, ms, kind = "ok") {
+  const text = formatFilledLine(filled, ms);
+  paintCopyStatus(text, kind);
+  const msEl = $("fill-ms");
+  if (msEl) msEl.textContent = formatPopupMs(ms);
+}
+
+function paintSignedStatus(signed) {
+  const el = $("signed-status");
+  if (el) el.textContent = formatSignedStatus(signed);
 }
 
 function formatDetectReadyLine(version, hasAllUrls) {
@@ -165,8 +205,7 @@ function applySignedInChrome(signed) {
 }
 
 function formatSavedCount(n) {
-  const count = Math.max(0, Math.floor(Number(n) || 0));
-  return count === 1 ? "1 saved" : `${count} saved`;
+  return formatCollectedCount(n);
 }
 
 function looksLikeSessionToken(raw) {
@@ -174,9 +213,14 @@ function looksLikeSessionToken(raw) {
 }
 
 function paintSavedCount(n) {
-  const label = formatSavedCount(n);
+  const label = formatCollectedCount(n);
   const hero = $("saved-count");
   if (hero) hero.textContent = label;
+  const collected = $("collected-line");
+  if (collected) {
+    collected.textContent = label;
+    collected.className = "line ok";
+  }
   const badge = $("conn");
   if (badge && document.body.classList.contains("signed-in")) {
     badge.textContent = label;
@@ -252,6 +296,25 @@ async function refreshSavedApis() {
   return apis;
 }
 
+async function refreshFillStatus() {
+  const started = Date.now();
+  let filled = 0;
+  let kind = "ok";
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "FILL_PAGE_NOW" });
+    if (resp && typeof resp.filled === "number") filled = resp.filled;
+    if (resp && resp.reason === "restricted-tab") kind = "";
+  } catch {
+    kind = "";
+  }
+  const ms = Date.now() - started;
+  try {
+    await chrome.storage.local.set({ ks_last_fill: { filled, ms, at: Date.now() } });
+  } catch { /* noop */ }
+  paintFilledLine(filled, ms, kind);
+  return { filled, ms };
+}
+
 async function loadSettings() {
   const stored = await chrome.storage.local.get([
     "ks_api_base",
@@ -308,13 +371,14 @@ async function loadSettings() {
   await refreshDetectReady();
   const signed = looksLikeSessionToken(ks_token);
   applySignedInChrome(signed);
+  paintSignedStatus(signed);
   if (signed) {
     await armLiveScanAfterLogin();
     await refreshSavedApis();
-    paintCopyStatus("copy · ready");
+    await refreshFillStatus();
   } else {
     paintSavedCount(0);
-    paintCopyStatus("copy · sign in first");
+    paintFilledLine(0, null, "");
   }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
@@ -432,25 +496,33 @@ async function openDashboardForSignin() {
 }
 
 async function fillActiveTab() {
+  const started = Date.now();
   let resp;
   try {
     resp = await chrome.runtime.sendMessage({ type: "FILL_PAGE_NOW" });
   } catch (e) {
+    paintFilledLine(0, Date.now() - started, "err");
     setStatus(`Fill failed: ${String(e)}`, "err", 3500);
     return;
   }
+  const filled = resp && typeof resp.filled === "number" ? resp.filled : 0;
+  const ms = Date.now() - started;
+  try {
+    await chrome.storage.local.set({ ks_last_fill: { filled, ms, at: Date.now() } });
+  } catch { /* noop */ }
+  paintFilledLine(filled, ms, resp && resp.ok ? "ok" : "err");
   if (resp && resp.ok) {
     setStatus(
-      resp.filled
-        ? `Pasted ${resp.filled} saved key${resp.filled === 1 ? "" : "s"} into empty API boxes.`
-        : "No empty API box on this tab. Use Copy for Cursor desktop Settings.",
+      filled
+        ? `Pasted ${filled} saved key${filled === 1 ? "" : "s"} into empty API boxes.`
+        : "No empty API box on this tab.",
       "ok",
       5000,
     );
     return;
   }
   if (resp && resp.reason === "restricted-tab") {
-    setStatus("Chrome cannot fill Cursor desktop. Copy the key, then paste into the black API box.", "err", 5500);
+    setStatus("This tab cannot be filled. Open a https page with an API box.", "err", 4000);
     return;
   }
   setStatus(`Fill skipped: ${resp?.reason || "no keys"}. Sign in, then try again.`, "err", 4000);

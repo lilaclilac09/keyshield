@@ -11,6 +11,10 @@ import {
   ensureManifestContentScripts,
   formatBulkSaveFailure,
   formatSavedCount,
+  formatCollectedCount,
+  formatFilledLine,
+  formatPopupMs,
+  formatSignedStatus,
   isCompactPopupHtml,
   shouldRewritePopupHtml,
   isExtensionContextDead,
@@ -110,6 +114,21 @@ describe("formatSavedCount", () => {
   });
 });
 
+describe("1.2 popup status lines", () => {
+  it("prints signed + collected + filled · ms", () => {
+    expect(formatSignedStatus(true)).toBe("signed");
+    expect(formatSignedStatus(false)).toBe("Sign in");
+    expect(formatCollectedCount(0)).toBe("0 collected");
+    expect(formatCollectedCount(1)).toBe("1 collected");
+    expect(formatCollectedCount(5)).toBe("5 collected");
+    expect(formatPopupMs(48)).toBe("48ms");
+    expect(formatPopupMs(null)).toBe("—");
+    expect(formatFilledLine({ filled: 0 })).toBe("0 filled · —");
+    expect(formatFilledLine({ filled: 2, ms: 48 })).toBe("2 filled · 48ms");
+    expect(formatFilledLine({ filled: 1, ms: 12 })).toBe("1 filled · 12ms");
+  });
+});
+
 describe("formatDetectReadyLine", () => {
   it("prints the exact ok 1.2.4 <all_urls> line", () => {
     expect(formatDetectReadyLine({ version: "1.2.4", hasAllUrls: true })).toEqual({
@@ -155,16 +174,29 @@ describe("formatDetectReadyLine", () => {
     expect(html).toContain('id="row-copy"');
     expect(html).toContain('id="detect-line"');
     expect(html).toContain('id="copy-status"');
+    expect(html).toContain('id="signed-status"');
+    expect(html).toContain('id="collected-line"');
+    expect(html).toContain('id="filled-line"');
+    expect(html).toContain('id="fill-ms"');
     expect(html).toContain("Copy Cursor key");
     expect(html).toContain('id="fingerprint"');
     expect(html).not.toContain("<details");
     expect(html).not.toContain("Register token");
     expect(html).not.toContain("Fill this tab");
+    expect(html).not.toContain("Sign in to KeyShield");
+    expect(html).not.toContain("Allow detect + auto-save");
     expect(isCompactPopupHtml(html)).toBe(true);
     expect(shouldRewritePopupHtml(html)).toBe(false);
     expect(isCompactPopupHtml('<h1>KeyShield — Sovereign Vault</h1><details><summary>Settings</summary></details>')).toBe(false);
     expect(shouldRewritePopupHtml('<h1>KeyShield — Sovereign Vault<span id="conn">no token</span></h1><button>Fill this tab</button><button>Register token</button><details><summary>Settings</summary></details>')).toBe(true);
     expect(shouldRewritePopupHtml('<body data-ui="three-line"><div id="signed-pane"></div><p id="saved-count"></p><div id="saved-apis"></div></body>')).toBe(true);
+    const ugly = readFileSync(resolve(root, "tests/fixtures/leftover-ugly-popup.html"), "utf8");
+    expect(shouldRewritePopupHtml(ugly)).toBe(true);
+    expect(isCompactPopupHtml(ugly)).toBe(false);
+    expect(popup).toContain("function formatCollectedCount");
+    expect(popup).toContain("function formatFilledLine");
+    expect(popup).toContain("function refreshFillStatus");
+    expect(popup).toContain("function paintSignedStatus");
     expect(html).toContain("KeyShield — Sovereign Vault");
     expect(popup).toContain("function harvestTokenFromDashboardTabs");
     expect(popup).toContain("function formatSavedCount");
