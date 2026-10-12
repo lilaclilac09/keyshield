@@ -7,10 +7,13 @@ import {
   DETECT_READY_VERSION,
   formatDetectReadyLine,
   ensureManifestContentScripts,
+  formatBulkSaveFailure,
   formatSavedCount,
   isCompactPopupHtml,
+  isExtensionContextDead,
   isLeftoverContentOnlyManifest,
   looksLikeSessionToken,
+  shouldRetryBackgroundSend,
   manifestHasSessionBridge,
   shouldArmLiveScan,
   shouldPopupForKey,
@@ -158,6 +161,32 @@ describe("summarizeSavedApis", () => {
     expect(summarizeSavedApis({ items: [{ upstream: "groq", cipher: "abc" }] })).toEqual([
       { id: "groq", upstream: "groq", name: "groq key", masked: "encrypted" },
     ]);
+  });
+});
+
+describe("extension context after Remove + Load unpacked", () => {
+  it("does not retry Extension context invalidated", () => {
+    expect(isExtensionContextDead("Error: Extension context invalidated.")).toBe(true);
+    expect(shouldRetryBackgroundSend("Error: Extension context invalidated.")).toBe(false);
+    expect(shouldRetryBackgroundSend("Receiving end does not exist.")).toBe(true);
+  });
+
+  it("tells the Helius tab to refresh instead of Retry", () => {
+    const fail = formatBulkSaveFailure({
+      saved: 0,
+      failed: 4,
+      reason: "extension-dead",
+      detail: "Error: Extension context invalidated.",
+    });
+    expect(fail.reload).toBe(true);
+    expect(fail.text).toContain("Saved 0, 4 failed.");
+    expect(fail.text).toContain("Refresh this tab");
+    expect(fail.text).not.toContain("Extension messaging error");
+    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
+    expect(content).toContain("function formatBulkSaveFailure");
+    expect(content).toContain("Refresh this tab");
+    expect(content).toContain("extension-dead");
+    expect(content).toContain("markExtensionContextDead");
   });
 });
 

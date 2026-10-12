@@ -169,6 +169,10 @@ Screen must say `ok 1.2.4` and `DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.
 5. Click **Sign in**. It must **not** open `127.0.0.1:5173`. After login the
    scanner stays on: any `sk-proj-` / `sk-or-` / `key_` / `crsr_` / `helius_auth_`
    toasts and saves. Cursor API Keys: click **Show** so the token is in the DOM.
+   Refresh `dashboard.helius.dev` (and any tab that already showed SOL UUID
+   keys) after Remove + Load unpacked. A stale toast saying
+   `Saved 0, 4 failed. Extension messaging error (Extension context invalidated.)`
+   means that tab still has the old content.js — Retry cannot revive it.
 
 ## 3. What you should see
 

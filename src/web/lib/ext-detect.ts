@@ -172,3 +172,50 @@ export function summarizeSavedApis(data: unknown): SavedApiRow[] {
   }
   return out;
 }
+
+/** Stale content.js after Remove + Load unpacked — retries cannot revive it. */
+export function isExtensionContextDead(detail: unknown): boolean {
+  return /Extension context invalidated|chrome\.runtime is not available|Cannot access a chrome\./i.test(
+    String(detail || ''),
+  );
+}
+
+/** Cold MV3 worker can be retried. Invalidated context cannot. */
+export function shouldRetryBackgroundSend(detail: unknown): boolean {
+  const text = String(detail || '');
+  if (isExtensionContextDead(text)) return false;
+  return /Receiving end does not exist|The message port closed/i.test(text);
+}
+
+export function formatBulkSaveFailure(opts: {
+  saved: number;
+  failed: number;
+  reason?: string | null;
+  detail?: string;
+}): { text: string; reload: boolean } {
+  const saved = Math.max(0, Math.floor(Number(opts.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(opts.failed) || 0));
+  let text = `Saved ${saved}, ${failed} failed.`;
+  const reason = String(opts.reason || '');
+  const detail = String(opts.detail || '');
+  if (isExtensionContextDead(detail) || reason === 'extension-dead') {
+    return {
+      text: `${text} Extension was reloaded. Refresh this tab, then Save again.`,
+      reload: true,
+    };
+  }
+  if (reason === 'token-expired' || reason === 'no-token') {
+    return { text: `${text} Sign in so saves land in your vault.`, reload: false };
+  }
+  if (reason === 'network') {
+    return { text: `${text} Backend unreachable.`, reload: false };
+  }
+  if (reason === 'extension') {
+    return {
+      text: `${text} Extension messaging error${detail ? ` (${detail})` : ''}.`,
+      reload: false,
+    };
+  }
+  if (reason) return { text: `${text} (${reason})`, reload: false };
+  return { text: `${text} Click Retry or open DevTools.`, reload: false };
+}

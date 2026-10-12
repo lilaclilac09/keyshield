@@ -176,6 +176,7 @@ const AUTO_STORE_KEY = 'ks_auto_store';
 let   autoStoreAllowed = false;
 let   loggedIn = false;
 let   autoStoreInFlight = false;
+let   extensionContextDead = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
 const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store', 'crypto-regime-api.onrender.com'];
@@ -288,7 +289,53 @@ function handleMatch(key, provider, onDomain) {
 }
 
 function detectIsArmed() {
-  return !!(autoStoreAllowed || loggedIn);
+  return !extensionContextDead && !!(autoStoreAllowed || loggedIn);
+}
+
+function isExtensionContextDead(detail) {
+  return /Extension context invalidated|chrome\.runtime is not available|Cannot access a chrome\./i.test(
+    String(detail || ''),
+  );
+}
+
+function shouldRetryBackgroundSend(detail) {
+  const text = String(detail || '');
+  if (isExtensionContextDead(text)) return false;
+  return /Receiving end does not exist|The message port closed/i.test(text);
+}
+
+function markExtensionContextDead() {
+  extensionContextDead = true;
+}
+
+function runtimeGone() {
+  try {
+    return typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id;
+  } catch {
+    return true;
+  }
+}
+
+function formatBulkSaveFailure(opts) {
+  const saved = Math.max(0, Math.floor(Number(opts && opts.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(opts && opts.failed) || 0));
+  let text = `Saved ${saved}, ${failed} failed.`;
+  const reason = String((opts && opts.reason) || '');
+  const detail = String((opts && opts.detail) || '');
+  if (isExtensionContextDead(detail) || reason === 'extension-dead') {
+    return { text: `${text} Extension was reloaded. Refresh this tab, then Save again.`, reload: true };
+  }
+  if (reason === 'token-expired' || reason === 'no-token') {
+    return { text: `${text} Sign in so saves land in your vault.`, reload: false };
+  }
+  if (reason === 'network') {
+    return { text: `${text} Backend unreachable.`, reload: false };
+  }
+  if (reason === 'extension') {
+    return { text: `${text} Extension messaging error${detail ? ` (${detail})` : ''}.`, reload: false };
+  }
+  if (reason) return { text: `${text} (${reason})`, reload: false };
+  return { text: `${text} Click Retry or open DevTools.`, reload: false };
 }
 
 function loadAutoStorePref() {
@@ -322,6 +369,7 @@ function grantAutoStore() {
 }
 
 function maybeAutoStore() {
+  if (extensionContextDead || runtimeGone()) return;
   if (!detectIsArmed() || autoStoreInFlight) return;
   const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
   if (unsaved === 0) return;
@@ -408,11 +456,13 @@ function renderPanel() {
   }).join('');
 
   const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
-  const btnText = unsavedCount === 0
-    ? 'All saved'
-    : detectIsArmed()
-      ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
-      : 'Allow auto-save';
+  const btnText = extensionContextDead
+    ? 'Refresh this tab'
+    : unsavedCount === 0
+      ? 'All saved'
+      : detectIsArmed()
+        ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
+        : 'Allow auto-save';
 
   panelEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px">
@@ -425,7 +475,7 @@ function renderPanel() {
     <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
     <div style="display:flex;gap:8px">
-      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
+      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 && !extensionContextDead ? 'disabled' : ''}>${btnText}</button>
       <button id="ks-ignore" class="ks-btn ks-btn-ghost">Dismiss</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -434,7 +484,9 @@ function renderPanel() {
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = detectIsArmed() ? bulkSave : grantAutoStore;
+  panelEl.querySelector('#ks-save-all').onclick = extensionContextDead
+    ? () => { try { location.reload(); } catch { /* noop */ } }
+    : detectIsArmed() ? bulkSave : grantAutoStore;
   panelEl.querySelector('#ks-ignore').onclick = closePanel;
   panelEl.querySelector('#ks-signin').onclick = (ev) => {
     ev.preventDefault();
@@ -451,7 +503,10 @@ function renderPanel() {
 
 /** MV3: background may be cold; Chrome yields lastError — retry after short backoff. */
 async function sendToBackground(message) {
-  const recoverable = /Receiving end does not exist|The message port closed|Extension context invalidated/i;
+  if (runtimeGone()) {
+    markExtensionContextDead();
+    return { ok: false, reason: 'extension-dead', detail: 'Extension context invalidated.' };
+  }
   let lastDetail = '';
   for (let attempt = 0; attempt < 5; attempt++) {
     /* eslint-disable no-await-in-loop */
@@ -470,7 +525,11 @@ async function sendToBackground(message) {
     });
     if (response && typeof response === 'object' && '__err' in response) {
       lastDetail = response.__err;
-      if (recoverable.test(lastDetail) && attempt < 4) {
+      if (isExtensionContextDead(lastDetail)) {
+        markExtensionContextDead();
+        return { ok: false, reason: 'extension-dead', detail: lastDetail };
+      }
+      if (shouldRetryBackgroundSend(lastDetail) && attempt < 4) {
         await new Promise((r) => setTimeout(r, 120 + attempt * 120));
         continue;
       }
@@ -488,11 +547,36 @@ async function bulkSave() {
   let btn = panelEl && panelEl.querySelector('#ks-save-all');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
+  if (extensionContextDead || runtimeGone()) {
+    markExtensionContextDead();
+    for (const [key, info] of unsaved) {
+      detectedKeys.set(key, { ...info, saved: 'fail' });
+    }
+    renderPanel();
+    const dead = formatBulkSaveFailure({
+      saved: 0,
+      failed: unsaved.length,
+      reason: 'extension-dead',
+      detail: 'Extension context invalidated.',
+    });
+    setPanelStatus(dead.text, 'err');
+    const deadBtn = panelEl && panelEl.querySelector('#ks-save-all');
+    if (deadBtn) { deadBtn.disabled = false; deadBtn.textContent = 'Refresh this tab'; }
+    return;
+  }
+
   await sendToBackground({ type: 'KS_BG_READY' });
 
   let saved = 0, failed = 0, lastReason = null, lastExtra = '';
   for (let i = 0; i < unsaved.length; i++) {
     const [key, info] = unsaved[i];
+    if (extensionContextDead) {
+      detectedKeys.set(key, { ...info, saved: 'fail' });
+      failed++;
+      lastReason = 'extension-dead';
+      lastExtra = 'Extension context invalidated.';
+      continue;
+    }
     setPanelStatus(`Saving ${i + 1}/${unsaved.length}: ${info.provider.name}…`, 'info');
 
     const result = await sendToBackground({
@@ -507,7 +591,15 @@ async function bulkSave() {
     });
 
     detectedKeys.set(key, { ...info, saved: result.ok ? true : 'fail' });
-    if (result.ok) saved++; else { failed++; lastReason = result.reason; if (result.detail) lastExtra = String(result.detail); }
+    if (result.ok) saved++;
+    else {
+      failed++;
+      lastReason = result.reason;
+      if (result.detail) lastExtra = String(result.detail);
+      if (result.reason === 'extension-dead' || isExtensionContextDead(result.detail)) {
+        markExtensionContextDead();
+      }
+    }
     renderPanel();
     const b = panelEl && panelEl.querySelector('#ks-save-all');
     if (b) { b.disabled = true; b.textContent = `Saving ${i + 1}/${unsaved.length}…`; }
@@ -520,14 +612,17 @@ async function bulkSave() {
     if (b2) { b2.disabled = true; b2.textContent = 'All saved'; }
     setTimeout(closePanel, 8000);
   } else {
-    let detail = `Saved ${saved}, ${failed} failed.`;
-    if      (lastReason === 'token-expired' || lastReason === 'no-token') detail += ' Sign in so saves land in your vault.';
-    else if (lastReason === 'network')       detail += ' Backend unreachable.';
-    else if (lastReason === 'extension')     detail += ` Extension messaging error${lastExtra ? ` (${lastExtra})` : ''}.`;
-    else if (lastReason)                     detail += ` (${lastReason})`;
-    else                                     detail += ' Click Retry or open DevTools.';
-    setPanelStatus(detail, 'err');
-    if (b2) { b2.disabled = false; b2.textContent = `Retry ${failed} failed`; }
+    const fail = formatBulkSaveFailure({
+      saved,
+      failed,
+      reason: lastReason,
+      detail: lastExtra,
+    });
+    setPanelStatus(fail.text, 'err');
+    if (b2) {
+      b2.disabled = false;
+      b2.textContent = fail.reload ? 'Refresh this tab' : `Retry ${failed} failed`;
+    }
   }
 }
 

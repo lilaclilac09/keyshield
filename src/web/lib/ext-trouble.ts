@@ -640,5 +640,6 @@ export const DETECT_AFTER_PATCH = [
   'Open popup: three lines only — green ok 1.2.4 <all_urls>, Sign in, Allow detect. No Settings / token box / URL fields',
   'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup shows N saved',
   'Already signed: N saved + masked key list + Sign out. Vault page shows the same rows.',
-  'Keep cursor.com / openai / openrouter open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_',
+  'Keep cursor.com / openai / openrouter / dashboard.helius.dev open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_ / Helius UUID keys (SOL badge)',
+  'If the toast says Extension context invalidated / Saved 0, N failed: refresh that tab. Remove + Load unpacked kills the old content.js; Retry on the stale panel cannot save.',
 ] as const;
