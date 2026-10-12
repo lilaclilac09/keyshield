@@ -212,6 +212,7 @@ describe("extension fill uses queued vault keys", () => {
     const demo = readFileSync(resolve(__dirname, "../src/web/public/cursor-settings-fill-demo.html"), "utf8");
     expect(demo).toContain("OpenAI API Key");
     expect(demo).toContain("127.0.0.1:5173/cursor-settings-fill-demo.html");
+    expect(content).toContain("isKeyShieldDashboardHost() && !ksIsLocalFillDemo() && !ksIsKiloFillContext()");
     expect(content).toContain("(ksIsKiloFillContext() || ksIsCursorFillContext()) ? remaining[0]");
     expect(bg).toContain("'app.kilo.ai'");
     expect(bg).toContain("function _isKiloKeyFetchContext");

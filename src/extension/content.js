@@ -1179,7 +1179,7 @@ function isKeyShieldDashboardHost() {
 // On load: ping background. Retry after login — a first miss used to disable
 // fill forever, which left the Cursor Settings black space empty.
 (function ksInitFillUI() {
-  if (isKeyShieldDashboardHost() && !ksIsLocalFillDemo()) {
+  if (isKeyShieldDashboardHost() && !ksIsLocalFillDemo() && !ksIsKiloFillContext()) {
     ksFillEnabled = false;
     return;
   }
