@@ -671,7 +671,7 @@ node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
 npm run gitnexus -- detect-changes --scope all
 ```
 
-`<符号>` is a placeholder — use a real name. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws `MODULE_NOT_FOUND`.
+`<symbol>` is a placeholder — use a real name. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws `MODULE_NOT_FOUND`.
 
 ---
 

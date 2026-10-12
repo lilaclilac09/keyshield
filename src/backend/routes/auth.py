@@ -43,8 +43,7 @@ def _passkey_json_error(exc: Exception, status: int = 400):
         detail = (
             "Face ID / Touch ID is saved on this Mac, but the server has no "
             "matching passkey for this account (common after a deploy). Use a "
-            "different wallet, sign in, then enroll passkey again. "
-            "指纹在这台 Mac 上，服务器没有对应 passkey。请改用钱包登录后再登记一次。"
+            "different wallet, sign in, then enroll passkey again."
         )
         code = code or pk_mod._NO_PASSKEY
     elif (
@@ -55,7 +54,7 @@ def _passkey_json_error(exc: Exception, status: int = 400):
     ):
         detail = (
             "Passkey challenge expired — tap Sign In again. Your fingerprint "
-            "is still on this device. 登录挑战过期了，再点一次 Sign In，指纹还在。"
+            "is still on this device."
         )
         code = code or pk_mod._CHALLENGE_GONE
     elif code == pk_mod._UNKNOWN_CRED or "unknown credential" in raw:
@@ -63,8 +62,7 @@ def _passkey_json_error(exc: Exception, status: int = 400):
         detail = (
             "Face ID worked, but this fingerprint is not the passkey stored "
             "for this account. Forget this device, sign in with wallet, then "
-            "enroll passkey again. 指纹对了，但服务器上的 credential 对不上。"
-            "点 Forget this device，用钱包登录后再登记。"
+            "enroll passkey again."
         )
         code = code or pk_mod._UNKNOWN_CRED
     else:

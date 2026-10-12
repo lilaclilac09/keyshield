@@ -855,7 +855,7 @@ Don't use it when:
 
 This project is indexed by GitNexus as **keyshield** (9484 symbols, 20837 relationships, 566 execution flows).
 
-> Index stale? From the **repo root** (not `~`): `node src/scripts/gitnexus.cjs analyze --index-only`. `.gitnexus/run.cjs` is gitignored. There is no global `gitnexus` on macOS PATH. Do not paste `<符号>`.
+> Index stale? From the **repo root** (not `~`): `node src/scripts/gitnexus.cjs analyze --index-only`. `.gitnexus/run.cjs` is gitignored. There is no global `gitnexus` on macOS PATH. Do not paste `<symbol>`.
 
 ## Always Do
 
@@ -894,7 +894,7 @@ node src/scripts/gitnexus.cjs detect-changes --scope all
 npm run gitnexus -- impact status_strip --direction upstream
 ```
 
-Never paste `<符号>`. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws MODULE_NOT_FOUND.
+Never paste `<symbol>`. From `$HOME`, `node src/scripts/gitnexus.cjs` looks for `/Users/you/src/scripts/gitnexus.cjs` and throws MODULE_NOT_FOUND.
 
 | Task | Read this skill file |
 | --- | --- |
