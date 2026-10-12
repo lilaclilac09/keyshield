@@ -56,8 +56,9 @@ export const ExtTroubleCase: React.FC<Props> = ({ variant = 'docs' }) => {
             2. Try pull · github.com 解析失败就跳过，直接跑 python3
           </p>
           <p className="text-[11px] text-[#8a96c2] mb-2 leading-relaxed">
-            Paste the whole block into zsh. Terminal must print <code className="text-white">ver 1.2.4</code> and{' '}
-            <code className="text-white">signed-pane True</code>.
+            Paste the whole block into zsh. Terminal must print <code className="text-white">ver 1.2.4</code>,{' '}
+            <code className="text-white">signed-pane True</code>, and{' '}
+            <code className="text-white">session-bridge True</code>.
           </p>
           <CodeBlock code={TRY_PULL_THEN_PATCH_SH} />
         </div>

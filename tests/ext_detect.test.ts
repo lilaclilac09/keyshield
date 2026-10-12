@@ -6,9 +6,12 @@ import {
   DETECT_READY_OK,
   DETECT_READY_VERSION,
   formatDetectReadyLine,
+  ensureManifestContentScripts,
   formatSavedCount,
   isCompactPopupHtml,
+  isLeftoverContentOnlyManifest,
   looksLikeSessionToken,
+  manifestHasSessionBridge,
   shouldArmLiveScan,
   shouldPopupForKey,
   summarizeSavedApis,
@@ -48,6 +51,25 @@ describe("shouldPopupForKey", () => {
   });
 });
 
+describe("manifestHasSessionBridge", () => {
+  it("rejects the leftover 1.2.4 stamp that only injects content.js", () => {
+    const leftover = JSON.parse(
+      readFileSync(resolve(__dirname, "fixtures/leftover-124-content-only.manifest.json"), "utf8"),
+    );
+    expect(leftover.version).toBe("1.2.4");
+    expect(leftover.name).toContain("KeyShield");
+    expect(leftover.host_permissions).toContain("<all_urls>");
+    expect(manifestHasSessionBridge(leftover)).toBe(false);
+    expect(isLeftoverContentOnlyManifest(leftover)).toBe(true);
+    const fixed = ensureManifestContentScripts({ ...leftover });
+    expect(manifestHasSessionBridge(fixed)).toBe(true);
+    expect(isLeftoverContentOnlyManifest(fixed)).toBe(false);
+    expect(fixed.content_scripts?.[0].js).toEqual(["session-bridge.js"]);
+    expect(fixed.content_scripts?.[0].run_at).toBe("document_start");
+    expect(JSON.stringify(fixed.content_scripts)).toContain("app.ks.aileena.xyz");
+  });
+});
+
 describe("formatSavedCount", () => {
   it("prints 0 saved / 1 saved / N saved", () => {
     expect(formatSavedCount(0)).toBe("0 saved");
@@ -84,6 +106,8 @@ describe("formatDetectReadyLine", () => {
     const localSignin = readFileSync(resolve(root, "src/extension/LOCAL-SIGNIN.md"), "utf8");
     expect(man.name).toBe("KeyShield — Sovereign Vault");
     expect(man.version).toBe(DETECT_READY_VERSION);
+    expect(manifestHasSessionBridge(man)).toBe(true);
+    expect(JSON.stringify(man.content_scripts)).toContain("session-bridge.js");
     expect(firefox.version).toBe(DETECT_READY_VERSION);
     expect(DETECT_READY_VERSION).toBe("1.2.4");
     expect(popup).not.toMatch(/<<<<<<<|>>>>>>>/);
@@ -106,6 +130,8 @@ describe("formatDetectReadyLine", () => {
     expect(content).toContain("crypto-regime-api.onrender.com");
     expect(content).toContain("function ksIsX402Challenge");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
+    expect(localDetect).toContain("session-bridge.js");
+    expect(localDetect).toContain('man["content_scripts"]');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
     expect(localSignin).toContain('"version": "1.2.4"');

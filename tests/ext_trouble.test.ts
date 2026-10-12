@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
@@ -45,6 +46,7 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(TRY_PULL_THEN_PATCH_SH).toContain("python3 src/extension/patch-signed-popup.py");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("ver 1.2.4");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("signed-pane True");
+    expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
   });
 
   it("offline python stamps 1.2.4 signed-pane and LIST_SAVED_APIS", () => {
@@ -53,6 +55,11 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).toContain("1.2.4");
     expect(OFFLINE_PATCH_PY).toContain('id="signed-pane"');
     expect(OFFLINE_PATCH_PY).toContain('id="saved-count"');
+    expect(OFFLINE_PATCH_PY).toContain("session-bridge.js");
+    expect(OFFLINE_PATCH_PY).toContain("document_start");
+    expect(OFFLINE_PATCH_PY).toContain("capturePageToken");
+    expect(OFFLINE_PATCH_PY).toContain('print("session-bridge"');
+    expect(OFFLINE_PATCH_PY).toContain("https://*.vercel.app/*");
     expect(OFFLINE_PATCH_PY).toContain("<details");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
@@ -66,7 +73,10 @@ describe("leftover 1.2.1 Trouble case", () => {
   it("UI and docs surface the case plus detect checklist", () => {
     expect(LEFTOVER_121_CASE.id).toBe("leftover-121");
     expect(DETECT_AFTER_PATCH.join(" ")).toContain("ok 1.2.4 <all_urls>");
+    expect(DETECT_AFTER_PATCH.join(" ")).toContain("session-bridge.js");
     expect(DETECT_AFTER_PATCH.join(" ")).toContain("sk-proj-");
+    expect(LEFTOVER_121_CASE.title).toContain("session-bridge");
+    expect(LEFTOVER_121_CASE.symptom).toContain("content.js");
     const docs = readFileSync(resolve(root, "src/web/components/sections/DocsSection.tsx"), "utf8");
     const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
     const caseUi = readFileSync(resolve(root, "src/web/components/ExtTroubleCase.tsx"), "utf8");
@@ -83,6 +93,62 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
+    expect(localDetect).toContain("session-bridge.js");
+    expect(caseUi).toContain("session-bridge True");
+  });
+
+  it("stamp_manifest restores session-bridge on leftover 1.2.4 content.js-only", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const tmp = mkdtempSync(join(tmpdir(), "ks-leftover-124-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "popup.html"), "<html></html>\n");
+    writeFileSync(join(tmp, "background.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    const py = `
+import importlib.util, json
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("patch", ${JSON.stringify(resolve(root, "src/extension/patch-signed-popup.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+man = json.loads((tmp / "manifest.json").read_text())
+assert mod.manifest_has_session_bridge(man) is False
+mod.stamp_manifest(tmp)
+man2 = json.loads((tmp / "manifest.json").read_text())
+assert man2["version"] == "1.2.4"
+assert mod.manifest_has_session_bridge(man2) is True
+assert (tmp / "session-bridge.js").is_file()
+assert "capturePageToken" in (tmp / "session-bridge.js").read_text()
+# leftover copy without sibling file: fallback still writes capturePageToken
+bare = tmp / "bare"
+bare.mkdir()
+(bare / "manifest.json").write_text((tmp / "manifest.json").read_text())
+old = getattr(mod, "__file__", None)
+try:
+    if hasattr(mod, "__file__"):
+        delattr(mod, "__file__")
+    dest = bare / "session-bridge.js"
+    if dest.exists():
+        dest.unlink()
+    mod.ensure_session_bridge_file(bare)
+    assert "capturePageToken" in dest.read_text()
+    print("session-bridge", True)
+    print("fallback", True)
+finally:
+    if old is not None:
+        mod.__file__ = old
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("session-bridge True");
+    expect(out).toContain("fallback True");
+    const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
+    expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
+    expect(stamped.content_scripts[0].run_at).toBe("document_start");
+    expect(stamped.content_scripts[0].matches).toContain("https://app.ks.aileena.xyz/*");
   });
 
   it("patch-signed-popup.py --find prints this checkout", () => {

@@ -30,11 +30,14 @@ python3 src/extension/patch-signed-popup.py
 If `github.com` does not resolve, skip git. Run
 `python3 src/extension/patch-signed-popup.py` if that file exists, else
 paste the python3 block from Home / Docs → Trouble (it writes `popup.html`
-with `id="signed-pane"`, stamps `man["version"] = "1.2.4"`, and injects
-`KS-SIGNED-1.2.4`). Terminal must print `ver 1.2.4` and `signed-pane True`.
+with `id="signed-pane"`, stamps `man["version"] = "1.2.4"`, restores
+`session-bridge.js` at `document_start`, and injects `KS-SIGNED-1.2.4`).
+Terminal must print `ver 1.2.4`, `signed-pane True`, and `session-bridge True`.
 Then chrome://extensions → **Remove** → **Load unpacked**.
 If already signed, popup is the full UI: **N saved** + the list + Sign out.
-Leave the hosted tab open so the popup can read `localStorage.ks_token`.
+Refresh `https://app.ks.aileena.xyz` so the bridge injects. A leftover
+1.2.4 stamp that only has `content.js` on `<all_urls>` (your loaded
+`manifest.json` can look “ok” and still miss the bridge) stays `no token`.
 
 ## 1. Patch 1.1.3 → 1.2.4 on disk (python3 only)
 
@@ -65,6 +68,34 @@ if "<all_urls>" not in man["host_permissions"]:
 for extra in ("scripting", "tabs"):
     if extra not in man.get("permissions", []):
         man.setdefault("permissions", []).append(extra)
+man["content_scripts"] = [
+    {
+        "matches": [
+            "https://app.ks.aileena.xyz/*",
+            "https://*.aileena.xyz/*",
+            "https://keyshield.dev/*",
+            "https://*.keyshield.dev/*",
+            "https://*.up.railway.app/*",
+            "https://*.vercel.app/*",
+            "http://127.0.0.1:5173/*",
+            "http://localhost:5173/*",
+            "http://127.0.0.1:3000/*",
+            "http://localhost:3000/*",
+        ],
+        "js": ["session-bridge.js"],
+        "run_at": "document_start",
+    },
+    {"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": True},
+]
+bridge = ext / "session-bridge.js"
+if (not bridge.is_file()) or ("capturePageToken" not in bridge.read_text(encoding="utf-8")):
+    bridge.write_text(
+        "(function keyShieldSessionBridge(){function announce(){try{window.postMessage({__ks_ext_announce:chrome.runtime.id},location.origin)}catch(e){}}"
+        "function capturePageToken(){try{var t=localStorage.getItem('ks_token')||'';if(t.trim().length<12)return;chrome.storage.local.get(['ks_token'],function(s){if(s&&s.ks_token===t)return;chrome.storage.local.set({ks_token:t,ks_auto_store:true})})}catch(e){}}"
+        "announce();capturePageToken();[400,1200,3000,8000].forEach(function(ms){setTimeout(capturePageToken,ms)});"
+        "window.addEventListener('ks-auth-changed',capturePageToken);window.addEventListener('storage',capturePageToken);"
+        "window.addEventListener('message',function(e){if(e.source!==window||!e.data)return;if(e.data.__ks_ext_request)announce();if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});})();\n"
+    )
 man_path.write_text(json.dumps(man, indent=2) + "\n")
 
 for name in ("popup.js", "background.js"):
@@ -118,10 +149,12 @@ loadAutoStorePref();
 
 print("ok 1.2.4", ext)
 print("ver", json.loads(man_path.read_text())["version"])
+print("session-bridge", any("session-bridge.js" in (row.get("js") or []) for row in json.loads(man_path.read_text()).get("content_scripts") or []))
 print("dash", [l for l in (ext / "popup.js").read_text().splitlines() if "DEFAULT_DASHBOARD_URL" in l][0])
 print("auto", "maybeAutoStore" in cjs.read_text())
 print("next: chrome://extensions Remove + Load unpacked this folder")
 print("then Sign-in must open https://app.ks.aileena.xyz/?ext=1&demo=shop")
+print("loaded manifest.json must list session-bridge.js — only content.js stays no token")
 PY
 ```
 

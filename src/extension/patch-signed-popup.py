@@ -666,6 +666,111 @@ def print_find(hits: list[tuple[str, Path]], ext: Path) -> None:
     print("export KS_EXT=" + shlex.quote(str(ext)))
 
 
+SESSION_BRIDGE_CONTENT_SCRIPT = {
+    "matches": [
+        "https://app.ks.aileena.xyz/*",
+        "https://*.aileena.xyz/*",
+        "https://keyshield.dev/*",
+        "https://*.keyshield.dev/*",
+        "https://*.up.railway.app/*",
+        "https://*.vercel.app/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:3000/*",
+        "http://localhost:3000/*",
+    ],
+    "js": ["session-bridge.js"],
+    "run_at": "document_start",
+}
+DETECT_CONTENT_SCRIPT = {
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": True,
+}
+
+
+def manifest_has_session_bridge(man: dict) -> bool:
+    for row in man.get("content_scripts") or []:
+        if isinstance(row, dict) and "session-bridge.js" in (row.get("js") or []):
+            return True
+    return False
+
+
+SESSION_BRIDGE_FALLBACK = r"""
+(function keyShieldSessionBridge() {
+  function announce() {
+    if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.id) return;
+    try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); } catch (e) {}
+  }
+  function readPageSession() {
+    try {
+      return {
+        token: localStorage.getItem("ks_token") || "",
+        user: localStorage.getItem("ks_wallet") || localStorage.getItem("ks_passkey_user") || "",
+      };
+    } catch (e) {
+      return { token: "", user: "" };
+    }
+  }
+  function capturePageToken() {
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
+    var page = readPageSession();
+    if (!page.token || page.token.trim().length < 12) return;
+    chrome.storage.local.get(["ks_token"], function (stored) {
+      if (stored && stored.ks_token === page.token) return;
+      chrome.storage.local.set({ ks_token: page.token, ks_user: page.user || null, ks_auto_store: true });
+    });
+  }
+  function shareSession() {
+    if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
+    capturePageToken();
+    chrome.storage.local.get(["ks_token", "ks_user"], function (stored) {
+      var token = stored && stored.ks_token;
+      try {
+        if (stored && stored.ks_user) {
+          if (!localStorage.getItem("ks_passkey_user")) localStorage.setItem("ks_passkey_user", stored.ks_user);
+          if (!localStorage.getItem("ks_wallet")) localStorage.setItem("ks_wallet", stored.ks_user);
+        }
+      } catch (e) {}
+      if (!token) return;
+      try {
+        if (!localStorage.getItem("ks_token")) {
+          localStorage.setItem("ks_token", token);
+          if (stored.ks_user) localStorage.setItem("ks_wallet", stored.ks_user);
+        }
+      } catch (e) {}
+      try { window.postMessage({ __ks_ext_session: { token: token, user: stored.ks_user || null } }, location.origin); } catch (e) {}
+    });
+  }
+  announce();
+  shareSession();
+  capturePageToken();
+  [400, 1200, 3000, 8000].forEach(function (ms) { setTimeout(capturePageToken, ms); });
+  window.addEventListener("ks-auth-changed", capturePageToken);
+  window.addEventListener("storage", capturePageToken);
+  window.addEventListener("message", function (e) {
+    if (e.source !== window || !e.data) return;
+    if (e.data.__ks_ext_request) announce();
+    if (e.data.__ks_ext_request_session) shareSession();
+    if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
+  });
+})();
+"""
+
+
+def ensure_session_bridge_file(ext: Path) -> None:
+    dest = ext / "session-bridge.js"
+    if dest.is_file() and "capturePageToken" in dest.read_text(encoding="utf-8"):
+        return
+    here = globals().get("__file__")
+    src = Path(here).resolve().parent / "session-bridge.js" if here else None
+    if src and src.is_file() and src.resolve() != dest.resolve():
+        dest.write_text(src.read_text(encoding="utf-8"))
+        return
+    dest.write_text(SESSION_BRIDGE_FALLBACK.lstrip() + "\n")
+
+
 def stamp_manifest(ext: Path) -> None:
     path = ext / "manifest.json"
     man = json.loads(path.read_text())
@@ -680,6 +785,8 @@ def stamp_manifest(ext: Path) -> None:
     for extra in ("scripting", "tabs"):
         if extra not in man.get("permissions", []):
             man.setdefault("permissions", []).append(extra)
+    man["content_scripts"] = [SESSION_BRIDGE_CONTENT_SCRIPT, DETECT_CONTENT_SCRIPT]
+    ensure_session_bridge_file(ext)
     path.write_text(json.dumps(man, indent=2) + "\n")
 
 
@@ -724,6 +831,7 @@ def main(argv: list[str] | None = None) -> None:
     print("signed-pane", 'id="signed-pane"' in html)
     print("saved-count", 'id="saved-count"' in html)
     print("full-ui", "<details" in html and 'id="fingerprint"' in html)
+    print("session-bridge", manifest_has_session_bridge(man))
     print("hosted", HOSTED)
     print("next: chrome://extensions → Remove → Load unpacked this folder")
     print("popup must say: ok 1.2.4 <all_urls>")

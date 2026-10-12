@@ -37,12 +37,12 @@ export const PATCH_VERSION = '1.2.4';
 
 export const LEFTOVER_121_CASE = {
   id: LEFTOVER_121_CASE_ID,
-  title: 'Leftover 1.2.1 · github.com DNS',
-  titleZh: '本地还是 1.2.1 · github.com 解析失败',
+  title: 'Leftover 1.2.4 · missing session-bridge',
+  titleZh: '本地 1.2.4 只有 content.js · Sign-in 进不了扩展',
   symptom:
-    'chrome://extensions card is still KeyShield — Sovereign Vault 1.2.1. Already signed, but the popup still shows Sign-in / token paste instead of Saved APIs. git pull cannot resolve github.com.',
+    'Card can already say KeyShield — Sovereign Vault 1.2.4 and ok 1.2.4 <all_urls>, but chrome://extensions → Details → loaded manifest.json only lists content.js on <all_urls>. Hosted Sign-in never writes chrome.storage — popup stays no token. git pull cannot resolve github.com.',
   symptomZh:
-    '卡片还是 1.2.1。已经 signed，popup 仍是 Sign-in / token paste，不是 Saved APIs。github.com 解析失败。',
+    '卡片已经是 1.2.4、popup 也能绿 ok 1.2.4 <all_urls>，但加载的 manifest 只有 content.js，没有 session-bridge.js。hosted Sign-in 写不进扩展，popup 一直 no token。github.com 解析失败。',
 } as const;
 
 export function shouldSkipGitPull(stderr: string): boolean {
@@ -305,6 +305,25 @@ if "<all_urls>" not in man["host_permissions"]:
 for extra in ("scripting", "tabs"):
     if extra not in man.get("permissions", []):
         man.setdefault("permissions", []).append(extra)
+man["content_scripts"] = [
+    {"matches": ["https://app.ks.aileena.xyz/*", "https://*.aileena.xyz/*", "https://keyshield.dev/*", "https://*.keyshield.dev/*", "https://*.up.railway.app/*", "https://*.vercel.app/*", "http://127.0.0.1:5173/*", "http://localhost:5173/*", "http://127.0.0.1:3000/*", "http://localhost:3000/*"], "js": ["session-bridge.js"], "run_at": "document_start"},
+    {"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": True},
+]
+bridge = ext / "session-bridge.js"
+if (not bridge.is_file()) or ("capturePageToken" not in bridge.read_text(encoding="utf-8")):
+    bridge.write_text(r'''
+(function keyShieldSessionBridge(){
+  function announce(){if(typeof chrome==="undefined"||!chrome.runtime||!chrome.runtime.id)return;try{window.postMessage({__ks_ext_announce:chrome.runtime.id},location.origin)}catch(e){}}
+  function readPageSession(){try{return{token:localStorage.getItem("ks_token")||"",user:localStorage.getItem("ks_wallet")||localStorage.getItem("ks_passkey_user")||""}}catch(e){return{token:"",user:""}}}
+  function capturePageToken(){if(typeof chrome==="undefined"||!chrome.storage||!chrome.storage.local)return;var page=readPageSession();if(!page.token||page.token.trim().length<12)return;chrome.storage.local.get(["ks_token"],function(stored){if(stored&&stored.ks_token===page.token)return;chrome.storage.local.set({ks_token:page.token,ks_user:page.user||null,ks_auto_store:true})})}
+  function shareSession(){if(typeof chrome==="undefined"||!chrome.storage||!chrome.storage.local)return;capturePageToken();chrome.storage.local.get(["ks_token","ks_user"],function(stored){var token=stored&&stored.ks_token;if(!token)return;try{if(!localStorage.getItem("ks_token"))localStorage.setItem("ks_token",token)}catch(e){}try{window.postMessage({__ks_ext_session:{token:token,user:stored.ks_user||null}},location.origin)}catch(e){}})}
+  announce();shareSession();capturePageToken();
+  [400,1200,3000,8000].forEach(function(ms){setTimeout(capturePageToken,ms)});
+  window.addEventListener("ks-auth-changed",capturePageToken);
+  window.addEventListener("storage",capturePageToken);
+  window.addEventListener("message",function(e){if(e.source!==window||!e.data)return;if(e.data.__ks_ext_request)announce();if(e.data.__ks_ext_request_session)shareSession();if(e.data.__ks_page_session||e.data.__ks_auth_changed)capturePageToken()});
+})();
+'''.lstrip())
 (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
 html_now = (ext / "popup.html").read_text() if (ext / "popup.html").exists() else ""
 if 'id="signed-pane"' not in html_now or "ok 1.2.4" not in html_now or "<details" not in html_now or 'id="saved-count"' not in html_now:
@@ -352,10 +371,12 @@ def splice(path, mark, block):
 splice(ext / "popup.js", MARK_JS, js)
 splice(ext / "background.js", MARK_BG, bg)
 html = (ext / "popup.html").read_text()
+man2 = json.loads((ext / "manifest.json").read_text())
 print("ok", ext)
-print("ver", json.loads((ext / "manifest.json").read_text())["version"])
+print("ver", man2["version"])
 print("signed-pane", 'id="signed-pane"' in html)
 print("saved-count", 'id="saved-count"' in html)
+print("session-bridge", any("session-bridge.js" in (row.get("js") or []) for row in (man2.get("content_scripts") or []) if isinstance(row, dict)))
 print("hosted", HOSTED)
 print("next: chrome://extensions Remove + Load unpacked", ext)
 `;
@@ -379,14 +400,16 @@ export const TRY_PULL_THEN_PATCH_SH = [
   'python3 src/extension/patch-signed-popup.py 2>/dev/null || python3 - <<\'PY\'',
   OFFLINE_PATCH_PY.trimEnd(),
   'PY',
-  'echo "must see: ver 1.2.4  and  signed-pane True"',
+  'echo "must see: ver 1.2.4  and  signed-pane True  and  session-bridge True"',
 ].join('\n') + '\n';
 
 export const DETECT_AFTER_PATCH = [
-  'chrome://extensions → Remove the old 1.2.1 card (Reload is not enough)',
+  'chrome://extensions → Remove the leftover card (Reload is not enough — even 1.2.4 can miss session-bridge.js)',
   'Load unpacked → the KS_EXT / src/extension folder the terminal printed',
   'Card name KeyShield — Sovereign Vault, version 1.2.4',
+  'Details → loaded manifest.json must list session-bridge.js at document_start on app.ks.aileena.xyz — only content.js on <all_urls> stays no token',
   'Open popup: green ok 1.2.4 <all_urls>',
+  'Refresh https://app.ks.aileena.xyz so session-bridge injects, then popup shows N saved',
   'Already signed: only Saved APIs + Sign out — no Sign-in / token paste',
   'Keep cursor.com / openai / openrouter open, click Show, save sk-proj- / sk-or- / key_ / crsr_ / helius_auth_',
 ] as const;

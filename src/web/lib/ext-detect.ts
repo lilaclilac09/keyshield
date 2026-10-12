@@ -71,6 +71,53 @@ export function looksLikeSessionToken(raw: string | null | undefined): boolean {
   return String(raw || '').trim().length >= 12;
 }
 
+export const SESSION_BRIDGE_SCRIPT = 'session-bridge.js';
+
+export const SESSION_BRIDGE_CONTENT_SCRIPT = {
+  matches: [
+    'https://app.ks.aileena.xyz/*',
+    'https://*.aileena.xyz/*',
+    'https://keyshield.dev/*',
+    'https://*.keyshield.dev/*',
+    'https://*.up.railway.app/*',
+    'https://*.vercel.app/*',
+    'http://127.0.0.1:5173/*',
+    'http://localhost:5173/*',
+    'http://127.0.0.1:3000/*',
+    'http://localhost:3000/*',
+  ],
+  js: [SESSION_BRIDGE_SCRIPT],
+  run_at: 'document_start',
+} as const;
+
+export const DETECT_CONTENT_SCRIPT = {
+  matches: ['<all_urls>'],
+  js: ['content.js'],
+  run_at: 'document_idle',
+  all_frames: true,
+} as const;
+
+export function manifestHasSessionBridge(man: {
+  content_scripts?: Array<{ js?: string[] }>;
+}): boolean {
+  return (man.content_scripts || []).some((row) => (row.js || []).includes(SESSION_BRIDGE_SCRIPT));
+}
+
+/** Loaded leftover 1.2.4: version + <all_urls> ok, but only content.js — Sign-in never reaches chrome.storage. */
+export function isLeftoverContentOnlyManifest(man: {
+  content_scripts?: Array<{ js?: string[] }>;
+}): boolean {
+  const scripts = man.content_scripts || [];
+  if (manifestHasSessionBridge(man)) return false;
+  return scripts.some((row) => (row.js || []).includes('content.js'));
+}
+
+/** Leftover 1.2.4 stamps often keep only content.js on <all_urls>. */
+export function ensureManifestContentScripts<T extends { content_scripts?: unknown }>(man: T): T {
+  man.content_scripts = [SESSION_BRIDGE_CONTENT_SCRIPT, DETECT_CONTENT_SCRIPT];
+  return man;
+}
+
 /** After Sign-in, keep scanning and save every new match. */
 export function shouldArmLiveScan(opts: {
   loggedIn: boolean;
