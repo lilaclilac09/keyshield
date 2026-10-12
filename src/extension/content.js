@@ -308,6 +308,22 @@ function markExtensionContextDead() {
   extensionContextDead = true;
 }
 
+function reloadDeadDetectTab() {
+  try {
+    if (sessionStorage.getItem('ks_dead_reloaded') === '1') return;
+    sessionStorage.setItem('ks_dead_reloaded', '1');
+    location.reload();
+  } catch { /* noop */ }
+}
+
+function takeOverStaleDetectPanel() {
+  try {
+    document.querySelectorAll('#keyshield-detection-notice').forEach((el) => {
+      if (el !== panelEl) el.remove();
+    });
+  } catch { /* noop */ }
+}
+
 function runtimeGone() {
   try {
     return typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id;
@@ -323,7 +339,7 @@ function formatBulkSaveFailure(opts) {
   const reason = String((opts && opts.reason) || '');
   const detail = String((opts && opts.detail) || '');
   if (isExtensionContextDead(detail) || reason === 'extension-dead') {
-    return { text: `${text} Extension was reloaded. Refresh this tab, then Save again.`, reload: true };
+    return { text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`, reload: true };
   }
   if (reason === 'token-expired' || reason === 'no-token') {
     return { text: `${text} Sign in so saves land in your vault.`, reload: false };
@@ -562,6 +578,7 @@ async function bulkSave() {
     setPanelStatus(dead.text, 'err');
     const deadBtn = panelEl && panelEl.querySelector('#ks-save-all');
     if (deadBtn) { deadBtn.disabled = false; deadBtn.textContent = 'Refresh this tab'; }
+    reloadDeadDetectTab();
     return;
   }
 
@@ -623,6 +640,7 @@ async function bulkSave() {
       b2.disabled = false;
       b2.textContent = fail.reload ? 'Refresh this tab' : `Retry ${failed} failed`;
     }
+    if (fail.reload) reloadDeadDetectTab();
   }
 }
 
@@ -1137,6 +1155,7 @@ function isKeyShieldDashboardHost() {
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
 function startDetectWatchers() {
+  takeOverStaleDetectPanel();
   loadDismissedDomains();
   loadAutoStorePref();
   scheduleScan();

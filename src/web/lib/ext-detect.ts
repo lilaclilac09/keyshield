@@ -27,6 +27,64 @@ export function classifyDetectedKey(raw: string): DetectedShape | null {
   return null;
 }
 
+function isHeliusDashboardHost(hostname: string): boolean {
+  const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
+  return host === 'dashboard.helius.dev' || host === 'helius.dev' || host.endsWith('.helius.dev')
+    || host === 'helius.xyz' || host.endsWith('.helius.xyz');
+}
+
+function looksMaskedSecret(raw: string): boolean {
+  return /•|…|\.{3}/.test(String(raw || ''));
+}
+
+/** All visible keys on a page. Helius UUIDs only on dashboard.helius.dev. */
+export function harvestKeysFromPageText(opts: {
+  text: string;
+  hostname: string;
+  href?: string;
+}): DetectedShape[] {
+  const text = String(opts.text || '');
+  const hostname = String(opts.hostname || '').toLowerCase();
+  const href = String(opts.href || '');
+  const skipUuid = new Set(
+    (href.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+      .map((s) => s.toLowerCase()),
+  );
+  const out: DetectedShape[] = [];
+  const seen = new Set<string>();
+  for (const row of SHAPES) {
+    const flags = row.re.flags.includes('g') ? row.re.flags : `${row.re.flags}g`;
+    const re = new RegExp(row.re.source, flags);
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text)) !== null) {
+      const key = match[0];
+      if (!key || looksMaskedSecret(key)) continue;
+      if (row.upstream === 'helius' && key.includes('-')) {
+        if (!isHeliusDashboardHost(hostname)) continue;
+        if (skipUuid.has(key.toLowerCase())) continue;
+      }
+      const id = `${row.upstream}:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ upstream: row.upstream, key });
+    }
+  }
+  return out;
+}
+
+export function formatHarvestSaveResult(opts: {
+  saved: number;
+  failed: number;
+}): string {
+  const saved = Math.max(0, Math.floor(Number(opts.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(opts.failed) || 0));
+  if (saved > 0 && failed === 0) {
+    return `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`;
+  }
+  if (saved > 0) return `Saved ${saved}, ${failed} failed.`;
+  return `Saved 0, ${failed} failed.`;
+}
+
 export function shouldPopupForKey(opts: {
   alreadySaved: boolean;
   panelOpen: boolean;
@@ -220,7 +278,13 @@ export function formatBulkSaveFailure(opts: {
   const detail = String(opts.detail || '');
   if (isExtensionContextDead(detail) || reason === 'extension-dead') {
     return {
-      text: `${text} Extension was reloaded. Refresh this tab, then Save again.`,
+      text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`,
+      reload: true,
+    };
+  }
+  if (reason === 'extension' && isExtensionContextDead(detail)) {
+    return {
+      text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`,
       reload: true,
     };
   }

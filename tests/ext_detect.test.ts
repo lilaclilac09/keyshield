@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   classifyDetectedKey,
+  harvestKeysFromPageText,
+  formatHarvestSaveResult,
   DETECT_READY_OK,
   DETECT_READY_VERSION,
   formatDetectReadyLine,
@@ -38,6 +40,29 @@ describe("classifyDetectedKey", () => {
     expect(classifyDetectedKey("gsk_" + "a".repeat(40))?.upstream).toBe("groq");
     expect(classifyDetectedKey("helius_auth_" + "b".repeat(20))?.upstream).toBe("helius");
     expect(classifyDetectedKey("10470584-67a9-4abc-8def-123456787761")?.upstream).toBe("helius");
+  });
+
+  it("harvests every Helius SOL UUID on dashboard.helius.dev", () => {
+    const text = [
+      "10470584-67a9-4abc-8def-123456787761",
+      "ba5bbc06-d3ee-4abc-8def-123456783876",
+      "396e9e16-89f9-4abc-8def-12345678e555",
+      "e38b4ee1-e7ab-4abc-8def-12345678736a",
+      "221dc279-15f9-4abc-8def-123456782973",
+    ].join("\n");
+    const rows = harvestKeysFromPageText({
+      text,
+      hostname: "dashboard.helius.dev",
+      href: "https://dashboard.helius.dev/accounts/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/api-keys",
+    });
+    expect(rows).toHaveLength(5);
+    expect(rows.every((row) => row.upstream === "helius")).toBe(true);
+    expect(rows.map((row) => row.key)).not.toContain("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(harvestKeysFromPageText({
+      text: "10470584-67a9-••••••••7761",
+      hostname: "dashboard.helius.dev",
+    })).toEqual([]);
+    expect(formatHarvestSaveResult({ saved: 5, failed: 0 })).toBe("Saved 5 keys to KeyShield vault.");
   });
 
   it("ignores ordinary sentences", () => {
@@ -193,13 +218,21 @@ describe("extension context after Remove + Load unpacked", () => {
     });
     expect(fail.reload).toBe(true);
     expect(fail.text).toContain("Saved 0, 4 failed.");
-    expect(fail.text).toContain("Refresh this tab");
+    expect(fail.text).toContain("writing the vault");
+    expect(fail.text).toContain("Dead toast cannot save");
     expect(fail.text).not.toContain("Extension messaging error");
     const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
     expect(content).toContain("function formatBulkSaveFailure");
+    expect(content).toContain("function takeOverStaleDetectPanel");
+    expect(content).toContain("function reloadDeadDetectTab");
     expect(content).toContain("Refresh this tab");
     expect(content).toContain("extension-dead");
     expect(content).toContain("markExtensionContextDead");
+    const background = readFileSync(resolve(__dirname, "../src/extension/background.js"), "utf8");
+    expect(background).toContain("function harvestVisibleKeysFromText");
+    expect(background).toContain("function collectPageSecrets");
+    expect(background).toContain("dashboard.helius.dev");
+    expect(background).toContain("directStore({ upstream: hit.upstream, value: hit.key })");
   });
 });
 

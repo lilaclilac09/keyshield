@@ -132,6 +132,7 @@ async function armLiveScanAfterLogin() {
   if (!ks_token) return;
   await chrome.storage.local.set({ ks_auto_store: true });
   try { await chrome.runtime.sendMessage({ type: "INJECT_DETECT" }); } catch { /* sw cold */ }
+  try { await refreshSavedApis(); } catch { /* vault list paints on next open */ }
 }
 
 function summarizeSavedApis(data) {

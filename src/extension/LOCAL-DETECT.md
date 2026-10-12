@@ -170,12 +170,12 @@ Screen must say `ok 1.2.4` and `DEFAULT_DASHBOARD_URL = "https://app.ks.aileena.
    scanner stays on: any `sk-proj-` / `sk-or-` / `key_` / `crsr_` / `helius_auth_`
    / Helius dashboard UUID (SOL badge) toasts and saves. Cursor API Keys: click
    **Show** so the token is in the DOM.
-   Refresh `dashboard.helius.dev` (and any tab that already showed SOL UUID
-   keys) after Remove + Load unpacked. A stale toast saying
-   `Saved 0, 4 failed. Extension messaging error (Extension context invalidated.)`
-   means that tab still has the old content.js — Retry cannot revive it.
-   Save those SOL UUIDs without Face ID / passkey. Passkey is only when you
-   paste a key into another site (Cursor API box, fill, reveal).
+   Keep `dashboard.helius.dev` open after Remove + Load unpacked. The new
+   background harvests every SOL UUID from that tab and POSTs `/manage/store`
+   — do not click Save on the dead toast
+   (`Saved 0, 5 failed. Extension messaging error (Error: Extension context invalidated.)`).
+   Popup then lists all saved Helius rows. Auto-detect stays on.
+   Passkey is only when you paste a key into another site (Cursor API box, fill, reveal).
 
 ## 3. What you should see
 

