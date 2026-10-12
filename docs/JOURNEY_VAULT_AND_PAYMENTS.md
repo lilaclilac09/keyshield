@@ -192,10 +192,26 @@ Probed 2026-10-12. Circle Devnet USDC
 
 | Offer | Status | Why |
 |---|---|---|
-| Crypto Regime `GET /v1/tokens` | **LIVE** | HTTP 402, 20000 micro = **0.02 USDC**, payTo `9ScHv3yEJcNj32ctNtPEuGyp1UHPvPFNn1rtsVxcCcY5` |
+| Crypto Regime `GET /v1/tokens` | **LIVE · paid** | HTTP 402 then 200. 20000 micro = **0.02 USDC**, payTo `9ScHv3yEJcNj32ctNtPEuGyp1UHPvPFNn1rtsVxcCcY5` |
+| PayAI extras (Quaestor 0.005 / Ekospor 0.02) | **LIVE 402** | Same Circle Devnet USDC accept. Not bought this run |
 | PayAI discovery | **LIVE list** | Returns Crypto Regime + others on that network |
-| Quicknode `x402.quicknode.com/solana-devnet` | **NOT SURFACE** | Pays Base USDC, not Circle Devnet USDC |
+| Quicknode `x402.quicknode.com/solana-devnet` | **NOT SURFACE** | Now Cloudflare 403 here; when it 402'd, pays Base USDC |
 | `$X402` / `$M32` | **NOT SURFACE** | Not a KeyShield SKU |
 
-KeyShield Home shop **cannot** settle the Crypto Regime 402. Do not buy
-again on `:8001`. The KeyShield SKU you already paid is **KS-MPP-509959477**.
+Live Crypto Regime settle (this VM, 2026-10-12):
+
+| Field | Value |
+|---|---|
+| Amount | **0.02 USDC** Circle Devnet |
+| HTTP | 402 → **200** + regime JSON |
+| Owner USDC | 12.89 → **12.87** |
+| Merchant USDC | 20.038 → **20.058** |
+| Tx | `3fMT2oYeD4kuZV3KugpGsKP5oHS2sZL4KbqdDyvjz2pjUCydFiP9iVWeYojAxC7kyEChHKxv599ygNvSHP4UqBmL` · slot **510125304** · err=null |
+| Network | `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` |
+| Fee payer | PayAI `2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4` |
+
+Explorer: https://explorer.solana.com/tx/3fMT2oYeD4kuZV3KugpGsKP5oHS2sZL4KbqdDyvjz2pjUCydFiP9iVWeYojAxC7kyEChHKxv599ygNvSHP4UqBmL?cluster=devnet
+
+KeyShield Home shop still **cannot** press-button settle a third-party 402.
+This pay used the owner Devnet wallet + PayAI facilitator, not `:8001` MPP.
+The KeyShield SKU you already paid is **KS-MPP-509959477**.

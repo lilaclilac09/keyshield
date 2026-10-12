@@ -6,7 +6,7 @@ import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
 import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
-import { BAZAAR_OFFERS } from '../../lib/x402-bazaar';
+import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
 import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { ensureVerified } from '../../lib/zk-verify';
@@ -313,7 +313,7 @@ export const HomeSection: React.FC<Props> = ({
             LIVE means Solana Devnet Circle USDC. KeyShield cannot settle these 402s.
             Not Raydium / <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
           </p>
-          {BAZAAR_OFFERS.map((offer) => (
+          {[...BAZAAR_OFFERS, ...PAYAI_LIVE_EXTRAS].map((offer) => (
             <div
               key={offer.id}
               data-testid={`shop-bazaar-${offer.id}`}

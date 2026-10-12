@@ -101,7 +101,7 @@ export const BAZAAR_OFFERS: BazaarOffer[] = [
     method: 'GET',
     url: 'https://x402.quicknode.com/solana-devnet',
     status: 'NOT_SURFACE',
-    detail: 'URL says solana-devnet; accepts pay Base Sepolia / Base USDC (eip155), not Circle Devnet USDC.',
+    detail: 'Now Cloudflare 403 from this VM. When it returned 402, accepts paid Base USDC (eip155), not Circle Devnet USDC.',
   },
   {
     id: 'payai',
@@ -109,6 +109,28 @@ export const BAZAAR_OFFERS: BazaarOffer[] = [
     method: 'GET',
     url: 'https://facilitator.payai.network/discovery/resources?network=solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
     status: 'LIVE',
-    detail: 'Discovery only — lists Crypto Regime and others. Not a KeyShield SKU.',
+    detail: 'Discovery only — lists Crypto Regime and other Circle Devnet USDC 402s. Not a KeyShield SKU.',
+  },
+];
+
+/** Extra PayAI rows that also accept Solana Devnet Circle USDC. Not KeyShield SKUs. */
+export const PAYAI_LIVE_EXTRAS: BazaarOffer[] = [
+  {
+    id: 'quaestor',
+    name: 'Quaestor quote-check',
+    method: 'GET',
+    url: 'https://quaestor-stocks.onrender.com/v1/intel/quote-check',
+    status: 'LIVE',
+    amountLabel: '0.005 USDC',
+    detail: 'PayAI discovery · Circle Devnet USDC exact. Not a KeyShield SKU.',
+  },
+  {
+    id: 'ekospor',
+    name: 'Ekospor index',
+    method: 'GET',
+    url: 'https://api.ekospor.com/v1/endeks',
+    status: 'LIVE',
+    amountLabel: '0.02 USDC',
+    detail: 'PayAI discovery · Circle Devnet USDC exact. Not a KeyShield SKU.',
   },
 ];

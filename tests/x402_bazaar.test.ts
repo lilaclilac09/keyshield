@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BAZAAR_OFFERS,
   CIRCLE_DEVNET_USDC,
+  PAYAI_LIVE_EXTRAS,
   SOLANA_DEVNET_CAIP,
   classifyX402Accepts,
   decodePaymentRequiredHeader,
@@ -64,5 +65,6 @@ describe("x402 bazaar classify", () => {
       "crypto-regime",
       "payai",
     ]);
+    expect(PAYAI_LIVE_EXTRAS.every((o) => o.status === "LIVE")).toBe(true);
   });
 });

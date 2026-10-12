@@ -24,5 +24,6 @@ describe("journey vault + payments brief", () => {
     expect(md).toContain("ok 1.2.4 <all_urls>");
     expect(md).toContain("crypto-regime-api.onrender.com");
     expect(md).toContain("NOT SURFACE");
+    expect(md).toContain("3fMT2oYeD4kuZV3KugpGsKP5oHS2sZL4KbqdDyvjz2pjUCydFiP9iVWeYojAxC7kyEChHKxv599ygNvSHP4UqBmL");
   });
 });
