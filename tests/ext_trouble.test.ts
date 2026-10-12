@@ -138,6 +138,9 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(hint).not.toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
     expect(token).not.toContain("Leftover 1.2.4");
+    expect(token).not.toContain("Register token");
+    expect(token).not.toContain("Old v1");
+    expect(token).toContain("Trouble tab");
     expect(OFFLINE_PATCH_PY).toContain("api.name||api.upstream");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("api.name||api.upstream");
     expect(ZSH_SAFE_STAMP_PY).toContain("api.name||api.upstream");
