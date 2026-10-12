@@ -115,17 +115,16 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      if (!isVaultUnlocked()) {
-        await unlock();
-        if (!isVaultUnlocked()) throw new Error('Vault still locked after unlock attempt');
-      }
+      // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) return;
-      await addEntry(upstream, rawKey);
+      if (isVaultUnlocked()) {
+        await addEntry(upstream, rawKey);
+      }
       refresh();
     },
-    [refresh, unlock],
+    [refresh],
   );
 
   const deleteItem = useCallback(

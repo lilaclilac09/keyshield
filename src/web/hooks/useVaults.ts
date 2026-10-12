@@ -6,8 +6,9 @@
  *                 trigger `unlock()` to do a passkey ceremony
  *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
  *
- * Device Vault (Path A) plus the Python `/manage/*` shim. Demo login lists
- * `/manage/vault` without a passkey unlock; reveal falls back to
+ * Device Vault (Path A) plus the Python `/manage/*` shim. Detect + save
+ * write `/manage/store` without a passkey. Demo login lists `/manage/vault`
+ * without unlock; reveal / paste-elsewhere uses passkey or
  * `/manage/decrypt/{id}`. Use `getDecryptedKey(upstream)` when Device Vault
  * is unlocked and you need a raw key for `/proxy/*`.
  */
@@ -22,6 +23,13 @@ import {
   getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
+import {
+  isVaultListPayload,
+  parseVaultListPayload,
+  previewPendingVaultHits,
+  VAULT_CHANGED_EVENT,
+  type PendingVaultHit,
+} from '../lib/vault-list';
 
 const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
   openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
@@ -95,6 +103,7 @@ function entryToVault(entry: VaultEntry): VaultItem {
 
 export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
+  const [pendingHits, setPendingHits] = useState<PendingVaultHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
@@ -108,10 +117,20 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         const r = await apiFetch('/manage/vault');
         if (!r.ok) {
           setVaultItems(local);
+          if (r.status >= 400 && local.length === 0) {
+            setError(r.status === 401 ? 'sign in again to load vault' : `vault list failed (${r.status})`);
+          }
           return;
         }
-        const rows = (await r.json()) as Array<Parameters<typeof serverRowToVault>[0]>;
-        const serverItems = (Array.isArray(rows) ? rows : []).map(serverRowToVault);
+        const payload = await r.json();
+        if (!isVaultListPayload(payload)) {
+          setVaultItems(local);
+          if (local.length === 0) setError('vault list failed');
+          return;
+        }
+        const rows = parseVaultListPayload(payload);
+        const serverItems = rows.map(serverRowToVault);
+        setError(null);
         const byId = new Map(serverItems.map((item) => [item.id, item]));
         for (const item of local) {
           if (!byId.has(item.id) && !byId.has(item.name)) byId.set(item.id, item);
@@ -119,6 +138,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         setVaultItems([...byId.values()]);
       } catch {
         setVaultItems(local);
+        if (local.length === 0) setError('vault list failed');
       }
     })();
   }, []);
@@ -144,32 +164,56 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
     refresh();
     const handler = () => refresh();
     window.addEventListener('ks-auth-changed', handler);
-    return () => window.removeEventListener('ks-auth-changed', handler);
+    window.addEventListener(VAULT_CHANGED_EVENT, handler);
+    window.addEventListener('focus', handler);
+    document.addEventListener('visibilitychange', handler);
+    return () => {
+      window.removeEventListener('ks-auth-changed', handler);
+      window.removeEventListener(VAULT_CHANGED_EVENT, handler);
+      window.removeEventListener('focus', handler);
+      document.removeEventListener('visibilitychange', handler);
+    };
   }, [refresh]);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.source !== window || !e.data) return;
+      if (Array.isArray(e.data.__ks_pending_vault)) {
+        setPendingHits(e.data.__ks_pending_vault as PendingVaultHit[]);
+      }
+      if (e.data.__ks_pending_vault_cleared) setPendingHits([]);
+      if (e.data.__ks_vault_changed) refresh();
+    };
+    window.addEventListener('message', onMsg);
+    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
+    return () => window.removeEventListener('message', onMsg);
+  }, [refresh]);
+
+  const mergedItems = useMemo(() => {
+    if (!pendingHits.length) return vaultItems;
+    const pendingItems = previewPendingVaultHits(pendingHits).map(serverRowToVault);
+    const seen = new Set(vaultItems.map((item) => `${item.name}:${item.value}`));
+    const extra = pendingItems.filter((item) => !seen.has(`${item.name}:${item.value}`));
+    return extra.length ? vaultItems.concat(extra) : vaultItems;
+  }, [vaultItems, pendingHits]);
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    if (!q) return vaultItems;
-    return vaultItems.filter(
+    if (!q) return mergedItems;
+    return mergedItems.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.domain?.toLowerCase().includes(q) ||
         item.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [vaultItems, searchQuery]);
+  }, [mergedItems, searchQuery]);
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      if (!isVaultUnlocked()) {
-        try {
-          await unlock();
-        } catch {
-          /* Demo / no passkey: still write the Python /manage shim. */
-        }
-      }
+      // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
-      if (!rawKey) return;
+      if (!rawKey) throw new Error('Paste the API key');
       if (isVaultUnlocked()) {
         await addEntry(upstream, rawKey);
       }
@@ -183,7 +227,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       }
       refresh();
     },
-    [refresh, unlock],
+    [refresh],
   );
 
   const deleteItem = useCallback(
@@ -220,7 +264,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   return {
     items: filteredItems,
-    allItems: vaultItems,
+    allItems: mergedItems,
     loading,
     error,
     unlocked,

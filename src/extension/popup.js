@@ -48,22 +48,89 @@ function isDeadDashboardUrl(url) {
 // the migration logic in loadSettings() doesn't fight them on every open.
 const PIN_PREF_KEY = "ks_url_pref_pinned";
 
-const $ = (id) => document.getElementById(id);
+function $(id) {
+  try { return document.getElementById(id); } catch { return null; }
+}
+
+function manifestVersion() {
+  try { return String(chrome.runtime.getManifest().version || "").trim(); }
+  catch { return ""; }
+}
+
+function paintLoadedBuild() {
+  const ver = manifestVersion() || "?";
+  const build = $("build");
+  if (build) build.textContent = `v${ver} · KeyShield — Sovereign Vault`;
+  const ready = $("detect-ready");
+  if (ready && !/ok 1\.2\.4/.test(ready.textContent || "")) {
+    ready.textContent = `checking ${ver} + <all_urls>…`;
+    ready.style.display = "block";
+  }
+}
 
 function setStatus(text, kind = "ok", ms = 1500) {
   const s = $("status");
+  if (!s) return;
   s.textContent = text;
   s.className = `status ${kind}`;
   if (ms > 0) setTimeout(() => { s.className = "status"; }, ms);
 }
 
+function formatCollectedCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 collected" : `${count} collected`;
+}
+
+function formatFilledCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 filled" : `${count} filled`;
+}
+
+function formatPopupMs(ms) {
+  if (ms == null || !Number.isFinite(Number(ms)) || Number(ms) < 0) return "—";
+  return `${Math.max(0, Math.round(Number(ms)))}ms`;
+}
+
+function formatFilledLine(filled, ms) {
+  return `${formatFilledCount(filled)} · ${formatPopupMs(ms)}`;
+}
+
+function formatSignedStatus(signed) {
+  return signed ? "signed" : "Sign in";
+}
+
+function paintCopyStatus(text, kind = "") {
+  const el = $("copy-status");
+  if (el) {
+    el.textContent = text;
+    el.className = `line ${kind}`.trim();
+  }
+  const filled = $("filled-line");
+  if (filled && text) {
+    filled.textContent = text;
+    filled.className = `line ${kind}`.trim();
+  }
+}
+
+function paintFilledLine(filled, ms, kind = "ok") {
+  const text = formatFilledLine(filled, ms);
+  paintCopyStatus(text, kind);
+  const msEl = $("fill-ms");
+  if (msEl) msEl.textContent = formatPopupMs(ms);
+}
+
+function paintSignedStatus(signed) {
+  const el = $("signed-status");
+  if (el) el.textContent = formatSignedStatus(signed);
+}
+
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
-  if (ver === "1.2.1" && hasAllUrls) return { ok: true, text: "ok 1.2.1 <all_urls>" };
+  if (ver === "1.2.4" && hasAllUrls) return { ok: true, text: "ok 1.2.4 <all_urls>" };
   if (!hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
   }
-  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.1)` };
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.4)` };
 }
 
 async function hasAllUrlsPermission() {
@@ -77,13 +144,26 @@ async function hasAllUrlsPermission() {
 
 async function refreshDetectReady() {
   const el = $("detect-ready");
-  if (!el) return { ok: false, text: "" };
   const ver = chrome.runtime.getManifest().version;
   const hasAllUrls = await hasAllUrlsPermission();
   const ready = formatDetectReadyLine(ver, hasAllUrls);
-  el.textContent = ready.text;
-  el.className = `status ${ready.ok ? "ok" : "err"}`;
-  el.style.display = "block";
+  if (el) {
+    el.textContent = ready.text;
+    el.className = `status ${ready.ok ? "ok" : "err"}`;
+    el.style.display = "block";
+  }
+  let auto = false;
+  try {
+    const stored = await chrome.storage.local.get("ks_auto_store");
+    auto = !!stored.ks_auto_store;
+  } catch { /* noop */ }
+  const line = $("detect-line");
+  if (line) {
+    line.textContent = ready.ok
+      ? (auto ? "detect on · ok 1.2.4" : "detect ready · ok 1.2.4")
+      : `detect · ${ready.text}`;
+    line.className = `line ${ready.ok ? "ok" : "err"}`;
+  }
   return ready;
 }
 
@@ -92,6 +172,147 @@ async function armLiveScanAfterLogin() {
   if (!ks_token) return;
   await chrome.storage.local.set({ ks_auto_store: true });
   try { await chrome.runtime.sendMessage({ type: "INJECT_DETECT" }); } catch { /* sw cold */ }
+  try { await refreshSavedApis(); } catch { /* vault list paints on next open */ }
+}
+
+function summarizeSavedApis(data) {
+  const rows = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.items)
+      ? data.items
+      : data && Array.isArray(data.keys)
+        ? data.keys
+        : [];
+  const out = [];
+  for (const it of rows) {
+    if (!it || typeof it !== "object") continue;
+    const upstream = String(it.upstream || "").toLowerCase().trim();
+    if (!upstream) continue;
+    let masked = String(it.masked_value || "").trim();
+    if (!masked) masked = it.cipher ? "encrypted" : "saved";
+    out.push({
+      id: String(it.id || upstream),
+      upstream,
+      name: String(it.name || `${upstream} key`),
+      masked,
+    });
+  }
+  return out;
+}
+
+function applySignedInChrome(signed) {
+  try { document.body.classList.toggle("signed-in", !!signed); } catch { /* noop */ }
+}
+
+function formatSavedCount(n) {
+  return formatCollectedCount(n);
+}
+
+function looksLikeSessionToken(raw) {
+  return String(raw || "").trim().length >= 12;
+}
+
+function paintSavedCount(n) {
+  const label = formatCollectedCount(n);
+  const hero = $("saved-count");
+  if (hero) hero.textContent = label;
+  const collected = $("collected-line");
+  if (collected) {
+    collected.textContent = label;
+    collected.className = "line ok";
+  }
+  const badge = $("conn");
+  if (badge && document.body.classList.contains("signed-in")) {
+    badge.textContent = label;
+    badge.title = label;
+  }
+}
+
+const DASHBOARD_HARVEST_URLS = [
+  "https://app.ks.aileena.xyz/*",
+  "https://*.aileena.xyz/*",
+  "http://127.0.0.1:5173/*",
+  "http://localhost:5173/*",
+];
+
+async function harvestTokenFromDashboardTabs() {
+  if (!chrome.scripting || !chrome.tabs) return null;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: DASHBOARD_HARVEST_URLS });
+  } catch {
+    try { tabs = await chrome.tabs.query({}); } catch { return null; }
+  }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          token: localStorage.getItem("ks_token") || "",
+          user: localStorage.getItem("ks_wallet") || localStorage.getItem("ks_passkey_user") || "",
+        }),
+      });
+      const result = injected && injected[0] && injected[0].result;
+      if (result && looksLikeSessionToken(result.token)) {
+        await chrome.storage.local.set({
+          ks_token: result.token,
+          ks_user: result.user || null,
+          ks_auto_store: true,
+        });
+        return result.token;
+      }
+    } catch { /* restricted tab */ }
+  }
+  return null;
+}
+
+async function refreshSavedApis() {
+  const box = $("saved-apis");
+  const empty = $("saved-empty");
+  let resp;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: "LIST_SAVED_APIS" });
+  } catch {
+    resp = { ok: false, apis: [] };
+  }
+  const apis = resp && Array.isArray(resp.apis) ? resp.apis : [];
+  if (box) {
+    box.replaceChildren();
+    for (const api of apis) {
+      const row = document.createElement("div");
+      row.className = "api-row";
+      const name = document.createElement("strong");
+      name.textContent = api.upstream;
+      const mask = document.createElement("code");
+      mask.textContent = api.masked;
+      row.append(name, mask);
+      box.appendChild(row);
+    }
+  }
+  if (empty) empty.style.display = apis.length ? "none" : "block";
+  paintSavedCount(apis.length);
+  return apis;
+}
+
+async function refreshFillStatus() {
+  const started = Date.now();
+  let filled = 0;
+  let kind = "ok";
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "FILL_PAGE_NOW" });
+    if (resp && typeof resp.filled === "number") filled = resp.filled;
+    if (resp && resp.reason === "restricted-tab") kind = "";
+  } catch {
+    kind = "";
+  }
+  const ms = Date.now() - started;
+  try {
+    await chrome.storage.local.set({ ks_last_fill: { filled, ms, at: Date.now() } });
+  } catch { /* noop */ }
+  paintFilledLine(filled, ms, kind);
+  return { filled, ms };
 }
 
 async function loadSettings() {
@@ -102,8 +323,16 @@ async function loadSettings() {
     "ks_user",
     PIN_PREF_KEY,
   ]);
-  const { ks_api_base, ks_dashboard_url, ks_token, ks_user } = stored;
+  let { ks_api_base, ks_dashboard_url, ks_token, ks_user } = stored;
   const pinned = !!stored[PIN_PREF_KEY];
+  if (!looksLikeSessionToken(ks_token)) {
+    const harvested = await harvestTokenFromDashboardTabs();
+    if (harvested) {
+      const again = await chrome.storage.local.get(["ks_token", "ks_user"]);
+      ks_token = again.ks_token;
+      ks_user = again.ks_user;
+    }
+  }
 
   // Auto-correct stale defaults written by older versions:
   //   - dashboard URL pointing at a backend port (`:8001`/`:8000`) — always
@@ -130,15 +359,27 @@ async function loadSettings() {
     try { await chrome.storage.local.set({ ks_api_base: api }); } catch { /* noop */ }
   }
 
-  $("api").value  = api;
-  $("dash").value = dash;
+  const apiEl = $("api");
+  const dashEl = $("dash");
+  if (apiEl) apiEl.value = api;
+  if (dashEl) dashEl.value = dash;
   const build = $("build");
   if (build) {
-    const ver = chrome.runtime.getManifest().version;
+    const ver = manifestVersion() || "?";
     build.textContent = `v${ver} · Sign-in opens ${dash}`;
   }
   await refreshDetectReady();
-  if (ks_token) await armLiveScanAfterLogin();
+  const signed = looksLikeSessionToken(ks_token);
+  applySignedInChrome(signed);
+  paintSignedStatus(signed);
+  if (signed) {
+    await armLiveScanAfterLogin();
+    await refreshSavedApis();
+    await refreshFillStatus();
+  } else {
+    paintSavedCount(0);
+    paintFilledLine(0, null, "");
+  }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.
@@ -159,23 +400,29 @@ async function loadSettings() {
 
   const badge = $("conn");
   const signinBtn = $("signin");
-  if (ks_token) {
+  if (signed) {
     const short = ks_user ? `${ks_user.slice(0, 4)}…${ks_user.slice(-4)}` : "signed in";
-    badge.textContent = hasVault ? `${short} · 🔒` : short;
-    badge.title = hasVault
-      ? "Token registered. Vault key registered — saves are encrypted client-side."
-      : "Token registered, but no vault key yet. Saves go in plaintext until you sign the vault-unlock message in the dashboard.";
-    if (signinBtn) signinBtn.textContent = "→ Open KeyShield";
+    if (badge && !/saved$/.test(badge.textContent || "")) {
+      badge.textContent = short;
+    }
+    if (badge) {
+      badge.title = hasVault
+        ? `${short} · vault key on this device`
+        : `${short} · detect stays on`;
+    }
+    if (signinBtn) signinBtn.textContent = "Open KeyShield";
   } else {
-    badge.textContent = "no token";
-    badge.title = "Click Sign in to open the dashboard.";
-    if (signinBtn) signinBtn.textContent = "→ Sign in to KeyShield";
+    if (badge) {
+      badge.textContent = "no token";
+      badge.title = "Sign in on app.ks.aileena.xyz — this popup reads that tab.";
+    }
+    if (signinBtn) signinBtn.textContent = "Sign in";
   }
 }
 
 async function saveSettings() {
-  const apiBase      = ($("api").value  || "").trim() || DEFAULT_API_BASE;
-  const dashboardUrl = ($("dash").value || "").trim() || DEFAULT_DASHBOARD_URL;
+  const apiBase      = (($("api") && $("api").value)  || "").trim() || DEFAULT_API_BASE;
+  const dashboardUrl = (($("dash") && $("dash").value) || "").trim() || DEFAULT_DASHBOARD_URL;
   // If the user typed a non-production URL by hand, treat that as a pin so
   // we don't silently revert it to production on the next popup open.
   const isProd =
@@ -248,6 +495,44 @@ async function openDashboardForSignin() {
   [800, 2000, 4000, 8000].forEach((ms) => setTimeout(loadSettings, ms));
 }
 
+async function fillActiveTab() {
+  const started = Date.now();
+  let resp;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: "FILL_PAGE_NOW" });
+  } catch (e) {
+    paintFilledLine(0, Date.now() - started, "err");
+    setStatus(`Fill failed: ${String(e)}`, "err", 3500);
+    return;
+  }
+  const filled = resp && typeof resp.filled === "number" ? resp.filled : 0;
+  const ms = Date.now() - started;
+  try {
+    await chrome.storage.local.set({ ks_last_fill: { filled, ms, at: Date.now() } });
+  } catch { /* noop */ }
+  paintFilledLine(filled, ms, resp && resp.ok ? "ok" : "err");
+  if (resp && resp.ok) {
+    setStatus(
+      filled
+        ? `Pasted ${filled} saved key${filled === 1 ? "" : "s"} into empty API boxes.`
+        : "No empty API box on this tab.",
+      "ok",
+      5000,
+    );
+    return;
+  }
+  if (resp && resp.reason === "restricted-tab") {
+    setStatus("This tab cannot be filled. Open a https page with an API box.", "err", 4000);
+    return;
+  }
+  setStatus(`Fill skipped: ${resp?.reason || "no keys"}. Sign in, then try again.`, "err", 4000);
+}
+
+async function copyPreferredCursorKey() {
+  // Leftover "Copy Cursor key" must paste into the tab, not the clipboard.
+  return fillActiveTab();
+}
+
 async function allowDetectAndStore() {
   let granted = false;
   try {
@@ -277,17 +562,19 @@ async function allowDetectAndStore() {
     "ok",
     5000,
   );
+  await refreshDetectReady();
 }
 
 async function registerManualToken() {
-  const raw = ($("manual").value || "").trim();
+  const manual = $("manual");
+  const raw = ((manual && manual.value) || "").trim();
   if (!raw) {
     setStatus("Paste a token first.", "err", 2000);
     return;
   }
   // Token format check: <base64>.<sig>.<...>  — be lenient, just non-empty.
   await chrome.storage.local.set({ ks_token: raw, ks_user: null });
-  $("manual").value = "";
+  if (manual) manual.value = "";
   setStatus("Token registered. Save flow now uses Authorization header.", "ok", 3000);
   loadSettings();
 }
@@ -476,35 +763,59 @@ async function importVaultFromFile() {
 
 // Re-render whenever background storage changes (token push from dashboard,
 // vault key registration, etc.) — gives the popup live status without polling.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) loadSettings();
-  if (area === "session" && changes.ks_vault_key) {
-    loadSettings();
-    refreshFingerprint();
-  }
-});
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) {
+      loadSettings();
+      refreshSavedApis();
+    }
+    if (area === "session" && changes.ks_vault_key) {
+      loadSettings();
+      refreshFingerprint();
+    }
+  });
+} catch { /* bootPopup still paints Sign-in / Fill */ }
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadSettings();
-  refreshFingerprint();
-  refreshDetectReady();
-  $("signin"      ).addEventListener("click", openDashboardForSignin);
-  const allowDetect = $("allow-detect");
-  if (allowDetect) allowDetect.addEventListener("click", allowDetectAndStore);
-  const useHostedTop = $("use-hosted-top");
-  if (useHostedTop) useHostedTop.addEventListener("click", pointAtProduction);
-  $("save"        ).addEventListener("click", saveSettings);
-  $("register"    ).addEventListener("click", registerManualToken);
-  $("clear"       ).addEventListener("click", clearSession);
-  const ptRemote = $("point-remote");
-  const ptLocal  = $("point-local");
-  const ptProd   = $("point-prod");
-  if (ptRemote) ptRemote.addEventListener("click", pointAtRemote);
-  if (ptLocal)  ptLocal.addEventListener("click",  pointAtLocal);
-  if (ptProd)   ptProd.addEventListener("click",   pointAtProduction);
+function onClick(id, handler) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener("click", () => {
+    Promise.resolve(handler()).catch((e) => setStatus(String(e), "err", 3500));
+  });
+}
 
-  const expBtn = $("export-vault");
-  const impBtn = $("import-vault");
-  if (expBtn) expBtn.addEventListener("click", exportVaultToFile);
-  if (impBtn) impBtn.addEventListener("click", importVaultFromFile);
-});
+function bootPopup() {
+  if (bootPopup._done) return;
+  bootPopup._done = true;
+  paintLoadedBuild();
+  Promise.resolve(refreshDetectReady()).catch(() => {});
+  Promise.resolve(loadSettings()).catch((e) => {
+    setStatus(`Popup load failed: ${String(e)}`, "err", 4000);
+  });
+  Promise.resolve(refreshFingerprint()).catch(() => {});
+  onClick("signin", openDashboardForSignin);
+  onClick("allow-detect", allowDetectAndStore);
+  onClick("fill-tab", fillActiveTab);
+  onClick("fill-tab-signed", fillActiveTab);
+  onClick("copy-cursor-key", copyPreferredCursorKey);
+  onClick("copy-cursor-key-signed", copyPreferredCursorKey);
+  [600, 1600, 3500].forEach((ms) => setTimeout(() => {
+    Promise.resolve(loadSettings()).catch(() => {});
+  }, ms));
+  onClick("use-hosted-top", pointAtProduction);
+  onClick("save", saveSettings);
+  onClick("register", registerManualToken);
+  onClick("clear", clearSession);
+  onClick("clear-top", clearSession);
+  onClick("point-remote", pointAtRemote);
+  onClick("point-local", pointAtLocal);
+  onClick("point-prod", pointAtProduction);
+  onClick("export-vault", exportVaultToFile);
+  onClick("import-vault", importVaultFromFile);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootPopup);
+} else {
+  bootPopup();
+}

@@ -22,6 +22,12 @@ _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("anthropic", re.compile(r"sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}")),
     ("groq", re.compile(r"gsk_[A-Za-z0-9]{32,}")),
     ("helius", re.compile(r"helius_auth_[A-Za-z0-9]{16,}")),
+    (
+        "helius",
+        re.compile(
+            r"(?i)(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])"
+        ),
+    ),
     ("vercel", re.compile(r"(?:vercel_|vcp_)[A-Za-z0-9_]{20,}")),
     ("github", re.compile(r"(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}")),
     ("openai", re.compile(r"sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}")),
@@ -162,28 +168,39 @@ def parse_usdc_micro(rpc_result: Any) -> int | None:
 
 
 def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
-    """Names + prefixes only. Never returns the raw key."""
+    """Names + prefixes only. Never returns the raw key.
+
+    One card per vault row. Five Helius keys stay five rows — do not
+    collapse by upstream or Vault looks empty after detect.
+    """
     from ..routes import vault as vault_mod
 
     out: list[dict[str, str]] = []
     with vault_mod._db() as conn:
         rows = conn.execute(
-            "SELECT id, name, upstream, value FROM vault_items "
+            "SELECT id, name, upstream, value, cipher_v FROM vault_items "
             "WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
     seen: set[str] = set()
     for row in rows:
         upstream = str(row["upstream"] or row["id"] or "").strip()
-        if not upstream or upstream in seen:
+        item_id = str(row["id"] or "")
+        if not upstream or not item_id:
             continue
-        seen.add(upstream)
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        raw = str(row["value"] or "")
+        prefix = (
+            "encrypted" if (not raw.strip() and int(row["cipher_v"] or 0) == 1) else mask_key(raw)
+        )
         out.append(
             {
-                "id": str(row["id"]),
+                "id": item_id,
                 "name": str(row["name"] or upstream),
                 "upstream": upstream,
-                "prefix": mask_key(str(row["value"] or "")),
+                "prefix": prefix,
             }
         )
     return out

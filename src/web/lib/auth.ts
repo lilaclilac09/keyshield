@@ -25,7 +25,7 @@ import {
   usePublicControlPlaneFallback,
 } from './host-deploy';
 import { mergeSessionSides, parseExtensionSession } from './ext-session';
-import { resolvePasskeyUserId } from './passkey-id';
+import { readApiErrorMessage, resolvePasskeyUserId } from './passkey-id';
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
@@ -411,7 +411,10 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   } catch (e) {
     throw describeApiNetError(e, '/auth/passkey/auth-options');
   }
-  if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Failed to fetch passkey options'));
+  }
   const opts = await optsRes.json();
 
   opts.challenge = _b64urlToBuffer(opts.challenge);
@@ -425,7 +428,13 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   const salt = await prfSalt();
   opts.extensions = { ...(opts.extensions ?? {}), prf: { eval: { first: salt } } };
 
-  const credential = await navigator.credentials.get({ publicKey: opts }) as PublicKeyCredential;
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = await navigator.credentials.get({ publicKey: opts }) as PublicKeyCredential | null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(readApiErrorMessage({ error: msg }, msg || 'Passkey authentication cancelled'));
+  }
   if (!credential) throw new Error('Passkey authentication cancelled');
 
   const resp = credential.response as AuthenticatorAssertionResponse;
@@ -456,7 +465,7 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   }
   if (!verRes.ok) {
     const err = await verRes.json().catch(() => ({ detail: 'Passkey login failed' }));
-    throw new Error((err as { detail: string }).detail ?? 'Passkey login failed');
+    throw new Error(readApiErrorMessage(err, 'Passkey login failed'));
   }
   return verRes.json();
 }
@@ -597,7 +606,10 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
   } catch (e) {
     throw describeApiNetError(e, '/auth/passkey/auth-options');
   }
-  if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Failed to fetch passkey options'));
+  }
   const opts = await optsRes.json();
 
   const salt = await prfSalt();

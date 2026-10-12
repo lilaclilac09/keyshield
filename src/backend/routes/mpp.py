@@ -174,21 +174,22 @@ async def mpp_status(request: Request):
         escrow = stream.get("escrow_micro_usdc")
         if escrow is not None:
             remaining += int(escrow)
-    last = None
-    for stream in streams:
-        sig = stream.get("on_chain_signature")
-        if not sig:
-            continue
-        digest = stream.get("pending_artifact_hash") or ""
-        last = {
-            "hash": digest,
-            "hash8": (digest or sig)[:8],
-            "mode": "submitted",
-            "signature": sig,
-            "stream_id": stream.get("id"),
-            "micro_usdc": stream.get("settled_micro_usdc"),
-        }
-        break
+    last = mpp_streams.latest_successful_settle(user_id)
+    if last is None:
+        for stream in streams:
+            sig = stream.get("on_chain_signature")
+            if not sig:
+                continue
+            digest = stream.get("pending_artifact_hash") or ""
+            last = {
+                "hash": digest,
+                "hash8": (digest or sig)[:8],
+                "mode": "submitted",
+                "signature": sig,
+                "stream_id": stream.get("id"),
+                "micro_usdc": stream.get("settled_micro_usdc"),
+            }
+            break
     rpc_ms = round((time.perf_counter() - t0) * 1000.0, 2)
     body = {
         "stream_remaining_micro_usdc": remaining,
@@ -447,7 +448,8 @@ async def mpp_capture(stream_id: int, request: Request):
             {"detail": str(e), "code": "unverified_fulfillment"},
             status_code=400,
         )
-    return JSONResponse({"stream": stream})
+    receipt = mpp_streams.latest_successful_settle(sess["user_id"], stream_id=int(stream_id))
+    return JSONResponse({"stream": stream, "receipt": receipt})
 
 
 # ─── 5. POST /mpp/streams/{id}/settle ─────────────────────────────────────

@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "KeyShield \u2014 Sovereign Vault",
+  "version": "1.2.4",
+  "description": "Auto-detect API keys on any page and store them in your encrypted KeyShield vault.",
+  "permissions": [
+    "storage",
+    "notifications",
+    "clipboardRead",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:8001/*",
+    "http://localhost:8001/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:5173/*",
+    "http://localhost:5173/*",
+    "http://localhost:3000/*",
+    "https://api.keyshield.dev/*",
+    "https://*.keyshield.dev/*",
+    "https://app.ks.aileena.xyz/*",
+    "https://*.aileena.xyz/*",
+    "https://keyshield-production.up.railway.app/*",
+    "https://*.up.railway.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*",
+      "http://localhost:3001/*",
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "https://keyshield.dev/*",
+      "https://*.keyshield.dev/*",
+      "https://app.ks.aileena.xyz/*",
+      "https://*.aileena.xyz/*",
+      "https://keyshield-production.up.railway.app/*",
+      "https://*.up.railway.app/*",
+      "https://*.vercel.app/*"
+    ]
+  },
+  "optional_host_permissions": [
+    "<all_urls>"
+  ]
+}

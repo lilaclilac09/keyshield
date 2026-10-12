@@ -21,8 +21,8 @@ Do **not** paste `<script>…</script>` into zsh. That is HTML.
 
 `git pull` the repo you use for Load unpacked (or clone fresh). Then
 `chrome://extensions` → **Remove** → **Load unpacked** → `src/extension`.
-The card must say **1.1.9**. Sign-in then opens
-`https://app.ks.aileena.xyz/?ext=1` already logged in when a token is in
+The card must say **1.2.4**. Sign-in then opens
+`https://app.ks.aileena.xyz/?ext=1&demo=shop` already logged in when a token is in
 the popup or on the hosted site. First visit still needs wallet / passkey
 once. After that, opening Sign-in is Home — not AuthScreen.
 
@@ -83,7 +83,7 @@ print("content announce", "app.ks.aileena.xyz" in cjs.read_text())
 
 man = ext / "manifest.json"
 m = man.read_text()
-m = re.sub(r'"version": "1\.[0-9.]+"', '"version": "1.1.9"', m, count=1)
+m = re.sub(r'"version": "1\.[0-9.]+"', '"version": "1.2.4"', m, count=1)
 man.write_text(m)
 print("manifest", [l.strip() for l in m.splitlines() if '"version"' in l][0])
 
@@ -109,5 +109,6 @@ print("ok", HOSTED)
 PY
 ```
 
-Then Remove + Load unpacked. Card **1.1.9**. Sign-in tab must be
-`https://app.ks.aileena.xyz/?ext=1`.
+Then Remove + Load unpacked. Card **1.2.4**. Sign-in tab must be
+`https://app.ks.aileena.xyz/?ext=1&demo=shop`. Popup first line must be
+`ok 1.2.4 <all_urls>`.

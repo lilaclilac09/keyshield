@@ -74,6 +74,11 @@ async def keychain_home(request: Request):
     )
     wallet = await kc.fetch_wallet_balances(address, helius_key or None)
     wallet_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    from ..routes import vault as vault_mod
+
+    if vault_mod._may_claim_default(request):
+        with vault_mod._db() as conn:
+            vault_mod._claim_default_rows(conn, user_id)
     apis = kc.list_stored_upstreams(user_id)
     catalog = kc.rpc_cache_catalog()
 

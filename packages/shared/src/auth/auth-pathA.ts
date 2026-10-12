@@ -212,7 +212,10 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   const { userId, passphrase } = trust;
 
   const optsRes = await fetch(`${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`);
-  if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({})) as { detail?: string; error?: string };
+    throw new Error(err.detail || err.error || 'Failed to fetch passkey options');
+  }
   const opts = await optsRes.json();
 
   opts.challenge = _b64urlToBuffer(opts.challenge);
@@ -252,7 +255,8 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   );
   if (!verRes.ok) {
     const err = await verRes.json().catch(() => ({ detail: 'Passkey login failed' }));
-    throw new Error((err as { detail: string }).detail ?? 'Passkey login failed');
+    const body = err as { detail?: string; error?: string };
+    throw new Error(body.detail || body.error || 'Passkey login failed');
   }
   return verRes.json();
 }
@@ -350,7 +354,10 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
   // the challenge we'll use is the CF Worker's, so the assertion verifies
   // there. We discard Python's challenge.
   const optsRes = await fetch(`${API_BASE}/auth/passkey/auth-options?user_id=${encodeURIComponent(userId)}`);
-  if (!optsRes.ok) throw new Error('Failed to fetch passkey options');
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({})) as { detail?: string; error?: string };
+    throw new Error(err.detail || err.error || 'Failed to fetch passkey options');
+  }
   const opts = await optsRes.json();
 
   // Probe ceremony: derive vaultId from PRF first (no server interaction

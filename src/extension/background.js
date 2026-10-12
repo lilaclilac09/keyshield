@@ -65,36 +65,40 @@ async function _getVaultKeyBytes() {
   return r.ks_vault_key ? _b64uDec(r.ks_vault_key) : null;
 }
 
-// ── Domain → upstream map for auto-fill (subset of content.js PROVIDERS) ────
-// Used by GET_KEYS_FOR_DOMAIN to resolve which vault items belong to a page.
-const DOMAIN_TO_UPSTREAM = {
-  'openrouter.ai':         'openrouter',
-  'scvd.store':            'openrouter',
-  'platform.openai.com':   'openai',
-  'openai.com':            'openai',
-  'console.anthropic.com': 'anthropic',
-  'anthropic.com':         'anthropic',
-  'console.groq.com':      'groq',
-  'groq.com':              'groq',
-  'console.mistral.ai':    'mistral',
-  'mistral.ai':            'mistral',
-  'dashboard.cohere.com':  'cohere',
-  'cohere.com':            'cohere',
-  'cohere.ai':             'cohere',
-  'dashboard.helius.dev':  'helius',
-  'helius.dev':            'helius',
-  'helius.xyz':            'helius',
-  'dashboard.0x.org':      '0x',
-  '0x.org':                '0x',
-  'dashboard.alchemy.com': 'alchemy',
-  'alchemy.com':           'alchemy',
-  'vercel.com':            'vercel',
-  'vercel.demo.localhost': 'vercel',
-  'github.com':            'github',
-  'github.demo.localhost': 'github',
-  'openrouter.demo.localhost': 'openrouter',
-  'cursor.demo.localhost': 'openrouter',
-  'devin.demo.localhost':  'openrouter',
+// ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
+// cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
+const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'groq'];
+const DOMAIN_TO_UPSTREAMS = {
+  'openrouter.ai':         ['openrouter'],
+  'scvd.store':            ['openrouter'],
+  'platform.openai.com':   ['openai'],
+  'openai.com':            ['openai'],
+  'console.anthropic.com': ['anthropic'],
+  'anthropic.com':         ['anthropic'],
+  'console.groq.com':      ['groq'],
+  'groq.com':              ['groq'],
+  'console.mistral.ai':    ['mistral'],
+  'mistral.ai':            ['mistral'],
+  'dashboard.cohere.com':  ['cohere'],
+  'cohere.com':            ['cohere'],
+  'cohere.ai':             ['cohere'],
+  'dashboard.helius.dev':  ['helius'],
+  'helius.dev':            ['helius'],
+  'helius.xyz':            ['helius'],
+  'dashboard.0x.org':      ['0x'],
+  '0x.org':                ['0x'],
+  'dashboard.alchemy.com': ['alchemy'],
+  'alchemy.com':           ['alchemy'],
+  'vercel.com':            ['vercel'],
+  'vercel.demo.localhost': ['vercel'],
+  'github.com':            ['github'],
+  'github.demo.localhost': ['github'],
+  'openrouter.demo.localhost': ['openrouter'],
+  'cursor.com':            CURSOR_FILL_UPSTREAMS,
+  'www.cursor.com':        CURSOR_FILL_UPSTREAMS,
+  'cursor.sh':             CURSOR_FILL_UPSTREAMS,
+  'cursor.demo.localhost': CURSOR_FILL_UPSTREAMS,
+  'devin.demo.localhost':  ['openrouter'],
 };
 
 function _normalizeHostname(input) {
@@ -103,15 +107,30 @@ function _normalizeHostname(input) {
   return raw.replace(/\.+$/, '');
 }
 
-function _upstreamForDomain(domain) {
+function _upstreamsForDomain(domain) {
   const normalized = _normalizeHostname(domain);
-  if (!normalized) return null;
-  if (DOMAIN_TO_UPSTREAM[normalized]) return DOMAIN_TO_UPSTREAM[normalized];
-  // suffix match (e.g. foo.openai.com → openai)
-  for (const d of Object.keys(DOMAIN_TO_UPSTREAM)) {
-    if (normalized === d || normalized.endsWith('.' + d)) return DOMAIN_TO_UPSTREAM[d];
+  if (!normalized) return [];
+  if (DOMAIN_TO_UPSTREAMS[normalized]) return DOMAIN_TO_UPSTREAMS[normalized];
+  for (const d of Object.keys(DOMAIN_TO_UPSTREAMS)) {
+    if (normalized === d || normalized.endsWith('.' + d)) return DOMAIN_TO_UPSTREAMS[d];
   }
-  return null;
+  return [];
+}
+
+function _isCursorFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'cursor.com' || host.endsWith('.cursor.com')
+    || host === 'cursor.sh' || host.endsWith('.cursor.sh')
+    || host === 'cursor.demo.localhost';
+}
+
+/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
+function _isCursorKeyFetchContext(domain, pathname) {
+  if (_isCursorFillHost(domain)) return true;
+  const host = _normalizeHostname(domain);
+  const path = String(pathname || '').toLowerCase();
+  const local = host === '127.0.0.1' || host === 'localhost';
+  return local && path.includes('cursor-settings-fill-demo');
 }
 
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
@@ -122,50 +141,111 @@ async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
   return new TextDecoder().decode(pt);
 }
 
-async function getKeysForDomain(domain) {
+function _isLocalApi(apiBase) {
+  try {
+    const host = new URL(apiBase).hostname;
+    return host === '127.0.0.1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
+function _manageHeaders(apiBase, token, extra) {
+  const headers = { ...(extra || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  // X-Dev-Mode is loopback-only. On Railway a stale Bearer plus this
+  // header used to write user_id=default, so Vault listed none.
+  if (_isLocalApi(apiBase)) headers['X-Dev-Mode'] = '1';
+  return headers;
+}
+
+async function pendingKeysForUpstreams(upstreams) {
+  const wanted = new Set((upstreams || []).map((u) => String(u || '').toLowerCase()));
+  try {
+    const stored = await chrome.storage.local.get(['ks_pending_vault']);
+    const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+    const out = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const upstream = String((row && row.upstream) || '').toLowerCase();
+      const value = String((row && row.value) || '');
+      if (!upstream || !value || seen.has(value)) continue;
+      if (wanted.size && !wanted.has(upstream)) continue;
+      seen.add(value);
+      out.push({ id: `pending-${upstream}`, upstream, name: `${upstream} key`, value });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function getKeysForDomain(domain, extra) {
+  let upstreams = _upstreamsForDomain(domain);
+  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra && extra.pathname)) {
+    upstreams = CURSOR_FILL_UPSTREAMS.slice();
+  }
+  if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
+
+  const wanted = new Set(upstreams);
+  const pending = await pendingKeysForUpstreams(upstreams);
   const keyBytes = await _getVaultKeyBytes();
-  if (!keyBytes) return { ok: false, reason: 'no-vault-key' };
-
-  const upstream = _upstreamForDomain(domain);
-  // We still query the vault even without a known upstream — caller may match
-  // by hostname suffix on their side. But for now, no match → no keys.
-  if (!upstream) return { ok: false, reason: 'no-upstream-match' };
-
   const { token } = await getStoredToken();
+  if (!token) {
+    if (pending.length) return { ok: true, keys: pending };
+    return { ok: false, reason: 'no-token' };
+  }
   const { apiBase } = await getApiBase();
-  const headers = { 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token);
 
-  let items;
+  let items = [];
   try {
     const r = await fetch(`${apiBase}/manage/vault`, { headers });
-    if (!r.ok) return { ok: false, reason: `http-${r.status}` };
-    items = await r.json();
-  } catch (e) {
-    return { ok: false, reason: 'network', detail: String(e) };
-  }
-  if (!Array.isArray(items)) return { ok: false, reason: 'bad-response' };
+    if (r.ok) {
+      const payload = await r.json();
+      items = Array.isArray(payload)
+        ? payload
+        : payload && Array.isArray(payload.items)
+          ? payload.items
+          : payload && Array.isArray(payload.keys)
+            ? payload.keys
+            : [];
+    }
+  } catch { /* pending fill still runs */ }
 
-  const matched = items.filter((it) =>
-    it && it.upstream === upstream &&
-    Number(it.cipher_v) === 1 &&
-    typeof it.cipher === 'string' && it.cipher !== '' &&
-    typeof it.iv === 'string' && it.iv !== ''
-  );
-  if (matched.length === 0) return { ok: false, reason: 'no-keys' };
-
+  const matched = items.filter((it) => it && wanted.has(it.upstream));
   const out = [];
   for (const it of matched) {
-    let value;
-    try {
-      value = await _decryptCipher(keyBytes, it.cipher, it.iv);
-    } catch (e) {
-      // skip items we can't decrypt (key mismatch, corrupt cipher, etc.)
-      continue;
+    let value = '';
+    const cipherOk = Number(it.cipher_v) === 1
+      && typeof it.cipher === 'string' && it.cipher !== ''
+      && typeof it.iv === 'string' && it.iv !== '';
+    if (cipherOk && keyBytes) {
+      try {
+        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
+      } catch {
+        value = '';
+      }
     }
-    out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
+    if (!value) {
+      try {
+        const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
+        if (dec.ok) {
+          const body = await dec.json();
+          value = typeof body.value === 'string' ? body.value : '';
+        }
+      } catch {
+        value = '';
+      }
+    }
+    if (value) out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
   }
-  if (out.length === 0) return { ok: false, reason: 'decrypt-failed' };
+  for (const row of pending) {
+    if (!out.some((k) => k.value === row.value)) out.push(row);
+  }
+  if (out.length === 0) {
+    return { ok: false, reason: keyBytes ? 'decrypt-failed' : 'no-keys' };
+  }
   return { ok: true, keys: out };
 }
 
@@ -229,16 +309,97 @@ function notify(title, message, icon) {
 
 // ── Direct store (no tab) ───────────────────────────────────────────────────
 
+function summarizeSavedApis(data) {
+  const rows = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.items)
+      ? data.items
+      : data && Array.isArray(data.keys)
+        ? data.keys
+        : [];
+  const out = [];
+  for (const it of rows) {
+    if (!it || typeof it !== 'object') continue;
+    const upstream = String(it.upstream || '').toLowerCase().trim();
+    if (!upstream) continue;
+    let masked = String(it.masked_value || '').trim();
+    if (!masked) masked = it.cipher ? 'encrypted' : 'saved';
+    out.push({
+      id: String(it.id || upstream),
+      upstream,
+      name: String(it.name || `${upstream} key`),
+      masked,
+    });
+  }
+  return out;
+}
+
+async function listSavedApis() {
+  const pending = await pendingKeysForUpstreams([]);
+  const pendingApis = pending.map((row) => ({
+    id: row.id,
+    upstream: row.upstream,
+    name: row.name,
+    masked: maskHarvestedKey(row.value),
+  }));
+  const { token } = await getStoredToken();
+  if (!token) {
+    return { ok: pendingApis.length > 0, reason: pendingApis.length ? undefined : 'no-token', apis: pendingApis };
+  }
+  const { apiBase } = await getApiBase();
+  const headers = _manageHeaders(apiBase, token);
+  try {
+    const r = await fetch(`${apiBase}/manage/vault`, { headers });
+    if (r.status === 401) {
+      await clearStoredToken();
+      return { ok: pendingApis.length > 0, reason: 'token-expired', apis: pendingApis };
+    }
+    if (!r.ok) return { ok: pendingApis.length > 0, reason: `http-${r.status}`, apis: pendingApis };
+    const items = await r.json();
+    const apis = summarizeSavedApis(items);
+    for (const row of pendingApis) {
+      if (!apis.some((it) => it.upstream === row.upstream && it.masked === row.masked)) apis.push(row);
+    }
+    return { ok: true, apis };
+  } catch (e) {
+    return { ok: pendingApis.length > 0, reason: 'network', apis: pendingApis, detail: String(e) };
+  }
+}
+
+async function notifyDashboardVaultSaved() {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return; }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'KS_VAULT_SAVED' }); } catch { /* no bridge */ }
+  }
+}
+
+async function queuePendingVault(hit) {
+  const upstream = String((hit && hit.upstream) || '').toLowerCase().trim();
+  const value = String((hit && hit.value) || '');
+  if (!upstream || !value) return;
+  try {
+    const stored = await chrome.storage.local.get(['ks_pending_vault']);
+    const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+    const id = `${upstream}:${value}`;
+    if (rows.some((row) => `${row.upstream}:${row.value}` === id)) return;
+    rows.push({ upstream, value, at: Date.now() });
+    await chrome.storage.local.set({ ks_pending_vault: rows.slice(-40) });
+  } catch { /* noop */ }
+}
+
 async function directStore({ upstream, value }) {
   try {
     const { token } = await getStoredToken();
+    if (!token) {
+      try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
+      return { ok: false, reason: 'no-token' };
+    }
     const { apiBase } = await getApiBase();
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-Dev-Mode':   '1',
-    };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
     let body;
     const keyBytes = await _getVaultKeyBytes();
@@ -270,18 +431,24 @@ async function directStore({ upstream, value }) {
     try {
       const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
       if (r.status === 401) {
+        try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
         await clearStoredToken();
         return { ok: false, reason: 'token-expired' };
       }
       if (!r.ok) {
+        try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
         return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
       }
+      try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
+      try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
       return { ok: true };
     } catch (e) {
+      try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
       return { ok: false, reason: 'network', detail: String(e) };
     }
   } catch (e) {
     console.error('[KeyShield] directStore exception:', e);
+    try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
     return { ok: false, reason: 'exception', detail: String(e) };
   }
 }
@@ -300,8 +467,7 @@ async function _vaultFingerprint(keyBytes) {
 async function exportVault() {
   const { token } = await getStoredToken();
   const { apiBase } = await getApiBase();
-  const headers = { 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token);
 
   let items;
   try {
@@ -358,8 +524,7 @@ async function importVault(jsonStr) {
 
   const { token } = await getStoredToken();
   const { apiBase } = await getApiBase();
-  const headers = { 'Content-Type': 'application/json', 'X-Dev-Mode': '1' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
   let imported = 0;
   let skipped  = 0;
@@ -523,12 +688,73 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'LIST_SAVED_APIS') {
+    (async () => {
+      try {
+        sendResponse(await listSavedApis());
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', apis: [], detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
   // Auto-fill: return decrypted vault values for a given page domain.
   if (message.type === 'GET_KEYS_FOR_DOMAIN') {
     (async () => {
       try {
-        const result = await getKeysForDomain(message.domain || '');
+        const result = await getKeysForDomain(message.domain || '', {
+          pathname: message.pathname || '',
+          title: message.title || '',
+        });
         sendResponse(result);
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'FILL_PAGE_NOW') {
+    (async () => {
+      try {
+        let tabId = message.tabId;
+        let tabUrl = '';
+        if (!tabId) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          tabId = tab && tab.id;
+          tabUrl = (tab && tab.url) || '';
+        }
+        if (!tabId) {
+          sendResponse({ ok: false, reason: 'no-tab' });
+          return;
+        }
+        if (!tabUrl) {
+          try {
+            const tab = await chrome.tabs.get(tabId);
+            tabUrl = (tab && tab.url) || '';
+          } catch { /* noop */ }
+        }
+        if (tabUrl && !/^https?:/i.test(tabUrl)) {
+          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or the fill demo.' });
+          return;
+        }
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            files: ['content.js'],
+          });
+        } catch { /* already injected or restricted */ }
+        let filled = 0;
+        let last = null;
+        try {
+          last = await chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' });
+          if (last && typeof last.filled === 'number') filled = last.filled;
+        } catch (e) {
+          sendResponse({ ok: false, reason: 'no-content', detail: String(e) });
+          return;
+        }
+        sendResponse({ ok: !!(last && last.ok), filled, reason: last && last.reason, keys: last && last.keys });
       } catch (e) {
         sendResponse({ ok: false, reason: 'exception', detail: String(e) });
       }
@@ -714,24 +940,360 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   return false;
 });
 
-async function injectDetectOnAllTabs() {
-  if (!chrome.scripting || !chrome.tabs) return { injected: 0 };
+function isHeliusDashboardHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
+  return host === 'dashboard.helius.dev' || host === 'helius.dev' || host.endsWith('.helius.dev')
+    || host === 'helius.xyz' || host.endsWith('.helius.xyz');
+}
+
+function harvestVisibleKeysFromText(text, hostname, href) {
+  const src = String(text || '');
+  const host = String(hostname || '').toLowerCase();
+  const pageHref = String(href || '');
+  const skipUuid = new Set(
+    (pageHref.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])
+      .map((s) => s.toLowerCase()),
+  );
+  const shapes = [
+    { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/g },
+    { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/g },
+    { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/g },
+    { upstream: 'helius', re: /helius_auth_[A-Za-z0-9]{16,}/g },
+    { upstream: 'helius', re: /(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi },
+    { upstream: 'cursor', re: /(?:key_|crsr[_-])[A-Za-z0-9_-]{12,}/g },
+    { upstream: 'openai', re: /sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}/g },
+  ];
+  const out = [];
+  const seen = new Set();
+  for (const row of shapes) {
+    row.re.lastIndex = 0;
+    let match;
+    while ((match = row.re.exec(src)) !== null) {
+      const key = match[0];
+      if (!key || /[•…]|\.{3}/.test(key)) continue;
+      if (row.upstream === 'helius' && key.includes('-')) {
+        if (!isHeliusDashboardHost(host)) continue;
+        if (skipUuid.has(key.toLowerCase())) continue;
+      }
+      const id = `${row.upstream}:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ upstream: row.upstream, key });
+    }
+  }
+  return out;
+}
+
+async function harvestTokenFromDashboardTabs() {
+  if (!chrome.scripting || !chrome.tabs) return null;
   let tabs = [];
-  try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0 }; }
-  let injected = 0;
+  try {
+    tabs = await chrome.tabs.query({
+      url: [
+        'https://app.ks.aileena.xyz/*',
+        'https://*.aileena.xyz/*',
+        'http://127.0.0.1:5173/*',
+        'http://localhost:5173/*',
+      ],
+    });
+  } catch {
+    try { tabs = await chrome.tabs.query({}); } catch { return null; }
+  }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          token: localStorage.getItem('ks_token') || '',
+          user: localStorage.getItem('ks_wallet') || localStorage.getItem('ks_passkey_user') || '',
+        }),
+      });
+      const result = injected && injected[0] && injected[0].result;
+      if (result && String(result.token || '').trim().length >= 12) {
+        await chrome.storage.local.set({
+          ks_token: result.token,
+          ks_user: result.user || null,
+          ks_auto_store: true,
+        });
+        return result.token;
+      }
+    } catch { /* restricted tab */ }
+  }
+  return null;
+}
+
+function collectPageSecrets() {
+  const chunks = [];
+  try { chunks.push(document.body ? document.body.innerText : ''); } catch (e) { /* noop */ }
+  try {
+    document.querySelectorAll('input, textarea, code, pre').forEach((el) => {
+      chunks.push(el.value || el.textContent || '');
+    });
+  } catch (e) { /* noop */ }
+  return {
+    text: chunks.join('\n'),
+    hostname: location.hostname,
+    href: location.href,
+    stalePanel: !!(
+      document.getElementById('keyshield-detection-notice')
+      || document.getElementById('keyshield-status-card')
+    ),
+  };
+}
+
+function maskHarvestedKey(raw) {
+  const key = String(raw || '');
+  if (key.length <= 18) return key;
+  return `${key.slice(0, 8)}••••${key.slice(-4)}`;
+}
+
+function paintLiveDetectPanel(state) {
+  const CARD = 'keyshield-status-card';
+  const STALE = 'keyshield-detection-notice';
+  document.querySelectorAll('#' + STALE).forEach((el) => el.remove());
+  document.querySelectorAll('#' + CARD).forEach((el, i) => { if (i > 0) el.remove(); });
+  let card = document.getElementById(CARD);
+  if (!card) {
+    card = document.createElement('div');
+    card.id = CARD;
+    Object.assign(card.style, {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      zIndex: '999999',
+      backgroundColor: '#0a0d1a',
+      border: '1px solid #1c2238',
+      borderRadius: '12px',
+      padding: '16px',
+      width: '340px',
+      boxShadow: '0 20px 40px -10px rgba(0,0,0,0.6)',
+      color: '#e4e4e7',
+      fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px',
+    });
+    (document.body || document.documentElement).appendChild(card);
+  }
+  const keys = Array.isArray(state && state.keys) ? state.keys : [];
+  const rows = keys.map((k) => (
+    '<li class="' + (k.saved ? 'ks-saved' : '') + '"><span class="ks-badge">'
+    + String(k.upstream || '') + '</span><span class="ks-keytext">'
+    + String(k.masked || '') + '</span><span class="ks-state">'
+    + (k.saved ? '✓' : '·') + '</span></li>'
+  )).join('');
+  const collected = keys.length === 1 ? '1 collected' : keys.length + ' collected';
+  const filledN = Math.max(0, Math.floor(Number(state && state.filled) || 0));
+  const ms = state && state.ms;
+  const filled = (filledN === 1 ? '1 filled' : filledN + ' filled') + ' · '
+    + (ms == null || !isFinite(Number(ms)) || Number(ms) < 0 ? '—' : Math.round(Number(ms)) + 'ms');
+  const saved = Math.max(0, Math.floor(Number(state && state.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(state && state.failed) || 0));
+  const queued = Math.max(0, Math.floor(Number(state && state.queued) || 0));
+  const inVault = saved + queued;
+  const save = inVault > 0
+    ? ('Saved ' + inVault + ' key' + (inVault === 1 ? '' : 's') + ' to KeyShield vault.')
+    : ('Saved ' + saved + ', ' + failed + ' failed.');
+  card.innerHTML = ''
+    + '<div style="font-size:14px;font-weight:600">KeyShield — Sovereign Vault</div>'
+    + '<div style="font-size:22px;font-weight:700;line-height:1.1">' + (state && state.signed ? 'signed' : 'Sign in') + '</div>'
+    + '<div style="font-size:12px;color:#34d399">' + collected + '</div>'
+    + '<ul class="ks-list" style="list-style:none;margin:0;padding:0;max-height:170px;overflow:auto">' + rows + '</ul>'
+    + '<div style="font-size:12px;color:' + (failed ? '#f87171' : '#34d399') + '">' + save + '</div>'
+    + '<div style="font-size:12px;color:#a1a1aa">' + filled + '</div>'
+    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>';
+}
+
+async function pushDetectState(tabId, state) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'KS_DETECT_STATE', state });
+  } catch { /* leftover or dead content */ }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: paintLiveDetectPanel,
+      args: [state],
+    });
+  } catch { /* restricted */ }
+}
+
+function injectedAutoFill(keys) {
+  if (!keys || !keys.length) return 0;
+  function hay(el) {
+    const bits = [
+      el.getAttribute('name') || '',
+      el.getAttribute('placeholder') || '',
+      el.getAttribute('aria-label') || '',
+      el.id || '',
+    ];
+    const item = el.closest && el.closest('.setting-item, [class*="setting-item"]');
+    if (item) {
+      const lab = item.querySelector('.setting-item-label, .setting-item-title, label');
+      if (lab) bits.push(lab.textContent || '');
+    }
+    return bits.join(' ').toLowerCase();
+  }
+  function match(h) {
+    if (/openrouter|sk-or/.test(h)) return 'openrouter';
+    if (/anthropic|claude|sk-ant/.test(h)) return 'anthropic';
+    if (/openai|chatgpt|gpt|sk-proj/.test(h)) return 'openai';
+    if (/groq|gsk_/.test(h)) return 'groq';
+    if (/cursor|crsr/.test(h)) return 'cursor';
+    return null;
+  }
+  function login(h) {
+    if (/(sign[\s-]?in|log[\s-]?in|email|username|account password)/.test(h)) return true;
+    return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(h);
+  }
+  function setVal(el, value) {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(el, value);
+    else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const remaining = keys.filter((k) => k && k.value);
+  const nodes = document.querySelectorAll('input[type=password], input[type=text], input:not([type]), textarea');
+  let filled = 0;
+  nodes.forEach((el) => {
+    if (el.disabled || el.readOnly) return;
+    if (String(el.value || '').trim()) return;
+    const h = hay(el);
+    if (login(h)) return;
+    const wanted = match(h);
+    let key = wanted ? remaining.find((k) => k.upstream === wanted) : null;
+    if (!key) {
+      const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+      for (const u of order) {
+        key = remaining.find((k) => k.upstream === u);
+        if (key) break;
+      }
+    }
+    if (!key) return;
+    setVal(el, key.value);
+    const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
+    if (idx >= 0) remaining.splice(idx, 1);
+    filled += 1;
+  });
+  return filled;
+}
+
+function isCursorFillTabUrl(url) {
+  return /cursor\.com|cursor\.sh|cursor-settings-fill-demo/i.test(String(url || ''));
+}
+
+async function fillCursorTabsFromPending() {
+  const keys = await pendingKeysForUpstreams(CURSOR_FILL_UPSTREAMS);
+  if (!keys.length) return 0;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return 0; }
+  let filled = 0;
   for (const tab of tabs) {
     if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
+    if (!isCursorFillTabUrl(tab.url)) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: injectedAutoFill,
+        args: [keys],
+      });
+      for (const row of injected || []) {
+        if (typeof row.result === 'number') filled += row.result;
+      }
+    } catch { /* restricted */ }
+    try {
+      const fill = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_PAGE_NOW' });
+      if (fill && typeof fill.filled === 'number' && fill.filled > filled) filled = fill.filled;
+    } catch { /* leftover content */ }
+  }
+  return filled;
+}
+
+async function injectDetectOnAllTabs(opts) {
+  if (!chrome.scripting || !chrome.tabs) return { injected: 0, saved: 0, failed: 0 };
+  const stored = await getStoredToken();
+  if (!stored.token) await harvestTokenFromDashboardTabs();
+  const again = await getStoredToken();
+  if (again.token) {
+    try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  }
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0, saved: 0, failed: 0 }; }
+  let injected = 0;
+  let saved = 0;
+  let failed = 0;
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
+    let page = null;
+    try {
+      const scraped = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: collectPageSecrets,
+      });
+      page = (scraped || []).map((row) => row && row.result).filter(Boolean)[0] || null;
+    } catch { /* restricted */ }
+    const started = Date.now();
+    const painted = [];
+    if (page) {
+      const keys = harvestVisibleKeysFromText(page.text, page.hostname, page.href);
+      for (const hit of keys) {
+        let queued = false;
+        try {
+          await queuePendingVault({ upstream: hit.upstream, value: hit.key });
+          queued = true;
+        } catch { /* dashboard flush */ }
+        let ok = false;
+        if (again.token) {
+          const result = await directStore({ upstream: hit.upstream, value: hit.key });
+          ok = !!(result && result.ok);
+          if (ok) saved += 1;
+          else failed += 1;
+        } else if (!queued) {
+          failed += 1;
+        }
+        painted.push({
+          upstream: hit.upstream,
+          masked: maskHarvestedKey(hit.key),
+          saved: ok || queued,
+        });
+      }
+    }
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
         files: ['content.js'],
       });
       injected += 1;
-    } catch {
-      /* chrome://, Web Store, and other restricted pages */
+    } catch { /* already declared or restricted */ }
+    let filled = 0;
+    try {
+      const fill = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_PAGE_NOW' });
+      if (fill && typeof fill.filled === 'number') filled = fill.filled;
+    } catch { /* restricted or dead content */ }
+    const queuedN = painted.filter((row) => row.saved).length;
+    const state = {
+      signed: !!again.token,
+      keys: painted,
+      saved: painted.filter((row) => row.saved).length,
+      failed: painted.filter((row) => !row.saved).length,
+      queued: queuedN,
+      filled,
+      ms: Date.now() - started,
+      force: true,
+    };
+    if (painted.length || (page && page.stalePanel) || (opts && tab.id === opts.focusTabId)) {
+      await pushDetectState(tab.id, state);
     }
   }
-  return { injected };
+  let filledAll = 0;
+  try { filledAll = await fillCursorTabsFromPending(); } catch { /* cursor tab missing */ }
+  if (saved > 0 || filledAll > 0) {
+    try { notify('KeyShield', `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault`); } catch { /* noop */ }
+  }
+  return { injected, saved, failed, filled: filledAll };
 }
 
 if (chrome.tabs && chrome.tabs.onUpdated) {
@@ -760,6 +1322,17 @@ chrome.runtime.onInstalled.addListener(() => {
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
     injectDetectOnAllTabs().catch(() => {});
+  });
+}
+
+const toolbarAction = (chrome.action && chrome.action.onClicked)
+  ? chrome.action
+  : (chrome.browserAction && chrome.browserAction.onClicked)
+    ? chrome.browserAction
+    : null;
+if (toolbarAction) {
+  toolbarAction.onClicked.addListener((tab) => {
+    injectDetectOnAllTabs({ focusTabId: tab && tab.id }).catch(() => {});
   });
 }
 

@@ -3,10 +3,7 @@ import { Key, Plus, ShieldCheck, ArrowRight } from 'lucide-react';
 import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
-import { callKeychain, detectUpstream, extractDetectedKey, storeDetectedKey } from '../../lib/keychain';
-import { getPasskeyTrust } from '../../lib/auth';
-import { isVaultUnlocked } from '../../lib/vault-session';
-import { ensureVerified } from '../../lib/zk-verify';
+import { callKeychain, detectUpstream, extractDetectedKeys, storeDetectedKeys } from '../../lib/keychain';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -22,20 +19,18 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   const detected = detectUpstream(paste);
 
   const saveAndCall = async (alsoCall: boolean) => {
-    const raw = extractDetectedKey(paste);
-    if (!raw) { setMsg('Paste a key first'); return; }
+    const hits = extractDetectedKeys(paste);
+    if (!hits.length) { setMsg('Paste a key first'); return; }
     setBusy(true); setMsg(null);
     try {
-      if (!isVaultUnlocked() && getPasskeyTrust()) {
-        await ensureVerified();
-      }
-      const stored = await storeDetectedKey(raw, detected.upstream ?? undefined);
+      const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       onStored?.();
-      if (alsoCall && stored.upstream) {
-        const result = await callKeychain(stored.upstream);
-        setMsg(`Saved ${stored.upstream} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
+      const first = stored[0];
+      if (alsoCall && first?.upstream) {
+        const result = await callKeychain(first.upstream);
+        setMsg(`Saved ${stored.length} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
       } else {
-        setMsg(`Saved ${stored.upstream} ${stored.prefix}`);
+        setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
       }
       setPaste('');
     } catch (err) {
@@ -49,13 +44,37 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   <div className="space-y-6">
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste or extension detect</p>
-      <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius_auth_…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
+      <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : 'Auto-detects provider prefix'}</span>
         <button type="button" disabled={busy || !paste.trim()} onClick={() => void saveAndCall(false)} className="h-9 px-3 rounded-lg bg-white text-black text-[13px] font-semibold disabled:opacity-50">Save</button>
         <button type="button" disabled={busy || !detected.upstream} onClick={() => void saveAndCall(true)} className="h-9 px-3 rounded-lg border border-zinc-500 text-white text-[13px] font-semibold disabled:opacity-50">Save + Call</button>
       </div>
       {msg && <p className="text-[13px] text-[#a8b3d8]">{msg}</p>}
+    </div>
+    <div data-testid="vault-saved-apis" className="rounded-xl border border-[#243365] bg-[#0e1631] p-4 space-y-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[28px] font-bold tracking-tight text-white leading-none">
+          {total === 1 ? '1 saved' : `${total} saved`}
+        </p>
+        <p className="text-[12px] text-[#8a96c2]">Extension + Vault · 登录后这里就是已存的 key</p>
+      </div>
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="flex items-baseline justify-between gap-3 rounded-lg border border-[#243365] bg-[#131c39] px-3 py-2">
+              <strong className="text-[13px] text-white">{item.name}</strong>
+              <code className="text-[11px] text-[#93b4ff] break-all">{item.value}</code>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] text-[#8a96c2]">
+          {searchQuery
+            ? 'No secrets match your search'
+            : 'No keys in this session yet. Detect writes this list.'}
+        </p>
+      )}
     </div>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />
@@ -74,8 +93,8 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
-        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty'}</p>
-        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Add your first encrypted secret to get started'}</p>
+        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
+        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Detect on a key page. This block is where saved keys show.'}</p>
         {!searchQuery && (
           <>
             <button onClick={onAdd} className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors">

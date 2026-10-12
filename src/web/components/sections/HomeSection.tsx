@@ -2,17 +2,21 @@ import React, { useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
+import { ExtTroubleCase } from '../ExtTroubleCase';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
-import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, wantsShopDemo } from '../../lib/shop-demo';
+import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
+import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
+import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
+import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
+import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
-import { ensureVerified } from '../../lib/zk-verify';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
 import {
   callKeychain,
   detectUpstream,
-  extractDetectedKey,
+  extractDetectedKeys,
   fetchKeychainHome,
-  storeDetectedKey,
+  storeDetectedKeys,
   type KeychainCallResult,
   type KeychainHome,
 } from '../../lib/keychain';
@@ -54,6 +58,7 @@ export const HomeSection: React.FC<Props> = ({
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
+  const [receipt, setReceipt] = useState<MppShopReceipt>(() => loadStoredMppReceipt());
   const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
 
   const detected = detectUpstream(paste);
@@ -64,13 +69,13 @@ export const HomeSection: React.FC<Props> = ({
   const conn = home?.connection;
 
   const savePaste = async () => {
-    const raw = extractDetectedKey(paste);
-    if (!raw) { setOk(false); setMsg('Paste a key first'); return; }
+    const hits = extractDetectedKeys(paste);
+    if (!hits.length) { setOk(false); setMsg('Paste a key first'); return; }
     setBusy('save'); setMsg(null);
     try {
-      const stored = await storeDetectedKey(raw, detected.upstream ?? undefined);
+      const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       setOk(true);
-      setMsg(`Saved ${stored.upstream} ${stored.prefix}`);
+      setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
       setPaste('');
       onRefresh();
     } catch (err) {
@@ -84,13 +89,6 @@ export const HomeSection: React.FC<Props> = ({
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
     try {
-      if (!isVaultUnlocked() && getPasskeyTrust()) {
-        setMsg('Verifying with passkey…');
-        const verified = await ensureVerified();
-        if (!verified.ok && verified.detail && /PRF|passkey|Face ID|No passkey/i.test(verified.detail)) {
-          /* Server vault can still call; local decrypt skipped. */
-        }
-      }
       const result = await callKeychain(upstream);
       setLastCall(result);
       setOk(result.live);
@@ -112,6 +110,7 @@ export const HomeSection: React.FC<Props> = ({
 
       <ExtensionTokenCopy />
       <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
+      <ExtTroubleCase variant="home" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
@@ -204,15 +203,41 @@ export const HomeSection: React.FC<Props> = ({
       >
         <div className="flex items-center gap-2">
           <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">Shop · pay · RPC</h3>
+          <h3 className="text-[20px] font-semibold text-white">Shop</h3>
         </div>
-        <p className="text-[15px] text-[#8a96c2]">
-          Buy {SHOP_ITEM_NAME} ${SHOP_CREDIT_USD.toFixed(2)} — Credit changes on this page. Then ping RPC twice to see the accelerated cache.
-        </p>
-        <p className="text-[28px] font-bold text-white" data-testid="shop-balance">
-          Credit ${fmt(home?.ledger.balance_usd, 2)}
-        </p>
+        <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-2">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">For sale · Solana Devnet</p>
+          <p className="text-[22px] font-semibold text-white">{formatMicroUsdc(receipt.captureMicroUsdc)} USDC metered call</p>
+          <p className="text-[15px] text-[#8a96c2]">
+            Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix 26).
+            Not Raydium / Pump.fun <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
+          </p>
+          <p className="text-[28px] font-bold text-white" data-testid="shop-balance">${SHOP_MPP_USD.toFixed(2)}</p>
+        </div>
+        <MppReceiptCard receipt={receipt} />
         <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            data-testid="shop-buy-mpp"
+            disabled={busy !== null}
+            onClick={() => {
+              setBusy('mpp');
+              setMsg(null);
+              void buyMppShopSku()
+                .then((next) => {
+                  setReceipt(next);
+                  setOk(true);
+                  setMsg(`Bought ${next.sku} · receipt ready`);
+                  downloadMppReceipt(next, 'html');
+                  onRefresh();
+                })
+                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
+                .finally(() => setBusy(null));
+            }}
+            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} · get receipt`}
+          </button>
           <button
             type="button"
             data-testid="shop-buy"
@@ -229,15 +254,15 @@ export const HomeSection: React.FC<Props> = ({
                     ? (d as { balance_usd: number }).balance_usd
                     : before + SHOP_CREDIT_USD;
                   setOk(true);
-                  setMsg(`Bought ${SHOP_ITEM_NAME} · ${describeBalanceChange(before, after).label}`);
+                  setMsg(`Bought ${SHOP_ITEM_NAME} (ledger, no Solana tx) · ${describeBalanceChange(before, after).label}`);
                   onRefresh();
                 })
                 .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
                 .finally(() => setBusy(null));
             }}
-            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
+            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
           >
-            {busy === 'shop' ? 'Buying…' : `Buy $${SHOP_CREDIT_USD.toFixed(2)} credit`}
+            {busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
           </button>
           <button
             type="button"
@@ -273,6 +298,40 @@ export const HomeSection: React.FC<Props> = ({
             Payments →
           </button>
         </div>
+        {msg && (busy === 'mpp' || busy === 'shop' || busy === 'rpc' || !lastCall) && (
+          <p data-testid="shop-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
+        )}
+        <div data-testid="shop-bazaar" className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">Third-party x402 · probed</p>
+          <p className="text-[14px] text-[#8a96c2]">
+            LIVE means Solana Devnet Circle USDC. KeyShield cannot settle these 402s.
+            Not Raydium / <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
+          </p>
+          {[...BAZAAR_OFFERS, ...PAYAI_LIVE_EXTRAS].map((offer) => (
+            <div
+              key={offer.id}
+              data-testid={`shop-bazaar-${offer.id}`}
+              className="rounded-lg border border-[#243365] px-3 py-3 space-y-1"
+            >
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className={`text-[11px] font-semibold uppercase ${offer.status === 'LIVE' ? 'text-emerald-400' : 'text-[#f87171]'}`}>
+                  {offer.status.replace('_', ' ')}
+                </span>
+                <span className="text-[15px] font-semibold text-white">{offer.name}</span>
+                {offer.amountLabel && <span className="text-[13px] text-[#a8b3d8]">{offer.amountLabel}</span>}
+              </div>
+              <p className="text-[13px] text-[#8a96c2]">{offer.method} · {offer.detail}</p>
+              <a
+                href={offer.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12px] text-[#93b4ff] hover:underline break-all"
+              >
+                {offer.url}
+              </a>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
@@ -291,7 +350,7 @@ export const HomeSection: React.FC<Props> = ({
           value={paste}
           onChange={(e) => setPaste(e.target.value)}
           rows={3}
-          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius_auth_…"
+          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius UUID…"
           className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
         />
         <div className="flex flex-wrap items-center gap-3">
@@ -332,7 +391,7 @@ export const HomeSection: React.FC<Props> = ({
           {[
             { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Links & troubleshooting', sub: 'Extension, proxy, RPC cache' },
+            { id: 'docs', title: 'Links & troubleshooting', sub: 'Leftover 1.2.1 · github.com DNS · find path' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
           ].map((row) => (
             <button

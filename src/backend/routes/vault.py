@@ -26,6 +26,7 @@ Endpoints:
 from __future__ import annotations
 
 import json as _json
+import os
 import sqlite3
 import time
 import uuid
@@ -39,10 +40,18 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
+
+def _vault_db_path() -> Path:
+    """Same file the Rust proxy reads (`KS_VAULT_DB_PATH`)."""
+    env = (os.environ.get("KS_VAULT_DB_PATH") or "").strip()
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent / "data" / "vault_shim.db"
+
+
 # SQLite DB path — shared with `ks_vault::sqlite::lookup_upstream_key`
-# (Rust hot-path proxy). Kept identical to the path the Rust crate
-# defaults to, so both sides read/write the same file.
-_DB_PATH = Path(__file__).parent.parent / "data" / "vault_shim.db"
+# (Rust hot-path proxy). Tests monkeypatch `_DB_PATH`.
+_DB_PATH = _vault_db_path()
 
 
 @contextmanager
@@ -101,17 +110,49 @@ def _auth(request: Request) -> dict | None:
 
 
 def _require_user_id(request: Request) -> "tuple[str | None, JSONResponse | None]":
-    """Resolve the caller. Bearer session wins; otherwise X-Dev-Mode:1
-    opts into the local "default" user. Returns 401 if neither.
+    """Resolve the caller. A Bearer token, even a stale one, is the
+    session. X-Dev-Mode:1 is only the no-Authorization local-dev
+    fallback. A bad Bearer plus X-Dev-Mode must not write to the
+    shared ``default`` user — that hid extension saves from Vault.
 
     The 2-tuple shape is kept so callers can early-return on error.
     """
-    sess = _auth(request)
-    if sess:
-        return sess["user_id"], None
+    token = request.headers.get("Authorization", "")
+    if token.startswith("Bearer "):
+        sess = _auth(request)
+        if sess:
+            return sess["user_id"], None
+        return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
     if request.headers.get("X-Dev-Mode") == "1":
         return "default", None
     return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
+
+
+def _may_claim_default(request: Request) -> bool:
+    """Local / explicit only. Never adopt shared Railway ``default`` rows."""
+    if os.environ.get("KS_CLAIM_DEFAULT_VAULT") == "1":
+        return True
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    return host in {"127.0.0.1", "localhost"}
+
+
+def _claim_default_rows(conn: sqlite3.Connection, uid: str) -> int:
+    """Move orphaned ``default`` rows onto an empty session user.
+
+    Extension + stale Bearer used to write ``user_id=default``. After a
+    real login the Vault list was empty even though the keys were in
+    the same SQLite file. Hosted/shared DBs must not do this.
+    """
+    if not uid or uid == "default":
+        return 0
+    n = conn.execute("SELECT COUNT(*) FROM vault_items WHERE user_id = ?", (uid,)).fetchone()[0]
+    if n:
+        return 0
+    cur = conn.execute(
+        "UPDATE vault_items SET user_id = ? WHERE user_id = 'default'",
+        (uid,),
+    )
+    return int(cur.rowcount or 0)
 
 
 def _iso(ts: float | None) -> str | None:
@@ -155,6 +196,8 @@ async def vault_list(request: Request):
     if err:
         return err
     with _db() as conn:
+        if _may_claim_default(request):
+            _claim_default_rows(conn, uid)
         rows = conn.execute(
             "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC",
             (uid,),
@@ -180,6 +223,21 @@ async def vault_store(request: Request):
         tags_json = "[]"
     # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
     stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
+    upstream = body.get("upstream") or ""
+    has_cipher = bool(body.get("cipher") and body.get("iv"))
+    if not str(stored_value).strip() and not has_cipher:
+        return JSONResponse({"detail": "Paste the API key"}, status_code=400)
+
+    # Same plaintext key → same row. A second Helius UUID stays a new row.
+    if not body.get("id") and stored_value:
+        with _db() as conn:
+            existing = conn.execute(
+                "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? AND value = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (uid, upstream, stored_value),
+            ).fetchone()
+            if existing:
+                item_id = existing[0]
 
     with _db() as conn:
         conn.execute(
@@ -206,7 +264,7 @@ async def vault_store(request: Request):
                 uid,
                 body.get("name") or "unnamed",
                 body.get("type") or "api_key",
-                body.get("upstream") or "",
+                upstream,
                 stored_value,
                 tags_json,
                 now,

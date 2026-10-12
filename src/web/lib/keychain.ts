@@ -1,6 +1,7 @@
 /** Shared keychain detect + framework snippets. Matches extension + backend. */
 
 import { API_BASE, apiFetch } from './auth';
+import { emitVaultChanged } from './vault-list';
 
 export interface DetectedKey {
   upstream: string | null;
@@ -75,6 +76,7 @@ const DETECTORS: { upstream: string; re: RegExp }[] = [
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },
   { upstream: 'helius', re: /helius_auth_[A-Za-z0-9]{16,}/ },
+  { upstream: 'helius', re: /(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/i },
   { upstream: 'vercel', re: /(?:vercel_|vcp_)[A-Za-z0-9_]{20,}/ },
   { upstream: 'github', re: /(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/ },
   { upstream: 'openai', re: /sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}/ },
@@ -100,6 +102,41 @@ export function extractDetectedKey(raw: string): string {
     if (found) return found[0];
   }
   return text;
+}
+
+/** Placeholder "sk-or-v1-…" is not a key. Autofill may fill the DOM, not React. */
+export function looksLikePlaceholderSecret(raw: string): boolean {
+  const text = String(raw || '').trim();
+  if (!text) return true;
+  if (/[•…]/.test(text) && text.replace(/[•….\s-]/g, '').length < 12) return true;
+  return false;
+}
+
+export function resolveApiKeyInput(stateValue: string, domValue = ''): string {
+  const raw = String(stateValue || '').trim() || String(domValue || '').trim();
+  if (looksLikePlaceholderSecret(raw)) return '';
+  return extractDetectedKey(raw);
+}
+
+export function extractDetectedKeys(raw: string): { upstream: string; key: string }[] {
+  const text = raw.trim();
+  if (!text) return [];
+  const out: { upstream: string; key: string }[] = [];
+  const seen = new Set<string>();
+  for (const row of DETECTORS) {
+    const flags = row.re.flags.includes('g') ? row.re.flags : `${row.re.flags}g`;
+    const re = new RegExp(row.re.source, flags);
+    let found: RegExpExecArray | null;
+    while ((found = re.exec(text)) !== null) {
+      const key = found[0];
+      if (!key) continue;
+      const id = `${row.upstream}:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ upstream: row.upstream, key });
+    }
+  }
+  return out;
 }
 
 export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
@@ -156,14 +193,54 @@ export async function fetchKeychainHome(address?: string): Promise<KeychainHome>
   return r.json();
 }
 
-export async function storeDetectedKey(value: string, upstream?: string): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
-  const r = await apiFetch('/keychain/store', {
+async function writeManageStore(
+  value: string,
+  upstream: string,
+): Promise<{ id?: string }> {
+  const stored = await apiFetch('/manage/store', {
     method: 'POST',
-    body: JSON.stringify({ value, upstream }),
+    body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
   });
-  const body = await r.json().catch(() => ({ detail: 'store failed' }));
-  if (!r.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
-  return body;
+  const body = await stored.json().catch(() => ({ detail: 'store failed' }));
+  if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
+  return body as { id?: string };
+}
+
+export async function storeDetectedKey(value: string, upstream?: string): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
+  const detected = detectUpstream(value);
+  const up = (upstream || detected.upstream || '').trim();
+  if (!value.trim()) throw new Error('Paste a key first');
+  if (!up) throw new Error('unrecognized key shape — pick a provider or paste a known prefix');
+  // Write /manage/store only. /keychain/store used to overwrite the latest
+  // helius row, so a sixth UUID ate one of the five already in Vault.
+  const saved = await writeManageStore(value, up);
+  emitVaultChanged();
+  return {
+    stored: true,
+    id: String(saved.id || up),
+    upstream: up,
+    prefix: detected.prefix || `${value.slice(0, 6)}…${value.slice(-4)}`,
+  };
+}
+
+export async function storeDetectedKeys(
+  raw: string,
+  forcedUpstream?: string,
+): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }[]> {
+  const hits = extractDetectedKeys(raw);
+  if (!hits.length) {
+    const fallback = extractDetectedKey(raw);
+    if (!fallback) throw new Error('Paste a key first');
+    hits.push({
+      upstream: forcedUpstream || detectUpstream(fallback).upstream || 'custom',
+      key: fallback,
+    });
+  }
+  const stored = [];
+  for (const hit of hits) {
+    stored.push(await storeDetectedKey(hit.key, forcedUpstream || hit.upstream));
+  }
+  return stored;
 }
 
 export async function callKeychain(upstream: string, prompt = 'KeyShield keychain ping'): Promise<KeychainCallResult> {

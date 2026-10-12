@@ -176,9 +176,10 @@ const AUTO_STORE_KEY = 'ks_auto_store';
 let   autoStoreAllowed = false;
 let   loggedIn = false;
 let   autoStoreInFlight = false;
+let   extensionContextDead = false;
 const HOST = window.location.hostname;
 const QUICK_AUTH_TARGETS = ['openrouter.ai', 'scvd.store'];
-const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store'];
+const PAYMENT_INTERCEPT_TARGETS = ['openrouter.ai', 'scvd.store', 'crypto-regime-api.onrender.com'];
 let lastQuickAuthPromptAt = 0;
 const QUICK_AUTH_COOLDOWN_MS = 5000;
 
@@ -288,7 +289,73 @@ function handleMatch(key, provider, onDomain) {
 }
 
 function detectIsArmed() {
-  return !!(autoStoreAllowed || loggedIn);
+  return !extensionContextDead && !!(autoStoreAllowed || loggedIn);
+}
+
+function isExtensionContextDead(detail) {
+  return /Extension context invalidated|chrome\.runtime is not available|Cannot access a chrome\./i.test(
+    String(detail || ''),
+  );
+}
+
+function shouldRetryBackgroundSend(detail) {
+  const text = String(detail || '');
+  if (isExtensionContextDead(text)) return false;
+  return /Receiving end does not exist|The message port closed/i.test(text);
+}
+
+function markExtensionContextDead() {
+  extensionContextDead = true;
+}
+
+function reloadDeadDetectTab() {
+  try {
+    if (sessionStorage.getItem('ks_dead_reloaded') === '1') return;
+    sessionStorage.setItem('ks_dead_reloaded', '1');
+    location.reload();
+  } catch { /* noop */ }
+}
+
+function takeOverStaleDetectPanel() {
+  try {
+    document.querySelectorAll('#keyshield-detection-notice').forEach((el) => el.remove());
+    document.querySelectorAll('#keyshield-status-card').forEach((el) => {
+      if (el !== panelEl) el.remove();
+    });
+  } catch { /* noop */ }
+}
+
+function runtimeGone() {
+  try {
+    return typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id;
+  } catch {
+    return true;
+  }
+}
+
+function formatBulkSaveFailure(opts) {
+  const saved = Math.max(0, Math.floor(Number(opts && opts.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(opts && opts.failed) || 0));
+  let text = `Saved ${saved}, ${failed} failed.`;
+  const reason = String((opts && opts.reason) || '');
+  const detail = String((opts && opts.detail) || '');
+  if (isExtensionContextDead(detail) || reason === 'extension-dead') {
+    return { text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`, reload: true };
+  }
+  if (reason === 'extension' && isExtensionContextDead(detail)) {
+    return { text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`, reload: true };
+  }
+  if (reason === 'token-expired' || reason === 'no-token') {
+    return { text: `${text} Sign in so saves land in your vault.`, reload: false };
+  }
+  if (reason === 'network') {
+    return { text: `${text} Backend unreachable.`, reload: false };
+  }
+  if (reason === 'extension') {
+    return { text: `${text} Extension messaging error${detail ? ` (${detail})` : ''}.`, reload: false };
+  }
+  if (reason) return { text: `${text} (${reason})`, reload: false };
+  return { text: `${text} Click Retry or open DevTools.`, reload: false };
 }
 
 function loadAutoStorePref() {
@@ -322,6 +389,7 @@ function grantAutoStore() {
 }
 
 function maybeAutoStore() {
+  if (extensionContextDead || runtimeGone()) return;
   if (!detectIsArmed() || autoStoreInFlight) return;
   const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
   if (unsaved === 0) return;
@@ -346,13 +414,13 @@ function injectStyleOnce() {
     .ks-btn-primary:disabled{opacity:.6;cursor:default;background:#3d5fb8}
     .ks-btn-ghost{background:transparent;color:#71717a;border-color:#27272a}
     .ks-btn-ghost:hover{color:#fafafa;border-color:#3f3f46}
-    #keyshield-detection-notice ul.ks-list{list-style:none;margin:0;padding:0;max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
-    #keyshield-detection-notice ul.ks-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#020408;border:1px solid #131929;border-radius:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#86efac}
-    #keyshield-detection-notice ul.ks-list li.ks-saved{color:#71717a;background:#0a0d1a;border-color:#1c2238}
-    #keyshield-detection-notice ul.ks-list li.ks-failed{color:#f87171;border-color:rgba(239,68,68,.3)}
-    #keyshield-detection-notice ul.ks-list li .ks-badge{flex-shrink:0;background:#0e1430;padding:2px 6px;border-radius:4px;font-size:9px;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.04em}
-    #keyshield-detection-notice ul.ks-list li .ks-keytext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #keyshield-detection-notice ul.ks-list li .ks-state{flex-shrink:0;font-size:11px}
+    #keyshield-status-card ul.ks-list,#keyshield-detection-notice ul.ks-list{list-style:none;margin:0;padding:0;max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+    #keyshield-status-card ul.ks-list li,#keyshield-detection-notice ul.ks-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#020408;border:1px solid #131929;border-radius:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#86efac}
+    #keyshield-status-card ul.ks-list li.ks-saved,#keyshield-detection-notice ul.ks-list li.ks-saved{color:#71717a;background:#0a0d1a;border-color:#1c2238}
+    #keyshield-status-card ul.ks-list li.ks-failed,#keyshield-detection-notice ul.ks-list li.ks-failed{color:#f87171;border-color:rgba(239,68,68,.3)}
+    #keyshield-status-card ul.ks-list li .ks-badge,#keyshield-detection-notice ul.ks-list li .ks-badge{flex-shrink:0;background:#0e1430;padding:2px 6px;border-radius:4px;font-size:9px;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.04em}
+    #keyshield-status-card ul.ks-list li .ks-keytext,#keyshield-detection-notice ul.ks-list li .ks-keytext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #keyshield-status-card ul.ks-list li .ks-state,#keyshield-detection-notice ul.ks-list li .ks-state{flex-shrink:0;font-size:11px}
   `;
   document.head.appendChild(style);
 }
@@ -361,7 +429,7 @@ function maskKey(k) { return k.length <= 18 ? k : `${k.substring(0, 14)}••�
 
 function buildPanel() {
   panelEl = document.createElement('div');
-  panelEl.id = 'keyshield-detection-notice';
+  panelEl.id = 'keyshield-status-card';
   Object.assign(panelEl.style, {
     position: 'fixed', top: '20px', right: '20px', zIndex: '999999',
     backgroundColor: '#0a0d1a', border: '1px solid #1c2238', borderRadius: '12px',
@@ -394,10 +462,45 @@ function setPanelStatus(text, kind) {
   s.style.background = palette[0]; s.style.color = palette[1]; s.style.border = `1px solid ${palette[2]}`;
 }
 
-function renderPanel() {
+function applyHarvestState(state) {
+  takeOverStaleDetectPanel();
+  if (state && Object.prototype.hasOwnProperty.call(state, 'signed')) {
+    loggedIn = !!state.signed;
+  }
+  const keys = Array.isArray(state && state.keys) ? state.keys : [];
+  for (const row of keys) {
+    if (!row || !row.saved) continue;
+    const mask = String(row.masked || '');
+    const tail = mask.slice(-4);
+    for (const [raw, info] of detectedKeys) {
+      if (maskKey(raw) === mask || (tail && raw.endsWith(tail))) {
+        detectedKeys.set(raw, { ...info, saved: true });
+      }
+    }
+  }
+  const filledN = Math.max(0, Math.floor(Number(state && state.filled) || 0));
+  const ms = state && state.ms;
+  const line = `${filledN === 1 ? '1 filled' : `${filledN} filled`} · ${
+    ms == null || !isFinite(Number(ms)) || Number(ms) < 0 ? '—' : `${Math.round(Number(ms))}ms`
+  }`;
+  if (!panelEl && (keys.length || detectedKeys.size || (state && state.force))) buildPanel();
+  if (panelEl) panelEl.dataset.ksFill = line;
+  renderPanel({ force: true });
+  const saved = Math.max(0, Math.floor(Number(state && state.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(state && state.failed) || 0));
+  if (saved > 0 && failed === 0) {
+    setPanelStatus(`Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
+  } else if (saved || failed) {
+    setPanelStatus(`Saved ${saved}, ${failed} failed.`, failed ? 'err' : 'ok');
+  }
+}
+
+function renderPanel(opts) {
+  takeOverStaleDetectPanel();
   injectStyleOnce();
   const all = Array.from(detectedKeys.entries());
-  if (all.length === 0) { closePanel(); return; }
+  const force = !!(opts && opts.force);
+  if (all.length === 0 && !force) { closePanel(); return; }
   if (!panelEl) buildPanel();
 
   const unsavedCount = all.filter(([, v]) => v.saved !== true).length;
@@ -407,51 +510,42 @@ function renderPanel() {
     return `<li class="${cls}"><span class="ks-badge">${v.provider.label}</span><span class="ks-keytext">${maskKey(k)}</span><span class="ks-state">${state}</span></li>`;
   }).join('');
 
-  const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
+  const savedCount = all.filter(([, v]) => v.saved === true).length;
+  const collectedLabel = all.length === 1 ? '1 collected' : `${all.length} collected`;
+  const signedLabel = loggedIn ? 'signed' : 'Sign in';
+  const lastFill = (panelEl && panelEl.dataset.ksFill) || '0 filled · —';
   const btnText = unsavedCount === 0
-    ? 'All saved'
+    ? (all.length === 0 ? 'Detect on' : 'All saved')
     : detectIsArmed()
       ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
       : 'Allow auto-save';
 
   panelEl.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="background:#0e1430;padding:6px 8px;border-radius:6px;font-size:10px;font-weight:700;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.05em">${all.length}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600">${title}</div>
-        <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${HOST}</div>
-      </div>
-    </div>
+    <div style="font-size:14px;font-weight:600">KeyShield — Sovereign Vault</div>
+    <div style="font-size:22px;font-weight:700;line-height:1.1">${signedLabel}</div>
+    <div id="ks-collected" style="font-size:12px;color:#34d399">${collectedLabel}</div>
     <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
+    <div id="ks-filled" style="font-size:12px;color:#a1a1aa">${lastFill}</div>
+    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>
     <div style="display:flex;gap:8px">
       <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
-      <button id="ks-ignore" class="ks-btn ks-btn-ghost">Dismiss</button>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <a id="ks-signin" href="#" style="font-size:10px;color:#93b4ff;text-decoration:none;cursor:pointer;border-bottom:1px dotted #3d5fb8">→ Sign in to KeyShield</a>
-      <a id="ks-hide-domain" href="#" style="font-size:10px;color:#71717a;text-decoration:none;cursor:pointer;border-bottom:1px dotted #3f3f46">Hide for this domain</a>
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = detectIsArmed() ? bulkSave : grantAutoStore;
-  panelEl.querySelector('#ks-ignore').onclick = closePanel;
-  panelEl.querySelector('#ks-signin').onclick = (ev) => {
-    ev.preventDefault();
-    try { chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD_FOR_SIGNIN' }); } catch { /* noop */ }
-    setPanelStatus('Opened the KeyShield dashboard. Sign in there to enable encrypted save.', 'info');
-  };
-  panelEl.querySelector('#ks-hide-domain').onclick = (ev) => {
-    ev.preventDefault();
-    dismissThisDomain();
-    setPanelStatus(`Auto-detect muted on ${HOST}.`, 'info');
-    setTimeout(closePanel, 1200);
-  };
+  const saveBtn = panelEl.querySelector('#ks-save-all');
+  if (saveBtn) saveBtn.onclick = detectIsArmed() ? bulkSave : grantAutoStore;
+  if (savedCount > 0 && unsavedCount === 0) {
+    setPanelStatus(`Saved ${savedCount} key${savedCount === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
+  }
 }
 
 /** MV3: background may be cold; Chrome yields lastError — retry after short backoff. */
 async function sendToBackground(message) {
-  const recoverable = /Receiving end does not exist|The message port closed|Extension context invalidated/i;
+  if (runtimeGone()) {
+    markExtensionContextDead();
+    return { ok: false, reason: 'extension-dead', detail: 'Extension context invalidated.' };
+  }
   let lastDetail = '';
   for (let attempt = 0; attempt < 5; attempt++) {
     /* eslint-disable no-await-in-loop */
@@ -470,7 +564,11 @@ async function sendToBackground(message) {
     });
     if (response && typeof response === 'object' && '__err' in response) {
       lastDetail = response.__err;
-      if (recoverable.test(lastDetail) && attempt < 4) {
+      if (isExtensionContextDead(lastDetail)) {
+        markExtensionContextDead();
+        return { ok: false, reason: 'extension-dead', detail: lastDetail };
+      }
+      if (shouldRetryBackgroundSend(lastDetail) && attempt < 4) {
         await new Promise((r) => setTimeout(r, 120 + attempt * 120));
         continue;
       }
@@ -488,11 +586,25 @@ async function bulkSave() {
   let btn = panelEl && panelEl.querySelector('#ks-save-all');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
+  if (extensionContextDead || runtimeGone()) {
+    markExtensionContextDead();
+    setPanelStatus('Saving from the live detect card…', 'info');
+    try { chrome.runtime.sendMessage({ type: 'INJECT_DETECT' }); } catch { /* sw harvest paints this card */ }
+    return;
+  }
+
   await sendToBackground({ type: 'KS_BG_READY' });
 
   let saved = 0, failed = 0, lastReason = null, lastExtra = '';
   for (let i = 0; i < unsaved.length; i++) {
     const [key, info] = unsaved[i];
+    if (extensionContextDead) {
+      detectedKeys.set(key, { ...info, saved: 'fail' });
+      failed++;
+      lastReason = 'extension-dead';
+      lastExtra = 'Extension context invalidated.';
+      continue;
+    }
     setPanelStatus(`Saving ${i + 1}/${unsaved.length}: ${info.provider.name}…`, 'info');
 
     const result = await sendToBackground({
@@ -507,7 +619,15 @@ async function bulkSave() {
     });
 
     detectedKeys.set(key, { ...info, saved: result.ok ? true : 'fail' });
-    if (result.ok) saved++; else { failed++; lastReason = result.reason; if (result.detail) lastExtra = String(result.detail); }
+    if (result.ok) saved++;
+    else {
+      failed++;
+      lastReason = result.reason;
+      if (result.detail) lastExtra = String(result.detail);
+      if (result.reason === 'extension-dead' || isExtensionContextDead(result.detail)) {
+        markExtensionContextDead();
+      }
+    }
     renderPanel();
     const b = panelEl && panelEl.querySelector('#ks-save-all');
     if (b) { b.disabled = true; b.textContent = `Saving ${i + 1}/${unsaved.length}…`; }
@@ -518,16 +638,32 @@ async function bulkSave() {
   if (failed === 0) {
     setPanelStatus(`Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
     if (b2) { b2.disabled = true; b2.textContent = 'All saved'; }
-    setTimeout(closePanel, 8000);
+    const started = Date.now();
+    try {
+      const fill = await sendToBackground({ type: 'FILL_PAGE_NOW' });
+      const n = fill && typeof fill.filled === 'number' ? fill.filled : 0;
+      const line = `${n === 1 ? '1 filled' : `${n} filled`} · ${Date.now() - started}ms`;
+      if (panelEl) {
+        panelEl.dataset.ksFill = line;
+        const el = panelEl.querySelector('#ks-filled');
+        if (el) el.textContent = line;
+      }
+    } catch { /* keep last fill line */ }
   } else {
-    let detail = `Saved ${saved}, ${failed} failed.`;
-    if      (lastReason === 'token-expired') detail += ' Session expired — sign in again.';
-    else if (lastReason === 'network')       detail += ' Backend unreachable.';
-    else if (lastReason === 'extension')     detail += ` Extension messaging error${lastExtra ? ` (${lastExtra})` : ''}.`;
-    else if (lastReason)                     detail += ` (${lastReason})`;
-    else                                     detail += ' Click Retry or open DevTools.';
-    setPanelStatus(detail, 'err');
-    if (b2) { b2.disabled = false; b2.textContent = `Retry ${failed} failed`; }
+    const fail = formatBulkSaveFailure({
+      saved,
+      failed,
+      reason: lastReason,
+      detail: lastExtra,
+    });
+    setPanelStatus(fail.text, fail.reload ? 'info' : 'err');
+    if (b2 && !fail.reload) {
+      b2.disabled = false;
+      b2.textContent = `Retry ${failed} failed`;
+    }
+    if (fail.reload) {
+      try { chrome.runtime.sendMessage({ type: 'INJECT_DETECT' }); } catch { /* harvest paints */ }
+    }
   }
 }
 
@@ -541,20 +677,204 @@ function showNotification(_key, _provider, _onDomain) { renderPanel(); }
 
 const KS_FILL_ATTACHED = '__ksFillAttached';   // marker on inputs we've decorated
 let   ksFillEnabled    = null;                 // null=unknown, true=have keys, false=skip
+let   ksCachedKeys     = null;
 
-function ksIsFillableInput(el) {
-  if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
-  if (el.closest && el.closest('#keyshield-detection-notice')) return false;
-  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
-  if (el.disabled || el.readOnly) return false;
-  const type = (el.getAttribute('type') || '').toLowerCase();
-  if (el.tagName === 'INPUT' && type === 'password') return true;
+const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([type]), textarea, '
+  + 'input[name*=key i], input[placeholder*=key i], input[placeholder*=API i], '
+  + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
+  + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
+
+const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b/;
+
+function ksIsCursorFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'cursor.com' || host.endsWith('.cursor.com')
+    || host === 'cursor.sh' || host.endsWith('.cursor.sh')
+    || host === 'cursor.demo.localhost';
+}
+
+function ksIsCursorFillContext() {
+  const host = location.hostname;
+  const path = String(location.pathname || '').toLowerCase();
+  const title = String(document.title || '').toLowerCase();
+  if (ksIsCursorFillHost(host)) return true;
+  if (path.includes('cursor-settings-fill-demo')) return true;
+  return title.includes('cursor') && /setting|api key|models/.test(`${path} ${title}`);
+}
+
+function ksAncestorHaystack(el) {
+  const chunks = [];
+  const item = el.closest && el.closest('.setting-item, [class*="setting-item"]');
+  if (item) {
+    const labeled = item.querySelector
+      && item.querySelector('.setting-item-label, .setting-item-title, [class*="setting-item-label"], label');
+    if (labeled && labeled !== el && !labeled.contains(el)) {
+      chunks.push(String(labeled.textContent || '').slice(0, 240));
+    }
+    return chunks.join(' ');
+  }
+  let node = el;
+  for (let depth = 0; depth < 6 && node; depth++) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const labeled = parent.querySelector
+      && parent.querySelector(':scope > .setting-item-label, :scope > label, :scope > .setting-item-title');
+    if (labeled && labeled !== el && !labeled.contains(el)) {
+      chunks.push(String(labeled.textContent || '').slice(0, 240));
+    }
+    const prev = el.previousElementSibling;
+    if (depth === 0 && prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) {
+      const t = String(prev.textContent || '').trim();
+      if (t && t.length < 160) chunks.push(t);
+    }
+    node = parent;
+    if (chunks.join(' ').length > 120) break;
+  }
+  return chunks.join(' ');
+}
+
+function ksInputHaystack(el) {
   const name = (el.getAttribute('name') || '').toLowerCase();
   const ph   = (el.getAttribute('placeholder') || '').toLowerCase();
   const id   = (el.getAttribute('id') || '').toLowerCase();
   const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-  const hay  = `${name} ${ph} ${id} ${aria}`;
-  return /\bkey\b|api[\s_-]?key|api\b|token|secret/.test(hay);
+  let label = '';
+  try {
+    if (el.id && typeof CSS !== 'undefined' && CSS.escape) {
+      const lab = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lab) label += ` ${lab.textContent || ''}`;
+    }
+  } catch { /* ignore selector issues */ }
+  const wrapped = el.closest && el.closest('label');
+  if (wrapped) label += ` ${wrapped.textContent || ''}`;
+  const prev = el.previousElementSibling;
+  if (prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) {
+    label += ` ${prev.textContent || ''}`;
+  }
+  label += ` ${ksAncestorHaystack(el)}`;
+  return `${name} ${ph} ${id} ${aria} ${label}`.toLowerCase();
+}
+
+function ksMatchUpstreamForHaystack(hay) {
+  if (/\bcursor\b|\bcrsr\b/.test(hay)) return 'cursor';
+  if (/\bopenrouter\b|\bsk-or\b/.test(hay)) return 'openrouter';
+  if (/\banthropic\b|\bclaude\b|\bsk-ant\b/.test(hay)) return 'anthropic';
+  if (/\bopenai\b|\bchatgpt\b|\bgpt\b|\bsk-proj\b/.test(hay)) return 'openai';
+  if (/\bgroq\b|\bgsk_/.test(hay)) return 'groq';
+  if (/\bhelius\b/.test(hay)) return 'helius';
+  if (/\bvercel\b/.test(hay)) return 'vercel';
+  if (/\bgithub\b|\bghp_|\bgithub_pat_/.test(hay)) return 'github';
+  return null;
+}
+
+function ksLooksLikeLoginPassword(hay) {
+  const text = String(hay || '').toLowerCase();
+  if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(text)) return true;
+  return /\bpassword\b/.test(text) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(text);
+}
+
+function ksLooksLikeKeyNameField(hay) {
+  const text = String(hay || '').toLowerCase();
+  return /api[\s_-]?key[\s_-]?name|key[\s_-]?name|name[\s_-]?your[\s_-]?key|display[\s_-]?name/.test(text);
+}
+
+function ksPreferredCursorFillKey(keys) {
+  const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+  for (const upstream of order) {
+    const hit = keys.find((k) => k.upstream === upstream && k.value);
+    if (hit) return hit;
+  }
+  return keys.find((k) => k.value) || null;
+}
+
+function ksPickKeyForInput(el, keys) {
+  if (!keys || !keys.length) return null;
+  const hay = ksInputHaystack(el);
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (ksLooksLikeKeyNameField(hay)) return null;
+  const wanted = ksMatchUpstreamForHaystack(hay);
+  if (wanted) {
+    const labeled = keys.find((k) => k.upstream === wanted);
+    if (labeled) return labeled;
+  }
+  if (ksLooksLikeLoginPassword(hay)) return null;
+  if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
+    return ksPreferredCursorFillKey(keys);
+  }
+  if (keys.length === 1) return keys[0];
+  return null;
+}
+
+function ksLooksLikeCursorApiBlank(el, hay, type) {
+  if (!ksIsCursorFillContext()) return false;
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return type === 'password' || !String(hay || '').trim();
+}
+
+function ksLooksLikeKeyInput(el) {
+  if (!el) return false;
+  if (el.closest && (el.closest('#keyshield-status-card') || el.closest('#keyshield-detection-notice'))) return false;
+  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
+  if (el.disabled || el.readOnly) return false;
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (el.tagName === 'INPUT' && (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'submit')) {
+    return false;
+  }
+  const hay = ksInputHaystack(el);
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return ksLooksLikeCursorApiBlank(el, hay, type);
+}
+
+function ksIsFillableInput(el) {
+  if (!el || el.dataset && el.dataset[KS_FILL_ATTACHED]) return false;
+  return ksLooksLikeKeyInput(el);
+}
+
+function ksCollectFillInputs(root) {
+  const out = [];
+  const visit = (node) => {
+    if (!node) return;
+    let list = [];
+    try { list = node.querySelectorAll ? node.querySelectorAll(KS_FILL_INPUT_SEL) : []; }
+    catch { list = []; }
+    list.forEach((el) => out.push(el));
+    let all = [];
+    try { all = node.querySelectorAll ? node.querySelectorAll('*') : []; }
+    catch { all = []; }
+    for (const el of all) {
+      if (el.shadowRoot) visit(el.shadowRoot);
+    }
+  };
+  visit(root || document);
+  return out;
+}
+
+function ksAutoFillEmptyInputs(keys) {
+  if (!keys || !keys.length) return 0;
+  const nodes = ksCollectFillInputs(document);
+  const candidates = [];
+  nodes.forEach((input) => {
+    if (!ksLooksLikeKeyInput(input)) return;
+    if (input.dataset && input.dataset.ksAutofilled) return;
+    if (String(input.value || '').trim().length > 0) return;
+    candidates.push(input);
+  });
+  const remaining = keys.filter((k) => k && k.value);
+  let filled = 0;
+  for (const input of candidates) {
+    const key = ksPickKeyForInput(input, remaining);
+    if (!key || !key.value) continue;
+    ksSetValue(input, key.value);
+    if (input.dataset) input.dataset.ksAutofilled = '1';
+    const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
+    if (idx >= 0) remaining.splice(idx, 1);
+    filled += 1;
+  }
+  return filled;
 }
 
 function ksFlashGreen(el) {
@@ -585,12 +905,29 @@ function ksSetValue(el, value) {
 }
 
 function ksRequestKeys() {
-  return sendToBackground({ type: 'GET_KEYS_FOR_DOMAIN', domain: location.hostname }).then((response) => {
+  return sendToBackground({
+    type: 'GET_KEYS_FOR_DOMAIN',
+    domain: location.hostname,
+    pathname: location.pathname,
+    title: document.title,
+  }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
     }
     return { ok: true, keys: response.keys };
   });
+}
+
+async function ksFillPageNow() {
+  const resp = await ksRequestKeys();
+  if (!resp || !resp.ok || !Array.isArray(resp.keys) || !resp.keys.length) {
+    return { ok: false, filled: 0, reason: resp?.reason || 'no-keys' };
+  }
+  ksFillEnabled = true;
+  ksCachedKeys = resp.keys;
+  ksScanForInputs();
+  const filled = ksAutoFillEmptyInputs(resp.keys);
+  return { ok: true, filled, keys: resp.keys.length };
 }
 
 function ksCloseDropdowns() {
@@ -726,14 +1063,9 @@ function ksAttachFillButton(input) {
 }
 
 function ksScanForInputs() {
-  if (ksFillEnabled === false) return;
-  const sel = 'input[type=password], input[name*=key i], input[placeholder*=key i], '
-            + 'input[placeholder*=API i], input[name*=token i], input[placeholder*=token i], '
-            + 'input[name*=secret i], textarea[name*=key i]';
-  let nodes;
-  try { nodes = document.querySelectorAll(sel); }
-  catch { return; }
+  const nodes = ksCollectFillInputs(document);
   nodes.forEach(ksAttachFillButton);
+  if (ksCachedKeys && ksCachedKeys.length) ksAutoFillEmptyInputs(ksCachedKeys);
 }
 
 // Must match manifest externally_connectable. Used to skip Fill on the
@@ -750,25 +1082,92 @@ function isKeyShieldDashboardHost() {
   );
 }
 
-// On load: ping background once. If we have keys for this domain, enable
-// the fill UI. If `no-vault-key`, stay disabled silently.
+// On load: ping background. Retry after login — a first miss used to disable
+// fill forever, which left the Cursor Settings black space empty.
 (function ksInitFillUI() {
-  // Best-effort: dashboard pages shouldn't get the fill button.
   if (isKeyShieldDashboardHost()) {
     ksFillEnabled = false;
     return;
   }
-  ksRequestKeys().then((resp) => {
-    if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
-      ksFillEnabled = true;
-      ksScanForInputs();
-    } else {
-      ksFillEnabled = false;
+  const refresh = () => {
+    ksRequestKeys().then((resp) => {
+      if (resp && resp.ok && Array.isArray(resp.keys) && resp.keys.length > 0) {
+        ksFillEnabled = true;
+        ksCachedKeys = resp.keys;
+        ksScanForInputs();
+        ksAutoFillEmptyInputs(resp.keys);
+      }
+    });
+  };
+  function ksCaptureSecretFromText(raw) {
+    const text = String(raw || '').trim();
+    if (!text || /[•…]|\.{3}/.test(text)) return;
+    for (const provider of PROVIDERS) {
+      for (const re of provider.patterns) {
+        re.lastIndex = 0;
+        const found = text.match(re);
+        if (!found || !found[0] || found[0].length < (provider.minLen || 12)) continue;
+        sendToBackground({
+          type: 'SAVE_KEY',
+          silent: true,
+          payload: { upstream: provider.id, name: `${provider.name} key`, value: found[0], domain: HOST },
+        }).then(() => refresh()).catch(() => {});
+        return;
+      }
     }
-  });
+  }
+  refresh();
   setInterval(() => {
-    if (ksFillEnabled) ksScanForInputs();
+    if (!ksCachedKeys || !ksCachedKeys.length) refresh();
+    else ksScanForInputs();
   }, 2000);
+  try {
+    chrome.storage?.onChanged?.addListener?.((changes, area) => {
+      if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();
+      if (area === 'session' && changes.ks_vault_key && changes.ks_vault_key.newValue) refresh();
+    });
+  } catch { /* noop */ }
+  try {
+    document.addEventListener('copy', () => {
+      let t = '';
+      try { t = String(window.getSelection ? window.getSelection() : ''); } catch { t = ''; }
+      if (t) ksCaptureSecretFromText(t);
+      else if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(ksCaptureSecretFromText).catch(() => {});
+      }
+    });
+  } catch { /* noop */ }
+  if (ksIsCursorFillHost(location.hostname)) {
+    document.addEventListener('click', (ev) => {
+      const hit = ev.target && ev.target.closest && ev.target.closest('button, [role="button"], [aria-label*="copy" i]');
+      if (!hit) return;
+      setTimeout(() => {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          navigator.clipboard.readText().then(ksCaptureSecretFromText).catch(() => {});
+        }
+      }, 250);
+    }, true);
+  }
+  try {
+    chrome.runtime?.onMessage?.addListener?.((msg, _sender, sendResponse) => {
+      if (!msg) return false;
+      if (msg.type === 'FILL_PAGE_NOW') {
+        ksFillPageNow().then(sendResponse);
+        return true;
+      }
+      if (msg.type === 'KS_DETECT_STATE') {
+        applyHarvestState(msg.state || {});
+        sendResponse({ ok: true });
+        return true;
+      }
+      if (msg.type === 'KS_SHOW_DETECT_PANEL') {
+        renderPanel({ force: true });
+        sendResponse({ ok: true });
+        return true;
+      }
+      return false;
+    });
+  } catch { /* noop */ }
 })();
 
 // ── Bridge: announce extension ID to KeyShield dashboard ────────────────────
@@ -782,8 +1181,28 @@ function isKeyShieldDashboardHost() {
     try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }
     catch { /* noop */ }
   };
+  const capturePageToken = () => {
+    let pageToken = '';
+    let pageUser = '';
+    try {
+      pageToken = localStorage.getItem('ks_token') || '';
+      pageUser = localStorage.getItem('ks_wallet') || localStorage.getItem('ks_passkey_user') || '';
+    } catch { /* noop */ }
+    if (!pageToken || pageToken.trim().length < 12) return;
+    try {
+      chrome.storage.local.get(['ks_token'], (stored) => {
+        if (stored && stored.ks_token === pageToken) return;
+        chrome.storage.local.set({
+          ks_token: pageToken,
+          ks_user: pageUser || null,
+          ks_auto_store: true,
+        });
+      });
+    } catch { /* noop */ }
+  };
   const shareSession = () => {
     try {
+      capturePageToken();
       chrome.storage.local.get(['ks_token', 'ks_user'], (stored) => {
         const token = stored && stored.ks_token;
         if (!token) return;
@@ -803,16 +1222,22 @@ function isKeyShieldDashboardHost() {
   };
   announce();
   shareSession();
+  capturePageToken();
+  [400, 1200, 3000, 8000].forEach((ms) => setTimeout(capturePageToken, ms));
+  window.addEventListener('ks-auth-changed', capturePageToken);
+  window.addEventListener('storage', capturePageToken);
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.__ks_ext_request) announce();
     if (e.data.__ks_ext_request_session) shareSession();
+    if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
   });
 })();
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
 function startDetectWatchers() {
+  takeOverStaleDetectPanel();
   loadDismissedDomains();
   loadAutoStorePref();
   scheduleScan();
@@ -915,10 +1340,38 @@ function ksPromptQuickAuth(hostname, reason) {
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 20000);
 }
 
+function ksX402PaymentHeader(response) {
+  try {
+    return response.headers.get('PAYMENT-REQUIRED')
+      || response.headers.get('Payment-Required')
+      || response.headers.get('X-Payment-Required')
+      || '';
+  } catch {
+    return '';
+  }
+}
+
+function ksIsX402Challenge(response) {
+  if (!response || response.status !== 402) return false;
+  const raw = String(ksX402PaymentHeader(response) || '').trim();
+  return raw === 'x402' || raw.length > 0;
+}
+
+function ksParseX402Accept(first) {
+  const row = first && typeof first === 'object' ? first : {};
+  const raw = parseFloat(row.amount ?? row.maxAmountRequired ?? '0');
+  return {
+    amount_usd: Number.isFinite(raw) ? raw / 1_000_000 : 0,
+    payTo: row.payTo || '',
+    network: row.network || '',
+    resource: row.resource || '',
+  };
+}
+
 // ── x402 payment interceptor ────────────────────────────────────────────────
 // Wraps window.fetch to detect 402 + x402 headers and show a payment prompt.
 // Does NOT interfere with any other fetch — only intercepts 402 responses that
-// carry the X-Payment-Required: x402 header.
+// carry X-Payment-Required: x402 or PAYMENT-REQUIRED (x402 v2).
 
 (function () {
   if (window.__ksFetchWrapped) return;
@@ -943,8 +1396,7 @@ function ksPromptQuickAuth(hostname, reason) {
     }
 
     if (
-      response.status === 402 &&
-      response.headers.get('X-Payment-Required') === 'x402' &&
+      ksIsX402Challenge(response) &&
       ksHostMatches(requestHost || location.hostname, PAYMENT_INTERCEPT_TARGETS)
     ) {
       // Clone so the caller still gets the original 402 body
@@ -957,13 +1409,26 @@ function ksPromptQuickAuth(hostname, reason) {
         let resource   = '';
 
         try {
-          const body = await clone.json();
-          const first = body?.accepts?.[0] ?? {};
-          const raw   = parseFloat(first.maxAmountRequired ?? '0');
-          amount_usd  = raw / 1_000_000;   // USDC 6 decimals → USD
-          payTo       = first.payTo    ?? '';
-          network     = first.network  ?? '';
-          resource    = first.resource ?? (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
+          let first = {};
+          try {
+            const body = await clone.json();
+            first = body?.accepts?.[0] ?? {};
+          } catch { /* empty 402 body — try PAYMENT-REQUIRED */ }
+          if (!first.amount && !first.maxAmountRequired) {
+            const header = ksX402PaymentHeader(response);
+            if (header && header !== 'x402') {
+              try {
+                const decoded = JSON.parse(atob(header));
+                first = decoded?.accepts?.[0] ?? {};
+                if (!resource && decoded?.resource?.url) resource = decoded.resource.url;
+              } catch { /* keep empty */ }
+            }
+          }
+          const parsed = ksParseX402Accept(first);
+          amount_usd  = parsed.amount_usd;
+          payTo       = parsed.payTo;
+          network     = parsed.network;
+          resource    = parsed.resource || resource || (typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '');
         } catch {
           // malformed body — still show a prompt with $0.00
         }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "KeyShield — Sovereign Vault",
-  "version": "1.2.1",
+  "version": "1.2.4",
   "description": "Auto-detect API keys on any page and store them in your encrypted KeyShield vault.",
 
   "permissions": [
@@ -27,9 +27,7 @@
     "https://*.vercel.app/*"
   ],
 
-  "browser_action": {
-    "default_popup": "popup.html"
-  },
+  "browser_action": {},
 
   "background": {
     "scripts": ["background.js"]
