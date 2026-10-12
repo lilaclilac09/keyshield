@@ -6,7 +6,8 @@ github.com will not resolve. Do **not** paste HTML into zsh.
 
 Stay on **KeyShield — Sovereign Vault**. Sign-in must open
 `https://app.ks.aileena.xyz/?ext=1&demo=shop`.
-If already signed, popup must show **only saved APIs**.
+If already signed, the on-page `#keyshield-status-card` is the only window:
+signed + collected + filled · ms. Toolbar click does not open a second popup.
 
 ## 0. Try pull, then offline signed-in patch
 

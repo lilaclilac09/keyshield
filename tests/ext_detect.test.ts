@@ -15,6 +15,10 @@ import {
   formatFilledLine,
   formatPopupMs,
   formatSignedStatus,
+  buildDetectPanelModel,
+  shouldShowDetectSignin,
+  DETECT_STATUS_CARD_ID,
+  manifestDropsDefaultPopup,
   isCompactPopupHtml,
   shouldRewritePopupHtml,
   isExtensionContextDead,
@@ -126,6 +130,46 @@ describe("1.2 popup status lines", () => {
     expect(formatFilledLine({ filled: 0 })).toBe("0 filled · —");
     expect(formatFilledLine({ filled: 2, ms: 48 })).toBe("2 filled · 48ms");
     expect(formatFilledLine({ filled: 1, ms: 12 })).toBe("1 filled · 12ms");
+  });
+
+  it("builds the single on-page detect card: signed + collected + filled, no Sign in when signed", () => {
+    const model = buildDetectPanelModel({
+      signed: true,
+      collected: [
+        { upstream: "helius", masked: "1047••••7761", saved: true },
+        { upstream: "helius", masked: "ba5b••••3876", saved: true },
+      ],
+      saved: 2,
+      failed: 0,
+      filled: 0,
+      ms: 42,
+    });
+    expect(model.signed).toBe("signed");
+    expect(model.collected).toBe("2 collected");
+    expect(model.filled).toBe("0 filled · 42ms");
+    expect(model.save).toBe("Saved 2 keys to KeyShield vault.");
+    expect(model.showSignin).toBe(false);
+    expect(shouldShowDetectSignin(true)).toBe(false);
+    expect(shouldShowDetectSignin(false)).toBe(true);
+    expect(DETECT_STATUS_CARD_ID).toBe("keyshield-status-card");
+  });
+
+  it("toolbar click does not open a second popup window", () => {
+    const root = resolve(__dirname, "..");
+    const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
+    const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
+    expect(manifestDropsDefaultPopup(man)).toBe(true);
+    expect(manifestDropsDefaultPopup(firefox)).toBe(true);
+    expect(JSON.stringify(man.action || {})).not.toContain("popup.html");
+    const background = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
+    expect(background).toContain("function pushDetectState");
+    expect(background).toContain("toolbarAction.onClicked");
+    expect(background).toContain("KS_DETECT_STATE");
+    expect(background).not.toContain("default_popup");
+    const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
+    expect(content).toContain("function applyHarvestState");
+    expect(content).toContain("KS_SHOW_DETECT_PANEL");
+    expect(content).toContain("detect on · ok 1.2.4");
   });
 });
 
@@ -241,7 +285,7 @@ describe("extension context after Remove + Load unpacked", () => {
     expect(shouldRetryBackgroundSend("Receiving end does not exist.")).toBe(true);
   });
 
-  it("tells the Helius tab to refresh instead of Retry", () => {
+  it("dead toast is replaced by one harvest card that writes the vault", () => {
     const fail = formatBulkSaveFailure({
       saved: 0,
       failed: 4,
@@ -253,18 +297,30 @@ describe("extension context after Remove + Load unpacked", () => {
     expect(fail.text).toContain("writing the vault");
     expect(fail.text).toContain("Dead toast cannot save");
     expect(fail.text).not.toContain("Extension messaging error");
+    const invalidated = formatBulkSaveFailure({
+      saved: 0,
+      failed: 8,
+      reason: "extension",
+      detail: "Error: Extension context invalidated.",
+    });
+    expect(invalidated.reload).toBe(true);
+    expect(invalidated.text).toContain("writing the vault");
+    expect(invalidated.text).not.toContain("Extension messaging error");
     const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
     expect(content).toContain("function formatBulkSaveFailure");
     expect(content).toContain("function takeOverStaleDetectPanel");
-    expect(content).toContain("function reloadDeadDetectTab");
-    expect(content).toContain("Refresh this tab");
+    expect(content).toContain("keyshield-status-card");
     expect(content).toContain("extension-dead");
     expect(content).toContain("markExtensionContextDead");
+    expect(content).not.toContain("Sign in to KeyShield");
+    expect(content).not.toContain("Refresh this tab");
     const background = readFileSync(resolve(__dirname, "../src/extension/background.js"), "utf8");
     expect(background).toContain("function harvestVisibleKeysFromText");
     expect(background).toContain("function collectPageSecrets");
+    expect(background).toContain("function paintLiveDetectPanel");
     expect(background).toContain("dashboard.helius.dev");
     expect(background).toContain("directStore({ upstream: hit.upstream, value: hit.key })");
+    expect(background).not.toContain("function stripStaleDetectPanel");
   });
 });
 

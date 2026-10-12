@@ -318,7 +318,8 @@ function reloadDeadDetectTab() {
 
 function takeOverStaleDetectPanel() {
   try {
-    document.querySelectorAll('#keyshield-detection-notice').forEach((el) => {
+    document.querySelectorAll('#keyshield-detection-notice').forEach((el) => el.remove());
+    document.querySelectorAll('#keyshield-status-card').forEach((el) => {
       if (el !== panelEl) el.remove();
     });
   } catch { /* noop */ }
@@ -339,6 +340,9 @@ function formatBulkSaveFailure(opts) {
   const reason = String((opts && opts.reason) || '');
   const detail = String((opts && opts.detail) || '');
   if (isExtensionContextDead(detail) || reason === 'extension-dead') {
+    return { text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`, reload: true };
+  }
+  if (reason === 'extension' && isExtensionContextDead(detail)) {
     return { text: `${text} Dead toast cannot save. New detect is writing the vault — keep this tab open.`, reload: true };
   }
   if (reason === 'token-expired' || reason === 'no-token') {
@@ -410,13 +414,13 @@ function injectStyleOnce() {
     .ks-btn-primary:disabled{opacity:.6;cursor:default;background:#3d5fb8}
     .ks-btn-ghost{background:transparent;color:#71717a;border-color:#27272a}
     .ks-btn-ghost:hover{color:#fafafa;border-color:#3f3f46}
-    #keyshield-detection-notice ul.ks-list{list-style:none;margin:0;padding:0;max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
-    #keyshield-detection-notice ul.ks-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#020408;border:1px solid #131929;border-radius:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#86efac}
-    #keyshield-detection-notice ul.ks-list li.ks-saved{color:#71717a;background:#0a0d1a;border-color:#1c2238}
-    #keyshield-detection-notice ul.ks-list li.ks-failed{color:#f87171;border-color:rgba(239,68,68,.3)}
-    #keyshield-detection-notice ul.ks-list li .ks-badge{flex-shrink:0;background:#0e1430;padding:2px 6px;border-radius:4px;font-size:9px;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.04em}
-    #keyshield-detection-notice ul.ks-list li .ks-keytext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #keyshield-detection-notice ul.ks-list li .ks-state{flex-shrink:0;font-size:11px}
+    #keyshield-status-card ul.ks-list,#keyshield-detection-notice ul.ks-list{list-style:none;margin:0;padding:0;max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+    #keyshield-status-card ul.ks-list li,#keyshield-detection-notice ul.ks-list li{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#020408;border:1px solid #131929;border-radius:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:#86efac}
+    #keyshield-status-card ul.ks-list li.ks-saved,#keyshield-detection-notice ul.ks-list li.ks-saved{color:#71717a;background:#0a0d1a;border-color:#1c2238}
+    #keyshield-status-card ul.ks-list li.ks-failed,#keyshield-detection-notice ul.ks-list li.ks-failed{color:#f87171;border-color:rgba(239,68,68,.3)}
+    #keyshield-status-card ul.ks-list li .ks-badge,#keyshield-detection-notice ul.ks-list li .ks-badge{flex-shrink:0;background:#0e1430;padding:2px 6px;border-radius:4px;font-size:9px;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.04em}
+    #keyshield-status-card ul.ks-list li .ks-keytext,#keyshield-detection-notice ul.ks-list li .ks-keytext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #keyshield-status-card ul.ks-list li .ks-state,#keyshield-detection-notice ul.ks-list li .ks-state{flex-shrink:0;font-size:11px}
   `;
   document.head.appendChild(style);
 }
@@ -425,7 +429,7 @@ function maskKey(k) { return k.length <= 18 ? k : `${k.substring(0, 14)}••�
 
 function buildPanel() {
   panelEl = document.createElement('div');
-  panelEl.id = 'keyshield-detection-notice';
+  panelEl.id = 'keyshield-status-card';
   Object.assign(panelEl.style, {
     position: 'fixed', top: '20px', right: '20px', zIndex: '999999',
     backgroundColor: '#0a0d1a', border: '1px solid #1c2238', borderRadius: '12px',
@@ -458,10 +462,45 @@ function setPanelStatus(text, kind) {
   s.style.background = palette[0]; s.style.color = palette[1]; s.style.border = `1px solid ${palette[2]}`;
 }
 
-function renderPanel() {
+function applyHarvestState(state) {
+  takeOverStaleDetectPanel();
+  if (state && Object.prototype.hasOwnProperty.call(state, 'signed')) {
+    loggedIn = !!state.signed;
+  }
+  const keys = Array.isArray(state && state.keys) ? state.keys : [];
+  for (const row of keys) {
+    if (!row || !row.saved) continue;
+    const mask = String(row.masked || '');
+    const tail = mask.slice(-4);
+    for (const [raw, info] of detectedKeys) {
+      if (maskKey(raw) === mask || (tail && raw.endsWith(tail))) {
+        detectedKeys.set(raw, { ...info, saved: true });
+      }
+    }
+  }
+  const filledN = Math.max(0, Math.floor(Number(state && state.filled) || 0));
+  const ms = state && state.ms;
+  const line = `${filledN === 1 ? '1 filled' : `${filledN} filled`} · ${
+    ms == null || !isFinite(Number(ms)) || Number(ms) < 0 ? '—' : `${Math.round(Number(ms))}ms`
+  }`;
+  if (!panelEl && (keys.length || detectedKeys.size || (state && state.force))) buildPanel();
+  if (panelEl) panelEl.dataset.ksFill = line;
+  renderPanel({ force: true });
+  const saved = Math.max(0, Math.floor(Number(state && state.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(state && state.failed) || 0));
+  if (saved > 0 && failed === 0) {
+    setPanelStatus(`Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
+  } else if (saved || failed) {
+    setPanelStatus(`Saved ${saved}, ${failed} failed.`, failed ? 'err' : 'ok');
+  }
+}
+
+function renderPanel(opts) {
+  takeOverStaleDetectPanel();
   injectStyleOnce();
   const all = Array.from(detectedKeys.entries());
-  if (all.length === 0) { closePanel(); return; }
+  const force = !!(opts && opts.force);
+  if (all.length === 0 && !force) { closePanel(); return; }
   if (!panelEl) buildPanel();
 
   const unsavedCount = all.filter(([, v]) => v.saved !== true).length;
@@ -471,50 +510,34 @@ function renderPanel() {
     return `<li class="${cls}"><span class="ks-badge">${v.provider.label}</span><span class="ks-keytext">${maskKey(k)}</span><span class="ks-state">${state}</span></li>`;
   }).join('');
 
-  const title = all.length === 1 ? 'API key detected' : `${all.length} API keys detected`;
-  const btnText = extensionContextDead
-    ? 'Refresh this tab'
-    : unsavedCount === 0
-      ? 'All saved'
-      : detectIsArmed()
-        ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
-        : 'Allow auto-save';
+  const savedCount = all.filter(([, v]) => v.saved === true).length;
+  const collectedLabel = all.length === 1 ? '1 collected' : `${all.length} collected`;
+  const signedLabel = loggedIn ? 'signed' : 'Sign in';
+  const lastFill = (panelEl && panelEl.dataset.ksFill) || '0 filled · —';
+  const btnText = unsavedCount === 0
+    ? (all.length === 0 ? 'Detect on' : 'All saved')
+    : detectIsArmed()
+      ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
+      : 'Allow auto-save';
 
   panelEl.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="background:#0e1430;padding:6px 8px;border-radius:6px;font-size:10px;font-weight:700;color:#5b8cff;border:1px solid #1c2550;letter-spacing:.05em">${all.length}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600">${title}</div>
-        <div style="color:#a1a1aa;font-size:11px;margin-top:2px">${HOST}</div>
-      </div>
-    </div>
+    <div style="font-size:14px;font-weight:600">KeyShield — Sovereign Vault</div>
+    <div style="font-size:22px;font-weight:700;line-height:1.1">${signedLabel}</div>
+    <div id="ks-collected" style="font-size:12px;color:#34d399">${collectedLabel}</div>
     <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
+    <div id="ks-filled" style="font-size:12px;color:#a1a1aa">${lastFill}</div>
+    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>
     <div style="display:flex;gap:8px">
-      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 && !extensionContextDead ? 'disabled' : ''}>${btnText}</button>
-      <button id="ks-ignore" class="ks-btn ks-btn-ghost">Dismiss</button>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <a id="ks-signin" href="#" style="font-size:10px;color:#93b4ff;text-decoration:none;cursor:pointer;border-bottom:1px dotted #3d5fb8">→ Sign in to KeyShield</a>
-      <a id="ks-hide-domain" href="#" style="font-size:10px;color:#71717a;text-decoration:none;cursor:pointer;border-bottom:1px dotted #3f3f46">Hide for this domain</a>
+      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
     </div>
   `;
 
-  panelEl.querySelector('#ks-save-all').onclick = extensionContextDead
-    ? () => { try { location.reload(); } catch { /* noop */ } }
-    : detectIsArmed() ? bulkSave : grantAutoStore;
-  panelEl.querySelector('#ks-ignore').onclick = closePanel;
-  panelEl.querySelector('#ks-signin').onclick = (ev) => {
-    ev.preventDefault();
-    try { chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD_FOR_SIGNIN' }); } catch { /* noop */ }
-    setPanelStatus('Opened the KeyShield dashboard. Sign in there to enable encrypted save.', 'info');
-  };
-  panelEl.querySelector('#ks-hide-domain').onclick = (ev) => {
-    ev.preventDefault();
-    dismissThisDomain();
-    setPanelStatus(`Auto-detect muted on ${HOST}.`, 'info');
-    setTimeout(closePanel, 1200);
-  };
+  const saveBtn = panelEl.querySelector('#ks-save-all');
+  if (saveBtn) saveBtn.onclick = detectIsArmed() ? bulkSave : grantAutoStore;
+  if (savedCount > 0 && unsavedCount === 0) {
+    setPanelStatus(`Saved ${savedCount} key${savedCount === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
+  }
 }
 
 /** MV3: background may be cold; Chrome yields lastError — retry after short backoff. */
@@ -565,20 +588,8 @@ async function bulkSave() {
 
   if (extensionContextDead || runtimeGone()) {
     markExtensionContextDead();
-    for (const [key, info] of unsaved) {
-      detectedKeys.set(key, { ...info, saved: 'fail' });
-    }
-    renderPanel();
-    const dead = formatBulkSaveFailure({
-      saved: 0,
-      failed: unsaved.length,
-      reason: 'extension-dead',
-      detail: 'Extension context invalidated.',
-    });
-    setPanelStatus(dead.text, 'err');
-    const deadBtn = panelEl && panelEl.querySelector('#ks-save-all');
-    if (deadBtn) { deadBtn.disabled = false; deadBtn.textContent = 'Refresh this tab'; }
-    reloadDeadDetectTab();
+    setPanelStatus('Saving from the live detect card…', 'info');
+    try { chrome.runtime.sendMessage({ type: 'INJECT_DETECT' }); } catch { /* sw harvest paints this card */ }
     return;
   }
 
@@ -627,7 +638,17 @@ async function bulkSave() {
   if (failed === 0) {
     setPanelStatus(`Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
     if (b2) { b2.disabled = true; b2.textContent = 'All saved'; }
-    setTimeout(closePanel, 8000);
+    const started = Date.now();
+    try {
+      const fill = await sendToBackground({ type: 'FILL_PAGE_NOW' });
+      const n = fill && typeof fill.filled === 'number' ? fill.filled : 0;
+      const line = `${n === 1 ? '1 filled' : `${n} filled`} · ${Date.now() - started}ms`;
+      if (panelEl) {
+        panelEl.dataset.ksFill = line;
+        const el = panelEl.querySelector('#ks-filled');
+        if (el) el.textContent = line;
+      }
+    } catch { /* keep last fill line */ }
   } else {
     const fail = formatBulkSaveFailure({
       saved,
@@ -635,12 +656,14 @@ async function bulkSave() {
       reason: lastReason,
       detail: lastExtra,
     });
-    setPanelStatus(fail.text, 'err');
-    if (b2) {
+    setPanelStatus(fail.text, fail.reload ? 'info' : 'err');
+    if (b2 && !fail.reload) {
       b2.disabled = false;
-      b2.textContent = fail.reload ? 'Refresh this tab' : `Retry ${failed} failed`;
+      b2.textContent = `Retry ${failed} failed`;
     }
-    if (fail.reload) reloadDeadDetectTab();
+    if (fail.reload) {
+      try { chrome.runtime.sendMessage({ type: 'INJECT_DETECT' }); } catch { /* harvest paints */ }
+    }
   }
 }
 
@@ -785,7 +808,7 @@ function ksLooksLikeCursorApiBlank(el, hay, type) {
 
 function ksLooksLikeKeyInput(el) {
   if (!el) return false;
-  if (el.closest && el.closest('#keyshield-detection-notice')) return false;
+  if (el.closest && (el.closest('#keyshield-status-card') || el.closest('#keyshield-detection-notice'))) return false;
   if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
   if (el.disabled || el.readOnly) return false;
   const type = (el.getAttribute('type') || '').toLowerCase();
@@ -1081,9 +1104,22 @@ function isKeyShieldDashboardHost() {
   } catch { /* noop */ }
   try {
     chrome.runtime?.onMessage?.addListener?.((msg, _sender, sendResponse) => {
-      if (!msg || msg.type !== 'FILL_PAGE_NOW') return false;
-      ksFillPageNow().then(sendResponse);
-      return true;
+      if (!msg) return false;
+      if (msg.type === 'FILL_PAGE_NOW') {
+        ksFillPageNow().then(sendResponse);
+        return true;
+      }
+      if (msg.type === 'KS_DETECT_STATE') {
+        applyHarvestState(msg.state || {});
+        sendResponse({ ok: true });
+        return true;
+      }
+      if (msg.type === 'KS_SHOW_DETECT_PANEL') {
+        renderPanel({ force: true });
+        sendResponse({ ok: true });
+        return true;
+      }
+      return false;
     });
   } catch { /* noop */ }
 })();

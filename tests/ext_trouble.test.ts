@@ -210,6 +210,53 @@ print("three-line", True)
     const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
     expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
     expect(stamped.content_scripts[0].run_at).toBe("document_start");
+    expect(JSON.stringify(stamped.action || {})).not.toContain("popup.html");
+    expect(readFileSync(join(tmp, "background.js"), "utf8")).toContain("function paintLiveDetectPanel");
+    expect(readFileSync(join(tmp, "background.js"), "utf8")).toContain("ksPaintTab");
+    expect(readFileSync(join(tmp, "content.js"), "utf8")).toContain("KS-ONE-PANEL-1.2.4");
+  });
+
+  it("leftover stamp drops the second popup and rewrites the dead detect toast", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const tmp = mkdtempSync(join(tmpdir(), "ks-one-panel-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(
+      join(tmp, "content.js"),
+      `function buildPanel(){panelEl.id='keyshield-detection-notice'}
+<a id="ks-signin">Sign in to KeyShield</a>
+<button>Refresh this tab</button>
+async function bulkSave(){setPanelStatus('Saved 0, 8 failed. Extension messaging error');}
+`,
+    );
+    writeFileSync(join(tmp, "popup.html"), "<html></html>\n");
+    const py = `
+import importlib.util, json
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+out = mod.stamp(tmp)
+assert "default_popup" not in json.dumps(out.get("action") or {})
+html = (tmp / "popup.html").read_text()
+assert "Register token" not in html
+content = (tmp / "content.js").read_text()
+assert "Sign in to KeyShield" not in content
+assert "keyshield-status-card" in content
+assert "KS-ONE-PANEL-1.2.4" in content
+assert "INJECT_DETECT" in content
+bg = (tmp / "background.js").read_text()
+assert "paintLiveDetectPanel" in bg
+assert "ksPaintTab" in bg
+assert "/manage/store" in bg
+print("one-panel", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("one-panel True");
   });
 
   it("rewrites leftover old three-line that hid copy in extra", () => {

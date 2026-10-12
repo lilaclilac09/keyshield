@@ -27,9 +27,7 @@
     "https://*.vercel.app/*"
   ],
 
-  "browser_action": {
-    "default_popup": "popup.html"
-  },
+  "browser_action": {},
 
   "background": {
     "scripts": ["background.js"]

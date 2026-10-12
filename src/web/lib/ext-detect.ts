@@ -140,6 +140,58 @@ export function formatSignedStatus(signed: boolean): string {
   return signed ? 'signed' : 'Sign in';
 }
 
+export const DETECT_STATUS_CARD_ID = 'keyshield-status-card';
+export const DETECT_STALE_NOTICE_ID = 'keyshield-detection-notice';
+
+/** Toolbar click paints the on-page card. A second popup window is leftover clutter. */
+export function manifestDropsDefaultPopup(man: {
+  action?: { default_popup?: string } | unknown;
+  browser_action?: { default_popup?: string } | unknown;
+}): boolean {
+  const action = man && typeof man.action === 'object' && man.action
+    ? (man.action as { default_popup?: string }).default_popup
+    : '';
+  const browser = man && typeof man.browser_action === 'object' && man.browser_action
+    ? (man.browser_action as { default_popup?: string }).default_popup
+    : '';
+  return !action && !browser;
+}
+
+export function shouldShowDetectSignin(signed: boolean): boolean {
+  return !signed;
+}
+
+export function formatDetectPanelTitle(n: number): string {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? '1 API key' : `${count} API keys`;
+}
+
+export function buildDetectPanelModel(opts: {
+  signed: boolean;
+  collected: Array<{ upstream: string; masked: string; saved?: boolean }>;
+  saved: number;
+  failed: number;
+  filled: number;
+  ms?: number | null;
+}): {
+  signed: string;
+  collected: string;
+  filled: string;
+  save: string;
+  showSignin: boolean;
+} {
+  const rows = Array.isArray(opts.collected) ? opts.collected : [];
+  const saved = Math.max(0, Math.floor(Number(opts.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(opts.failed) || 0));
+  return {
+    signed: formatSignedStatus(!!opts.signed),
+    collected: formatCollectedCount(rows.length),
+    filled: formatFilledLine({ filled: opts.filled, ms: opts.ms }),
+    save: formatHarvestSaveResult({ saved, failed }),
+    showSignin: shouldShowDetectSignin(!!opts.signed),
+  };
+}
+
 export const THREE_LINE_UI_MARK = 'data-ui="three-line"';
 
 const LEFTOVER_POPUP_CLUTTER = [

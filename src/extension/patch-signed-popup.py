@@ -547,6 +547,16 @@ def stamp_manifest(ext: Path) -> None:
         if extra not in man.get("permissions", []):
             man.setdefault("permissions", []).append(extra)
     man["content_scripts"] = [SESSION_BRIDGE_CONTENT_SCRIPT, DETECT_CONTENT_SCRIPT]
+    action = man.get("action")
+    if isinstance(action, dict):
+        action.pop("default_popup", None)
+        man["action"] = action
+    else:
+        man["action"] = {}
+    browser = man.get("browser_action")
+    if isinstance(browser, dict):
+        browser.pop("default_popup", None)
+        man["browser_action"] = browser
     ensure_session_bridge_file(ext)
     path.write_text(json.dumps(man, indent=2) + "\n")
 

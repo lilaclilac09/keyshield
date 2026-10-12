@@ -986,15 +986,88 @@ function collectPageSecrets() {
     text: chunks.join('\n'),
     hostname: location.hostname,
     href: location.href,
-    stalePanel: !!document.getElementById('keyshield-detection-notice'),
+    stalePanel: !!(
+      document.getElementById('keyshield-detection-notice')
+      || document.getElementById('keyshield-status-card')
+    ),
   };
 }
 
-function stripStaleDetectPanel() {
-  document.querySelectorAll('#keyshield-detection-notice').forEach((el) => el.remove());
+function maskHarvestedKey(raw) {
+  const key = String(raw || '');
+  if (key.length <= 18) return key;
+  return `${key.slice(0, 8)}••••${key.slice(-4)}`;
 }
 
-async function injectDetectOnAllTabs() {
+function paintLiveDetectPanel(state) {
+  const CARD = 'keyshield-status-card';
+  const STALE = 'keyshield-detection-notice';
+  document.querySelectorAll('#' + STALE).forEach((el) => el.remove());
+  document.querySelectorAll('#' + CARD).forEach((el, i) => { if (i > 0) el.remove(); });
+  let card = document.getElementById(CARD);
+  if (!card) {
+    card = document.createElement('div');
+    card.id = CARD;
+    Object.assign(card.style, {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      zIndex: '999999',
+      backgroundColor: '#0a0d1a',
+      border: '1px solid #1c2238',
+      borderRadius: '12px',
+      padding: '16px',
+      width: '340px',
+      boxShadow: '0 20px 40px -10px rgba(0,0,0,0.6)',
+      color: '#e4e4e7',
+      fontFamily: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px',
+    });
+    (document.body || document.documentElement).appendChild(card);
+  }
+  const keys = Array.isArray(state && state.keys) ? state.keys : [];
+  const rows = keys.map((k) => (
+    '<li class="' + (k.saved ? 'ks-saved' : '') + '"><span class="ks-badge">'
+    + String(k.upstream || '') + '</span><span class="ks-keytext">'
+    + String(k.masked || '') + '</span><span class="ks-state">'
+    + (k.saved ? '✓' : '·') + '</span></li>'
+  )).join('');
+  const collected = keys.length === 1 ? '1 collected' : keys.length + ' collected';
+  const filledN = Math.max(0, Math.floor(Number(state && state.filled) || 0));
+  const ms = state && state.ms;
+  const filled = (filledN === 1 ? '1 filled' : filledN + ' filled') + ' · '
+    + (ms == null || !isFinite(Number(ms)) || Number(ms) < 0 ? '—' : Math.round(Number(ms)) + 'ms');
+  const saved = Math.max(0, Math.floor(Number(state && state.saved) || 0));
+  const failed = Math.max(0, Math.floor(Number(state && state.failed) || 0));
+  const save = saved > 0 && failed === 0
+    ? ('Saved ' + saved + ' key' + (saved === 1 ? '' : 's') + ' to KeyShield vault.')
+    : ('Saved ' + saved + ', ' + failed + ' failed.');
+  card.innerHTML = ''
+    + '<div style="font-size:14px;font-weight:600">KeyShield — Sovereign Vault</div>'
+    + '<div style="font-size:22px;font-weight:700;line-height:1.1">' + (state && state.signed ? 'signed' : 'Sign in') + '</div>'
+    + '<div style="font-size:12px;color:#34d399">' + collected + '</div>'
+    + '<ul class="ks-list" style="list-style:none;margin:0;padding:0;max-height:170px;overflow:auto">' + rows + '</ul>'
+    + '<div style="font-size:12px;color:' + (failed ? '#f87171' : '#34d399') + '">' + save + '</div>'
+    + '<div style="font-size:12px;color:#a1a1aa">' + filled + '</div>'
+    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>';
+}
+
+async function pushDetectState(tabId, state) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'KS_DETECT_STATE', state });
+  } catch { /* leftover or dead content */ }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: paintLiveDetectPanel,
+      args: [state],
+    });
+  } catch { /* restricted */ }
+}
+
+async function injectDetectOnAllTabs(opts) {
   if (!chrome.scripting || !chrome.tabs) return { injected: 0, saved: 0, failed: 0 };
   const stored = await getStoredToken();
   if (!stored.token) await harvestTokenFromDashboardTabs();
@@ -1017,12 +1090,20 @@ async function injectDetectOnAllTabs() {
       });
       page = (scraped || []).map((row) => row && row.result).filter(Boolean)[0] || null;
     } catch { /* restricted */ }
+    const started = Date.now();
+    const painted = [];
     if (page && again.token) {
       const keys = harvestVisibleKeysFromText(page.text, page.hostname, page.href);
       for (const hit of keys) {
         const result = await directStore({ upstream: hit.upstream, value: hit.key });
-        if (result && result.ok) saved += 1;
+        const ok = !!(result && result.ok);
+        if (ok) saved += 1;
         else failed += 1;
+        painted.push({
+          upstream: hit.upstream,
+          masked: maskHarvestedKey(hit.key),
+          saved: ok,
+        });
       }
     }
     try {
@@ -1031,14 +1112,23 @@ async function injectDetectOnAllTabs() {
         files: ['content.js'],
       });
       injected += 1;
-    } catch { /* chrome://, Web Store */ }
-    if (page && page.stalePanel) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id, allFrames: true },
-          func: stripStaleDetectPanel,
-        });
-      } catch { /* noop */ }
+    } catch { /* already declared or restricted */ }
+    let filled = 0;
+    try {
+      const fill = await chrome.tabs.sendMessage(tab.id, { type: 'FILL_PAGE_NOW' });
+      if (fill && typeof fill.filled === 'number') filled = fill.filled;
+    } catch { /* restricted or dead content */ }
+    const state = {
+      signed: !!again.token,
+      keys: painted,
+      saved: painted.filter((row) => row.saved).length,
+      failed: painted.filter((row) => !row.saved).length,
+      filled,
+      ms: Date.now() - started,
+      force: true,
+    };
+    if (painted.length || (page && page.stalePanel) || (opts && tab.id === opts.focusTabId)) {
+      await pushDetectState(tab.id, state);
     }
   }
   if (saved > 0) {
@@ -1073,6 +1163,17 @@ chrome.runtime.onInstalled.addListener(() => {
 if (chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
     injectDetectOnAllTabs().catch(() => {});
+  });
+}
+
+const toolbarAction = (chrome.action && chrome.action.onClicked)
+  ? chrome.action
+  : (chrome.browserAction && chrome.browserAction.onClicked)
+    ? chrome.browserAction
+    : null;
+if (toolbarAction) {
+  toolbarAction.onClicked.addListener((tab) => {
+    injectDetectOnAllTabs({ focusTabId: tab && tab.id }).catch(() => {});
   });
 }
 

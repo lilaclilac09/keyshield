@@ -421,6 +421,12 @@ def stamp(ext):
         if extra not in man.get("permissions", []):
             man.setdefault("permissions", []).append(extra)
     man["content_scripts"] = SCRIPTS
+    action = man.get("action")
+    if isinstance(action, dict):
+        action.pop("default_popup", None)
+        man["action"] = action
+    else:
+        man["action"] = {}
     dest = ext / "session-bridge.js"
     if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
         dest.write_text(BRIDGE)
@@ -568,6 +574,12 @@ def stamp(ext):
         if extra not in man.get("permissions", []):
             man.setdefault("permissions", []).append(extra)
     man["content_scripts"] = SCRIPTS
+    action = man.get("action")
+    if isinstance(action, dict):
+        action.pop("default_popup", None)
+        man["action"] = action
+    else:
+        man["action"] = {}
     dest = ext / "session-bridge.js"
     if (not dest.is_file()) or ("capturePageToken" not in dest.read_text(encoding="utf-8")):
         dest.write_text(BRIDGE)
