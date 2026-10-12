@@ -52,6 +52,8 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).toContain('man["version"] = VER');
     expect(OFFLINE_PATCH_PY).toContain("1.2.4");
     expect(OFFLINE_PATCH_PY).toContain('id="signed-pane"');
+    expect(OFFLINE_PATCH_PY).toContain('id="saved-count"');
+    expect(OFFLINE_PATCH_PY).toContain("<details");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
     expect(OFFLINE_PATCH_PY).toContain("Library/Application Support/Google/Chrome");

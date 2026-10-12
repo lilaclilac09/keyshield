@@ -307,14 +307,14 @@ for extra in ("scripting", "tabs"):
         man.setdefault("permissions", []).append(extra)
 (ext / "manifest.json").write_text(json.dumps(man, indent=2) + "\\n")
 html_now = (ext / "popup.html").read_text() if (ext / "popup.html").exists() else ""
-if 'id="signed-pane"' not in html_now or "ok 1.2.4" not in html_now:
+if 'id="signed-pane"' not in html_now or "ok 1.2.4" not in html_now or "<details" not in html_now or 'id="saved-count"' not in html_now:
     (ext / "popup.html").write_text("""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
 <style>:root{color-scheme:dark}body{width:320px;margin:0;padding:16px;background:#0a0d1a;color:#e4e4e7;font:13px/1.5 -apple-system,system-ui,sans-serif}h1{margin:0 0 4px;font-size:15px}.sub,.info-block,.footer{color:#71717a;font-size:11px}button{cursor:pointer;width:100%;margin-top:12px;padding:8px 12px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:6px}button.secondary{background:transparent;color:#a1a1aa;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3)}.status{margin-top:10px;padding:6px 8px;border-radius:6px;font-size:11px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.api-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;margin-top:6px;background:#020408;border:1px solid #1c2238;border-radius:6px}body.signed-in .guest-only{display:none !important}body:not(.signed-in) .signed-only{display:none !important}</style></head><body>
 <h1>KeyShield — Sovereign Vault <span id="conn"></span></h1>
 <div class="sub signed-only">Already signed in — saved APIs only. Detect stays on.</div>
 <div id="detect-ready" class="status" style="display:block">ok 1.2.4 + &lt;all_urls&gt;…</div>
 <div id="build" class="sub"></div>
-<div id="signed-pane" class="signed-only"><p class="sub">Saved APIs</p><div id="saved-apis"></div><p id="saved-empty">None yet. Leave a provider tab open — detect saves here.</p><button id="clear-top" class="danger">Sign out</button></div>
+<div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><p class="sub">Already signed in. Detect stays on.</p><div id="saved-apis"></div><p id="saved-empty">None yet. Leave a provider tab open — detect saves here.</p><button id="clear-top" class="danger">Sign out</button></div>
 <button id="signin" class="guest-only">Sign in to KeyShield</button>
 <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
 <button id="fill-tab" class="secondary guest-only">Fill this tab</button>
@@ -323,7 +323,7 @@ if 'id="signed-pane"' not in html_now or "ok 1.2.4" not in html_now:
 <div id="status" class="status"></div>
 <textarea id="manual" class="guest-only"></textarea>
 <div class="guest-only"><button id="register" class="secondary">Register token</button><button id="clear" class="danger">Sign out</button></div>
-<input id="api"/><input id="dash"/><button id="save" class="guest-only">Save</button>
+<details class="guest-only"><summary>Settings</summary><input id="api"/><input id="dash"/><button id="save">Save</button></details>
 <div id="fingerprint"></div><input id="remote"/>
 <button id="point-remote"></button><button id="point-local"></button><button id="point-prod"></button>
 <button id="export-vault"></button><input id="import-file" type="file"/><button id="import-vault"></button>
@@ -355,6 +355,7 @@ html = (ext / "popup.html").read_text()
 print("ok", ext)
 print("ver", json.loads((ext / "manifest.json").read_text())["version"])
 print("signed-pane", 'id="signed-pane"' in html)
+print("saved-count", 'id="saved-count"' in html)
 print("hosted", HOSTED)
 print("next: chrome://extensions Remove + Load unpacked", ext)
 `;

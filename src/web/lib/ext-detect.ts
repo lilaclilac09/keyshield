@@ -51,6 +51,26 @@ export function formatDetectReadyLine(opts: {
   return { ok: false, text: `need Remove + Load unpacked · v${ver} (want ${DETECT_READY_VERSION})` };
 }
 
+/** Signed-in popup hero: "0 saved" / "1 saved" / "3 saved". */
+export function formatSavedCount(n: number): string {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? '1 saved' : `${count} saved`;
+}
+
+/** Emergency one-liner HTML is not the user-facing popup. */
+export function isCompactPopupHtml(html: string): boolean {
+  const text = String(html || '');
+  return (
+    !text.includes('<details') ||
+    !text.includes('id="fingerprint"') ||
+    !text.includes('id="saved-count"')
+  );
+}
+
+export function looksLikeSessionToken(raw: string | null | undefined): boolean {
+  return String(raw || '').trim().length >= 12;
+}
+
 /** After Sign-in, keep scanning and save every new match. */
 export function shouldArmLiveScan(opts: {
   loggedIn: boolean;

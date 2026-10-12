@@ -222,6 +222,14 @@
     }
     .api-row strong { font-size: 12px; color: #e4e4e7; }
     .api-row code { font-size: 10px; color: #93b4ff; word-break: break-all; }
+    .saved-count {
+      margin: 8px 0 2px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #fafafa;
+      line-height: 1.1;
+    }
     body.signed-in .guest-only { display: none !important; }
     body:not(.signed-in) .signed-only { display: none !important; }
   </style>
@@ -229,7 +237,6 @@
 <body>
   <h1>KeyShield — Sovereign Vault <span class="badge" id="conn">…</span></h1>
   <div class="sub guest-only">Auto-detect API keys and store them in your encrypted vault.</div>
-  <div class="sub signed-only">Already signed in — saved APIs only. Detect stays on.</div>
   <div id="detect-ready" class="status" style="display:block;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
     checking 1.2.4 + &lt;all_urls&gt;…
   </div>
@@ -238,9 +245,12 @@
   </div>
 
   <div id="signed-pane" class="signed-only">
-    <p class="sub" style="margin:8px 0 4px">Saved APIs</p>
+    <p id="saved-count" class="saved-count">0 saved</p>
+    <p class="sub" style="margin:4px 0 8px">Already signed in. Detect stays on — new keys add to this list.</p>
     <div id="saved-apis"></div>
-    <p id="saved-empty" class="info-block">None yet. Leave a provider tab open — detect saves here.</p>
+    <p id="saved-empty" class="info-block">None yet. Leave cursor.com / openai / openrouter open and click Show.</p>
+    <button id="fill-tab-signed" class="secondary">Fill this tab</button>
+    <button id="copy-cursor-key-signed" class="secondary">Copy key for Cursor API box</button>
     <button id="clear-top" class="danger">Sign out</button>
   </div>
 

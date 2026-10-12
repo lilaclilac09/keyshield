@@ -142,10 +142,69 @@ function applySignedInChrome(signed) {
   try { document.body.classList.toggle("signed-in", !!signed); } catch { /* noop */ }
 }
 
+function formatSavedCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 saved" : `${count} saved`;
+}
+
+function looksLikeSessionToken(raw) {
+  return String(raw || "").trim().length >= 12;
+}
+
+function paintSavedCount(n) {
+  const label = formatSavedCount(n);
+  const hero = $("saved-count");
+  if (hero) hero.textContent = label;
+  const badge = $("conn");
+  if (badge && document.body.classList.contains("signed-in")) {
+    badge.textContent = label;
+    badge.title = label;
+  }
+}
+
+const DASHBOARD_HARVEST_URLS = [
+  "https://app.ks.aileena.xyz/*",
+  "https://*.aileena.xyz/*",
+  "http://127.0.0.1:5173/*",
+  "http://localhost:5173/*",
+];
+
+async function harvestTokenFromDashboardTabs() {
+  if (!chrome.scripting || !chrome.tabs) return null;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: DASHBOARD_HARVEST_URLS });
+  } catch {
+    try { tabs = await chrome.tabs.query({}); } catch { return null; }
+  }
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          token: localStorage.getItem("ks_token") || "",
+          user: localStorage.getItem("ks_wallet") || localStorage.getItem("ks_passkey_user") || "",
+        }),
+      });
+      const result = injected && injected[0] && injected[0].result;
+      if (result && looksLikeSessionToken(result.token)) {
+        await chrome.storage.local.set({
+          ks_token: result.token,
+          ks_user: result.user || null,
+          ks_auto_store: true,
+        });
+        return result.token;
+      }
+    } catch { /* restricted tab */ }
+  }
+  return null;
+}
+
 async function refreshSavedApis() {
   const box = $("saved-apis");
   const empty = $("saved-empty");
-  if (!box) return [];
   let resp;
   try {
     resp = await chrome.runtime.sendMessage({ type: "LIST_SAVED_APIS" });
@@ -153,18 +212,21 @@ async function refreshSavedApis() {
     resp = { ok: false, apis: [] };
   }
   const apis = resp && Array.isArray(resp.apis) ? resp.apis : [];
-  box.replaceChildren();
-  for (const api of apis) {
-    const row = document.createElement("div");
-    row.className = "api-row";
-    const name = document.createElement("strong");
-    name.textContent = api.upstream;
-    const mask = document.createElement("code");
-    mask.textContent = api.masked;
-    row.append(name, mask);
-    box.appendChild(row);
+  if (box) {
+    box.replaceChildren();
+    for (const api of apis) {
+      const row = document.createElement("div");
+      row.className = "api-row";
+      const name = document.createElement("strong");
+      name.textContent = api.upstream;
+      const mask = document.createElement("code");
+      mask.textContent = api.masked;
+      row.append(name, mask);
+      box.appendChild(row);
+    }
   }
   if (empty) empty.style.display = apis.length ? "none" : "block";
+  paintSavedCount(apis.length);
   return apis;
 }
 
@@ -176,8 +238,16 @@ async function loadSettings() {
     "ks_user",
     PIN_PREF_KEY,
   ]);
-  const { ks_api_base, ks_dashboard_url, ks_token, ks_user } = stored;
+  let { ks_api_base, ks_dashboard_url, ks_token, ks_user } = stored;
   const pinned = !!stored[PIN_PREF_KEY];
+  if (!looksLikeSessionToken(ks_token)) {
+    const harvested = await harvestTokenFromDashboardTabs();
+    if (harvested) {
+      const again = await chrome.storage.local.get(["ks_token", "ks_user"]);
+      ks_token = again.ks_token;
+      ks_user = again.ks_user;
+    }
+  }
 
   // Auto-correct stale defaults written by older versions:
   //   - dashboard URL pointing at a backend port (`:8001`/`:8000`) — always
@@ -214,10 +284,13 @@ async function loadSettings() {
     build.textContent = `v${ver} · Sign-in opens ${dash}`;
   }
   await refreshDetectReady();
-  applySignedInChrome(!!ks_token);
-  if (ks_token) {
+  const signed = looksLikeSessionToken(ks_token);
+  applySignedInChrome(signed);
+  if (signed) {
     await armLiveScanAfterLogin();
     await refreshSavedApis();
+  } else {
+    paintSavedCount(0);
   }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
@@ -239,19 +312,21 @@ async function loadSettings() {
 
   const badge = $("conn");
   const signinBtn = $("signin");
-  if (ks_token) {
+  if (signed) {
     const short = ks_user ? `${ks_user.slice(0, 4)}…${ks_user.slice(-4)}` : "signed in";
+    if (badge && !/saved$/.test(badge.textContent || "")) {
+      badge.textContent = short;
+    }
     if (badge) {
-      badge.textContent = hasVault ? `${short} · 🔒` : short;
       badge.title = hasVault
-        ? "Token registered. Vault key registered — saves are encrypted client-side."
-        : "Token registered, but no vault key yet. Saves go in plaintext until you sign the vault-unlock message in the dashboard.";
+        ? `${short} · vault key on this device`
+        : `${short} · detect stays on`;
     }
     if (signinBtn) signinBtn.textContent = "→ Open KeyShield";
   } else {
     if (badge) {
       badge.textContent = "no token";
-      badge.title = "Click Sign in to open the dashboard.";
+      badge.title = "Sign in on app.ks.aileena.xyz — this popup reads that tab.";
     }
     if (signinBtn) signinBtn.textContent = "→ Sign in to KeyShield";
   }
@@ -651,7 +726,12 @@ function bootPopup() {
   onClick("signin", openDashboardForSignin);
   onClick("allow-detect", allowDetectAndStore);
   onClick("fill-tab", fillActiveTab);
+  onClick("fill-tab-signed", fillActiveTab);
   onClick("copy-cursor-key", copyPreferredCursorKey);
+  onClick("copy-cursor-key-signed", copyPreferredCursorKey);
+  [600, 1600, 3500].forEach((ms) => setTimeout(() => {
+    Promise.resolve(loadSettings()).catch(() => {});
+  }, ms));
   onClick("use-hosted-top", pointAtProduction);
   onClick("save", saveSettings);
   onClick("register", registerManualToken);

@@ -986,8 +986,28 @@ function isKeyShieldDashboardHost() {
     try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }
     catch { /* noop */ }
   };
+  const capturePageToken = () => {
+    let pageToken = '';
+    let pageUser = '';
+    try {
+      pageToken = localStorage.getItem('ks_token') || '';
+      pageUser = localStorage.getItem('ks_wallet') || localStorage.getItem('ks_passkey_user') || '';
+    } catch { /* noop */ }
+    if (!pageToken || pageToken.trim().length < 12) return;
+    try {
+      chrome.storage.local.get(['ks_token'], (stored) => {
+        if (stored && stored.ks_token === pageToken) return;
+        chrome.storage.local.set({
+          ks_token: pageToken,
+          ks_user: pageUser || null,
+          ks_auto_store: true,
+        });
+      });
+    } catch { /* noop */ }
+  };
   const shareSession = () => {
     try {
+      capturePageToken();
       chrome.storage.local.get(['ks_token', 'ks_user'], (stored) => {
         const token = stored && stored.ks_token;
         if (!token) return;
@@ -1007,10 +1027,15 @@ function isKeyShieldDashboardHost() {
   };
   announce();
   shareSession();
+  capturePageToken();
+  [400, 1200, 3000, 8000].forEach((ms) => setTimeout(capturePageToken, ms));
+  window.addEventListener('ks-auth-changed', capturePageToken);
+  window.addEventListener('storage', capturePageToken);
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.__ks_ext_request) announce();
     if (e.data.__ks_ext_request_session) shareSession();
+    if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
   });
 })();
 

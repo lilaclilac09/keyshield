@@ -6,6 +6,9 @@ import {
   DETECT_READY_OK,
   DETECT_READY_VERSION,
   formatDetectReadyLine,
+  formatSavedCount,
+  isCompactPopupHtml,
+  looksLikeSessionToken,
   shouldArmLiveScan,
   shouldPopupForKey,
   summarizeSavedApis,
@@ -45,6 +48,16 @@ describe("shouldPopupForKey", () => {
   });
 });
 
+describe("formatSavedCount", () => {
+  it("prints 0 saved / 1 saved / N saved", () => {
+    expect(formatSavedCount(0)).toBe("0 saved");
+    expect(formatSavedCount(1)).toBe("1 saved");
+    expect(formatSavedCount(3)).toBe("3 saved");
+    expect(looksLikeSessionToken("ksv2_abcdefghij")).toBe(true);
+    expect(looksLikeSessionToken("short")).toBe(false);
+  });
+});
+
 describe("formatDetectReadyLine", () => {
   it("prints the exact ok 1.2.4 <all_urls> line", () => {
     expect(formatDetectReadyLine({ version: "1.2.4", hasAllUrls: true })).toEqual({
@@ -80,7 +93,15 @@ describe("formatDetectReadyLine", () => {
     expect(popup).toContain("function applySignedInChrome");
     expect(html).toContain("ok 1.2.4");
     expect(html).toContain('id="signed-pane"');
+    expect(html).toContain('id="saved-count"');
+    expect(html).toContain("<details");
+    expect(html).toContain('id="fingerprint"');
+    expect(isCompactPopupHtml(html)).toBe(false);
     expect(html).toContain("KeyShield — Sovereign Vault");
+    expect(popup).toContain("function harvestTokenFromDashboardTabs");
+    expect(popup).toContain("function formatSavedCount");
+    expect(popup).toContain("function paintSavedCount");
+    expect(readFileSync(resolve(root, "src/extension/session-bridge.js"), "utf8")).toContain("function capturePageToken");
     const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
     expect(content).toContain("crypto-regime-api.onrender.com");
     expect(content).toContain("function ksIsX402Challenge");

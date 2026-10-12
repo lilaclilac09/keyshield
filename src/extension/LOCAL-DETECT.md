@@ -33,6 +33,8 @@ paste the python3 block from Home / Docs → Trouble (it writes `popup.html`
 with `id="signed-pane"`, stamps `man["version"] = "1.2.4"`, and injects
 `KS-SIGNED-1.2.4`). Terminal must print `ver 1.2.4` and `signed-pane True`.
 Then chrome://extensions → **Remove** → **Load unpacked**.
+If already signed, popup is the full UI: **N saved** + the list + Sign out.
+Leave the hosted tab open so the popup can read `localStorage.ks_token`.
 
 ## 1. Patch 1.1.3 → 1.2.4 on disk (python3 only)
 

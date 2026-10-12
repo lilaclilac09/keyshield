@@ -12,8 +12,34 @@
     catch { /* noop */ }
   }
 
+  function readPageSession() {
+    try {
+      return {
+        token: localStorage.getItem('ks_token') || '',
+        user: localStorage.getItem('ks_wallet') || localStorage.getItem('ks_passkey_user') || '',
+      };
+    } catch {
+      return { token: '', user: '' };
+    }
+  }
+
+  function capturePageToken() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    const page = readPageSession();
+    if (!page.token || page.token.trim().length < 12) return;
+    chrome.storage.local.get(['ks_token'], (stored) => {
+      if (stored && stored.ks_token === page.token) return;
+      chrome.storage.local.set({
+        ks_token: page.token,
+        ks_user: page.user || null,
+        ks_auto_store: true,
+      });
+    });
+  }
+
   function shareSession() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    capturePageToken();
     chrome.storage.local.get(['ks_token', 'ks_user'], (stored) => {
       const token = stored && stored.ks_token;
       try {
@@ -44,10 +70,15 @@
 
   announce();
   shareSession();
+  capturePageToken();
+  [400, 1200, 3000, 8000].forEach((ms) => setTimeout(capturePageToken, ms));
+  window.addEventListener('ks-auth-changed', capturePageToken);
+  window.addEventListener('storage', capturePageToken);
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.__ks_ext_request) announce();
     if (e.data.__ks_ext_request_session) shareSession();
+    if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
   });
   try {
     chrome.runtime.onMessage.addListener((msg) => {
