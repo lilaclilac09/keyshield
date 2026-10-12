@@ -8,6 +8,7 @@ import {
   formatDetectReadyLine,
   shouldArmLiveScan,
   shouldPopupForKey,
+  summarizeSavedApis,
 } from "../src/web/lib/ext-detect";
 
 describe("classifyDetectedKey", () => {
@@ -76,9 +77,30 @@ describe("formatDetectReadyLine", () => {
     expect(popup).toContain('if (ver === "1.2.4" && hasAllUrls)');
     expect(popup).toContain("ok 1.2.4 <all_urls>");
     expect(popup).toContain("function bootPopup");
+    expect(popup).toContain("function applySignedInChrome");
     expect(html).toContain("ok 1.2.4");
+    expect(html).toContain('id="signed-pane"');
+    expect(html).toContain("KeyShield — Sovereign Vault");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localSignin).toContain('"version": "1.2.4"');
+  });
+});
+
+describe("summarizeSavedApis", () => {
+  it("lists only masked rows and drops raw value", () => {
+    const rows = summarizeSavedApis([
+      { id: "1", upstream: "openai", name: "openai key", masked_value: "sk-proj-••••ONL", value: "sk-proj-SECRET" },
+      { id: "2", upstream: "helius", masked_value: "helius••••1234" },
+    ]);
+    expect(rows.map((r) => r.upstream)).toEqual(["openai", "helius"]);
+    expect(JSON.stringify(rows)).not.toContain("SECRET");
+    expect(rows[0].masked).toContain("••••");
+  });
+
+  it("accepts {items} payloads and cipher-only rows", () => {
+    expect(summarizeSavedApis({ items: [{ upstream: "groq", cipher: "abc" }] })).toEqual([
+      { id: "groq", upstream: "groq", name: "groq key", masked: "encrypted" },
+    ]);
   });
 });
 

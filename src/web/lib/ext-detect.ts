@@ -58,3 +58,46 @@ export function shouldArmLiveScan(opts: {
 }): boolean {
   return Boolean(opts.loggedIn) || Boolean(opts.autoStorePref);
 }
+
+export type SavedApiRow = {
+  id: string;
+  upstream: string;
+  name: string;
+  masked: string;
+};
+
+/** Signed-in popup lists only these — never raw `value`. */
+export function summarizeSavedApis(data: unknown): SavedApiRow[] {
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object'
+      ? (Array.isArray((data as { items?: unknown }).items)
+        ? (data as { items: unknown[] }).items
+        : Array.isArray((data as { keys?: unknown }).keys)
+          ? (data as { keys: unknown[] }).keys
+          : [])
+      : [];
+  const out: SavedApiRow[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const it = raw as {
+      id?: string;
+      upstream?: string;
+      name?: string;
+      masked_value?: string;
+      cipher?: string;
+      value?: string;
+    };
+    const upstream = String(it.upstream || '').toLowerCase().trim();
+    if (!upstream) continue;
+    let masked = String(it.masked_value || '').trim();
+    if (!masked) masked = it.cipher ? 'encrypted' : 'saved';
+    out.push({
+      id: String(it.id || upstream),
+      upstream,
+      name: String(it.name || `${upstream} key`),
+      masked,
+    });
+  }
+  return out;
+}

@@ -209,11 +209,27 @@
       color: #fafafa;
       border-color: #3f3f46;
     }
+    .api-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      padding: 8px 10px;
+      margin-top: 6px;
+      background: #020408;
+      border: 1px solid #1c2238;
+      border-radius: 6px;
+    }
+    .api-row strong { font-size: 12px; color: #e4e4e7; }
+    .api-row code { font-size: 10px; color: #93b4ff; word-break: break-all; }
+    body.signed-in .guest-only { display: none !important; }
+    body:not(.signed-in) .signed-only { display: none !important; }
   </style>
 </head>
 <body>
-  <h1>KeyShield Vault <span class="badge" id="conn">…</span></h1>
-  <div class="sub">Auto-detect API keys and store them in your encrypted vault.</div>
+  <h1>KeyShield — Sovereign Vault <span class="badge" id="conn">…</span></h1>
+  <div class="sub guest-only">Auto-detect API keys and store them in your encrypted vault.</div>
+  <div class="sub signed-only">Already signed in — saved APIs only. Detect stays on.</div>
   <div id="detect-ready" class="status" style="display:block;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">
     checking 1.2.4 + &lt;all_urls&gt;…
   </div>
@@ -221,12 +237,19 @@
     checking loaded build…
   </div>
 
-  <button id="signin">→ Sign in to KeyShield</button>
-  <button id="allow-detect" class="secondary">Allow detect + auto-save</button>
-  <button id="fill-tab" class="secondary">Fill this tab</button>
-  <button id="copy-cursor-key" class="secondary">Copy key for Cursor API box</button>
-  <button id="use-hosted-top" class="secondary">Use hosted app.ks.aileena.xyz</button>
-  <p class="hint" style="margin:8px 0 0;line-height:1.45">
+  <div id="signed-pane" class="signed-only">
+    <p class="sub" style="margin:8px 0 4px">Saved APIs</p>
+    <div id="saved-apis"></div>
+    <p id="saved-empty" class="info-block">None yet. Leave a provider tab open — detect saves here.</p>
+    <button id="clear-top" class="danger">Sign out</button>
+  </div>
+
+  <button id="signin" class="guest-only">→ Sign in to KeyShield</button>
+  <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>
+  <button id="fill-tab" class="secondary guest-only">Fill this tab</button>
+  <button id="copy-cursor-key" class="secondary guest-only">Copy key for Cursor API box</button>
+  <button id="use-hosted-top" class="secondary guest-only">Use hosted app.ks.aileena.xyz</button>
+  <p class="hint guest-only" style="margin:8px 0 0;line-height:1.45">
     Popup must show <code>ok 1.2.4 &lt;all_urls&gt;</code>. If it does not:
     chrome://extensions → <strong>Remove</strong> then <strong>Load unpacked</strong>
     <code>src/extension</code>. Do not only Reload. After Sign-in the scanner
@@ -238,14 +261,14 @@
   </p>
   <div id="status" class="status"></div>
 
-  <label for="manual">Paste session token (works on 1.1.1)</label>
-  <textarea id="manual" placeholder="paste session token from app.ks.aileena.xyz Home or Developer"></textarea>
-  <div class="row">
+  <label for="manual" class="guest-only">Paste session token (works on 1.1.1)</label>
+  <textarea id="manual" class="guest-only" placeholder="paste session token from app.ks.aileena.xyz Home or Developer"></textarea>
+  <div class="row guest-only">
     <button id="register" class="secondary">Register token</button>
     <button id="clear" class="danger">Sign out</button>
   </div>
 
-  <details>
+  <details class="guest-only">
     <summary>Settings</summary>
 
     <label for="api">Backend API base URL</label>
@@ -259,7 +282,7 @@
     </div>
   </details>
 
-  <details>
+  <details class="guest-only">
     <summary>Cross-device sync</summary>
 
     <div class="info-block">
@@ -289,7 +312,7 @@
     </div>
   </details>
 
-  <details>
+  <details class="guest-only">
     <summary>Backup &amp; restore</summary>
 
     <div class="info-block">
@@ -311,7 +334,7 @@
     <div id="backup-status" class="status"></div>
   </details>
 
-  <div class="footer">
+  <div class="footer guest-only">
     Sign-in opens the hosted dashboard already logged in when a session
     exists. First visit still needs wallet or passkey once.
   </div>

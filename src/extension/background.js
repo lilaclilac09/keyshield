@@ -278,6 +278,50 @@ function notify(title, message, icon) {
 
 // ── Direct store (no tab) ───────────────────────────────────────────────────
 
+function summarizeSavedApis(data) {
+  const rows = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.items)
+      ? data.items
+      : data && Array.isArray(data.keys)
+        ? data.keys
+        : [];
+  const out = [];
+  for (const it of rows) {
+    if (!it || typeof it !== 'object') continue;
+    const upstream = String(it.upstream || '').toLowerCase().trim();
+    if (!upstream) continue;
+    let masked = String(it.masked_value || '').trim();
+    if (!masked) masked = it.cipher ? 'encrypted' : 'saved';
+    out.push({
+      id: String(it.id || upstream),
+      upstream,
+      name: String(it.name || `${upstream} key`),
+      masked,
+    });
+  }
+  return out;
+}
+
+async function listSavedApis() {
+  const { token } = await getStoredToken();
+  if (!token) return { ok: false, reason: 'no-token', apis: [] };
+  const { apiBase } = await getApiBase();
+  const headers = _manageHeaders(apiBase, token);
+  try {
+    const r = await fetch(`${apiBase}/manage/vault`, { headers });
+    if (r.status === 401) {
+      await clearStoredToken();
+      return { ok: false, reason: 'token-expired', apis: [] };
+    }
+    if (!r.ok) return { ok: false, reason: `http-${r.status}`, apis: [] };
+    const items = await r.json();
+    return { ok: true, apis: summarizeSavedApis(items) };
+  } catch (e) {
+    return { ok: false, reason: 'network', apis: [], detail: String(e) };
+  }
+}
+
 async function notifyDashboardVaultSaved() {
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch { return; }
@@ -573,6 +617,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse(result);
       } catch (e) {
         sendResponse({ ok: false, reason: 'exception', detail: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'LIST_SAVED_APIS') {
+    (async () => {
+      try {
+        sendResponse(await listSavedApis());
+      } catch (e) {
+        sendResponse({ ok: false, reason: 'exception', apis: [], detail: String(e) });
       }
     })();
     return true;

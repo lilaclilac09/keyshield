@@ -113,6 +113,61 @@ async function armLiveScanAfterLogin() {
   try { await chrome.runtime.sendMessage({ type: "INJECT_DETECT" }); } catch { /* sw cold */ }
 }
 
+function summarizeSavedApis(data) {
+  const rows = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.items)
+      ? data.items
+      : data && Array.isArray(data.keys)
+        ? data.keys
+        : [];
+  const out = [];
+  for (const it of rows) {
+    if (!it || typeof it !== "object") continue;
+    const upstream = String(it.upstream || "").toLowerCase().trim();
+    if (!upstream) continue;
+    let masked = String(it.masked_value || "").trim();
+    if (!masked) masked = it.cipher ? "encrypted" : "saved";
+    out.push({
+      id: String(it.id || upstream),
+      upstream,
+      name: String(it.name || `${upstream} key`),
+      masked,
+    });
+  }
+  return out;
+}
+
+function applySignedInChrome(signed) {
+  try { document.body.classList.toggle("signed-in", !!signed); } catch { /* noop */ }
+}
+
+async function refreshSavedApis() {
+  const box = $("saved-apis");
+  const empty = $("saved-empty");
+  if (!box) return [];
+  let resp;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: "LIST_SAVED_APIS" });
+  } catch {
+    resp = { ok: false, apis: [] };
+  }
+  const apis = resp && Array.isArray(resp.apis) ? resp.apis : [];
+  box.replaceChildren();
+  for (const api of apis) {
+    const row = document.createElement("div");
+    row.className = "api-row";
+    const name = document.createElement("strong");
+    name.textContent = api.upstream;
+    const mask = document.createElement("code");
+    mask.textContent = api.masked;
+    row.append(name, mask);
+    box.appendChild(row);
+  }
+  if (empty) empty.style.display = apis.length ? "none" : "block";
+  return apis;
+}
+
 async function loadSettings() {
   const stored = await chrome.storage.local.get([
     "ks_api_base",
@@ -159,7 +214,11 @@ async function loadSettings() {
     build.textContent = `v${ver} · Sign-in opens ${dash}`;
   }
   await refreshDetectReady();
-  if (ks_token) await armLiveScanAfterLogin();
+  applySignedInChrome(!!ks_token);
+  if (ks_token) {
+    await armLiveScanAfterLogin();
+    await refreshSavedApis();
+  }
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.
@@ -561,7 +620,10 @@ async function importVaultFromFile() {
 // vault key registration, etc.) — gives the popup live status without polling.
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) loadSettings();
+    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) {
+      loadSettings();
+      refreshSavedApis();
+    }
     if (area === "session" && changes.ks_vault_key) {
       loadSettings();
       refreshFingerprint();
@@ -594,6 +656,7 @@ function bootPopup() {
   onClick("save", saveSettings);
   onClick("register", registerManualToken);
   onClick("clear", clearSession);
+  onClick("clear-top", clearSession);
   onClick("point-remote", pointAtRemote);
   onClick("point-local", pointAtLocal);
   onClick("point-prod", pointAtProduction);
