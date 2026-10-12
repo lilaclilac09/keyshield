@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { getToken } from '../lib/auth';
 
-/** Session token on Home. Leftover Sign-in steps live in the Trouble tab. */
+/** Session token on Home. Leftover 1.2.4 stamp trunks live on this page. */
 export const ExtensionTokenCopy: React.FC = () => {
   const token = getToken() ?? '';
   const [copied, setCopied] = useState(false);
@@ -28,7 +28,7 @@ export const ExtensionTokenCopy: React.FC = () => {
       <p className="text-[16px] font-semibold text-white">Signed in — token is on this page</p>
       <p className="text-[14px] text-[#a8b3d8] mt-1.5 leading-relaxed">
         Load unpacked <strong className="text-white">v1.2.4</strong>. Sign-in on this tab
-        should already show logged in. Stuck? Open the Trouble tab.
+        should already show logged in. Stuck? Leftover 1.2.4 · missing session-bridge is on this page.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <code className="flex-1 min-w-0 text-[12px] font-mono truncate text-[#8a96c2] px-3 py-2 rounded-lg bg-[#020408] border border-[#131929]">

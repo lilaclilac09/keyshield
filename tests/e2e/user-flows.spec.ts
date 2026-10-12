@@ -742,7 +742,6 @@ test.describe('navigation', () => {
       ['Sessions',  'Active sessions across devices'],
       ['Settings',  'Account, security, and preferences'],
       ['Developer', 'API token, CLI commands, SDK snippets'],
-      ['Trouble',   'Leftover 1.2.4 · missing session-bridge'],
       ['Docs',      'Architecture, integration guides, and specs'],
     ];
 

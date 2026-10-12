@@ -11,11 +11,12 @@ signed + collected + filled · ms. Toolbar click does not open a second popup.
 
 ## 0. Try pull, then offline signed-in patch
 
-Do **not** hardcode `~/Downloads/privacy_hack/keyshield`. Home / Docs →
-Trouble finds the clone from Chrome internals (`Preferences` unpacked
-`path`, Details → Loaded from) plus a home walk.
+Do **not** hardcode `~/Downloads/privacy_hack/keyshield`. Home leftover
+**Leftover 1.2.4 · missing session-bridge** finds the clone from Chrome
+internals (`Preferences` unpacked `path`, Details → Loaded from) plus a
+home walk.
 
-1. Paste the **find local path** python from the Trouble card.
+1. Paste the **find local path** python from the Home leftover card.
 2. Try pull on `cursor/cursor-api-autofill-b48a`.
 3. If `github.com` does not resolve, skip git and run python3.
 
@@ -23,12 +24,12 @@ Trouble finds the clone from Chrome internals (`Preferences` unpacked
 # zsh. python not HTML. Do not use eval.
 # leftover --find traceback inside eval "$(...)" = parse error near )
 python3 src/extension/patch-leftover-bridge.py
-# or paste Trouble tab block: python3 - <<'PY' ... PY
+# or paste Home leftover block: python3 - <<'PY' ... PY
 ```
 
 If `github.com` does not resolve, skip git. Run
 `python3 src/extension/patch-leftover-bridge.py` if that file exists, else
-`python3 src/extension/patch-signed-popup.py`, else paste Trouble tab →
+`python3 src/extension/patch-signed-popup.py`, else paste Home leftover →
 local stamp (python, not HTML). It restores
 `session-bridge.js` at `document_start` on every leftover folder.
 Terminal must print `ver 1.2.4` and `session-bridge True`.
@@ -52,7 +53,7 @@ if (root / "src/extension/manifest.json").exists():
 elif (root / "manifest.json").exists() and (root / "popup.js").exists():
     ext = root
 else:
-    raise SystemExit("run find-path from Home / Docs Trouble first")
+    raise SystemExit("run find-path from Home leftover 1.2.4 first")
 
 HOSTED = "https://app.ks.aileena.xyz"
 man_path = ext / "manifest.json"

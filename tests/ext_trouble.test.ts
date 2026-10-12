@@ -24,7 +24,7 @@ import {
 
 const root = resolve(__dirname, "..");
 
-describe("leftover 1.2.1 Trouble case", () => {
+describe("leftover 1.2.1 Home case", () => {
   it("finds a KeyShield ext folder and repo root without a hardcoded Downloads path", () => {
     expect(repoRootFromExt("/Users/me/src/keyshield/src/extension")).toBe("/Users/me/src/keyshield");
     expect(repoRootFromExt("/Users/me/extension")).toBe("/Users/me");
@@ -107,40 +107,36 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(LEFTOVER_121_CASE.symptom).toContain("content.js");
     const docs = readFileSync(resolve(root, "src/web/components/sections/DocsSection.tsx"), "utf8");
     const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
-    const trouble = readFileSync(resolve(root, "src/web/components/sections/TroubleSection.tsx"), "utf8");
     const app = readFileSync(resolve(root, "src/web/App.tsx"), "utf8");
     const caseUi = readFileSync(resolve(root, "src/web/components/ExtTroubleCase.tsx"), "utf8");
     const hint = readFileSync(resolve(root, "src/web/components/ExtensionInstallHint.tsx"), "utf8");
     const token = readFileSync(resolve(root, "src/web/components/ExtensionTokenCopy.tsx"), "utf8");
     const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
-    expect(trouble).toContain("ExtTroubleCase");
-    expect(trouble).toContain("Troubleshooting");
-    expect(trouble).toContain("LEFTOVER_121_CASE");
-    expect(app).toContain("label: 'Trouble'");
-    expect(app).toContain("section === 'trouble'");
+    expect(app).not.toContain("label: 'Trouble'");
+    expect(app).not.toContain("section === 'trouble'");
+    expect(app).not.toContain("TroubleSection");
     expect(docs).not.toContain("ExtTroubleCase");
     expect(docs).not.toContain("Leftover 1.2.4");
-    expect(home).not.toContain("ExtTroubleCase");
-    expect(home).not.toContain("Leftover 1.2.4");
-    expect(home).not.toContain("missing session-bridge");
+    expect(home).toContain("ExtTroubleCase");
+    expect(home).toContain("ext-trouble-leftover-121");
+    expect(home).not.toContain("onGo('trouble')");
     expect(home).not.toContain("Docs → Troubleshooting");
-    expect(home).toContain("onGo('trouble')");
-    expect(home).toContain("Extension Sign-in and detect");
     expect(JSON.stringify(LEFTOVER_121_CASE)).not.toMatch(/[\u4e00-\u9fff]/);
     expect("titleZh" in LEFTOVER_121_CASE).toBe(false);
     expect("symptomZh" in LEFTOVER_121_CASE).toBe(false);
-    expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);
     expect(caseUi).not.toMatch(/[\u4e00-\u9fff]/);
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     expect(docs).not.toMatch(/[\u4e00-\u9fff]/);
     expect(caseUi).toContain("ext-trouble-leftover-121");
-    expect(hint).not.toContain("Leftover 1.2.4");
+    expect(caseUi).toContain("LEFTOVER_121_CASE.title");
+    expect(hint).toContain("Leftover 1.2.4");
+    expect(hint).not.toContain("Trouble tab");
     expect(hint).not.toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
-    expect(token).not.toContain("Leftover 1.2.4");
+    expect(token).toContain("Leftover 1.2.4");
     expect(token).not.toContain("Register token");
     expect(token).not.toContain("Old v1");
-    expect(token).toContain("Trouble tab");
+    expect(token).not.toContain("Trouble tab");
     expect(OFFLINE_PATCH_PY).toContain("api.name||api.upstream");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("api.name||api.upstream");
     expect(ZSH_SAFE_STAMP_PY).toContain("api.name||api.upstream");
