@@ -20,15 +20,17 @@ export const PurchasesPanel: React.FC<Props> = ({
   rows, buyMppLabel, buyLedgerLabel, busy, onBuyMpp, onBuyLedger,
 }) => {
   const groups = groupPurchases(rows);
+  const total = rows.length;
   return (
     <div data-testid="purchases-panel" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
       <div className="flex items-center gap-2">
         <Receipt size={18} className="text-white" />
         <h3 className="text-[20px] font-semibold text-white">Purchases</h3>
+        <span data-testid="purchases-count" className="text-[13px] text-[#8a96c2]">{total} on this account</span>
       </div>
       <p className="text-[14px] text-[#8a96c2]">
-        Every buy on this device, grouped. On-chain rows link to Solana Devnet explorer.
-        Buy again with the buttons in each category.
+        Every buy, grouped: on-chain MPP, Solana top-up, ledger credit, stored APIs.
+        On-chain rows open Solana Devnet explorer. Buy again in each category.
       </p>
       {groups.map((group) => (
         <section
@@ -50,7 +52,7 @@ export const PurchasesPanel: React.FC<Props> = ({
                 <p className="text-[14px] text-emerald-400">{item.amountLabel}</p>
               </div>
               <p className="text-[13px] text-[#8a96c2]">{item.detail}</p>
-              {item.explorer.length > 0 && (
+              {item.explorer.length > 0 ? (
                 <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
                   {item.explorer.map((link) => (
                     <a
@@ -58,13 +60,16 @@ export const PurchasesPanel: React.FC<Props> = ({
                       href={link.href}
                       target="_blank"
                       rel="noreferrer"
+                      data-testid="purchase-explorer-link"
                       className="text-[12px] text-[#93b4ff] hover:underline font-mono"
                     >
-                      {link.label}
+                      Explorer · {link.label}
                     </a>
                   ))}
                 </div>
-              )}
+              ) : item.kind === 'ledger' ? (
+                <p className="text-[12px] text-[#5e6a91]">No chain tx</p>
+              ) : null}
             </div>
           ))}
           {group.category === ON_CHAIN_CATEGORY && (

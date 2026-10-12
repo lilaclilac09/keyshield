@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
@@ -20,7 +20,12 @@ import {
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
 import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
-import { listPurchases, recordLedgerPurchase } from '../../lib/purchases';
+import {
+  fetchAccountPurchases,
+  listPurchases,
+  recordLedgerPurchase,
+  type PurchaseRow,
+} from '../../lib/purchases';
 import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
 import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
@@ -74,6 +79,7 @@ export const HomeSection: React.FC<Props> = ({
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
   const [receipt, setReceipt] = useState<MppShopReceipt>(() => loadStoredMppReceipt());
   const [purchasesTick, setPurchasesTick] = useState(0);
+  const [accountPurchases, setAccountPurchases] = useState<PurchaseRow[]>([]);
   const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
 
   const detected = detectUpstream(paste);
@@ -82,7 +88,19 @@ export const HomeSection: React.FC<Props> = ({
   const wallet = home?.wallet;
   const apis = home?.apis ?? [];
   const conn = home?.connection;
-  const purchases = useMemo(() => listPurchases(apis), [apis, purchasesTick, receipt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAccountPurchases().then((rows) => {
+      if (!cancelled) setAccountPurchases(rows);
+    });
+    return () => { cancelled = true; };
+  }, [purchasesTick, home?.ledger.balance_usd, home?.wallet.address]);
+
+  const purchases = useMemo(
+    () => listPurchases(apis, accountPurchases),
+    [apis, accountPurchases, purchasesTick, receipt],
+  );
 
   const buyMpp = () => {
     setBusy('mpp');

@@ -30,8 +30,12 @@ import {
   explorerLinksForReceipt,
   groupPurchases,
   listPurchases,
+  mergePurchaseRows,
   mppPurchaseFromReceipt,
   ON_CHAIN_CATEGORY,
+  purchaseFromMppStream,
+  purchaseFromSolanaTopup,
+  SOLANA_TOPUP_CATEGORY,
 } from "../src/web/lib/purchases";
 
 describe("shop demo helpers", () => {
@@ -69,10 +73,13 @@ describe("shop demo helpers", () => {
     expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf("Stored APIs"));
     expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf(">Connection<"));
     expect(home).toContain("PurchasesPanel");
+    expect(home).toContain("fetchAccountPurchases");
     expect(home.indexOf("PurchasesPanel")).toBeLessThan(home.indexOf("Stored APIs"));
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     const panel = readFileSync(resolve(__dirname, "../src/web/components/PurchasesPanel.tsx"), "utf8");
     expect(panel).toContain('data-testid="purchases-panel"');
+    expect(panel).toContain("purchase-explorer-link");
+    expect(panel).toContain("Explorer ·");
     expect(panel).toContain("item.explorer.map");
   });
 
@@ -95,6 +102,40 @@ describe("shop demo helpers", () => {
     ]));
     expect(grouped[0]?.category).toBe(ON_CHAIN_CATEGORY);
     expect(grouped.some((g) => g.category === "RPC APIs" && g.items.length === 1)).toBe(true);
+    expect(row.explorer.some((link) => link.href.includes("/address/") && link.label.startsWith("ATA"))).toBe(true);
+  });
+
+  it("turns every settled MPP stream and Solana top-up into an explorer row", () => {
+    const stream = purchaseFromMppStream({
+      id: 7,
+      agent_name: "keyshield-shop-big",
+      upstream: "openrouter",
+      status: "open",
+      settled_micro_usdc: 2_000_000,
+      on_chain_signature: "SettleSig1111111111111111111111111111111111111111111111111111111111",
+      stream_pda: "StreamPda111111111111111111111111111111111111",
+      stream_usdc_ata: "Ata11111111111111111111111111111111111111111",
+      total_calls: 1,
+    });
+    expect(stream?.category).toBe(ON_CHAIN_CATEGORY);
+    expect(stream?.explorer.some((link) => link.href.includes("/tx/") && link.href.includes("cluster=devnet"))).toBe(true);
+    expect(stream?.explorer.some((link) => link.label.startsWith("Stream"))).toBe(true);
+    expect(purchaseFromMppStream({ id: 8, settled_micro_usdc: 0 })).toBeNull();
+
+    const topup = purchaseFromSolanaTopup({
+      tx_signature: "TopupSig111111111111111111111111111111111111111111111111111111111",
+      chain: "solana",
+      asset: "USDC",
+      amount_usd: 2,
+    });
+    expect(topup?.category).toBe(SOLANA_TOPUP_CATEGORY);
+    expect(topup?.explorer[0]?.href).toContain("cluster=devnet");
+    expect(topup?.explorer[0]?.href).toContain("/tx/");
+
+    const merged = groupPurchases(listPurchases([], [stream!, topup!]));
+    expect(merged.some((g) => g.category === SOLANA_TOPUP_CATEGORY && g.items.length === 1)).toBe(true);
+    expect(merged.some((g) => g.category === ON_CHAIN_CATEGORY && g.items.length >= 2)).toBe(true);
+    expect(mergePurchaseRows([stream!, stream!])).toHaveLength(1);
   });
 
   it("keeps the 2.00 USDC MPP shop SKU separate from ledger credit", () => {

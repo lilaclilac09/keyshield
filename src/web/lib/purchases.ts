@@ -1,8 +1,10 @@
 /**
  * Home purchases: every buy, grouped, with Solana explorer links.
- * On-chain MPP / ledger credit / stored vault APIs. Not Raydium / $X402 / $M32.
+ * On-chain MPP / Solana top-up / ledger credit / stored vault APIs.
+ * Not Raydium / $X402 / $M32.
  */
 
+import { apiFetch } from './auth';
 import {
   explorerAddress,
   explorerTx,
@@ -15,7 +17,7 @@ import { formatStoredApiCard, providerMeta } from './provider-catalog';
 import { formatUsd, SHOP_CREDIT_USD, SHOP_ITEM_NAME } from './shop-demo';
 import type { KeychainStoredApi } from './keychain';
 
-export type PurchaseKind = 'on-chain-mpp' | 'ledger' | 'vault-api';
+export type PurchaseKind = 'on-chain-mpp' | 'ledger' | 'solana-topup' | 'vault-api';
 
 export type ExplorerLink = { label: string; href: string };
 
@@ -36,13 +38,35 @@ export type LedgerPurchase = {
   at: number;
 };
 
+export type MppStreamPurchase = {
+  id: number;
+  agent_name?: string;
+  upstream?: string;
+  status?: string;
+  settled_micro_usdc?: number;
+  on_chain_signature?: string | null;
+  stream_pda?: string | null;
+  stream_usdc_ata?: string | null;
+  total_calls?: number;
+};
+
+export type SolanaTopup = {
+  tx_signature: string;
+  chain?: string;
+  asset?: string;
+  amount_usd: number;
+  credited_at?: number;
+};
+
 const LEDGER_KEY = 'ks_ledger_purchases';
 
 export const ON_CHAIN_CATEGORY = 'On-chain MPP';
+export const SOLANA_TOPUP_CATEGORY = 'Solana top-up';
 export const LEDGER_CATEGORY = 'Ledger credit';
 
 export const PURCHASE_CATEGORY_ORDER = [
   ON_CHAIN_CATEGORY,
+  SOLANA_TOPUP_CATEGORY,
   LEDGER_CATEGORY,
   'AI APIs',
   'RPC APIs',
@@ -50,6 +74,12 @@ export const PURCHASE_CATEGORY_ORDER = [
   'GIT APIs',
   'DEX APIs',
 ] as const;
+
+function ledgerStore(): Storage | null {
+  if (typeof localStorage !== 'undefined') return localStorage;
+  if (typeof sessionStorage !== 'undefined') return sessionStorage;
+  return null;
+}
 
 export function explorerLinksForReceipt(receipt: MppShopReceipt): ExplorerLink[] {
   const links: ExplorerLink[] = [];
@@ -61,6 +91,9 @@ export function explorerLinksForReceipt(receipt: MppShopReceipt): ExplorerLink[]
   }
   if (receipt.streamPda) {
     links.push({ label: `Stream ${shortSig(receipt.streamPda)}`, href: explorerAddress(receipt.streamPda) });
+  }
+  if (receipt.streamAta) {
+    links.push({ label: `ATA ${shortSig(receipt.streamAta)}`, href: explorerAddress(receipt.streamAta) });
   }
   if (receipt.owner) {
     links.push({ label: `Owner ${shortSig(receipt.owner)}`, href: explorerAddress(receipt.owner) });
@@ -81,11 +114,46 @@ export function mppPurchaseFromReceipt(receipt: MppShopReceipt): PurchaseRow {
   };
 }
 
-export function loadLedgerPurchases(): LedgerPurchase[] {
-  if (typeof sessionStorage === 'undefined') return [];
+export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | null {
+  const settled = Number(stream.settled_micro_usdc || 0);
+  const sig = String(stream.on_chain_signature || '').trim();
+  const pda = String(stream.stream_pda || '').trim();
+  if (settled <= 0 && !sig) return null;
+  const explorer: ExplorerLink[] = [];
+  if (sig) explorer.push({ label: `Settle ${shortSig(sig)}`, href: explorerTx(sig) });
+  if (pda) explorer.push({ label: `Stream ${shortSig(pda)}`, href: explorerAddress(pda) });
+  const ata = String(stream.stream_usdc_ata || '').trim();
+  if (ata) explorer.push({ label: `ATA ${shortSig(ata)}`, href: explorerAddress(ata) });
+  const upstream = stream.upstream || 'mpp';
+  const name = (stream.agent_name || '').trim() || `${upstream} stream #${stream.id}`;
+  return {
+    id: `mpp-stream-${stream.id}`,
+    kind: 'on-chain-mpp',
+    category: ON_CHAIN_CATEGORY,
+    title: name,
+    amountLabel: `${formatMicroUsdc(settled)} USDC`,
+    detail: `${stream.status || 'open'} · ${stream.total_calls || 0} calls · ${upstream}`,
+    explorer,
+  };
+}
+
+export function purchaseFromSolanaTopup(row: SolanaTopup): PurchaseRow | null {
+  const sig = String(row.tx_signature || '').trim();
+  if (!sig) return null;
+  return {
+    id: `topup-${sig}`,
+    kind: 'solana-topup',
+    category: SOLANA_TOPUP_CATEGORY,
+    title: `${row.asset || 'SOL'} top-up`,
+    amountLabel: formatUsd(Number(row.amount_usd || 0)),
+    detail: `${row.chain || 'solana'} · on-chain credit`,
+    explorer: [{ label: `Tx ${shortSig(sig)}`, href: explorerTx(sig) }],
+  };
+}
+
+function parseLedgerRows(raw: string | null): LedgerPurchase[] {
+  if (!raw) return [];
   try {
-    const raw = sessionStorage.getItem(LEDGER_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((row): row is LedgerPurchase => (
@@ -93,6 +161,24 @@ export function loadLedgerPurchases(): LedgerPurchase[] {
       && typeof (row as LedgerPurchase).id === 'string'
       && typeof (row as LedgerPurchase).amountUsd === 'number'
     ));
+  } catch {
+    return [];
+  }
+}
+
+export function loadLedgerPurchases(): LedgerPurchase[] {
+  const store = ledgerStore();
+  if (!store) return [];
+  try {
+    let raw = store.getItem(LEDGER_KEY);
+    if (!raw && typeof sessionStorage !== 'undefined' && store !== sessionStorage) {
+      raw = sessionStorage.getItem(LEDGER_KEY);
+      if (raw) {
+        store.setItem(LEDGER_KEY, raw);
+        sessionStorage.removeItem(LEDGER_KEY);
+      }
+    }
+    return parseLedgerRows(raw);
   } catch {
     return [];
   }
@@ -110,7 +196,7 @@ export function recordLedgerPurchase(
   };
   try {
     const next = [...loadLedgerPurchases(), row];
-    sessionStorage.setItem(LEDGER_KEY, JSON.stringify(next));
+    ledgerStore()?.setItem(LEDGER_KEY, JSON.stringify(next));
   } catch {
     /* ignore quota */
   }
@@ -145,12 +231,64 @@ export function vaultPurchases(apis: KeychainStoredApi[]): PurchaseRow[] {
   });
 }
 
-export function listPurchases(apis: KeychainStoredApi[] = []): PurchaseRow[] {
-  return [
+function txHref(row: PurchaseRow): string {
+  return row.explorer.find((link) => link.href.includes('/tx/'))?.href || '';
+}
+
+export function mergePurchaseRows(rows: PurchaseRow[]): PurchaseRow[] {
+  const seenId = new Set<string>();
+  const seenTx = new Set<string>();
+  const out: PurchaseRow[] = [];
+  for (const row of rows) {
+    if (seenId.has(row.id)) continue;
+    const tx = txHref(row);
+    if (tx && seenTx.has(tx)) continue;
+    seenId.add(row.id);
+    if (tx) seenTx.add(tx);
+    out.push(row);
+  }
+  return out;
+}
+
+export function listPurchases(
+  apis: KeychainStoredApi[] = [],
+  extra: PurchaseRow[] = [],
+): PurchaseRow[] {
+  return mergePurchaseRows([
     ...loadMppReceiptHistory().map(mppPurchaseFromReceipt),
+    ...extra,
     ...loadLedgerPurchases().map(ledgerPurchaseRow),
     ...vaultPurchases(apis),
-  ];
+  ]);
+}
+
+export async function fetchAccountPurchases(): Promise<PurchaseRow[]> {
+  const rows: PurchaseRow[] = [];
+  try {
+    const sRes = await apiFetch('/mpp/streams');
+    if (sRes.ok) {
+      const body = await sRes.json() as { streams?: MppStreamPurchase[] };
+      for (const stream of body.streams || []) {
+        const row = purchaseFromMppStream(stream);
+        if (row) rows.push(row);
+      }
+    }
+  } catch {
+    /* offline / unsigned */
+  }
+  try {
+    const tRes = await apiFetch('/billing/topup-history?limit=50');
+    if (tRes.ok) {
+      const body = await tRes.json() as { topups?: SolanaTopup[] };
+      for (const top of body.topups || []) {
+        const row = purchaseFromSolanaTopup(top);
+        if (row) rows.push(row);
+      }
+    }
+  } catch {
+    /* offline / unsigned */
+  }
+  return rows;
 }
 
 export function groupPurchases(rows: PurchaseRow[]): { category: string; items: PurchaseRow[] }[] {
@@ -160,6 +298,7 @@ export function groupPurchases(rows: PurchaseRow[]): { category: string; items: 
     list.push(row);
     map.set(row.category, list);
   }
+  if (!map.has(ON_CHAIN_CATEGORY)) map.set(ON_CHAIN_CATEGORY, []);
   if (!map.has(LEDGER_CATEGORY)) map.set(LEDGER_CATEGORY, []);
   const known = PURCHASE_CATEGORY_ORDER.filter((cat) => map.has(cat));
   const extra = [...map.keys()].filter((cat) => !PURCHASE_CATEGORY_ORDER.includes(cat as typeof PURCHASE_CATEGORY_ORDER[number]));
