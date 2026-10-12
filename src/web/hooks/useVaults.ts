@@ -213,7 +213,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
-      if (!rawKey) return;
+      if (!rawKey) throw new Error('Paste the API key');
       if (isVaultUnlocked()) {
         await addEntry(upstream, rawKey);
       }

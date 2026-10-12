@@ -104,6 +104,20 @@ export function extractDetectedKey(raw: string): string {
   return text;
 }
 
+/** Placeholder "sk-or-v1-…" is not a key. Autofill may fill the DOM, not React. */
+export function looksLikePlaceholderSecret(raw: string): boolean {
+  const text = String(raw || '').trim();
+  if (!text) return true;
+  if (/[•…]/.test(text) && text.replace(/[•….\s-]/g, '').length < 12) return true;
+  return false;
+}
+
+export function resolveApiKeyInput(stateValue: string, domValue = ''): string {
+  const raw = String(stateValue || '').trim() || String(domValue || '').trim();
+  if (looksLikePlaceholderSecret(raw)) return '';
+  return extractDetectedKey(raw);
+}
+
 export function extractDetectedKeys(raw: string): { upstream: string; key: string }[] {
   const text = raw.trim();
   if (!text) return [];

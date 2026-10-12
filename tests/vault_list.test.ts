@@ -8,7 +8,7 @@ import {
   shouldRefreshVaultOnVisit,
 } from "../src/web/lib/vault-list";
 import { needsPasskey } from "../src/web/lib/zk-verify";
-import { detectUpstream, extractDetectedKeys } from "../src/web/lib/keychain";
+import { detectUpstream, extractDetectedKeys, resolveApiKeyInput, looksLikePlaceholderSecret } from "../src/web/lib/keychain";
 import {
   flushPendingVaultHits,
   previewPendingVaultHits,
@@ -62,6 +62,20 @@ describe("passkey is not required to save", () => {
 
   it("classifies Helius dashboard UUIDs so store does not 422", () => {
     expect(detectUpstream("10470584-67a9-4abc-8def-123456787761").upstream).toBe("helius");
+  });
+
+  it("New Secret save reads a real key, not the sk-or-v1-… placeholder", () => {
+    expect(looksLikePlaceholderSecret("sk-or-v1-…")).toBe(true);
+    expect(resolveApiKeyInput("", "sk-or-v1-…")).toBe("");
+    expect(resolveApiKeyInput("", "sk-or-v1-LOCALONLYFILLTEST1234567890abcd")).toBe(
+      "sk-or-v1-LOCALONLYFILLTEST1234567890abcd",
+    );
+    const modal = readFileSync(resolve(root, "src/web/components/AddKeyModal.tsx"), "utf8");
+    expect(modal).toContain("resolveApiKeyInput");
+    expect(modal).toContain("paste sk-or-v1-");
+    expect(modal).toContain('data-testid="new-secret-api-key"');
+    const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
+    expect(hook).toContain("if (!rawKey) throw new Error('Paste the API key')");
   });
 
   it("extracts all five Helius UUIDs from one paste so Save writes five rows", () => {

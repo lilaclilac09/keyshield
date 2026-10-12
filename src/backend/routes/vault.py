@@ -40,10 +40,17 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
+def _vault_db_path() -> Path:
+    """Same file the Rust proxy reads (`KS_VAULT_DB_PATH`)."""
+    env = (os.environ.get("KS_VAULT_DB_PATH") or "").strip()
+    if env:
+        return Path(env)
+    return Path(__file__).parent.parent / "data" / "vault_shim.db"
+
+
 # SQLite DB path — shared with `ks_vault::sqlite::lookup_upstream_key`
-# (Rust hot-path proxy). Kept identical to the path the Rust crate
-# defaults to, so both sides read/write the same file.
-_DB_PATH = Path(__file__).parent.parent / "data" / "vault_shim.db"
+# (Rust hot-path proxy). Tests monkeypatch `_DB_PATH`.
+_DB_PATH = _vault_db_path()
 
 
 @contextmanager
@@ -218,6 +225,9 @@ async def vault_store(request: Request):
     # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
     stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
     upstream = body.get("upstream") or ""
+    has_cipher = bool(body.get("cipher") and body.get("iv"))
+    if not str(stored_value).strip() and not has_cipher:
+        return JSONResponse({"detail": "Paste the API key"}, status_code=400)
 
     # Same plaintext key → same row. A second Helius UUID stays a new row.
     if not body.get("id") and stored_value:

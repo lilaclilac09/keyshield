@@ -141,6 +141,26 @@ def test_five_helius_manage_store_lists_five_rows(tmp_path, monkeypatch):
         assert secret not in dumped
 
 
+def test_manage_store_rejects_empty_plaintext(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    client = TestClient(app)
+    empty = client.post(
+        "/manage/store",
+        headers=_DEV_HEADERS,
+        json={"upstream": "openrouter", "name": "OpenRouter (Nemotron free)"},
+    )
+    assert empty.status_code == 400
+    assert "Paste" in empty.json().get("detail", "")
+
+
+def test_vault_db_path_honors_ks_vault_db_path(monkeypatch, tmp_path):
+    from src.backend.routes import vault as vault_mod
+
+    custom = tmp_path / "from-env.db"
+    monkeypatch.setenv("KS_VAULT_DB_PATH", str(custom))
+    assert vault_mod._vault_db_path() == custom
+
+
 def test_hosted_empty_session_does_not_claim_default(tmp_path, monkeypatch):
     """Shared Railway must not give every signed-in user the default bucket."""
     _iso(tmp_path, monkeypatch)
