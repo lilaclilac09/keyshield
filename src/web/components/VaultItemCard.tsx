@@ -40,7 +40,11 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
   const handleReveal = async () => {
     if (isRevealed) { clearReveal(); return; }
     setIsDecrypting(true); setDecryptErr('');
-    try { const v = await onDecrypt(item.id); setRawValue(v); setIsRevealed(true); startTimer(); }
+    try {
+      const v = String(await onDecrypt(item.id) || '').trim();
+      if (!v) { setDecryptErr('Save the API key again'); return; }
+      setRawValue(v); setIsRevealed(true); startTimer();
+    }
     catch (e) { setDecryptErr(e instanceof Error ? e.message : 'Decrypt failed'); }
     finally { setIsDecrypting(false); }
   };

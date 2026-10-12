@@ -7,12 +7,11 @@ Touch ID → PRF → AES-GCM decrypt in this tab only.
 import { requestVaultUnlock } from './auth';
 import { isVaultUnlocked } from './vault-session';
 
-/** Passkey / Face ID is only when a secret leaves this vault — paste, reveal, unlock.
- * Detect, save, and proxy Call never prompt. */
+/** Passkey / Face ID is only Device Vault unlock. Vault reveal is `/manage/decrypt`. */
 export type CredentialUse = 'save' | 'detect' | 'paste' | 'reveal' | 'call' | 'unlock';
 
 export function needsPasskey(use: CredentialUse): boolean {
-  return use === 'paste' || use === 'reveal' || use === 'unlock';
+  return use === 'unlock';
 }
 
 export async function ensureVerified(): Promise<{ ok: boolean; unlocked: boolean; detail?: string }> {

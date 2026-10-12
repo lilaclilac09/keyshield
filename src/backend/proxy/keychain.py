@@ -178,7 +178,7 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     with vault_mod._db() as conn:
         rows = conn.execute(
-            "SELECT id, name, upstream, value, cipher_v FROM vault_items "
+            "SELECT id, name, upstream, value FROM vault_items "
             "WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
@@ -192,9 +192,9 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
             continue
         seen.add(item_id)
         raw = str(row["value"] or "")
-        prefix = (
-            "encrypted" if (not raw.strip() and int(row["cipher_v"] or 0) == 1) else mask_key(raw)
-        )
+        if not raw.strip():
+            continue
+        prefix = mask_key(raw)
         out.append(
             {
                 "id": item_id,

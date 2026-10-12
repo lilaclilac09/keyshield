@@ -1,16 +1,9 @@
 /**
- * useVaults — Path A vault hook backed by the CF Worker + client-side crypto.
+ * useVaults — SQLite `/manage/*` vault.
  *
- * State machine:
- *   - locked    → no PRF-derived master key in module state; user must
- *                 trigger `unlock()` to do a passkey ceremony
- *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
- *
- * Device Vault (Path A) plus the Python `/manage/*` shim. Detect + save
- * write `/manage/store` without a passkey. Demo login lists `/manage/vault`
- * without unlock; reveal / paste-elsewhere uses passkey or
- * `/manage/decrypt/{id}`. Use `getDecryptedKey(upstream)` when Device Vault
- * is unlocked and you need a raw key for `/proxy/*`.
+ * Detect + save POST `/manage/store` with the API key. List GET
+ * `/manage/vault` (masked). Reveal GET `/manage/decrypt/{id}`. No
+ * passkey / Device Vault unlock on this path.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
@@ -20,7 +13,6 @@ import {
   removeEntry,
   listEntries,
   isVaultUnlocked,
-  getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
 import {
@@ -66,7 +58,7 @@ function serverRowToVault(row: {
     id: row.id,
     name: row.name || meta.name,
     type,
-    value: row.masked_value || `${API_BASE}/proxy/${upstream}/`,
+    value: `${API_BASE}/proxy/${upstream}/`,
     domain: meta.domain,
     createdAt: Number.isFinite(created) ? created : Date.now(),
     lastUsedAt: Number.isFinite(updated) ? updated : Date.now(),
@@ -210,7 +202,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
+      // Detect + save never prompts passkey. Reveal is GET /manage/decrypt.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
@@ -249,17 +241,15 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
-    if (isVaultUnlocked()) {
-      const key = getDecryptedKey(id);
-      if (key) return key;
-    }
     const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: 'decrypt failed' }));
-      throw new Error((err as { detail?: string }).detail ?? 'Vault locked — unlock first');
+      throw new Error((err as { detail?: string; code?: string }).detail ?? 'Save the API key again');
     }
     const data = await r.json();
-    return String(data.value ?? '');
+    const plaintext = String(data.value ?? data.key ?? '').trim();
+    if (!plaintext) throw new Error('Save the API key again');
+    return plaintext;
   }, []);
 
   return {

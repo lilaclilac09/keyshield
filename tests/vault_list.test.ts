@@ -51,12 +51,12 @@ describe("shouldRefreshVaultOnVisit", () => {
 });
 
 describe("passkey is not required to save", () => {
-  it("only gates paste / reveal / unlock — never detect, save, or call", () => {
+  it("only gates Device Vault unlock — never detect, save, call, paste, or reveal", () => {
     expect(needsPasskey("save")).toBe(false);
     expect(needsPasskey("detect")).toBe(false);
     expect(needsPasskey("call")).toBe(false);
-    expect(needsPasskey("paste")).toBe(true);
-    expect(needsPasskey("reveal")).toBe(true);
+    expect(needsPasskey("paste")).toBe(false);
+    expect(needsPasskey("reveal")).toBe(false);
     expect(needsPasskey("unlock")).toBe(true);
   });
 
@@ -115,6 +115,14 @@ describe("Vault page saved-key hero", () => {
     expect(src).toContain("/manage/vault");
     expect(src).toContain("storeDetectedKeys");
     expect(src).toContain("extractDetectedKeys");
+    expect(src).not.toContain("Unlock Device Vault");
+    const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
+    expect(hook).toContain("/manage/decrypt/");
+    expect(hook).toContain("Save the API key again");
+    const card = readFileSync(resolve(root, "src/web/components/VaultItemCard.tsx"), "utf8");
+    expect(card).toContain("if (!v)");
+    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
+    expect(bg).toContain("apiKey: String(value ?? '')");
   });
 });
 

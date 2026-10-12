@@ -189,7 +189,6 @@ async function getKeysForDomain(domain, extra) {
 
   const wanted = new Set(upstreams);
   const pending = await pendingKeysForUpstreams(upstreams);
-  const keyBytes = await _getVaultKeyBytes();
   const { token } = await getStoredToken();
   if (!token) {
     if (pending.length) return { ok: true, keys: pending };
@@ -217,26 +216,14 @@ async function getKeysForDomain(domain, extra) {
   const out = [];
   for (const it of matched) {
     let value = '';
-    const cipherOk = Number(it.cipher_v) === 1
-      && typeof it.cipher === 'string' && it.cipher !== ''
-      && typeof it.iv === 'string' && it.iv !== '';
-    if (cipherOk && keyBytes) {
-      try {
-        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
-      } catch {
-        value = '';
+    try {
+      const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
+      if (dec.ok) {
+        const body = await dec.json();
+        value = typeof body.value === 'string' ? body.value : (typeof body.key === 'string' ? body.key : '');
       }
-    }
-    if (!value) {
-      try {
-        const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
-        if (dec.ok) {
-          const body = await dec.json();
-          value = typeof body.value === 'string' ? body.value : '';
-        }
-      } catch {
-        value = '';
-      }
+    } catch {
+      value = '';
     }
     if (value) out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
   }
@@ -244,7 +231,7 @@ async function getKeysForDomain(domain, extra) {
     if (!out.some((k) => k.value === row.value)) out.push(row);
   }
   if (out.length === 0) {
-    return { ok: false, reason: keyBytes ? 'decrypt-failed' : 'no-keys' };
+    return { ok: false, reason: 'no-keys' };
   }
   return { ok: true, keys: out };
 }
@@ -401,32 +388,14 @@ async function directStore({ upstream, value }) {
 
     const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
-    let body;
-    const keyBytes = await _getVaultKeyBytes();
-    if (keyBytes) {
-      try {
-        const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const ct = new Uint8Array(await crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv },
-          aesKey,
-          new TextEncoder().encode(String(value ?? '')),
-        ));
-        body = JSON.stringify({
-          upstream,
-          name:     `${upstream} key`,
-          cipher:   _b64uEnc(ct),
-          iv:       _b64uEnc(iv),
-          cipher_v: 1,
-        });
-      } catch (encErr) {
-        console.warn('[KeyShield] client encrypt failed — falling back to plaintext:', encErr);
-        body = JSON.stringify({ upstream, value, name: `${upstream} key` });
-      }
-    } else {
-      console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
-      body = JSON.stringify({ upstream, value: String(value ?? ''), name: `${upstream} key` });
-    }
+    // Vault page reveal reads SQLite `value`. Cipher-only rows showed
+    // "hides in Ns" with an empty RAW field. Always send plaintext.
+    const body = JSON.stringify({
+      upstream,
+      apiKey: String(value ?? ''),
+      value: String(value ?? ''),
+      name: `${upstream} key`,
+    });
 
     try {
       const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
@@ -532,13 +501,14 @@ async function importVault(jsonStr) {
 
   for (const it of backup.items) {
     if (!it || typeof it.id !== 'string') { skipped++; continue; }
+    const plaintext = String(it.value || it.apiKey || it.api_key || '').trim();
+    if (!plaintext) { skipped++; continue; }
     const body = JSON.stringify({
       id:       it.id,
       upstream: it.upstream,
       name:     it.name,
-      cipher:   it.cipher,
-      iv:       it.iv,
-      cipher_v: it.cipher_v,
+      apiKey:   plaintext,
+      value:    plaintext,
     });
     try {
       const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
