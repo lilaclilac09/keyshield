@@ -209,7 +209,7 @@ body.signed-in #detect-ready{display:none!important}.extra{display:none!importan
 </style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<div id="detect-ready" class="status" style="display:block">checking 1.2.4 + &lt;all_urls&gt;…</div>
+<div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div>
 <div id="signed-pane" class="signed-only"><p id="saved-count" class="saved-count">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div>
 <button id="signin" class="guest-only">Sign in to KeyShield</button>
 <button id="allow-detect" class="secondary guest-only">Allow detect + auto-save</button>

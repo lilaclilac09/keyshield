@@ -32,7 +32,7 @@ Trouble → **本地 pull 代码** (python, not HTML). It restores
 `session-bridge.js` at `document_start` on every leftover folder.
 Terminal must print `ver 1.2.4` and `session-bridge True`.
 Then chrome://extensions → **Remove** → **Load unpacked**.
-If already signed, popup is three lines: **N saved** + masked key list + Sign out. Vault lists the same `/manage/vault` rows.
+If already signed, popup is three lines: **N saved** + `signed-pane` key list + Sign out. Vault lists the same `/manage/vault` rows.
 Refresh `https://app.ks.aileena.xyz` so the bridge injects. A leftover
 1.2.4 stamp that only has `content.js` on `<all_urls>` (your loaded
 `manifest.json` can look “ok” and still miss the bridge) stays `no token`.
