@@ -26,6 +26,13 @@ import {
   renderMppReceiptHtml,
   shortSig,
 } from "../src/web/lib/mpp-receipt";
+import {
+  explorerLinksForReceipt,
+  groupPurchases,
+  listPurchases,
+  mppPurchaseFromReceipt,
+  ON_CHAIN_CATEGORY,
+} from "../src/web/lib/purchases";
 
 describe("shop demo helpers", () => {
   it("recognizes the extension Sign-in shop landing", () => {
@@ -61,6 +68,33 @@ describe("shop demo helpers", () => {
     expect(home).toContain("ForceClawback");
     expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf("Stored APIs"));
     expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf(">Connection<"));
+    expect(home).toContain("PurchasesPanel");
+    expect(home.indexOf("PurchasesPanel")).toBeLessThan(home.indexOf("Stored APIs"));
+    expect(home).not.toMatch(/[\u4e00-\u9fff]/);
+    const panel = readFileSync(resolve(__dirname, "../src/web/components/PurchasesPanel.tsx"), "utf8");
+    expect(panel).toContain('data-testid="purchases-panel"');
+    expect(panel).toContain("item.explorer.map");
+  });
+
+  it("lists every on-chain buy with explorer links, grouped", () => {
+    const row = mppPurchaseFromReceipt(LAST_LIVE_MPP_RECEIPT);
+    expect(row.category).toBe(ON_CHAIN_CATEGORY);
+    expect(row.explorer.length).toBeGreaterThanOrEqual(3);
+    expect(row.explorer.some((link) => link.href.includes("/tx/") && link.href.includes("cluster=devnet"))).toBe(true);
+    expect(explorerLinksForReceipt(LAST_LIVE_MPP_RECEIPT).some((link) => link.label.startsWith("Settle"))).toBe(true);
+    const grouped = groupPurchases(listPurchases([
+      {
+        id: "helius-1",
+        name: "Helius RPC · dashboard",
+        upstream: "helius",
+        prefix: "abcd12…wxyz",
+        family: "RPC",
+        product: "Solana RPC",
+        domain: "dashboard.helius.dev",
+      },
+    ]));
+    expect(grouped[0]?.category).toBe(ON_CHAIN_CATEGORY);
+    expect(grouped.some((g) => g.category === "RPC APIs" && g.items.length === 1)).toBe(true);
   });
 
   it("keeps the 2.00 USDC MPP shop SKU separate from ledger credit", () => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText } from 'lucide-react';
+import { Home, Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText, AlertCircle } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
@@ -28,11 +28,12 @@ import { SessionsSection } from './components/sections/SessionsSection';
 import { SettingsSection } from './components/sections/SettingsSection';
 import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
+import { TroubleSection } from './components/sections/TroubleSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StoryJourney } from './components/StoryJourney';
 
-type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
+type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'trouble' | 'reports' | 'trust';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' | 'more' }[] = [
   { id: 'home', label: 'Home', icon: <Home size={16} />, group: 'focus' },
@@ -43,6 +44,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' |
   { id: 'sharing', label: 'Sharing', icon: <Share2 size={14} />, group: 'more' },
   { id: 'sessions', label: 'Sessions', icon: <Users size={14} />, group: 'more' },
   { id: 'settings', label: 'Settings', icon: <Settings size={14} />, group: 'more' },
+  { id: 'trouble', label: 'Trouble', icon: <AlertCircle size={14} />, group: 'more' },
   { id: 'docs', label: 'Docs', icon: <BookOpen size={14} />, group: 'more' },
   { id: 'reports', label: 'Reports', icon: <FileText size={14} />, group: 'more' },
   { id: 'trust', label: 'X402 Trust', icon: <ShieldCheck size={14} />, group: 'more' },
@@ -58,6 +60,7 @@ const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   settings: { title: 'Settings', subtitle: 'Account, security, and preferences' },
   developer: { title: 'Developer', subtitle: 'API tokens, SDK snippets, and endpoint reference' },
   docs: { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
+  trouble: { title: 'Trouble', subtitle: 'Leftover 1.2.4 · missing session-bridge' },
   reports: { title: 'Reports', subtitle: 'Vault audit log — detections, autofills, and saved keys' },
   trust: { title: 'X402 Trust', subtitle: 'Trusted domains for x402 micropayment auto-pay' },
 };
@@ -236,6 +239,7 @@ const MainContent: React.FC = () => {
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
               {section === 'developer' && <DeveloperSection vaultUpstreams={(home?.apis ?? []).map((row) => row.upstream)} />}
               {section === 'docs' && <DocsSection />}
+              {section === 'trouble' && <TroubleSection />}
               {section === 'reports' && <ReportPage />}
               {section === 'trust' && <X402TrustManager />}
             </div>

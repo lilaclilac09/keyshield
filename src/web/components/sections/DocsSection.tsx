@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, AlertCircle, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
+import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
@@ -7,25 +7,12 @@ import { Button } from '../ui/Button';
 import { API_BASE, getToken } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
-import { ExtTroubleCase } from '../ExtTroubleCase';
 
 export const DocsSection: React.FC = () => {
   const installCmd = `curl -fsSL ${API_BASE}/install.sh | bash`;
 
   return (
     <div className="space-y-8">
-      <div>
-        <div className="flex items-center gap-2 text-[11px] text-white mb-1"><AlertCircle size={12} />TROUBLESHOOTING</div>
-        <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Troubleshooting</h2>
-        <p className="text-[14px] text-[#a8b3d8] mt-1">
-          Leftover 1.2.4 · missing session-bridge. Find your local clone from Chrome internals, try pull, skip github.com DNS, then python3.
-        </p>
-        <p className="text-[12px] text-[#8a96c2] mt-1">
-          本地 1.2.4 只有 content.js 时 Sign-in 写不进扩展 — 在这里 stamp，不要放在 Home。
-        </p>
-      </div>
-      <ExtTroubleCase variant="docs" />
-
       {/* Quickstart */}
       <div>
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>

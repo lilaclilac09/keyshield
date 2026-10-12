@@ -58,5 +58,7 @@ describe("passkey server errors", () => {
     expect(describePasskeyFailure("challenge_expired", "authentication challenge expired or not found")).toMatch(
       /tap Sign In again/,
     );
+    expect(describePasskeyFailure("no_passkey", "no passkey enrolled on the server")).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(describePasskeyFailure("unknown_credential", "unknown credential")).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });

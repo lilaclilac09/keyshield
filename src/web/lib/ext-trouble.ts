@@ -1,7 +1,8 @@
 /**
- * Home / Docs Trouble case: leftover Load unpacked 1.2.1 + github.com DNS fail.
+ * Trouble tab case: leftover Load unpacked 1.2.4 + github.com DNS fail.
  * Find the clone from Chrome internals (Preferences path) and a home walk —
  * do not hardcode ~/Downloads/privacy_hack/keyshield.
+ * Never render this case on Home or Docs.
  */
 
 export const LEFTOVER_121_CASE_ID = 'leftover-121';
@@ -38,11 +39,8 @@ export const PATCH_VERSION = '1.2.4';
 export const LEFTOVER_121_CASE = {
   id: LEFTOVER_121_CASE_ID,
   title: 'Leftover 1.2.4 · missing session-bridge',
-  titleZh: '本地 1.2.4 只有 content.js · Sign-in 进不了扩展',
   symptom:
     'Card can already say KeyShield — Sovereign Vault 1.2.4 and ok 1.2.4 <all_urls>, but the leftover popup still stacks Fill / Copy / Settings / token box, and chrome://extensions → Details → loaded manifest.json only lists content.js on <all_urls>. Hosted Sign-in never writes chrome.storage — title jams into no token. git pull cannot resolve github.com.',
-  symptomZh:
-    '本地 1.2.4 只有 content.js 时 Sign-in 写不进扩展。',
 } as const;
 
 export function shouldSkipGitPull(stderr: string): boolean {

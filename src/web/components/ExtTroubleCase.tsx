@@ -30,14 +30,12 @@ export const ExtTroubleCase: React.FC<Props> = ({ variant = 'docs' }) => {
                 {LEFTOVER_121_CASE.title}
               </span>
             </div>
-            <p className="text-[12px] text-[#a8b3d8] mt-1">{LEFTOVER_121_CASE.titleZh}</p>
           </div>
         </div>
 
         <p className="text-[13px] text-[#e8ecff] leading-relaxed" data-testid="ext-trouble-symptom">
           {LEFTOVER_121_CASE.symptom}
         </p>
-        <p className="text-[12px] text-[#8a96c2] leading-relaxed">{LEFTOVER_121_CASE.symptomZh}</p>
 
         <div>
           <p className="text-[12px] font-semibold text-white mb-1">

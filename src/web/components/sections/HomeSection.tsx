@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
+import { PurchasesPanel } from '../PurchasesPanel';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import {
   describeBalanceChange,
@@ -19,6 +20,7 @@ import {
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
 import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
+import { listPurchases, recordLedgerPurchase } from '../../lib/purchases';
 import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
 import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
@@ -71,6 +73,7 @@ export const HomeSection: React.FC<Props> = ({
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
   const [receipt, setReceipt] = useState<MppShopReceipt>(() => loadStoredMppReceipt());
+  const [purchasesTick, setPurchasesTick] = useState(0);
   const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
 
   const detected = detectUpstream(paste);
@@ -79,6 +82,44 @@ export const HomeSection: React.FC<Props> = ({
   const wallet = home?.wallet;
   const apis = home?.apis ?? [];
   const conn = home?.connection;
+  const purchases = useMemo(() => listPurchases(apis), [apis, purchasesTick, receipt]);
+
+  const buyMpp = () => {
+    setBusy('mpp');
+    setMsg(null);
+    void buyMppShopSku()
+      .then((next) => {
+        setReceipt(next);
+        setPurchasesTick((n) => n + 1);
+        setOk(true);
+        setMsg(`Bought ${next.sku} · receipt ready`);
+        downloadMppReceipt(next, 'html');
+        onRefresh();
+      })
+      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
+      .finally(() => setBusy(null));
+  };
+
+  const buyLedger = () => {
+    const before = home?.ledger.balance_usd ?? 0;
+    setBusy('shop');
+    setMsg(null);
+    void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((d as { detail?: string }).detail ?? 'Shop credit failed');
+        const after = typeof (d as { balance_usd?: number }).balance_usd === 'number'
+          ? (d as { balance_usd: number }).balance_usd
+          : before + SHOP_CREDIT_USD;
+        recordLedgerPurchase(SHOP_CREDIT_USD, SHOP_ITEM_NAME);
+        setPurchasesTick((n) => n + 1);
+        setOk(true);
+        setMsg(`Bought ${SHOP_ITEM_NAME} (ledger, no Solana tx) · ${describeBalanceChange(before, after).label}`);
+        onRefresh();
+      })
+      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
+      .finally(() => setBusy(null));
+  };
 
   const savePaste = async () => {
     const hits = extractDetectedKeys(paste);
@@ -121,7 +162,7 @@ export const HomeSection: React.FC<Props> = ({
       </div>
 
       <ExtensionTokenCopy />
-      <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
+      <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('trouble')} />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
@@ -168,30 +209,25 @@ export const HomeSection: React.FC<Props> = ({
             <p className="text-[13px] text-[#8a96c2] mt-2">on-chain recover</p>
           </div>
         </div>
-        <p className="text-[14px] text-[#8a96c2]">买 API：点 Buy $2.00 出收据。链上结算 1,906 CU，缓存 0.004ms，PRF 解钥，ix 28 可追回。</p>
         <button
           type="button"
           data-testid="shop-buy-mpp"
           disabled={busy !== null}
-          onClick={() => {
-            setBusy('mpp');
-            setMsg(null);
-            void buyMppShopSku()
-              .then((next) => {
-                setReceipt(next);
-                setOk(true);
-                setMsg(`Bought ${next.sku} · receipt ready`);
-                downloadMppReceipt(next, 'html');
-                onRefresh();
-              })
-              .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
-              .finally(() => setBusy(null));
-          }}
+          onClick={buyMpp}
           className="h-12 px-6 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
         >
           {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} · get receipt`}
         </button>
       </div>
+
+      <PurchasesPanel
+        rows={purchases}
+        busy={busy !== null}
+        buyMppLabel={busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)}`}
+        buyLedgerLabel={busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
+        onBuyMpp={buyMpp}
+        onBuyLedger={buyLedger}
+      />
 
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -284,24 +320,7 @@ export const HomeSection: React.FC<Props> = ({
             type="button"
             data-testid="shop-buy"
             disabled={busy !== null}
-            onClick={() => {
-              const before = home?.ledger.balance_usd ?? 0;
-              setBusy('shop');
-              setMsg(null);
-              void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
-                .then(async (r) => {
-                  const d = await r.json().catch(() => ({}));
-                  if (!r.ok) throw new Error((d as { detail?: string }).detail ?? 'Shop credit failed');
-                  const after = typeof (d as { balance_usd?: number }).balance_usd === 'number'
-                    ? (d as { balance_usd: number }).balance_usd
-                    : before + SHOP_CREDIT_USD;
-                  setOk(true);
-                  setMsg(`Bought ${SHOP_ITEM_NAME} (ledger, no Solana tx) · ${describeBalanceChange(before, after).label}`);
-                  onRefresh();
-                })
-                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
-                .finally(() => setBusy(null));
-            }}
+            onClick={buyLedger}
             className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
           >
             {busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
@@ -433,7 +452,7 @@ export const HomeSection: React.FC<Props> = ({
           {[
             { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Docs → Troubleshooting', sub: 'Extension Sign-in and detect' },
+            { id: 'trouble', title: 'Trouble', sub: 'Extension Sign-in and detect' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
           ].map((row) => (
             <button

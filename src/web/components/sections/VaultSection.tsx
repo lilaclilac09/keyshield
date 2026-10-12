@@ -58,7 +58,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <p className="text-[28px] font-bold tracking-tight text-white leading-none">
           {total === 1 ? '1 saved' : `${total} saved`}
         </p>
-        <p className="text-[12px] text-[#8a96c2]">`/manage/vault` · hidden until you click reveal · 点眼睛才看到明文</p>
+        <p className="text-[12px] text-[#8a96c2]">`/manage/vault` · hidden until you click reveal</p>
       </div>
       {items.length > 0 ? (
         <div className="space-y-2">
@@ -104,7 +104,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
-        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
+        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty'}</p>
         <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Detect on a key page. This block is where saved keys show.'}</p>
         {!searchQuery && (
           <>

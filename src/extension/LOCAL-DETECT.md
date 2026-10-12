@@ -23,13 +23,13 @@ Trouble finds the clone from Chrome internals (`Preferences` unpacked
 # zsh. python not HTML. Do not use eval.
 # leftover --find traceback inside eval "$(...)" = parse error near )
 python3 src/extension/patch-leftover-bridge.py
-# or paste Home / Docs Trouble block: python3 - <<'PY' ... PY
+# or paste Trouble tab block: python3 - <<'PY' ... PY
 ```
 
 If `github.com` does not resolve, skip git. Run
 `python3 src/extension/patch-leftover-bridge.py` if that file exists, else
-`python3 src/extension/patch-signed-popup.py`, else paste Home / Docs →
-Trouble → **本地 pull 代码** (python, not HTML). It restores
+`python3 src/extension/patch-signed-popup.py`, else paste Trouble tab →
+local stamp (python, not HTML). It restores
 `session-bridge.js` at `document_start` on every leftover folder.
 Terminal must print `ver 1.2.4` and `session-bridge True`.
 Then chrome://extensions → **Remove** → **Load unpacked**.

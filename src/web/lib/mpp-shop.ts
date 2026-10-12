@@ -19,6 +19,7 @@ import {
 } from './mpp-receipt';
 
 const RECEIPT_STORAGE_KEY = 'ks_mpp_shop_receipt';
+const RECEIPT_HISTORY_KEY = 'ks_mpp_shop_receipts';
 
 type StreamRow = {
   id?: number;
@@ -51,9 +52,48 @@ export function loadStoredMppReceipt(): MppShopReceipt {
 export function storeMppReceipt(receipt: MppShopReceipt): void {
   try {
     sessionStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(receipt));
+    const key = receipt.settleTx || receipt.openTx || receipt.sku;
+    const next = loadMppReceiptHistory().filter(
+      (row) => (row.settleTx || row.openTx || row.sku) !== key,
+    );
+    next.push(receipt);
+    sessionStorage.setItem(RECEIPT_HISTORY_KEY, JSON.stringify(next));
   } catch {
     /* ignore quota */
   }
+}
+
+function receiptKey(row: MppShopReceipt): string {
+  return row.settleTx || row.openTx || row.sku;
+}
+
+/** Every on-chain MPP buy we know about, including the last live Devnet receipt. */
+export function loadMppReceiptHistory(): MppShopReceipt[] {
+  const seen = new Set<string>();
+  const out: MppShopReceipt[] = [];
+  const add = (row: MppShopReceipt) => {
+    const key = receiptKey(row);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(row);
+  };
+  add(LAST_LIVE_MPP_RECEIPT);
+  if (typeof sessionStorage === 'undefined') return out;
+  try {
+    const raw = sessionStorage.getItem(RECEIPT_HISTORY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const row of parsed) {
+          if (isMppShopReceipt(row)) add(row);
+        }
+      }
+    }
+  } catch {
+    /* keep seed */
+  }
+  add(loadStoredMppReceipt());
+  return out;
 }
 
 export async function buyMppShopSku(): Promise<MppShopReceipt> {
