@@ -6,6 +6,23 @@ github.com will not resolve. Do **not** paste HTML into zsh.
 
 Stay on **KeyShield — Sovereign Vault**. Sign-in must open
 `https://app.ks.aileena.xyz/?ext=1&demo=shop`.
+If already signed, popup must show **only saved APIs**.
+
+## 0. Try pull, then offline signed-in patch
+
+```bash
+cd ~/Downloads/privacy_hack/keyshield
+git fetch origin cursor/cursor-api-autofill-b48a
+git checkout cursor/cursor-api-autofill-b48a
+git pull origin cursor/cursor-api-autofill-b48a
+python3 src/extension/patch-signed-popup.py
+```
+
+If `github.com` does not resolve, skip git. Run
+`python3 src/extension/patch-signed-popup.py` if that file exists, else
+paste the python3 block from the agent (it writes `popup.html` with
+`id="signed-pane"`, stamps `man["version"] = "1.2.4"`, and injects
+`KS-SIGNED-1.2.4`). Then chrome://extensions → **Remove** → **Load unpacked**.
 
 ## 1. Patch 1.1.3 → 1.2.4 on disk (python3 only)
 

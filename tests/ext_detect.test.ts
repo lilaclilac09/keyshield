@@ -85,7 +85,10 @@ describe("formatDetectReadyLine", () => {
     expect(content).toContain("crypto-regime-api.onrender.com");
     expect(content).toContain("function ksIsX402Challenge");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
+    expect(localDetect).toContain("signed-pane");
+    expect(localDetect).toContain("patch-signed-popup.py");
     expect(localSignin).toContain('"version": "1.2.4"');
+    expect(readFileSync(resolve(root, "src/extension/patch-signed-popup.py"), "utf8")).toContain("signed-pane");
   });
 });
 
