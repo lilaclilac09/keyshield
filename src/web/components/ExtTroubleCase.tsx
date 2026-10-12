@@ -41,28 +41,40 @@ export const ExtTroubleCase: React.FC<Props> = ({ variant = 'docs' }) => {
 
         <div>
           <p className="text-[12px] font-semibold text-white mb-1">
-            1. Find the local path · 先找本机路径（Chrome internals，不是写死 Downloads）
+            1. 本地 stamp · paste this only. Do not use eval.
           </p>
           <p className="text-[11px] text-[#8a96c2] mb-2 leading-relaxed">
-            Reads Chrome / Edge / Brave / Arc <code className="text-[#a8b3d8]">Preferences</code> unpacked
-            <code className="text-[#a8b3d8]"> path</code> (Details → Loaded from), then walks Downloads /
-            Documents / Desktop / src / dev. Do not assume{' '}
-            <code className="text-[#a8b3d8]">~/Downloads/privacy_hack/keyshield</code>.
-          </p>
-          <CodeBlock code={FIND_LOCAL_PATH_PY} />
-        </div>
-
-        <div>
-          <p className="text-[12px] font-semibold text-white mb-1">
-            2. 本地 pull 代码 · github.com 解析失败就跳过，直接跑 python3
-          </p>
-          <p className="text-[11px] text-[#8a96c2] mb-2 leading-relaxed">
-            Paste this whole block into zsh. It is python, not HTML. Terminal must print{' '}
-            <code className="text-white">ver 1.2.4</code> and{' '}
+            zsh parse error near <code className="text-white">)</code> means you wrapped python in{' '}
+            <code className="text-white">eval "$(…)"</code>, or pasted a comment like{' '}
+            <code className="text-white">1) find … (Chrome …)</code>. Paste only the block below.
+            Terminal must print <code className="text-white">ver 1.2.4</code> and{' '}
             <code className="text-white">session-bridge True</code>.
           </p>
           <CodeBlock code={LOCAL_PULL_BRIDGE_SH} />
         </div>
+
+        <details>
+          <summary className="text-[12px] font-semibold text-white cursor-pointer">
+            Find path only. python3 heredoc. Do not eval.
+          </summary>
+          <div className="mt-2">
+            <CodeBlock code={`python3 - <<'PY'\n${FIND_LOCAL_PATH_PY.trimEnd()}\nPY\n`} />
+          </div>
+        </details>
+
+        <details>
+          <summary className="text-[12px] font-semibold text-white cursor-pointer">
+            Optional git fetch. Skip if github.com DNS fails.
+          </summary>
+          <div className="mt-2">
+            <CodeBlock
+              code={`git fetch origin cursor/cursor-api-autofill-b48a || echo skip-git
+git checkout cursor/cursor-api-autofill-b48a || echo skip-git
+git pull origin cursor/cursor-api-autofill-b48a || echo skip-git
+`}
+            />
+          </div>
+        </details>
 
         <details>
           <summary className="text-[12px] font-semibold text-white cursor-pointer">

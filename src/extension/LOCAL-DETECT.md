@@ -19,13 +19,10 @@ Trouble finds the clone from Chrome internals (`Preferences` unpacked
 3. If `github.com` does not resolve, skip git and run python3.
 
 ```bash
-# find path first (Chrome internals + home walk) — then:
-git fetch origin cursor/cursor-api-autofill-b48a
-git checkout cursor/cursor-api-autofill-b48a
-git pull origin cursor/cursor-api-autofill-b48a
+# zsh. python not HTML. Do not use eval.
+# leftover --find traceback inside eval "$(...)" = parse error near )
 python3 src/extension/patch-leftover-bridge.py
-# or: python3 src/extension/patch-leftover-bridge.py --find
-# leftover 1.2.4 missing session-bridge: this stamps every KeyShield folder found
+# or paste Home / Docs Trouble block: python3 - <<'PY' ... PY
 ```
 
 If `github.com` does not resolve, skip git. Run

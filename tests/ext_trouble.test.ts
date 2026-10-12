@@ -15,6 +15,8 @@ import {
   PATCH_BRANCH,
   PATCH_VERSION,
   TRY_PULL_THEN_PATCH_SH,
+  ZSH_SAFE_STAMP_PY,
+  isZshSafePullBlock,
   isKeyshieldExtManifest,
   repoRootFromExt,
   shouldSkipGitPull,
@@ -45,13 +47,14 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(shouldSkipGitPull("Name or service not known")).toBe(true);
     expect(TRY_PULL_THEN_PATCH_SH).toContain(`git fetch origin ${PATCH_BRANCH}`);
     expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com 解析失败就跳过，直接跑下面的 python3");
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("python3 src/extension/patch-signed-popup.py");
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("ver 1.2.4");
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("signed-pane True");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
-    expect(LOCAL_PULL_BRIDGE_SH).toContain("patch-leftover-bridge.py");
-    expect(LOCAL_PULL_BRIDGE_SH).toContain("github.com 解析失败就跳过，直接跑下面的 python3");
+    expect(TRY_PULL_THEN_PATCH_SH).not.toContain("eval ");
+    expect(isZshSafePullBlock(LOCAL_PULL_BRIDGE_SH)).toBe(true);
+    expect(LOCAL_PULL_BRIDGE_SH).toContain("python3 - <<'PY'");
     expect(LOCAL_PULL_BRIDGE_SH).toContain("session-bridge True");
+    expect(LOCAL_PULL_BRIDGE_SH).not.toContain("eval ");
+    expect(LOCAL_PULL_BRIDGE_SH).not.toContain("$(");
+    expect(ZSH_SAFE_STAMP_PY).toContain("capturePageToken");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("capturePageToken");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("session-bridge.js");
     expect(OFFLINE_BRIDGE_STAMP_PY).not.toContain("<!DOCTYPE html>");
@@ -105,7 +108,27 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(localDetect).toContain("session-bridge.js");
     expect(caseUi).toContain("session-bridge True");
     expect(caseUi).toContain("LOCAL_PULL_BRIDGE_SH");
-    expect(caseUi).toContain("本地 pull");
+    expect(caseUi).toContain("Do not use eval");
+  });
+
+  it("zsh-safe local-pull block parses and stamps leftover 1.2.4", () => {
+    const tmpSh = join(mkdtempSync(join(tmpdir(), "ks-zsh-safe-")), "local-pull.sh");
+    writeFileSync(tmpSh, LOCAL_PULL_BRIDGE_SH);
+    execFileSync("bash", ["-n", tmpSh], { encoding: "utf8" });
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
+      "utf8",
+    );
+    const tmp = mkdtempSync(join(tmpdir(), "ks-zsh-stamp-"));
+    writeFileSync(join(tmp, "manifest.json"), leftover);
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    const out = execFileSync("python3", ["-c", ZSH_SAFE_STAMP_PY], {
+      cwd: tmp,
+      encoding: "utf8",
+    });
+    expect(out).toContain("session-bridge True");
+    const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
+    expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
   });
 
   it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {
