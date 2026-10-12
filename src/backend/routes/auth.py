@@ -29,6 +29,52 @@ async def _session(token: str) -> dict | None:
     return sess_mod.get(token)
 
 
+_HOSTED_PASSKEY_ORIGINS = (
+    "https://app.ks.aileena.xyz",
+    "https://ks.aileena.xyz",
+)
+
+
+def _passkey_json_error(exc: Exception, status: int = 400):
+    code = getattr(exc, "code", "") or ""
+    raw = getattr(exc, "message", None) or str(exc)
+    if code == pk_mod._NO_PASSKEY or "no passkey enrolled" in raw:
+        status = 404
+        detail = (
+            "Face ID / Touch ID is saved on this Mac, but the server has no "
+            "matching passkey for this account (common after a deploy). Use a "
+            "different wallet, sign in, then enroll passkey again. "
+            "指纹在这台 Mac 上，服务器没有对应 passkey。请改用钱包登录后再登记一次。"
+        )
+        code = code or pk_mod._NO_PASSKEY
+    elif (
+        code == pk_mod._CHALLENGE_GONE
+        or "challenge expired" in raw
+        or "challenge" in raw
+        and "not found" in raw
+    ):
+        detail = (
+            "Passkey challenge expired — tap Sign In again. Your fingerprint "
+            "is still on this device. 登录挑战过期了，再点一次 Sign In，指纹还在。"
+        )
+        code = code or pk_mod._CHALLENGE_GONE
+    elif code == pk_mod._UNKNOWN_CRED or "unknown credential" in raw:
+        status = 401
+        detail = (
+            "Face ID worked, but this fingerprint is not the passkey stored "
+            "for this account. Forget this device, sign in with wallet, then "
+            "enroll passkey again. 指纹对了，但服务器上的 credential 对不上。"
+            "点 Forget this device，用钱包登录后再登记。"
+        )
+        code = code or pk_mod._UNKNOWN_CRED
+    else:
+        detail = raw
+    return JSONResponse(
+        {"error": raw, "detail": detail, "code": code or "passkey_failed"},
+        status_code=status,
+    )
+
+
 def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
     """Derive WebAuthn rp_id + allowed origins from the request's Origin
     header. WebAuthn requires rp_id to match the page hostname — for
@@ -36,13 +82,17 @@ def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
     it per-request beats hardcoding a single env var. Returns (None, None)
     if no Origin header — caller falls back to env defaults.
     """
-    origin = request.headers.get("Origin")
-    if not origin:
-        return None, None
-    host = urlparse(origin).hostname
+    origin = (request.headers.get("Origin") or "").strip()
+    host = urlparse(origin).hostname if origin else None
+    origins: list[str] = []
+    if origin:
+        origins.append(origin)
+    for extra in (*pk_mod.ORIGIN, *_HOSTED_PASSKEY_ORIGINS):
+        if extra and extra not in origins:
+            origins.append(extra)
     if not host:
-        return None, None
-    return host, [origin]
+        return None, origins or None
+    return host, origins
 
 
 # ─── Auth routes ────────────────────────────────────────────────
@@ -260,8 +310,10 @@ async def passkey_register_options(request: Request):
         plans_mod.assert_slot(user_id, level, extra=1)
     except plans_mod.PlanLimitError as exc:
         return JSONResponse(exc.payload, status_code=402)
-    rp_id, _ = _origin_rp_id(request)
-    opts = pk_mod.registration_options(user_id, display_name="Device Vault", rp_id=rp_id)
+    rp_id, origins = _origin_rp_id(request)
+    opts = pk_mod.registration_options(
+        user_id, display_name="Device Vault", rp_id=rp_id, expected_origin=origins
+    )
     return JSONResponse(opts)
 
 
@@ -289,7 +341,7 @@ async def passkey_register_verify(request: Request):
             expected_origin=origins,
         )
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return _passkey_json_error(e)
     cred_id = out.get("credentialId") or (body.get("credential") or {}).get("id")
     try:
         if cred_id:
@@ -308,11 +360,11 @@ async def passkey_register_verify(request: Request):
 @router.get("/auth/passkey/auth-options")
 async def passkey_auth_options(user_id: str, request: Request):
     """Unauthenticated — used by login flow."""
-    rp_id, _ = _origin_rp_id(request)
+    rp_id, origins = _origin_rp_id(request)
     try:
-        opts = pk_mod.authentication_options(user_id, rp_id=rp_id)
+        opts = pk_mod.authentication_options(user_id, rp_id=rp_id, expected_origin=origins)
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return _passkey_json_error(e)
     return JSONResponse(opts)
 
 
@@ -328,16 +380,17 @@ async def passkey_auth_verify(request: Request, user_id: str, passphrase: str = 
     effective_passphrase = body.get("passphrase", passphrase) or ""
     rp_id, origins = _origin_rp_id(request)
     try:
-        pk_mod.authentication_verify(
+        verified = pk_mod.authentication_verify(
             user_id,
             body.get("credential", body),
             rp_id=rp_id,
             expected_origin=origins,
         )
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-    token = sess_mod.create_token(user_id, effective_passphrase)
-    return JSONResponse({"token": token, "userId": user_id})
+        return _passkey_json_error(e)
+    signed_user = (verified or {}).get("userId") or user_id
+    token = sess_mod.create_token(signed_user, effective_passphrase)
+    return JSONResponse({"token": token, "userId": signed_user})
 
 
 @router.get("/auth/passkey/list")

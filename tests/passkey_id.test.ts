@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  describePasskeyFailure,
+  readApiErrorMessage,
   readPasskeyUserIdFromStorage,
   resolvePasskeyUserId,
   shortPasskeyLabel,
@@ -39,5 +41,22 @@ describe("shouldShowPasskeyPanel", () => {
       getItem(key: string) { return this.data[key] ?? null; },
     };
     expect(readPasskeyUserIdFromStorage(store)).toBe("wallet111");
+  });
+});
+
+describe("passkey server errors", () => {
+  it("reads Python `error` when `detail` is missing (the hosted Face ID bug)", () => {
+    expect(readApiErrorMessage({ error: "unknown credential" }, "Passkey login failed")).toMatch(
+      /Forget this device/,
+    );
+  });
+
+  it("explains a wiped server passkey without dropping the fingerprint", () => {
+    expect(describePasskeyFailure("no_passkey", "no passkey enrolled on the server")).toMatch(
+      /enroll passkey again/,
+    );
+    expect(describePasskeyFailure("challenge_expired", "authentication challenge expired or not found")).toMatch(
+      /tap Sign In again/,
+    );
   });
 });
