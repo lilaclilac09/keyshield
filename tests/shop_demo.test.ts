@@ -106,6 +106,11 @@ describe("shop demo helpers", () => {
     expect(payments).toContain("WebAuthn PRF");
     expect(payments).toContain("ForceClawback");
     expect(payments).toContain("PurchasesPanel");
+    expect(payments).toContain("payments-dashboard");
+    expect(payments).toContain("payments-kpis");
+    expect(payments).toContain("payments-kpi-human");
+    expect(payments).toContain("Transparency ledger");
+    expect(payments).not.toMatch(/[\u4e00-\u9fff]/);
     const activity = readFileSync(resolve(__dirname, "../src/web/components/sections/ActivitySection.tsx"), "utf8");
     expect(activity).toContain("PaymentsLedger");
     const panel = readFileSync(resolve(__dirname, "../src/web/components/PurchasesPanel.tsx"), "utf8");
@@ -119,7 +124,12 @@ describe("shop demo helpers", () => {
     expect(panel).toContain("groupPurchasesByRoleAndWallet");
     expect(panel).toContain("item.portal");
     expect(panel).toContain("item.whatChanged");
-    expect(panel).toContain("item.potentialUse");
+    expect(panel).toContain("purchase-wallet-full");
+    expect(panel).toContain("purchase-sku");
+    expect(panel).toContain("purchase-amount");
+    expect(panel).toContain("purchase-rail");
+    expect(panel).toContain("<table");
+    expect(panel).toContain("Transparency dashboard");
     expect(panel).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
@@ -142,6 +152,9 @@ describe("shop demo helpers", () => {
     expect(row.receipt?.settleTx).toBeTruthy();
     const byRole = groupPurchasesByRoleAndWallet(listPurchases([]));
     expect(byRole.some((g) => g.role === "user" && g.wallets.some((w) => w.walletAddress === LAST_LIVE_MPP_RECEIPT.owner))).toBe(true);
+    expect(LAST_LIVE_MPP_RECEIPT.owner).toBe("GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq");
+    expect(row.explorer.some((link) => link.href.includes("4YW8ffsb"))).toBe(true);
+    expect(row.explorer.some((link) => link.href.includes("3tGEtZ65"))).toBe(true);
     expect(summarizeConsumption(listPurchases([])).humanUsd).toBeGreaterThan(0);
     expect(row.explorer.some((link) => link.href.includes("/address/") && link.label.startsWith("ATA"))).toBe(true);
   });

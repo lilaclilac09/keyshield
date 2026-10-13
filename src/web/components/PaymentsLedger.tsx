@@ -5,11 +5,13 @@ import {
   fetchAccountPurchases,
   listPurchases,
   recordLedgerPurchase,
+  summarizeConsumption,
   type PurchaseRow,
 } from '../lib/purchases';
 import { buyMppShopSku, downloadMppReceipt } from '../lib/mpp-shop';
 import {
   describeBalanceChange,
+  formatUsd,
   SHOP_CREDIT_USD,
   SHOP_ITEM_NAME,
   SHOP_MPP_USD,
@@ -41,6 +43,11 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
   }, [tick, ledgerUsd]);
 
   const rows = useMemo(() => listPurchases([], account), [account, tick]);
+  const consume = useMemo(() => summarizeConsumption(rows), [rows]);
+  const explorerCount = useMemo(
+    () => rows.reduce((n, row) => n + row.explorer.filter((link) => link.href.includes('explorer.solana.com')).length, 0),
+    [rows],
+  );
 
   const buyMpp = () => {
     setBusy('mpp');
@@ -79,10 +86,37 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
   };
 
   return (
-    <div className="space-y-6" data-testid="payments-ledger">
-      <div>
-        <p className="text-[15px] text-[#8a96c2]">Portal · amount · explorer · human or agent</p>
+    <div className="space-y-6" data-testid="payments-dashboard">
+      <div data-testid="payments-ledger">
+        <p className="text-[13px] uppercase tracking-wider text-emerald-400">Transparency ledger</p>
         <h2 className="text-[28px] font-bold text-white mt-1">Payments</h2>
+        <p className="text-[15px] text-[#8a96c2] mt-2">
+          Every buy on this account. Grouped Human / Agent, then the full wallet.
+          Each row shows purchased SKU, amount, rail, and Solana explorer.
+          Ledger credits have no chain tx. Tempo is archived. Not Raydium / $X402 / $M32.
+        </p>
+      </div>
+      <div data-testid="payments-kpis" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div data-testid="payments-kpi-human" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+          <p className="text-[13px] text-[#8a96c2]">Human</p>
+          <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.humanUsd)}</p>
+          <p className="text-[12px] text-[#5e6a91] mt-2">{consume.humanCount} txs · wallet + explorer</p>
+        </div>
+        <div data-testid="payments-kpi-agent" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+          <p className="text-[13px] text-[#8a96c2]">Agent</p>
+          <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.agentUsd)}</p>
+          <p className="text-[12px] text-[#5e6a91] mt-2">{consume.agentCount} txs · live /mpp/streams</p>
+        </div>
+        <div data-testid="payments-kpi-ledger" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+          <p className="text-[13px] text-[#8a96c2]">Ledger</p>
+          <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.ledgerUsd)}</p>
+          <p className="text-[12px] text-[#5e6a91] mt-2">{consume.ledgerCount} credits · no chain tx</p>
+        </div>
+        <div data-testid="payments-kpi-explorer" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+          <p className="text-[13px] text-[#8a96c2]">On-chain proofs</p>
+          <p className="text-[24px] font-bold text-white leading-none mt-2">{explorerCount}</p>
+          <p className="text-[12px] text-[#5e6a91] mt-2">Solana Devnet explorer links</p>
+        </div>
       </div>
       <PurchasesPanel
         rows={rows}
