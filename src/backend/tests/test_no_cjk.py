@@ -65,11 +65,7 @@ def test_git_tracked_source_has_no_cjk():
 
 
 def test_ui_trees_have_no_cjk():
-    ui = [
-        rel
-        for rel in _tracked_files()
-        if rel.replace("\\", "/").startswith(_UI_PREFIXES)
-    ]
+    ui = [rel for rel in _tracked_files() if rel.replace("\\", "/").startswith(_UI_PREFIXES)]
     assert ui, "expected tracked UI files under src/web and src/extension"
     hits = _cjk_hits(ui)
     assert hits == [], "CJK leftover in UI:\n" + "\n".join(hits)
