@@ -247,6 +247,8 @@ describe("formatDetectReadyLine", () => {
     expect(popup).toContain('ver === "1.2.5"');
     expect(popup).toContain("ok ${ver} <all_urls>");
     expect(popup).toContain("function bootPopup");
+    expect(popup).toContain("function autoDetectAndFill");
+    expect(popup).toContain("Sign in with passkey");
     expect(popup).toContain("function applySignedInChrome");
     expect(html).toContain("ok 1.2.5");
     expect(html).toContain('id="signed-pane"');

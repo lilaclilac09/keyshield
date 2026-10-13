@@ -60,10 +60,10 @@
 <body>
   <h1>Kilo · Bring Your Own Key (BYOK)</h1>
   <p class="sub">
-    Stand-in for <code>https://app.kilo.ai/byok</code>. Add Key → provider OpenRouter →
-    paste the saved <code>sk-or-</code> vault key. KeyShield must fill the empty API Key
-    box and leave the login password empty. Chrome cannot inject into a signed-out
-    Kilo SPA the same way — this page is the local BYOK fixture.
+    Stand-in for <code>https://app.kilo.ai/byok</code>. Add Key → pick a provider →
+    paste the saved vault key (OpenRouter <code>sk-or-</code>, NVIDIA <code>nvapi-</code>,
+    OpenAI, Anthropic, or Groq). KeyShield fills the empty API Key box after an
+    auto-approve session or passkey sign-in, and leaves the login password empty.
   </p>
 
   <div class="card" data-testid="kilo-byok-card">
@@ -72,7 +72,9 @@
     <select id="kilo-provider" aria-label="Provider">
       <option>Anthropic</option>
       <option selected>OpenRouter</option>
+      <option>NVIDIA</option>
       <option>OpenAI</option>
+      <option>Groq</option>
     </select>
     <label for="kilo-openrouter-key">OpenRouter API Key</label>
     <input
@@ -97,8 +99,9 @@
     Do not paste this file into zsh. Open it as
     <code>http://127.0.0.1:5173/kilo-byok-fill-demo.html</code>
     after Remove + Load unpacked <code>src/extension</code>. A stored OpenRouter
-    key auto-fills the empty BYOK boxes. Popup must show
-    <code>ok 1.2.4 &lt;all_urls&gt;</code>.
+    or NVIDIA key auto-fills the empty BYOK boxes when the popup has an
+    auto-approve session or a passkey sign-in. Popup must show
+    <code>ok 1.2.5 &lt;all_urls&gt;</code>.
   </p>
 </body>
 </html>

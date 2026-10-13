@@ -67,9 +67,9 @@ async function _getVaultKeyBytes() {
 
 // ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
 // cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
-// app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
+// app.kilo.ai/byok pastes a saved OpenRouter / NVIDIA / OpenAI / Anthropic / Groq key.
 const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'nvidia', 'groq'];
-const KILO_FILL_UPSTREAMS = ['openrouter'];
+const KILO_FILL_UPSTREAMS = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq'];
 const NVIDIA_FILL_UPSTREAMS = ['nvidia', 'openrouter'];
 const AI_FILL_UPSTREAMS = ['nvidia', 'openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
 const DOMAIN_TO_UPSTREAMS = {
@@ -194,9 +194,23 @@ function _isKiloFillHost(domain) {
   return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
 }
 
-function _isKiloByokPath(pathname) {
-  const path = String(pathname || '').toLowerCase();
-  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+function _isKiloByokPath(pathname, url) {
+  const blob = `${pathname || ''} ${url || ''}`.toLowerCase();
+  return blob.includes('/byok')
+    || blob.includes('kilo-byok-fill-demo')
+    || blob.includes('bring-your-own-key')
+    || blob.includes('bring_your_own_key')
+    || /[#?&=/]byok\b/.test(blob);
+}
+
+function _isKiloFillTabUrl(url) {
+  const raw = String(url || '');
+  if (/kilo-byok-fill-demo|kilo\.demo\.localhost/i.test(raw)) return true;
+  try {
+    const parsed = new URL(raw);
+    if (_isKiloFillHost(parsed.hostname) && _isKiloByokPath(parsed.pathname, raw)) return true;
+  } catch { /* noop */ }
+  return _isKiloByokPath(raw, raw);
 }
 
 function _isKiloKeyFetchContext(domain, pathname, url) {
@@ -204,12 +218,12 @@ function _isKiloKeyFetchContext(domain, pathname, url) {
   try {
     if (url) {
       const parsed = new URL(url);
-      if (parsed.protocol === 'chrome-extension:' && _isKiloByokPath(parsed.pathname || pathname)) return true;
+      if (parsed.protocol === 'chrome-extension:' && _isKiloByokPath(parsed.pathname || pathname, url)) return true;
     }
   } catch { /* noop */ }
   const host = _normalizeHostname(domain);
   const local = host === '127.0.0.1' || host === 'localhost';
-  return local && _isKiloByokPath(pathname);
+  return local && _isKiloByokPath(pathname, url);
 }
 
 function _isOwnExtensionFillDemo(url) {
@@ -220,7 +234,7 @@ function _isOwnExtensionFillDemo(url) {
     if (parsed.protocol !== 'chrome-extension:') return false;
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id
       && parsed.host !== chrome.runtime.id) return false;
-    return _isLocalFillDemoPath(parsed.pathname) || _isKiloByokPath(parsed.pathname);
+    return _isLocalFillDemoPath(parsed.pathname) || _isKiloByokPath(parsed.pathname, raw);
   } catch {
     return false;
   }
@@ -235,7 +249,7 @@ function _isFillableTabUrl(url) {
 /** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
 function _isCursorKeyFetchContext(domain, pathname, url) {
   if (_isCursorFillHost(domain)) return true;
-  if (_isOwnExtensionFillDemo(url) && !_isKiloByokPath(pathname) && !_isKiloByokPath(url)) return true;
+  if (_isOwnExtensionFillDemo(url) && !_isKiloByokPath(pathname, url) && !_isKiloByokPath(url, url)) return true;
   const host = _normalizeHostname(domain);
   const local = host === '127.0.0.1' || host === 'localhost';
   return local && _isLocalFillDemoPath(pathname);
@@ -317,6 +331,7 @@ async function pendingKeysForUpstreams(upstreams) {
 
 async function getKeysForDomain(domain, extra) {
   extra = extra || {};
+  await ensureFillSession();
   let upstreams = _upstreamsForDomain(domain);
   if (!upstreams.length && _isKiloKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = KILO_FILL_UPSTREAMS.slice();
@@ -873,26 +888,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabUrl = (tab && tab.url) || '';
           } catch { /* noop */ }
         }
-        if (tabUrl && !_isFillableTabUrl(tabUrl)) {
-          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or http://127.0.0.1:5173/cursor-settings-fill-demo.html.' });
-          return;
-        }
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId, allFrames: true },
-            files: ['content.js'],
-          });
-        } catch { /* already injected or restricted */ }
-        let filled = 0;
-        let last = null;
-        try {
-          last = await chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' });
-          if (last && typeof last.filled === 'number') filled = last.filled;
-        } catch (e) {
-          sendResponse({ ok: false, reason: 'no-content', detail: String(e) });
-          return;
-        }
-        sendResponse({ ok: !!(last && last.ok), filled, reason: last && last.reason, keys: last && last.keys });
+        const result = await fillTabNow(tabId, tabUrl);
+        sendResponse(result);
       } catch (e) {
         sendResponse({ ok: false, reason: 'exception', detail: String(e) });
       }
@@ -1165,6 +1162,7 @@ async function harvestTokenFromDashboardTabs() {
   } catch {
     try { tabs = await chrome.tabs.query({}); } catch { return null; }
   }
+  let foundUser = null;
   for (const tab of tabs) {
     if (!tab.id || !tab.url) continue;
     if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
@@ -1185,9 +1183,126 @@ async function harvestTokenFromDashboardTabs() {
         });
         return result.token;
       }
+      if (result && result.user && !foundUser) foundUser = result.user;
     } catch { /* restricted tab */ }
   }
+  if (foundUser) {
+    try { await chrome.storage.local.set({ ks_user: foundUser }); } catch { /* noop */ }
+  }
   return null;
+}
+
+async function ensureFillSession() {
+  let { token, user } = await getStoredToken();
+  if (!token) {
+    const harvested = await harvestTokenFromDashboardTabs();
+    if (harvested) {
+      const again = await getStoredToken();
+      token = again.token;
+      user = again.user;
+    }
+  }
+  if (token) {
+    try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  }
+  return { token, user };
+}
+
+const _kiloFillRetryAt = new Map();
+
+function scheduleKiloFillRetries(tabId) {
+  const now = Date.now();
+  const last = _kiloFillRetryAt.get(tabId) || 0;
+  if (now - last < 2500) return;
+  _kiloFillRetryAt.set(tabId, now);
+  [400, 1200, 2500, 5000].forEach((ms) => {
+    setTimeout(() => {
+      chrome.tabs.get(tabId).then((tab) => {
+        fillTabNow(tabId, (tab && tab.url) || '', { skipRetry: true }).catch(() => {});
+      }).catch(() => {});
+    }, ms);
+  });
+}
+
+async function fillTabNow(tabId, tabUrl, opts) {
+  if (!tabId) return { ok: false, reason: 'no-tab', filled: 0 };
+  if (tabUrl && !_isFillableTabUrl(tabUrl)) {
+    return {
+      ok: false,
+      reason: 'restricted-tab',
+      filled: 0,
+      detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or http://127.0.0.1:5173/cursor-settings-fill-demo.html.',
+    };
+  }
+  await ensureFillSession();
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: ['content.js'],
+    });
+  } catch { /* already injected or restricted */ }
+
+  let host = '';
+  let path = '';
+  try {
+    const parsed = new URL(tabUrl || '');
+    host = parsed.hostname;
+    path = parsed.pathname;
+  } catch { /* noop */ }
+
+  let keys = [];
+  try {
+    const fetched = await getKeysForDomain(host, { pathname: path, url: tabUrl || '' });
+    if (fetched && fetched.ok && Array.isArray(fetched.keys)) keys = fetched.keys;
+  } catch { keys = []; }
+
+  let filled = 0;
+  if (keys.length) {
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: injectedAutoFill,
+        args: [keys],
+      });
+      for (const row of injected || []) {
+        if (typeof row.result === 'number' && row.result > filled) filled = row.result;
+      }
+    } catch { /* restricted */ }
+  }
+
+  let last = null;
+  try {
+    last = await chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' });
+    if (last && typeof last.filled === 'number' && last.filled > filled) filled = last.filled;
+  } catch { /* leftover content */ }
+
+  try {
+    const worlds = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        try {
+          if (typeof window.__ksFillPageNow === 'function') return window.__ksFillPageNow();
+        } catch { /* noop */ }
+        return null;
+      },
+    });
+    for (const row of worlds || []) {
+      const result = row && row.result;
+      if (result && typeof result.filled === 'number' && result.filled > filled) filled = result.filled;
+    }
+  } catch { /* noop */ }
+
+  if ((!opts || !opts.skipRetry) && (_isKiloFillTabUrl(tabUrl) || _isKiloKeyFetchContext(host, path, tabUrl))) {
+    scheduleKiloFillRetries(tabId);
+  }
+
+  const ok = !!(last && last.ok) || filled > 0 || keys.length > 0;
+  return {
+    ok,
+    filled,
+    reason: last && last.reason,
+    keys: (last && last.keys) || keys.length,
+  };
 }
 
 function collectPageSecrets() {
@@ -1311,6 +1426,7 @@ function injectedAutoFill(keys) {
     return bits.join(' ').toLowerCase();
   }
   function match(h) {
+    if (/nvidia|nim|nvapi/.test(h)) return 'nvidia';
     if (/openrouter|sk-or/.test(h)) return 'openrouter';
     if (/anthropic|claude|sk-ant/.test(h)) return 'anthropic';
     if (/openai|chatgpt|gpt|sk-proj/.test(h)) return 'openai';
@@ -1321,10 +1437,10 @@ function injectedAutoFill(keys) {
   }
   function login(h) {
     if (/(sign[\s-]?in|log[\s-]?in|email|username|account password)/.test(h)) return true;
-    return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(h);
+    return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter|nvidia)\b/.test(h);
   }
   function looksKey(h) {
-    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/.test(h);
+    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bgroq\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/.test(h);
   }
   function setVal(el, value) {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -1357,8 +1473,8 @@ function injectedAutoFill(keys) {
     let key = wanted ? remaining.find((k) => k.upstream === wanted) : null;
     if (!key && (cursorish || kiloish || looksKey(h))) {
       const order = kiloish
-        ? ['openrouter', 'openai', 'anthropic', 'groq', 'cursor']
-        : ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+        ? ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor']
+        : ['cursor', 'openai', 'nvidia', 'openrouter', 'anthropic', 'groq'];
       for (const u of order) {
         key = remaining.find((k) => k.upstream === u);
         if (key) break;
@@ -1529,16 +1645,15 @@ async function injectDetectOnAllTabs(opts) {
 
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-    if (info.status !== 'complete') return;
-    if (!tab || !tab.url || !_isFillableTabUrl(tab.url)) return;
-    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_vault'], (out) => {
-      if (!out || (!out.ks_token && !out.ks_auto_store && !(out.ks_pending_vault || []).length)) return;
-      chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        files: ['content.js'],
-      }).then(() => {
-        chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' }).catch(() => {});
-      }).catch(() => {});
+    if (info.status !== 'complete' && !info.url) return;
+    const url = (tab && tab.url) || info.url || '';
+    if (!url || !_isFillableTabUrl(url)) return;
+    const kilo = _isKiloFillTabUrl(url);
+    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_vault', 'ks_user'], (out) => {
+      const pending = (out && out.ks_pending_vault) || [];
+      const hasAuth = !!(out && (out.ks_token || out.ks_auto_store || pending.length || out.ks_user));
+      if (!hasAuth && !kilo) return;
+      fillTabNow(tabId, url).catch(() => {});
     });
   });
 }

@@ -768,7 +768,8 @@ let   ksCachedKeys     = null;
 const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([type]), textarea, '
   + 'input[name*=key i], input[placeholder*=key i], input[placeholder*=API i], '
   + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
-  + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
+  + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i], '
+  + '[contenteditable="true"], [role="textbox"]';
 
 const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
@@ -809,9 +810,21 @@ function ksIsKiloFillHost(domain) {
   return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
 }
 
+function ksKiloRouteBlob() {
+  try {
+    return `${location.pathname || ''} ${location.hash || ''} ${location.search || ''} ${location.href || ''}`;
+  } catch {
+    return String((typeof location !== 'undefined' && location.pathname) || '');
+  }
+}
+
 function ksIsKiloByokPath(pathname) {
-  const path = String(pathname || location.pathname || '').toLowerCase();
-  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+  const blob = `${pathname || ''} ${ksKiloRouteBlob()}`.toLowerCase();
+  return blob.includes('/byok')
+    || blob.includes('kilo-byok-fill-demo')
+    || blob.includes('bring-your-own-key')
+    || blob.includes('bring_your_own_key')
+    || /[#?&=/]byok\b/.test(blob);
 }
 
 function ksIsNvidiaFillHost(domain) {
@@ -826,7 +839,7 @@ function ksIsNvidiaFillContext() {
 
 function ksIsKiloFillContext() {
   const host = location.hostname;
-  if (ksIsKiloFillHost(host)) return true;
+  if (ksIsKiloFillHost(host) && ksIsKiloByokPath(location.pathname)) return true;
   const local = host === '127.0.0.1' || host === 'localhost';
   if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
     return ksIsKiloByokPath(location.pathname);
@@ -947,7 +960,7 @@ function ksPickKeyForInput(el, keys) {
       || keys.find((k) => k.value)
       || null;
   }
-  if (ksIsKiloFillContext() || (ksIsKiloFillHost(location.hostname) && type === 'password')) {
+  if (ksIsKiloFillContext() || (ksIsKiloFillHost(location.hostname) && type === 'password' && ksIsKiloByokPath())) {
     return ksPreferredKiloFillKey(keys);
   }
   if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
@@ -978,7 +991,9 @@ function ksLooksLikeKiloApiBlank(el, hay, type) {
 function ksLooksLikeKeyInput(el) {
   if (!el) return false;
   if (el.closest && (el.closest('#keyshield-status-card') || el.closest('#keyshield-detection-notice'))) return false;
-  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return false;
+  const editable = !!(el.isContentEditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true'));
+  const textbox = el.getAttribute && el.getAttribute('role') === 'textbox';
+  if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && !editable && !textbox) return false;
   if (el.disabled || el.readOnly) return false;
   const type = (el.getAttribute('type') || '').toLowerCase();
   if (el.tagName === 'INPUT' && (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'submit')) {
@@ -991,7 +1006,7 @@ function ksLooksLikeKeyInput(el) {
   if (ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) {
     if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(hay)) return false;
     if (KS_KEY_FIELD_RE.test(hay)) return true;
-    return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA';
+    return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA' || editable || textbox;
   }
   if (ksLooksLikeLoginPassword(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
@@ -1022,6 +1037,14 @@ function ksCollectFillInputs(root) {
   return out;
 }
 
+function ksCurrentInputValue(el) {
+  if (!el) return '';
+  if (el.isContentEditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true')) {
+    return String(el.textContent || '').trim();
+  }
+  return String(el.value || '').trim();
+}
+
 function ksAutoFillEmptyInputs(keys) {
   if (!keys || !keys.length) return 0;
   const nodes = ksCollectFillInputs(document);
@@ -1029,7 +1052,7 @@ function ksAutoFillEmptyInputs(keys) {
   nodes.forEach((input) => {
     if (!ksLooksLikeKeyInput(input)) return;
     if (input.dataset && input.dataset.ksAutofilled) return;
-    if (String(input.value || '').trim().length > 0) return;
+    if (ksCurrentInputValue(input).length > 0) return;
     candidates.push(input);
   });
   const remaining = keys.filter((k) => k && k.value);
@@ -1044,7 +1067,7 @@ function ksAutoFillEmptyInputs(keys) {
     return true;
   };
   for (const input of candidates) {
-    if (String(input.value || '').trim()) continue;
+    if (ksCurrentInputValue(input)) continue;
     const hay = ksInputHaystack(input);
     const wanted = ksMatchUpstreamForHaystack(hay);
     if (!wanted) continue;
@@ -1052,7 +1075,7 @@ function ksAutoFillEmptyInputs(keys) {
     take(input, key);
   }
   for (const input of candidates) {
-    if (String(input.value || '').trim()) continue;
+    if (ksCurrentInputValue(input)) continue;
     const key = ksPickKeyForInput(input, remaining)
       || ((ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) ? remaining[0] : null);
     if (key) take(input, key);
@@ -1077,6 +1100,18 @@ function ksFlashGreen(el) {
 }
 
 function ksSetValue(el, value) {
+  if (el.isContentEditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true')) {
+    try { el.focus(); } catch { /* noop */ }
+    el.textContent = value;
+    try {
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: value, inputType: 'insertFromPaste' }));
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    ksFlashGreen(el);
+    return;
+  }
   // React/Vue use a native value setter that bypasses property descriptors.
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value');
@@ -1103,7 +1138,7 @@ function ksCollectHints() {
   nodes.forEach((el) => {
     if (!ksLooksLikeKeyInput(el)) return;
     hints.push(ksInputHaystack(el));
-    if (!String(el.value || '').trim()) blanks += 1;
+    if (!ksCurrentInputValue(el)) blanks += 1;
   });
   if (!hints.length) {
     const title = String(document.title || '');
@@ -1137,15 +1172,17 @@ async function ksFillPageNow() {
   }
   ksFillEnabled = true;
   ksCachedKeys = resp.keys;
-  ksScanForInputs();
-  let filled = ksAutoFillEmptyInputs(resp.keys);
-  if (!filled) {
-    await new Promise((resolve) => setTimeout(resolve, 120));
+  let filled = 0;
+  const waits = ksIsKiloFillContext() ? [0, 150, 400, 1200, 2500] : [0, 150];
+  for (const wait of waits) {
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
     ksScanForInputs();
-    filled = ksAutoFillEmptyInputs(resp.keys);
+    filled = Math.max(filled, ksAutoFillEmptyInputs(resp.keys));
+    if (filled) break;
   }
   return { ok: true, filled, keys: resp.keys.length };
 }
+try { window.__ksFillPageNow = ksFillPageNow; } catch { /* isolated world */ }
 
 function ksCloseDropdowns() {
   document.querySelectorAll('.ks-fill-dropdown').forEach((n) => n.remove());
@@ -1361,15 +1398,22 @@ function isKeyShieldDashboardHost() {
   try {
     let scanTimer = 0;
     const mo = new MutationObserver(() => {
-      if (!ksCachedKeys || !ksCachedKeys.length) return;
       if (scanTimer) return;
       scanTimer = window.setTimeout(() => {
         scanTimer = 0;
+        if (!ksCachedKeys || !ksCachedKeys.length) {
+          if (ksIsKiloFillContext()) refresh();
+          return;
+        }
         ksScanForInputs();
       }, 80);
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
   } catch { /* noop */ }
+  if (ksIsKiloFillHost(location.hostname) || ksIsKiloFillContext()) {
+    window.addEventListener('hashchange', refresh);
+    window.addEventListener('popstate', refresh);
+  }
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
       if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();
