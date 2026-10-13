@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText, AlertCircle } from 'lucide-react';
+import { Home, Key, Activity, Bot, Share2, Users, Settings, Terminal, BookOpen, ShieldCheck, FileText } from 'lucide-react';
 import { VaultItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AddKeyModal } from './components/AddKeyModal';
@@ -28,7 +28,6 @@ import { SessionsSection } from './components/sections/SessionsSection';
 import { SettingsSection } from './components/sections/SettingsSection';
 import { DeveloperSection } from './components/sections/DeveloperSection';
 import { DocsSection } from './components/sections/DocsSection';
-import { TroubleshootingSection } from './components/sections/TroubleshootingSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StoryJourney } from './components/StoryJourney';
@@ -40,27 +39,26 @@ const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' |
   { id: 'vault', label: 'Vault', icon: <Key size={16} />, group: 'focus' },
   { id: 'activity', label: 'Payments', icon: <Activity size={16} />, group: 'focus' },
   { id: 'developer', label: 'Developer', icon: <Terminal size={16} />, group: 'focus' },
-  { id: 'troubleshooting', label: 'Troubleshooting', icon: <AlertCircle size={16} />, group: 'focus' },
+  { id: 'docs', label: 'Docs & Troubleshooting', icon: <BookOpen size={16} />, group: 'focus' },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} />, group: 'more' },
   { id: 'sharing', label: 'Sharing', icon: <Share2 size={14} />, group: 'more' },
   { id: 'sessions', label: 'Sessions', icon: <Users size={14} />, group: 'more' },
   { id: 'settings', label: 'Settings', icon: <Settings size={14} />, group: 'more' },
-  { id: 'docs', label: 'Docs', icon: <BookOpen size={14} />, group: 'more' },
   { id: 'reports', label: 'Reports', icon: <FileText size={14} />, group: 'more' },
   { id: 'trust', label: 'X402 Trust', icon: <ShieldCheck size={14} />, group: 'more' },
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
-  home: { title: 'Home', subtitle: 'RPC and API call speed' },
+  home: { title: 'Home', subtitle: 'RPC, API timings, subscription, one-click buy or call' },
   vault: { title: 'Vault Management', subtitle: 'Saved keys — hidden until you reveal' },
-  activity: { title: 'Payments', subtitle: 'Purchases, size, wallet, explorer' },
+  activity: { title: 'Payments', subtitle: 'Portal, rail, explorer, receipt — grouped by wallet and human or agent' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
   settings: { title: 'Settings', subtitle: 'Account, security, and preferences' },
   developer: { title: 'Developer', subtitle: 'API tokens, SDK snippets, and endpoint reference' },
-  docs: { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
-  troubleshooting: { title: 'Troubleshooting', subtitle: 'Leftover 1.2.4 · missing session-bridge' },
+  docs: { title: 'Docs & Troubleshooting', subtitle: 'Chapters first · leftover 1.2.4 at the bottom' },
+  troubleshooting: { title: 'Docs & Troubleshooting', subtitle: 'Leftover 1.2.4 · missing session-bridge' },
   reports: { title: 'Reports', subtitle: 'Vault audit log — detections, autofills, and saved keys' },
   trust: { title: 'X402 Trust', subtitle: 'Trusted domains for x402 micropayment auto-pay' },
 };
@@ -90,6 +88,7 @@ const MainContent: React.FC = () => {
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeMs, setHomeMs] = useState<number | null>(null);
+  const [scrollTrouble, setScrollTrouble] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -111,11 +110,20 @@ const MainContent: React.FC = () => {
 
   const goSection = React.useCallback((id: string) => {
     if (id === 'trouble' || id === 'troubleshooting') {
-      setSection('troubleshooting');
+      setSection('docs');
+      setScrollTrouble(true);
       return;
     }
     setSection(id as Section);
   }, []);
+
+  useEffect(() => {
+    if (section !== 'docs' || !scrollTrouble) return;
+    const el = document.getElementById('docs-troubleshooting');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setScrollTrouble(false);
+  }, [section, scrollTrouble]);
 
   useEffect(() => {
     const onNav = (e: Event) => {
@@ -250,7 +258,7 @@ const MainContent: React.FC = () => {
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
               {section === 'developer' && <DeveloperSection vaultUpstreams={(home?.apis ?? []).map((row) => row.upstream)} />}
               {section === 'docs' && <DocsSection />}
-              {section === 'troubleshooting' && <TroubleshootingSection />}
+              {section === 'troubleshooting' && <DocsSection />}
               {section === 'reports' && <ReportPage />}
               {section === 'trust' && <X402TrustManager />}
             </div>

@@ -3,9 +3,9 @@ import { AlertCircle } from 'lucide-react';
 import { ExtTroubleCase } from '../ExtTroubleCase';
 import { LEFTOVER_121_CASE } from '../../lib/ext-trouble';
 
-/** Dedicated Troubleshooting tab. Leftover + stamp trunks never belong on Home or Docs. */
+/** Leftover + stamp trunks live at the bottom of Docs & Troubleshooting. Never on Home. */
 export const TroubleshootingSection: React.FC = () => (
-  <div className="space-y-8" data-testid="troubleshooting-section">
+  <div id="docs-troubleshooting" className="space-y-8" data-testid="troubleshooting-section">
     <div>
       <div className="flex items-center gap-2 text-[11px] text-white mb-1">
         <AlertCircle size={12} />TROUBLESHOOTING

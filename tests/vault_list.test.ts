@@ -98,7 +98,7 @@ describe("passkey is not required to save", () => {
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(vault).toContain("storeDetectedKey");
     expect(vault).not.toContain("ensureVerified");
-    expect(home).toContain("storeDetectedKey");
+    expect(home).not.toContain("storeDetectedKey");
     expect(home).not.toContain("ensureVerified");
     expect(home).not.toContain("Verifying with passkey");
     expect(hook).toContain("Detect + save never prompts passkey");

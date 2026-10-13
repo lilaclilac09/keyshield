@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plug } from 'lucide-react';
-import { getPasskeyTrust } from '../../lib/auth';
-import { describeRpcPing, SHOP_PROOF_CACHE_MS, SHOP_PROOF_WAN_MS } from '../../lib/shop-demo';
+import { apiFetch, getPasskeyTrust } from '../../lib/auth';
+import { describeRpcPing, formatUsd, SHOP_MPP_USD, SHOP_PROOF_CACHE_MS, SHOP_PROOF_WAN_MS } from '../../lib/shop-demo';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import {
   callKeychain,
@@ -9,6 +9,15 @@ import {
   type KeychainCallResult,
   type KeychainHome,
 } from '../../lib/keychain';
+import { buyMppShopSku } from '../../lib/mpp-shop';
+import { formatExpiry } from '../../lib/provider-catalog';
+import {
+  fetchAccountPurchases,
+  listPurchases,
+  summarizeConsumption,
+  type PurchaseRow,
+} from '../../lib/purchases';
+import type { PlanSnapshot } from '../PlanCatalog';
 
 interface Props {
   home: KeychainHome | null;
@@ -29,6 +38,14 @@ function fmt(n: number | null | undefined, digits = 4): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+function planExpiry(snap: PlanSnapshot | null, planName?: string): string {
+  const billing = snap?.plan.billing || (planName && planName !== 'Free' ? 'subscription+payg' : 'payg');
+  if (billing === 'payg') return 'PAYG · no calendar expiry';
+  const period = snap?.period;
+  if (period) return `Included credit period ${period} · renews next UTC month`;
+  return 'Monthly subscription · PAYG overage · no hard expiry';
+}
+
 const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, label, sub }) => (
   <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
     <div className="flex items-center gap-2">
@@ -47,12 +64,33 @@ export const HomeSection: React.FC<Props> = ({
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
   const [rpcPing, setRpcPing] = useState<string | null>(null);
+  const [account, setAccount] = useState<PurchaseRow[]>([]);
+  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
 
   const passkey = !!getPasskeyTrust();
   const vaultOpen = isVaultUnlocked();
   const wallet = home?.wallet;
   const apis = home?.apis ?? [];
   const conn = home?.connection;
+  const intervalSec = conn?.lowest_ttl_sec ?? home?.rpc_cache.lowest_ttl_sec ?? 2;
+  const firstApi = apis[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiFetch('/billing/plan')
+      .then(async (r) => (r.ok ? r.json() as Promise<PlanSnapshot> : null))
+      .then((snap) => { if (!cancelled && snap) setPlanSnap(snap); })
+      .catch(() => { /* unsigned */ });
+    void fetchAccountPurchases()
+      .then((rows) => { if (!cancelled) setAccount(rows); })
+      .catch(() => { /* unsigned */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const consume = useMemo(
+    () => summarizeConsumption(listPurchases([], account)),
+    [account],
+  );
 
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
@@ -69,13 +107,26 @@ export const HomeSection: React.FC<Props> = ({
     }
   };
 
+  const buyOnChain = () => {
+    setBusy('buy');
+    setMsg(null);
+    void buyMppShopSku()
+      .then((next) => {
+        setOk(true);
+        setMsg(`On-chain buy ${next.sku} · ${next.settleTx ? 'settled' : 'opened'} · detail in Payments`);
+        onRefresh();
+      })
+      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Buy failed'); })
+      .finally(() => setBusy(null));
+  };
+
   return (
     <div className="space-y-8" data-testid="home-metrics">
       <div>
-        <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency</p>
+        <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency · subscription</p>
         <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Speed</h2>
         <p className="text-[14px] text-[#8a96c2] mt-2">
-          Metrics only. Purchases, explorer links, and receipts live in Payments.
+          Metrics, saved API timings, and one-click buy or call. Purchase explorer links and receipts live in Payments.
         </p>
       </div>
 
@@ -97,8 +148,8 @@ export const HomeSection: React.FC<Props> = ({
             <p className="text-[13px] text-[#8a96c2] mt-2">Wallet ping</p>
           </div>
           <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{conn?.lowest_ttl_sec ?? 2}s</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">RPC TTL</p>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{intervalSec}s</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">RPC TTL / interval</p>
           </div>
         </div>
         <button
@@ -154,22 +205,39 @@ export const HomeSection: React.FC<Props> = ({
             <p className="text-[13px] text-[#8a96c2] mt-2">Upstream / cache</p>
           </div>
         </div>
-        {apis.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {apis.slice(0, 6).map((api) => (
-              <button
-                key={api.id}
-                type="button"
-                data-testid={`api-call-${api.upstream}`}
-                disabled={busy !== null}
-                onClick={() => void runCall(api.upstream)}
-                className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
-              >
-                {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
-              </button>
-            ))}
-          </div>
-        )}
+        <div data-testid="home-saved-apis" className="space-y-2">
+          <p className="text-[13px] text-[#8a96c2]">{apis.length} saved API{apis.length === 1 ? '' : 's'} · interval {intervalSec}s</p>
+          {apis.length === 0 ? (
+            <p className="text-[14px] text-[#5e6a91]">No stored APIs yet. Save a key in Vault, then Call from here.</p>
+          ) : (
+            apis.slice(0, 8).map((api) => {
+              const active = lastCall?.upstream === api.upstream;
+              const connecting = active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
+              return (
+                <div key={api.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3">
+                  <div>
+                    <p className="text-[15px] font-semibold text-white">{api.name || api.upstream}</p>
+                    <p className="text-[12px] text-[#8a96c2] mt-1">
+                      {api.upstream} · connect {active ? `${Math.round(lastCall.latency_ms)}ms` : 'not called'} · interval {intervalSec}s · {formatExpiry(api.expires_at)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[12px] ${active && lastCall?.live ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>{connecting}</span>
+                    <button
+                      type="button"
+                      data-testid={`api-call-${api.upstream}`}
+                      disabled={busy !== null}
+                      onClick={() => void runCall(api.upstream)}
+                      className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
+                    >
+                      {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
         {lastCall && (
           <p data-testid="call-latency" className="text-[16px] font-mono text-white">
             Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
@@ -178,6 +246,31 @@ export const HomeSection: React.FC<Props> = ({
         {msg && busy !== 'rpc' && (
           <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
         )}
+      </section>
+
+      <section data-testid="home-one-click" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-4">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">One-click</p>
+        <p className="text-[14px] text-[#8a96c2]">Buy makes an on-chain Solana Devnet MPP tx. Call hits the first saved API through the proxy.</p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            data-testid="home-buy-mpp"
+            disabled={busy !== null}
+            onClick={buyOnChain}
+            className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'buy' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} on-chain`}
+          </button>
+          <button
+            type="button"
+            data-testid="home-call-first"
+            disabled={busy !== null || !firstApi}
+            onClick={() => firstApi && void runCall(firstApi.upstream)}
+            className="h-12 px-5 rounded-xl border border-zinc-500 text-white text-[16px] font-semibold disabled:opacity-50"
+          >
+            {firstApi ? (busy === firstApi.upstream ? 'Calling…' : `Call ${firstApi.upstream}`) : 'Call API (none saved)'}
+          </button>
+        </div>
       </section>
 
       <section className="space-y-4">
@@ -196,6 +289,23 @@ export const HomeSection: React.FC<Props> = ({
             <p className="text-[28px] font-bold text-white leading-none mt-2">${fmt(home?.ledger.balance_usd, 2)}</p>
           </div>
         </div>
+        <div data-testid="home-consumption" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Human consumption</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.humanUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.humanCount} txs · detail in Payments</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Agent consumption</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.agentUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.agentCount} txs · detail in Payments</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Ledger credit</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.ledgerUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.ledgerCount} credits</p>
+          </div>
+        </div>
         {!walletConnected && onConnectWallet && (
           <button type="button" onClick={onConnectWallet} className="h-11 px-4 rounded-xl bg-white text-black text-[16px] font-semibold">Connect wallet</button>
         )}
@@ -206,6 +316,22 @@ export const HomeSection: React.FC<Props> = ({
             <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'Unlock to verify'} />
           </div>
           <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'} · ${wallet?.rpc === 'helius-cache' ? `cache ${wallet.cache}` : wallet?.rpc || '—'}`} />
+        </div>
+        <div data-testid="home-subscription" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Subscription</p>
+            <p className="text-[20px] font-semibold text-white mt-1">{planSnap?.plan.name || home?.plan?.name || 'Free'}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">{planExpiry(planSnap, home?.plan?.name)}</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Auto-approve</p>
+            <p className="text-[20px] font-semibold text-white mt-1">{conn?.autosign ? 'On' : 'Off'}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">
+              {conn?.autosign
+                ? `MPP autosign ${conn.autosign_pubkey ? `${conn.autosign_pubkey.slice(0, 4)}…${conn.autosign_pubkey.slice(-4)}` : 'loaded'}`
+                : 'Wallet must sign each stream open'}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-3">
           {onUnlock && !vaultOpen && (
@@ -230,7 +356,7 @@ export const HomeSection: React.FC<Props> = ({
             onClick={() => onGo('troubleshooting')}
             className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[16px] font-semibold"
           >
-            Troubleshooting →
+            Docs & Troubleshooting →
           </button>
         </div>
       </section>

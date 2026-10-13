@@ -2,7 +2,7 @@
  * Troubleshooting leftover case: Load unpacked 1.2.4 + github.com DNS fail.
  * Find the clone from Chrome internals (Preferences path) and a home walk —
  * do not hardcode ~/Downloads/privacy_hack/keyshield.
- * Render on the Troubleshooting tab only. Home and Docs have no leftover card
+ * Render at the bottom of Docs & Troubleshooting. Home has no leftover card
  * and no python stamp trunks.
  */
 

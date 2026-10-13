@@ -7,7 +7,7 @@ import {
   recordLedgerPurchase,
   type PurchaseRow,
 } from '../lib/purchases';
-import { buyMppShopSku } from '../lib/mpp-shop';
+import { buyMppShopSku, downloadMppReceipt } from '../lib/mpp-shop';
 import {
   describeBalanceChange,
   SHOP_CREDIT_USD,
@@ -81,7 +81,7 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
   return (
     <div className="space-y-6" data-testid="payments-ledger">
       <div>
-        <p className="text-[15px] text-[#8a96c2]">Size · type · rail · explorer</p>
+        <p className="text-[15px] text-[#8a96c2]">Portal · amount · explorer · human or agent</p>
         <h2 className="text-[28px] font-bold text-white mt-1">Payments</h2>
       </div>
       <PurchasesPanel

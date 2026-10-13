@@ -29,9 +29,11 @@ import {
 import {
   explorerLinksForReceipt,
   groupPurchases,
+  groupPurchasesByRoleAndWallet,
   listPurchases,
   mergePurchaseRows,
   mppPurchaseFromReceipt,
+  summarizeConsumption,
   LAST_LIVE_LEDGER,
   ON_CHAIN_CATEGORY,
   purchaseFromMppStream,
@@ -72,6 +74,10 @@ describe("shop demo helpers", () => {
     expect(home).toContain("SHOP_PROOF_CACHE_MS");
     expect(home).toContain("1 · RPC");
     expect(home).toContain("2 · API call");
+    expect(home).toContain("home-saved-apis");
+    expect(home).toContain("home-consumption");
+    expect(home).toContain("home-subscription");
+    expect(home).toContain("home-buy-mpp");
     expect(home).toContain("text-[40px]");
     expect(home).not.toContain("shop-proof-strip");
     expect(home).not.toContain("PurchasesPanel");
@@ -95,6 +101,10 @@ describe("shop demo helpers", () => {
     expect(panel).toContain("item.railLabel");
     expect(panel).toContain("item.sizeLabel");
     expect(panel).toContain("Download receipt");
+    expect(panel).toContain("groupPurchasesByRoleAndWallet");
+    expect(panel).toContain("item.portal");
+    expect(panel).toContain("item.whatChanged");
+    expect(panel).toContain("item.potentialUse");
     expect(panel).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
@@ -107,10 +117,17 @@ describe("shop demo helpers", () => {
     const grouped = groupPurchases(listPurchases([]));
     expect(grouped[0]?.category).toBe(ON_CHAIN_CATEGORY);
     expect(row.walletRole).toBe("user");
+    expect(row.walletAddress).toBe(LAST_LIVE_MPP_RECEIPT.owner);
+    expect(row.callKind).toBe("on-chain tx");
+    expect(row.portal).toContain("MPP");
+    expect(row.whatChanged).toContain("Owner USDC");
     expect(row.txType).toContain("MPP");
     expect(row.rail).toBe("solana-mpp");
     expect(row.sizeLabel).toContain("USDC");
     expect(row.receipt?.settleTx).toBeTruthy();
+    const byRole = groupPurchasesByRoleAndWallet(listPurchases([]));
+    expect(byRole.some((g) => g.role === "user" && g.wallets.some((w) => w.walletAddress === LAST_LIVE_MPP_RECEIPT.owner))).toBe(true);
+    expect(summarizeConsumption(listPurchases([])).humanUsd).toBeGreaterThan(0);
     expect(row.explorer.some((link) => link.href.includes("/address/") && link.label.startsWith("ATA"))).toBe(true);
   });
 

@@ -41,6 +41,8 @@ export interface PlanSnapshot {
   features?: string[];
   allows?: Record<string, boolean>;
   credited_usd?: number;
+  period?: string;
+  selected_at?: number | null;
 }
 
 const LEVEL_LABEL: Record<DeviceLevelId, string> = {

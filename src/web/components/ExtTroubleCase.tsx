@@ -12,7 +12,7 @@ import {
   OFFLINE_PATCH_PY,
 } from '../lib/ext-trouble';
 
-/** Leftover 1.2.4 + session-bridge stamp trunks. Lives on Troubleshooting only. */
+/** Leftover 1.2.4 + session-bridge stamp trunks. Lives at the bottom of Docs & Troubleshooting. */
 export const ExtTroubleCase: React.FC = () => (
   <Card variant="bordered" className="border-amber-900/50">
     <div id="ext-trouble-leftover-121" data-testid="ext-trouble-leftover-121" className="space-y-4">

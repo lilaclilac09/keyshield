@@ -116,13 +116,14 @@ describe("leftover 1.2.4 Troubleshooting tab", () => {
       resolve(root, "src/web/components/sections/TroubleshootingSection.tsx"),
       "utf8",
     );
-    expect(app).toContain("label: 'Troubleshooting'");
-    expect(app).toContain("TroubleshootingSection");
+    expect(app).toContain("label: 'Docs & Troubleshooting'");
     expect(app).toContain("section === 'troubleshooting'");
+    expect(app).toContain("docs-troubleshooting");
     expect(app).not.toContain("label: 'Trouble'");
     expect(app).not.toContain("TroubleSection");
-    expect(docs).not.toContain("ExtTroubleCase");
-    expect(docs).not.toContain("Leftover 1.2.4");
+    expect(docs).toContain("TroubleshootingSection");
+    expect(docs).toContain("docs-toc");
+    expect(docs).toContain("docs-ch-1");
     expect(home).not.toContain("ExtTroubleCase");
     expect(home).not.toContain("ext-trouble-leftover-121");
     expect(home).not.toContain("LOCAL_PULL_BRIDGE_SH");
@@ -133,9 +134,10 @@ describe("leftover 1.2.4 Troubleshooting tab", () => {
     expect(home).not.toContain("onGo('trouble')");
     expect(home).not.toContain("Docs → Troubleshooting");
     expect(home).toContain("onGo('troubleshooting')");
-    expect(home).toContain("Troubleshooting →");
+    expect(home).toContain("Docs & Troubleshooting →");
     expect(trouble).toContain("ExtTroubleCase");
     expect(trouble).toContain("LEFTOVER_121_CASE");
+    expect(trouble).toContain("docs-troubleshooting");
     expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);
     expect(JSON.stringify(LEFTOVER_121_CASE)).not.toMatch(/[\u4e00-\u9fff]/);
     expect("titleZh" in LEFTOVER_121_CASE).toBe(false);
@@ -148,12 +150,12 @@ describe("leftover 1.2.4 Troubleshooting tab", () => {
     expect(token).not.toMatch(/[\u4e00-\u9fff]/);
     expect(caseUi).toContain("ext-trouble-leftover-121");
     expect(caseUi).toContain("LEFTOVER_121_CASE.title");
-    expect(hint).toContain("Open Troubleshooting");
+    expect(hint).toContain("Open Docs & Troubleshooting");
     expect(hint).not.toContain("is on Home");
     expect(hint).not.toContain("Leftover 1.2.4 ↓");
     expect(hint).not.toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
-    expect(token).toContain("Open the Troubleshooting tab");
+    expect(token).toContain("Open the Docs & Troubleshooting tab");
     expect(token).not.toContain("missing session-bridge is on this page");
     expect(token).not.toContain("Register token");
     expect(token).not.toContain("Old v1");
