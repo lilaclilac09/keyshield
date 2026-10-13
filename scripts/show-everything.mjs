@@ -63,6 +63,36 @@ function describeRpcPing(firstMs, secondMs, cache, rpc) {
   ].join(" · ");
 }
 
+function extensionReport() {
+  const man = JSON.parse(read("src/extension/manifest.json"));
+  const popup = read("src/extension/popup.js");
+  const html = read("src/extension/popup.html");
+  const install = read("src/extension/INSTALL-LOCAL.md");
+  const leftover = man.version === "1.2.4";
+  return {
+    name: man.name,
+    version: man.version,
+    path: resolve(ROOT, "src/extension"),
+    leftover,
+    want: "1.2.5",
+    readyLine: "ok 1.2.5 <all_urls>",
+    latestLine: "1.2.5 · latest",
+    hasDefaultPopup: Boolean(man.action && man.action.default_popup),
+    autoDetect: popup.includes("autoDetectAndFill"),
+    autoFill: popup.includes("FILL_PAGE_NOW") && popup.includes("fillActiveTab"),
+    passkeySignin: popup.includes("Sign in with passkey"),
+    sessionAuto: popup.includes("ks_auto_store"),
+    installHasMacPath: install.includes("/Users/aileen/Downloads/privacy_hack/keyshield"),
+    installHasThreeLinePrint: install.includes("print(m['name'])") && install.includes("print(m['version'])"),
+    macClone: "/Users/aileen/Downloads/privacy_hack/keyshield",
+    loadUnpacked:
+      leftover
+        ? "leftover 1.2.4 — Remove every card, then Load unpacked 1.2.5"
+        : "Remove every KeyShield card, Load unpacked src/extension (1.2.5)",
+    htmlReady: html.includes("ok 1.2.5"),
+  };
+}
+
 function sourceMap() {
   const home = read("src/web/components/sections/HomeSection.tsx");
   const docs = read("src/web/components/sections/DocsSection.tsx");
@@ -132,6 +162,7 @@ const report = {
   home: null,
   docs: null,
   payments: null,
+  extension: null,
   rpcSim: null,
   source: null,
   errors: [],
@@ -139,6 +170,7 @@ const report = {
 
 try {
   report.source = sourceMap();
+  report.extension = extensionReport();
   report.home = {
     note: "Home is speed + saved API timings + human/agent consumption + passkey + subscription + one-click buy/call. Details live in Payments.",
     checks: report.source.home,
@@ -208,8 +240,23 @@ try {
   const srcOk = Object.values(report.source.home).every(Boolean)
     && Object.values(report.source.docs).every(Boolean)
     && Object.values(report.source.payments).every(Boolean);
+  const ext = report.extension;
+  const extOk = Boolean(
+    ext
+    && ext.name === "KeyShield — Sovereign Vault"
+    && ext.version === "1.2.5"
+    && !ext.leftover
+    && ext.hasDefaultPopup
+    && ext.autoDetect
+    && ext.autoFill
+    && ext.passkeySignin
+    && ext.sessionAuto
+    && ext.installHasMacPath
+    && ext.installHasThreeLinePrint
+    && ext.htmlReady,
+  );
   const rpcOk = health1.ok && health2.ok && slot1.ok && bal1.ok && cache.ok;
-  report.ok = srcOk && rpcOk;
+  report.ok = srcOk && extOk && rpcOk;
 } catch (err) {
   report.errors.push(String(err && err.stack ? err.stack : err));
 }
@@ -229,6 +276,10 @@ function line(title, obj) {
 line("HOME", report.home);
 line("DOCS", report.docs);
 line("PAYMENTS", report.payments);
+line("EXTENSION", report.extension);
 line("RPC SIM", report.rpcSim);
 console.log(`\nok ${report.ok}  wrote ${OUT}`);
+if (report.extension && report.extension.leftover) {
+  console.log("\nleftover 1.2.4 — Remove every KeyShield card, then Load unpacked 1.2.5");
+}
 if (!report.ok) process.exitCode = 1;

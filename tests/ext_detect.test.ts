@@ -242,6 +242,7 @@ describe("formatDetectReadyLine", () => {
     const html = readFileSync(resolve(root, "src/extension/popup.html"), "utf8");
     const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
     const localSignin = readFileSync(resolve(root, "src/extension/LOCAL-SIGNIN.md"), "utf8");
+    const installLocal = readFileSync(resolve(root, "src/extension/INSTALL-LOCAL.md"), "utf8");
     expect(man.name).toBe("KeyShield — Sovereign Vault");
     expect(man.version).toBe(DETECT_READY_VERSION);
     expect(manifestHasSessionBridge(man)).toBe(true);
@@ -308,6 +309,13 @@ describe("formatDetectReadyLine", () => {
     expect(localDetect).toContain("patch-leftover-bridge.py");
     expect(localSignin).toContain('"version": "1.2.4"');
     expect(readFileSync(resolve(root, "src/extension/patch-signed-popup.py"), "utf8")).toContain("signed-pane");
+    expect(installLocal).toContain("KeyShield — Sovereign Vault");
+    expect(installLocal).toContain("1.2.5");
+    expect(installLocal).toContain("/Users/aileen/Downloads/privacy_hack/keyshield");
+    expect(installLocal).toContain("print(m['name'])");
+    expect(installLocal).toContain("print(m['version'])");
+    expect(installLocal).toContain("Remove every KeyShield card");
+    expect(installLocal).toContain("ok 1.2.5 <all_urls>");
   });
 });
 
