@@ -43,6 +43,21 @@ import {
   x402Purchases,
 } from "../src/web/lib/purchases";
 
+describe("show-everything script", () => {
+  it("is zsh-safe and covers Home / Docs / Payments plus RPC", () => {
+    const script = readFileSync(resolve(__dirname, "../scripts/show-everything.mjs"), "utf8");
+    expect(script).toContain("node scripts/show-everything.mjs");
+    expect(script).toContain("Do not run eval");
+    expect(script).not.toContain("eval(");
+    expect(script).toContain("home-saved-apis");
+    expect(script).toContain("Docs & Troubleshooting");
+    expect(script).toContain("groupPurchasesByRoleAndWallet");
+    expect(script).toContain("getSlot");
+    expect(script).toContain("getBalance");
+    expect(script).toContain("/keychain/rpc-cache");
+  });
+});
+
 describe("shop demo helpers", () => {
   it("recognizes the extension Sign-in shop landing", () => {
     expect(wantsShopDemo("?ext=1&demo=shop")).toBe(true);
