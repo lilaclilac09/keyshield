@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
+import { Fingerprint, Loader2, AlertCircle, Play, Lock } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
-import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
+import { passkeyLogin, passwordLogin, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel, shouldShowPasskeyPanel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
@@ -16,11 +16,16 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState('');
   const [demoModel, setDemoModel] = useState('');
+  const [pwUser, setPwUser] = useState(() => readPasskeyUserIdFromStorage() ?? '');
+  const [pwSecret, setPwSecret] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState('');
 
   useEffect(() => {
     const sync = () => {
       const id = readPasskeyUserIdFromStorage();
       setUserId(id);
+      if (id) setPwUser((prev) => prev || id);
       // Jumping out (Phantom / Face ID / dead 5173) and back must restore
       // the preregistered-id button, not leave the wallet-only panel up.
       if (id) setPreferWallet(false);
@@ -91,6 +96,62 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   };
   const forgetDevice = () => { clearPasskeyTrust(); setUserId(null); setPreferWallet(true); };
 
+  const handlePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwLoading(true);
+    setPwError('');
+    try {
+      const { token, userId: signed } = await passwordLogin(pwUser, pwSecret);
+      setToken(token);
+      setWalletAddress(signed);
+      notifyAuthChanged();
+      onAuthenticated();
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : 'Password login failed');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const passwordForm = (
+    <form onSubmit={handlePassword} className="w-full space-y-3 text-left" data-testid="password-login">
+      <p className="text-[12px] text-[#8a96c2] text-center">Or open with your registered password</p>
+      <label className="block space-y-1.5">
+        <span className="text-[10px] text-[#8a96c2] uppercase tracking-wider">User ID</span>
+        <input
+          data-testid="password-userid"
+          autoComplete="username"
+          value={pwUser}
+          onChange={(ev) => setPwUser(ev.target.value)}
+          placeholder="Your registered user ID"
+          className="w-full px-4 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] text-white text-[14px] placeholder:text-[#5e6a91]"
+        />
+      </label>
+      <label className="block space-y-1.5">
+        <span className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Password</span>
+        <input
+          data-testid="password-secret"
+          type="password"
+          autoComplete="current-password"
+          value={pwSecret}
+          onChange={(ev) => setPwSecret(ev.target.value)}
+          placeholder="Registered password"
+          className="w-full px-4 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] text-white text-[14px] placeholder:text-[#5e6a91]"
+        />
+      </label>
+      <button
+        type="submit"
+        data-testid="password-open"
+        disabled={pwLoading || !pwUser.trim() || !pwSecret}
+        className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors"
+      >
+        {pwLoading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+        <span className="text-[13px] font-semibold uppercase tracking-wider">{pwLoading ? 'Opening\u2026' : 'Open app'}</span>
+      </button>
+      {pwError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words">{pwError}</p></div>}
+    </form>
+  );
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6 py-12">
       <div className="w-full max-w-lg flex flex-col items-center text-center">
@@ -110,6 +171,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                 </button>
               </div>
               {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
+              {passwordForm}
               <button type="button" onClick={() => setPreferWallet(true)} className="w-full text-center py-2 text-[12px] text-[#8a96c2] hover:text-white transition-colors">Use a different wallet instead</button>
               <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>
             </div>
@@ -126,6 +188,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                   {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}
                 </div>
               )}
+              <div className="mt-4">{passwordForm}</div>
               {userId && <button type="button" onClick={() => setPreferWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
             </>
           )}

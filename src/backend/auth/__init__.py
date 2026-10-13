@@ -9,6 +9,9 @@ from .session import (
     mark_deleted,
     is_deleted,
     extend_token,
+    has_password,
+    register_password,
+    verify_password,
 )
 from .session import _db as _session_db
 from .session import create  # backward compat alias
@@ -35,6 +38,9 @@ __all__ = [
     "mark_deleted",
     "is_deleted",
     "extend_token",
+    "has_password",
+    "register_password",
+    "verify_password",
     "_db",
     "create",
     "registration_options",

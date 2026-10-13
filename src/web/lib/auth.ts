@@ -355,6 +355,33 @@ export async function walletLogin(
   return res.json();
 }
 
+export async function passwordLogin(
+  userId: string,
+  password: string,
+): Promise<{ token: string; userId: string }> {
+  const id = userId.trim();
+  if (!id || !password) {
+    throw new Error('User ID and password required');
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: id, password }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/login');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Password login failed'));
+  }
+  const body = await res.json() as { token?: string; userId?: string };
+  if (!body.token) throw new Error('Password login failed');
+  return { token: body.token, userId: body.userId || id };
+}
+
 // ── Passkey helpers ───────────────────────────────────────────────────────
 
 /** Mark this device as passkey-trusted. userId is non-secret → localStorage.
