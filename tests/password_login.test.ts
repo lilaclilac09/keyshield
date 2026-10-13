@@ -3,14 +3,17 @@ import { describe, expect, it } from "vitest";
 import { readApiErrorMessage } from "../src/web/lib/passkey-id";
 
 describe("registered password opens the app", () => {
-  it("AuthScreen wires userId + password to passwordLogin", () => {
+  it("AuthScreen login page has no User ID / password / Open app form", () => {
     const src = readFileSync("src/web/components/AuthScreen.tsx", "utf8");
-    expect(src).toContain("passwordLogin");
-    expect(src).toContain('data-testid="password-login"');
-    expect(src).toContain('data-testid="password-userid"');
-    expect(src).toContain('data-testid="password-secret"');
-    expect(src).toContain('data-testid="password-open"');
-    expect(src).toContain("Open app");
+    expect(src).not.toContain("passwordLogin");
+    expect(src).not.toContain('data-testid="password-login"');
+    expect(src).not.toContain('data-testid="password-userid"');
+    expect(src).not.toContain('data-testid="password-secret"');
+    expect(src).not.toContain('data-testid="password-open"');
+    expect(src).not.toContain("Registered password");
+    expect(src).not.toContain("Open app");
+    expect(src).not.toContain("User ID");
+    expect(src).toContain('data-testid="passkey-signin"');
   });
 
   it("client login helper posts /auth/login", () => {

@@ -172,6 +172,7 @@ describe("flushPendingVaultHits", () => {
     expect(bridge).toContain("__ks_pending_vault");
     const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
     expect(bg).toContain("queuePendingVault");
+    expect(bg).toContain("flushPendingVaultToStore");
     expect(bg).toContain("ks_pending_vault");
     expect(bg).toContain("pendingApis");
   });
