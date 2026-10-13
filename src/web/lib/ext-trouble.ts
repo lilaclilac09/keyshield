@@ -1,8 +1,9 @@
 /**
- * Home leftover case: Load unpacked 1.2.4 + github.com DNS fail.
+ * Troubleshooting leftover case: Load unpacked 1.2.4 + github.com DNS fail.
  * Find the clone from Chrome internals (Preferences path) and a home walk —
  * do not hardcode ~/Downloads/privacy_hack/keyshield.
- * Render on Home only. Docs has no leftover card.
+ * Render on the Troubleshooting tab only. Home and Docs have no leftover card
+ * and no python stamp trunks.
  */
 
 export const LEFTOVER_121_CASE_ID = 'leftover-121';

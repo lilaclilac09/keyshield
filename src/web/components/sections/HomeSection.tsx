@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
-import { ExtTroubleCase } from '../ExtTroubleCase';
 import { PurchasesPanel } from '../PurchasesPanel';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import {
@@ -181,11 +180,7 @@ export const HomeSection: React.FC<Props> = ({
       </div>
 
       <ExtensionTokenCopy />
-      <ExtensionInstallHint
-        variant="home"
-        onOpenDocs={() => document.getElementById('ext-trouble-leftover-121')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-      />
-      <ExtTroubleCase />
+      <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('troubleshooting')} />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
@@ -475,7 +470,7 @@ export const HomeSection: React.FC<Props> = ({
           {[
             { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Docs', sub: 'Quickstart and architecture' },
+            { id: 'troubleshooting', title: 'Troubleshooting', sub: 'Extension Sign-in and detect' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
           ].map((row) => (
             <button

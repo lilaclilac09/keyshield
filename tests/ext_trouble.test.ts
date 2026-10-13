@@ -24,7 +24,7 @@ import {
 
 const root = resolve(__dirname, "..");
 
-describe("leftover 1.2.1 Home case", () => {
+describe("leftover 1.2.4 Troubleshooting tab", () => {
   it("finds a KeyShield ext folder and repo root without a hardcoded Downloads path", () => {
     expect(repoRootFromExt("/Users/me/src/keyshield/src/extension")).toBe("/Users/me/src/keyshield");
     expect(repoRootFromExt("/Users/me/extension")).toBe("/Users/me");
@@ -112,35 +112,57 @@ describe("leftover 1.2.1 Home case", () => {
     const hint = readFileSync(resolve(root, "src/web/components/ExtensionInstallHint.tsx"), "utf8");
     const token = readFileSync(resolve(root, "src/web/components/ExtensionTokenCopy.tsx"), "utf8");
     const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
+    const trouble = readFileSync(
+      resolve(root, "src/web/components/sections/TroubleshootingSection.tsx"),
+      "utf8",
+    );
+    expect(app).toContain("label: 'Troubleshooting'");
+    expect(app).toContain("TroubleshootingSection");
+    expect(app).toContain("section === 'troubleshooting'");
     expect(app).not.toContain("label: 'Trouble'");
-    expect(app).not.toContain("section === 'trouble'");
     expect(app).not.toContain("TroubleSection");
     expect(docs).not.toContain("ExtTroubleCase");
     expect(docs).not.toContain("Leftover 1.2.4");
-    expect(home).toContain("ExtTroubleCase");
-    expect(home).toContain("ext-trouble-leftover-121");
+    expect(home).not.toContain("ExtTroubleCase");
+    expect(home).not.toContain("ext-trouble-leftover-121");
+    expect(home).not.toContain("LOCAL_PULL_BRIDGE_SH");
+    expect(home).not.toContain("FIND_LOCAL_PATH_PY");
+    expect(home).not.toContain("OFFLINE_BRIDGE_STAMP_PY");
+    expect(home).not.toContain("OFFLINE_PATCH_PY");
+    expect(home).not.toContain("Leftover 1.2.4 · missing session-bridge");
     expect(home).not.toContain("onGo('trouble')");
     expect(home).not.toContain("Docs → Troubleshooting");
+    expect(home).toContain("onGo('troubleshooting')");
+    expect(home).toContain("title: 'Troubleshooting'");
+    expect(trouble).toContain("ExtTroubleCase");
+    expect(trouble).toContain("LEFTOVER_121_CASE");
+    expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);
     expect(JSON.stringify(LEFTOVER_121_CASE)).not.toMatch(/[\u4e00-\u9fff]/);
     expect("titleZh" in LEFTOVER_121_CASE).toBe(false);
     expect("symptomZh" in LEFTOVER_121_CASE).toBe(false);
     expect(caseUi).not.toMatch(/[\u4e00-\u9fff]/);
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     expect(docs).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(app).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(hint).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(token).not.toMatch(/[\u4e00-\u9fff]/);
     expect(caseUi).toContain("ext-trouble-leftover-121");
     expect(caseUi).toContain("LEFTOVER_121_CASE.title");
-    expect(hint).toContain("Leftover 1.2.4");
-    expect(hint).not.toContain("Trouble tab");
+    expect(hint).toContain("Open Troubleshooting");
+    expect(hint).not.toContain("is on Home");
+    expect(hint).not.toContain("Leftover 1.2.4 ↓");
     expect(hint).not.toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
-    expect(token).toContain("Leftover 1.2.4");
+    expect(token).toContain("Open the Troubleshooting tab");
+    expect(token).not.toContain("missing session-bridge is on this page");
     expect(token).not.toContain("Register token");
     expect(token).not.toContain("Old v1");
-    expect(token).not.toContain("Trouble tab");
     expect(OFFLINE_PATCH_PY).toContain("api.name||api.upstream");
     expect(OFFLINE_BRIDGE_STAMP_PY).toContain("api.name||api.upstream");
     expect(ZSH_SAFE_STAMP_PY).toContain("api.name||api.upstream");
     expect(localDetect).toContain("Chrome internals");
+    expect(localDetect).toContain("Troubleshooting leftover");
+    expect(localDetect).not.toContain("Home leftover");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
