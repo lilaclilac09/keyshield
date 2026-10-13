@@ -119,10 +119,12 @@ enough. The old cwd-relative one-liner fails from `$HOME`. Paste the
 directory (works from `~`). No `cd`. No `git pull`. No `eval`. No `$(...)`.
 
 Must print `KeyShield — Sovereign Vault` then `1.2.5` then that
-`src/extension` path then `READY 1.2.5`. If it prints `LEFTOVER 1.2.4`,
-you still have leftover files.
+`src/extension` path then `READY 1.2.5`. Line 2 is the Chrome card version.
+`toolbar then: ok 1.2.5` is after Load unpacked — ignore it if line 2 is `1.2.4`.
+The leftover patch writes `1.2.4` onto `src/extension`. The paste block writes
+`1.2.5` back. Load unpacked **only** that folder.
 
-Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
+Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Chrome card must say **1.2.5**. If it still says **1.2.4**, you loaded leftover. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
 
 ### 3. Pay for a stream (optional)
 

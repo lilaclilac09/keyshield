@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(__dirname, "..");
@@ -32,6 +32,9 @@ describe("mac_ready.py — any cwd", () => {
       expect(out).toContain("ok 1.2.5 <all_urls>");
       expect(out).toContain("1.2.5 · latest");
       expect(out).toContain("Remove every KeyShield card");
+      expect(out).toContain("LOAD UNPACKED ONLY");
+      expect(out).toContain("toolbar then:");
+      expect(out).toContain("do not run patch-leftover-bridge.py");
     }
   });
 
@@ -41,6 +44,9 @@ describe("mac_ready.py — any cwd", () => {
     expect(installLocal).toContain("print(m['name'])");
     expect(installLocal).toContain("print(m['version'])");
     expect(installLocal).toContain("READY 1.2.5");
+    expect(installLocal).toContain("LOAD UNPACKED ONLY");
+    expect(installLocal).toContain("patch-leftover-bridge.py");
+    expect(installLocal).toContain("toolbar then:");
     expect(installLocal).not.toContain("eval $(");
     expect(installLocal).not.toContain("python3 -c");
     expect(macReady).toContain("MAC_ROOT");
@@ -89,5 +95,43 @@ describe("mac_ready.py — any cwd", () => {
     }
     expect(err?.status).toBe(1);
     expect(String(err?.stderr || "")).toContain("NO CLONE");
+  });
+
+  it("restores leftover 1.2.4 stamp on product src/extension only", () => {
+    const tmp = join(tmpdir(), `ks-restore-125-${Date.now()}`);
+    const ext = join(tmp, "src/extension");
+    mkdirSync(ext, { recursive: true });
+    mkdirSync(join(tmp, "src/web"), { recursive: true });
+    writeFileSync(
+      join(ext, "manifest.json"),
+      JSON.stringify({
+        name: "KeyShield — Sovereign Vault",
+        version: "1.2.4",
+        host_permissions: ["<all_urls>"],
+        action: {},
+      }),
+    );
+    writeFileSync(join(ext, "popup.html"), '<div id="detect-ready">ok 1.2.4 &lt;all_urls&gt;</div>');
+    writeFileSync(join(ext, "popup.js"), 'if (ver === "1.2.4") ok = true;');
+    const leftoverOnly = join(tmpdir(), `ks-leftover-only-${Date.now()}`);
+    mkdirSync(leftoverOnly, { recursive: true });
+    writeFileSync(
+      join(leftoverOnly, "manifest.json"),
+      JSON.stringify({ name: "KeyShield — Sovereign Vault", version: "1.2.4", action: {} }),
+    );
+    const out = execFileSync(process.env.PYTHON || "python3", [script], {
+      cwd: tmpdir(),
+      encoding: "utf8",
+      env: { ...process.env, KS_ROOT: tmp },
+    });
+    const man = JSON.parse(readFileSync(join(ext, "manifest.json"), "utf8"));
+    expect(man.version).toBe("1.2.5");
+    expect(man.action.default_popup).toBe("popup.html");
+    expect(out).toContain("READY 1.2.5");
+    expect(out).toContain("restored 1.2.4 -> 1.2.5");
+    expect(out).toContain("LOAD UNPACKED ONLY");
+    expect(JSON.parse(readFileSync(join(leftoverOnly, "manifest.json"), "utf8")).version).toBe(
+      "1.2.4",
+    );
   });
 });
