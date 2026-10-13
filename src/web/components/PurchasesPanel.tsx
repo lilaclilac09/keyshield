@@ -32,9 +32,8 @@ export const PurchasesPanel: React.FC<Props> = ({
           <span data-testid="purchases-count" className="text-[13px] text-[#8a96c2]">{total} rows</span>
         </div>
         <p className="text-[14px] text-[#8a96c2] mt-2">
-          Every buy on this account, English only. Grouped by human or agent, then wallet address.
-          Each row shows portal, API or on-chain tx, amount, what changed, rail (Solana / Tempo / MPP / x402),
-          and a downloadable receipt.
+          Transparency dashboard. Every buy grouped by Human or Agent, then the full wallet.
+          Columns: purchased, amount, rail, Solana explorer. Ledger credits show no chain tx.
         </p>
       </div>
       {groups.map((group) => (
@@ -53,14 +52,34 @@ export const PurchasesPanel: React.FC<Props> = ({
             <p className="text-[14px] text-[#5e6a91]">None yet for {group.roleLabel.toLowerCase()}.</p>
           ) : (
             group.wallets.map((wallet) => (
-              <div key={`${group.role}-${wallet.walletAddress || wallet.walletLabel}`} className="space-y-2">
-                <p className="text-[13px] text-[#93b4ff] font-mono break-all">
+              <div
+                key={`${group.role}-${wallet.walletAddress || wallet.walletLabel}`}
+                className="rounded-xl border border-[#243365] bg-[#0e1631] overflow-hidden"
+              >
+                <p
+                  data-testid="purchase-wallet-full"
+                  className="text-[13px] text-[#93b4ff] font-mono break-all px-4 pt-4 pb-2"
+                >
                   {wallet.walletLabel}
-                  {wallet.walletAddress && wallet.walletAddress !== wallet.walletLabel ? ` · ${wallet.walletAddress}` : ''}
+                  {wallet.walletAddress ? ` · ${wallet.walletAddress}` : ''}
                 </p>
-                {wallet.items.map((item) => (
-                  <PurchaseCard key={item.id} item={item} />
-                ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-left border-t border-[#243365]">
+                    <thead>
+                      <tr className="text-[11px] uppercase tracking-wider text-[#8a96c2]">
+                        <th className="px-4 py-2 font-medium">Purchased</th>
+                        <th className="px-4 py-2 font-medium">Amount</th>
+                        <th className="px-4 py-2 font-medium">Rail</th>
+                        <th className="px-4 py-2 font-medium">Explorer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wallet.items.map((item) => (
+                        <PurchaseRowView key={item.id} item={item} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))
           )}
@@ -100,56 +119,49 @@ export const PurchasesPanel: React.FC<Props> = ({
   );
 };
 
-const PurchaseCard: React.FC<{ item: PurchaseRow }> = ({ item }) => (
-  <article
-    data-testid={`purchase-${item.id}`}
-    className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3"
-  >
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <p className="text-[28px] font-bold tracking-tight text-white leading-none">{item.sizeLabel || item.amountLabel}</p>
-        <p className="text-[12px] uppercase tracking-wider text-[#8a96c2] mt-2">Amount</p>
-      </div>
-      <div className="text-right space-y-1">
-        <p className="text-[12px] font-semibold uppercase tracking-wider text-emerald-400">{item.txType}</p>
-        <p className="text-[12px] text-[#8a96c2]">{item.railLabel}</p>
-        <p className="text-[12px] text-[#93b4ff]">{item.callKind}</p>
-      </div>
-    </div>
-    <div>
-      <p className="text-[16px] font-semibold text-white">{item.title}</p>
-      <p className="text-[13px] text-[#8a96c2] mt-1">{item.portal}</p>
-      <p className="text-[13px] text-[#8a96c2] mt-1">{item.detail}</p>
-    </div>
-    <div className="space-y-1">
-      <p className="text-[13px] text-white"><span className="text-[#8a96c2]">Use · </span>{item.potentialUse}</p>
-      <p className="text-[13px] text-white"><span className="text-[#8a96c2]">Changed · </span>{item.whatChanged}</p>
-    </div>
-    {item.explorer.length > 0 ? (
-      <div className="flex flex-col gap-1">
-        {item.explorer.map((link) => (
-          <a
-            key={link.href}
-            href={link.href}
-            target="_blank"
-            rel="noreferrer"
-            data-testid="purchase-explorer-link"
-            className="text-[12px] text-[#93b4ff] hover:underline font-mono break-all"
-          >
-            {link.href.includes('explorer.solana.com') ? `Explorer · ${link.label}` : link.label}
-          </a>
-        ))}
-      </div>
-    ) : (
-      <p className="text-[12px] text-[#5e6a91]">{item.kind === 'ledger' ? 'No chain tx' : '—'}</p>
-    )}
-    <button
-      type="button"
-      data-testid={`purchase-receipt-${item.id}`}
-      onClick={() => downloadPurchaseReceipt(item)}
-      className="text-[13px] text-[#93b4ff] hover:underline"
-    >
-      Download receipt
-    </button>
-  </article>
+const PurchaseRowView: React.FC<{ item: PurchaseRow }> = ({ item }) => (
+  <tr data-testid={`purchase-${item.id}`} className="border-t border-[#1c2748] align-top">
+    <td className="px-4 py-3">
+      <p data-testid="purchase-sku" className="text-[15px] font-semibold text-white">{item.title}</p>
+      <p className="text-[12px] text-[#8a96c2] mt-1">{item.portal}</p>
+      <p className="text-[12px] text-[#8a96c2] mt-1">{item.detail}</p>
+      <p className="text-[12px] text-white mt-2"><span className="text-[#8a96c2]">Changed · </span>{item.whatChanged}</p>
+      <button
+        type="button"
+        data-testid={`purchase-receipt-${item.id}`}
+        onClick={() => downloadPurchaseReceipt(item)}
+        className="text-[12px] text-[#93b4ff] hover:underline mt-2"
+      >
+        Download receipt
+      </button>
+    </td>
+    <td className="px-4 py-3 whitespace-nowrap">
+      <p data-testid="purchase-amount" className="text-[20px] font-bold text-white leading-none">{item.sizeLabel || item.amountLabel}</p>
+      <p className="text-[11px] uppercase tracking-wider text-[#8a96c2] mt-2">{item.txType}</p>
+    </td>
+    <td className="px-4 py-3">
+      <p data-testid="purchase-rail" className="text-[13px] text-white">{item.railLabel}</p>
+      <p className="text-[12px] text-[#93b4ff] mt-1">{item.callKind}</p>
+    </td>
+    <td className="px-4 py-3">
+      {item.explorer.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          {item.explorer.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="purchase-explorer-link"
+              className="text-[12px] text-[#93b4ff] hover:underline font-mono break-all"
+            >
+              {link.href.includes('explorer.solana.com') ? `Explorer · ${link.label}` : link.label}
+            </a>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[12px] text-[#5e6a91]">{item.kind === 'ledger' ? 'No chain tx' : '—'}</p>
+      )}
+    </td>
+  </tr>
 );
