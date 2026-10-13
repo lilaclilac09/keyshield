@@ -196,10 +196,16 @@ function distinguishStoreName({ upstream, value, name, domain, pageTitle }) {
   const prefix = raw.length < 10 ? '••••' : `${raw.slice(0, 6)}…${raw.slice(-4)}`;
   const given = String(name || '').trim();
   const up = String(upstream || '').toLowerCase();
+  const pageName = /^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(given)
+    && !/^(name|api key|key)$/i.test(given)
+    && given.toLowerCase() !== up
+    && given.toLowerCase() !== `${up} key`;
+  if (pageName) return given;
   const generic = !given
     || given.toLowerCase() === up
     || given.toLowerCase() === `${up} key`
-    || given.toLowerCase() === `${up}key`;
+    || given.toLowerCase() === `${up}key`
+    || given.toLowerCase().startsWith(`${up} rpc (`);
   if (given && !generic) return given.includes(prefix) ? given : `${given} · ${prefix}`;
   const parts = [upstream || 'API', prefix];
   const host = String(domain || '').trim();
@@ -463,7 +469,7 @@ async function queuePendingVault(hit) {
   } catch { /* noop */ }
 }
 
-async function directStore({ upstream, value, name, domain, pageTitle }) {
+async function directStore({ upstream, value, name, domain, pageTitle, expires_at }) {
   try {
     const { token } = await getStoredToken();
     if (!token) {
@@ -487,6 +493,7 @@ async function directStore({ upstream, value, name, domain, pageTitle }) {
       domain: domain || '',
       origin: domain || '',
       pageTitle: pageTitle || '',
+      expires_at: expires_at || undefined,
     });
 
     try {
@@ -917,6 +924,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         name,
         domain,
         pageTitle: payload.pageTitle || '',
+        expires_at: payload.expires_at || payload.expiresAt || '',
       });
       if (result.ok) {
         notify('KeyShield', `Saved ${upstream} key to KeyShield`);
@@ -1014,6 +1022,26 @@ function isHeliusDashboardHost(hostname) {
   const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
   return host === 'dashboard.helius.dev' || host === 'helius.dev' || host.endsWith('.helius.dev')
     || host === 'helius.xyz' || host.endsWith('.helius.xyz');
+}
+
+function harvestPageKeyLabels(text) {
+  const lines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < lines.length - 1; i++) {
+    const name = lines[i];
+    if (!/^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(name)) continue;
+    if (/^(name|api key|api keys|key|keys|expires|created|status)$/i.test(name)) continue;
+    const next = lines[i + 1];
+    const uuid = String(next).match(/[0-9a-f]{8}(?:-[0-9a-f*]{4}){3}-[0-9a-f*]{12}/i);
+    if (!uuid) continue;
+    out.push({ name, prefix: uuid[0].slice(0, 8).toLowerCase() });
+  }
+  return out;
+}
+
+function labelForHarvestedKey(key, labels) {
+  const prefix = String(key || '').slice(0, 8).toLowerCase();
+  return (labels || []).find((row) => prefix.startsWith(row.prefix))?.name || '';
 }
 
 function harvestVisibleKeysFromText(text, hostname, href) {
@@ -1369,6 +1397,7 @@ async function injectDetectOnAllTabs(opts) {
     const painted = [];
     if (page) {
       const keys = harvestVisibleKeysFromText(page.text, page.hostname, page.href);
+      const labels = harvestPageKeyLabels(page.text);
       for (const hit of keys) {
         let queued = false;
         try {
@@ -1380,6 +1409,7 @@ async function injectDetectOnAllTabs(opts) {
           const result = await directStore({
             upstream: hit.upstream,
             value: hit.key,
+            name: labelForHarvestedKey(hit.key, labels),
             domain: page.hostname,
             pageTitle: page.title || tab.title || '',
           });

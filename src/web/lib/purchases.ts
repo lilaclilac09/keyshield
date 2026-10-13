@@ -21,15 +21,27 @@ export type PurchaseKind = 'on-chain-mpp' | 'ledger' | 'solana-topup' | 'vault-a
 
 export type ExplorerLink = { label: string; href: string };
 
+export type WalletRole = 'user' | 'agent' | 'ledger' | 'none';
+
 export type PurchaseRow = {
   id: string;
   kind: PurchaseKind;
   category: string;
   title: string;
   amountLabel: string;
+  sizeLabel: string;
+  txType: string;
+  walletRole: WalletRole;
+  walletLabel: string;
   detail: string;
   explorer: ExplorerLink[];
 };
+
+function shortWallet(addr: string): string {
+  const text = String(addr || '').trim();
+  if (text.length <= 12) return text || '—';
+  return `${text.slice(0, 4)}…${text.slice(-4)}`;
+}
 
 export type LedgerPurchase = {
   id: string;
@@ -41,6 +53,7 @@ export type LedgerPurchase = {
 export type MppStreamPurchase = {
   id: number;
   agent_name?: string;
+  agent_pubkey?: string;
   upstream?: string;
   status?: string;
   settled_micro_usdc?: number;
@@ -109,6 +122,10 @@ export function mppPurchaseFromReceipt(receipt: MppShopReceipt): PurchaseRow {
     category: ON_CHAIN_CATEGORY,
     title: receipt.sku,
     amountLabel: `${formatMicroUsdc(receipt.captureMicroUsdc)} USDC`,
+    sizeLabel: `${formatMicroUsdc(receipt.captureMicroUsdc)} USDC`,
+    txType: 'On-chain MPP settle',
+    walletRole: 'user',
+    walletLabel: receipt.owner ? `User · ${shortWallet(receipt.owner)}` : 'User wallet',
     detail: `${receipt.network}${cu}`,
     explorer: explorerLinksForReceipt(receipt),
   };
@@ -132,6 +149,14 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     category: ON_CHAIN_CATEGORY,
     title: name,
     amountLabel: `${formatMicroUsdc(settled)} USDC`,
+    sizeLabel: `${formatMicroUsdc(settled)} USDC`,
+    txType: 'On-chain MPP stream',
+    walletRole: 'agent',
+    walletLabel: stream.agent_name
+      ? `Agent · ${stream.agent_name}`
+      : stream.agent_pubkey
+        ? `Agent · ${shortWallet(stream.agent_pubkey)}`
+        : 'Agent wallet',
     detail: `${stream.status || 'open'} · ${stream.total_calls || 0} calls · ${upstream}`,
     explorer,
   };
@@ -146,6 +171,10 @@ export function purchaseFromSolanaTopup(row: SolanaTopup): PurchaseRow | null {
     category: SOLANA_TOPUP_CATEGORY,
     title: `${row.asset || 'SOL'} top-up`,
     amountLabel: formatUsd(Number(row.amount_usd || 0)),
+    sizeLabel: formatUsd(Number(row.amount_usd || 0)),
+    txType: 'Solana top-up',
+    walletRole: 'user',
+    walletLabel: 'User wallet',
     detail: `${row.chain || 'solana'} · on-chain credit`,
     explorer: [{ label: `Tx ${shortSig(sig)}`, href: explorerTx(sig) }],
   };
@@ -210,6 +239,10 @@ export function ledgerPurchaseRow(row: LedgerPurchase): PurchaseRow {
     category: LEDGER_CATEGORY,
     title: row.name,
     amountLabel: formatUsd(row.amountUsd),
+    sizeLabel: formatUsd(row.amountUsd),
+    txType: 'Ledger credit',
+    walletRole: 'ledger',
+    walletLabel: 'Ledger · no chain wallet',
     detail: 'Proxy ledger · no Solana tx',
     explorer: [],
   };
@@ -225,6 +258,10 @@ export function vaultPurchases(apis: KeychainStoredApi[]): PurchaseRow[] {
       category: `${family} APIs`,
       title: card.title,
       amountLabel: card.subtitle,
+      sizeLabel: card.subtitle,
+      txType: 'Stored API',
+      walletRole: 'none',
+      walletLabel: '—',
       detail: card.meta,
       explorer: [],
     };
@@ -251,14 +288,13 @@ export function mergePurchaseRows(rows: PurchaseRow[]): PurchaseRow[] {
 }
 
 export function listPurchases(
-  apis: KeychainStoredApi[] = [],
+  _apis: KeychainStoredApi[] = [],
   extra: PurchaseRow[] = [],
 ): PurchaseRow[] {
   return mergePurchaseRows([
     ...loadMppReceiptHistory().map(mppPurchaseFromReceipt),
     ...extra,
     ...loadLedgerPurchases().map(ledgerPurchaseRow),
-    ...vaultPurchases(apis),
   ]);
 }
 

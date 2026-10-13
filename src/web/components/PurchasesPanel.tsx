@@ -22,56 +22,77 @@ export const PurchasesPanel: React.FC<Props> = ({
   const groups = groupPurchases(rows);
   const total = rows.length;
   return (
-    <div data-testid="purchases-panel" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
+    <div data-testid="purchases-panel" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-6">
       <div className="flex items-center gap-2">
         <Receipt size={18} className="text-white" />
         <h3 className="text-[20px] font-semibold text-white">Purchases</h3>
         <span data-testid="purchases-count" className="text-[13px] text-[#8a96c2]">{total} on this account</span>
       </div>
       <p className="text-[14px] text-[#8a96c2]">
-        Every buy, grouped: on-chain MPP, Solana top-up, ledger credit, stored APIs.
-        On-chain rows open Solana Devnet explorer. Buy again in each category.
+        Every buy, grouped in English: on-chain MPP, Solana top-up, ledger credit.
+        Size, type, user vs agent wallet, and Solana Devnet explorer links.
       </p>
       {groups.map((group) => (
         <section
           key={group.category}
           data-testid={`purchases-cat-${group.category.replace(/\s+/g, '-').toLowerCase()}`}
-          className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3"
+          className="space-y-3"
         >
-          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">{group.category}</p>
+          <p className="text-[12px] uppercase tracking-wider text-[#8a96c2]">{group.category}</p>
           {group.items.length === 0 ? (
             <p className="text-[14px] text-[#5e6a91]">None yet in this category.</p>
-          ) : group.items.map((item) => (
-            <div
-              key={item.id}
-              data-testid={`purchase-${item.id}`}
-              className="rounded-lg border border-[#243365] px-3 py-3 space-y-1"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-[16px] font-semibold text-white">{item.title}</p>
-                <p className="text-[14px] text-emerald-400">{item.amountLabel}</p>
-              </div>
-              <p className="text-[13px] text-[#8a96c2]">{item.detail}</p>
-              {item.explorer.length > 0 ? (
-                <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
-                  {item.explorer.map((link) => (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      data-testid="purchase-explorer-link"
-                      className="text-[12px] text-[#93b4ff] hover:underline font-mono"
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-[#243365]">
+              <table className="w-full min-w-[720px] text-left">
+                <thead className="bg-[#0d0d0d] text-[10px] uppercase tracking-wider text-[#8a96c2]">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Item</th>
+                    <th className="px-3 py-2 font-semibold">Type</th>
+                    <th className="px-3 py-2 font-semibold">Size</th>
+                    <th className="px-3 py-2 font-semibold">Wallet</th>
+                    <th className="px-3 py-2 font-semibold">On-chain</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.items.map((item) => (
+                    <tr
+                      key={item.id}
+                      data-testid={`purchase-${item.id}`}
+                      className="border-t border-[#243365]/40 bg-[#0e1631]"
                     >
-                      Explorer · {link.label}
-                    </a>
+                      <td className="px-3 py-3 align-top">
+                        <p className="text-[14px] font-semibold text-white">{item.title}</p>
+                        <p className="text-[12px] text-[#8a96c2] mt-0.5">{item.detail}</p>
+                      </td>
+                      <td className="px-3 py-3 align-top text-[13px] text-[#e8ecff]">{item.txType}</td>
+                      <td className="px-3 py-3 align-top text-[14px] text-emerald-400 font-semibold">{item.sizeLabel || item.amountLabel}</td>
+                      <td className="px-3 py-3 align-top text-[13px] text-[#93b4ff]">{item.walletLabel}</td>
+                      <td className="px-3 py-3 align-top">
+                        {item.explorer.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {item.explorer.map((link) => (
+                              <a
+                                key={link.href}
+                                href={link.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                data-testid="purchase-explorer-link"
+                                className="text-[12px] text-[#93b4ff] hover:underline font-mono"
+                              >
+                                Explorer · {link.label}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[12px] text-[#5e6a91]">{item.kind === 'ledger' ? 'No chain tx' : '—'}</p>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              ) : item.kind === 'ledger' ? (
-                <p className="text-[12px] text-[#5e6a91]">No chain tx</p>
-              ) : null}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
           {group.category === ON_CHAIN_CATEGORY && (
             <button
               type="button"

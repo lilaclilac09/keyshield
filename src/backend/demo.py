@@ -206,7 +206,6 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
     from .routes import vault as vault_mod
 
     now = time.time()
-    label = kc.distinguish_name(upstream=upstream, raw=api_key)
     tags = kc.catalog_tags(upstream, ["keychain"])
     vault_mod._DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with vault_mod._db() as conn:
@@ -215,6 +214,14 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
             "ORDER BY created_at DESC LIMIT 1",
             (user_id, upstream, api_key),
         ).fetchone()
+        taken = [
+            str(row["name"] or "")
+            for row in conn.execute(
+                "SELECT name FROM vault_items WHERE user_id = ? AND id != ?",
+                (user_id, existing[0] if existing else ""),
+            ).fetchall()
+        ]
+        label = kc.vault_item_name(upstream=upstream, raw=api_key, taken=taken)
         if existing:
             conn.execute(
                 "UPDATE vault_items SET updated_at = ?, name = ?, tags = ? WHERE id = ? AND user_id = ?",

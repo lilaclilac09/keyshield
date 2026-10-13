@@ -1,33 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Key, Plug, ArrowRight } from 'lucide-react';
 import { ExtensionInstallHint } from '../ExtensionInstallHint';
 import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
-import { PurchasesPanel } from '../PurchasesPanel';
-import { apiFetch, getPasskeyTrust } from '../../lib/auth';
-import {
-  describeBalanceChange,
-  describeRpcPing,
-  SHOP_CREDIT_USD,
-  SHOP_ITEM_NAME,
-  SHOP_MPP_USD,
-  SHOP_PROOF_CACHE_MS,
-  SHOP_PROOF_CLAWBACK_IX,
-  SHOP_PROOF_SETTLE_CU,
-  SHOP_PROOF_SETTLE_IX,
-  SHOP_PROOF_WAN_MS,
-  wantsShopDemo,
-} from '../../lib/shop-demo';
+import { getPasskeyTrust } from '../../lib/auth';
+import { describeRpcPing, SHOP_PROOF_CACHE_MS, SHOP_PROOF_WAN_MS } from '../../lib/shop-demo';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
-import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
-import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
-import {
-  fetchAccountPurchases,
-  listPurchases,
-  recordLedgerPurchase,
-  type PurchaseRow,
-} from '../../lib/purchases';
-import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
-import { MppReceiptCard } from '../MppReceiptCard';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
 import {
@@ -77,10 +54,7 @@ export const HomeSection: React.FC<Props> = ({
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
-  const [receipt, setReceipt] = useState<MppShopReceipt>(() => loadStoredMppReceipt());
-  const [purchasesTick, setPurchasesTick] = useState(0);
-  const [accountPurchases, setAccountPurchases] = useState<PurchaseRow[]>([]);
-  const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
+  const [rpcPing, setRpcPing] = useState<string | null>(null);
 
   const detected = detectUpstream(paste);
   const passkey = !!getPasskeyTrust();
@@ -88,56 +62,6 @@ export const HomeSection: React.FC<Props> = ({
   const wallet = home?.wallet;
   const apis = home?.apis ?? [];
   const conn = home?.connection;
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchAccountPurchases().then((rows) => {
-      if (!cancelled) setAccountPurchases(rows);
-    });
-    return () => { cancelled = true; };
-  }, [purchasesTick, home?.ledger.balance_usd, home?.wallet.address]);
-
-  const purchases = useMemo(
-    () => listPurchases(apis, accountPurchases),
-    [apis, accountPurchases, purchasesTick, receipt],
-  );
-
-  const buyMpp = () => {
-    setBusy('mpp');
-    setMsg(null);
-    void buyMppShopSku()
-      .then((next) => {
-        setReceipt(next);
-        setPurchasesTick((n) => n + 1);
-        setOk(true);
-        setMsg(`Bought ${next.sku} · receipt ready`);
-        downloadMppReceipt(next, 'html');
-        onRefresh();
-      })
-      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
-      .finally(() => setBusy(null));
-  };
-
-  const buyLedger = () => {
-    const before = home?.ledger.balance_usd ?? 0;
-    setBusy('shop');
-    setMsg(null);
-    void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
-      .then(async (r) => {
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error((d as { detail?: string }).detail ?? 'Shop credit failed');
-        const after = typeof (d as { balance_usd?: number }).balance_usd === 'number'
-          ? (d as { balance_usd: number }).balance_usd
-          : before + SHOP_CREDIT_USD;
-        recordLedgerPurchase(SHOP_CREDIT_USD, SHOP_ITEM_NAME);
-        setPurchasesTick((n) => n + 1);
-        setOk(true);
-        setMsg(`Bought ${SHOP_ITEM_NAME} (ledger, no Solana tx) · ${describeBalanceChange(before, after).label}`);
-        onRefresh();
-      })
-      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
-      .finally(() => setBusy(null));
-  };
 
   const savePaste = async () => {
     const hits = extractDetectedKeys(paste);
@@ -175,7 +99,7 @@ export const HomeSection: React.FC<Props> = ({
   return (
     <div className="space-y-8">
       <div>
-        <p className="text-[15px] text-[#8a96c2]">Balance · stored APIs · connection</p>
+        <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency · connection</p>
         <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Keychain</h2>
       </div>
 
@@ -197,55 +121,40 @@ export const HomeSection: React.FC<Props> = ({
           <p className="text-[15px] text-[#5e6a91] mt-3">{wallet?.rpc === 'helius-cache' ? `RPC cache ${wallet.cache}` : wallet?.rpc === 'public' ? 'Public RPC' : 'Waiting for address'}</p>
         </div>
         <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
-          <p className="text-[16px] text-[#8a96c2]">Credit</p>
-          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">${fmt(home?.ledger.balance_usd, 2)}</p>
-          <p className="text-[15px] text-[#5e6a91] mt-3">Proxy ledger · free ${fmt(home?.ledger.free_credit_usd, 2)}</p>
+          <p className="text-[16px] text-[#8a96c2]">API call</p>
+          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">
+            {lastCall ? `${Math.round(lastCall.latency_ms)}ms` : '—'}
+          </p>
+          <p className="text-[15px] text-[#5e6a91] mt-3">{lastCall ? `${lastCall.upstream} · cache ${lastCall.cache}` : 'Paste a key and Call'}</p>
         </div>
       </div>
 
-      <div data-testid="shop-proof-strip" className="rounded-2xl border border-emerald-900/50 bg-emerald-950/20 px-5 py-5 space-y-4">
-        <p className="text-[13px] uppercase tracking-wider text-emerald-400">How to buy an API · Solana Devnet MPP</p>
-        <p className="text-[18px] text-white leading-snug">
-          Click <strong>Buy ${SHOP_MPP_USD.toFixed(2)}</strong> · get a receipt. Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix {SHOP_PROOF_SETTLE_IX}).
-          That receipt is the paid API proof — not Raydium / $X402 / $M32.
-        </p>
+      <div data-testid="home-metrics-strip" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-4">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">RPC and API speed</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_SETTLE_CU.toLocaleString()} CU</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">MppSettle compute</p>
-          </div>
-          <div>
             <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_CACHE_MS}ms</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">cache vs {SHOP_PROOF_WAN_MS}ms WAN</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">RPC cache</p>
           </div>
           <div>
-            <p className="text-[20px] font-semibold text-white leading-tight">WebAuthn PRF</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">device-bound unwrap</p>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_WAN_MS}ms</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">RPC WAN</p>
           </div>
           <div>
-            <p className="text-[20px] font-semibold text-white leading-tight">ForceClawback ix {SHOP_PROOF_CLAWBACK_IX}</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">on-chain recover</p>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+              {home?.latency?.wallet_ms != null ? `${Math.round(home.latency.wallet_ms)}ms` : '—'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Wallet RPC ping</p>
+          </div>
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+              {lastCall ? `${Math.round(lastCall.latency_ms)}ms` : homeMs != null ? `${Math.round(homeMs)}ms` : '—'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Last API / health</p>
           </div>
         </div>
-        <button
-          type="button"
-          data-testid="shop-buy-mpp"
-          disabled={busy !== null}
-          onClick={buyMpp}
-          className="h-12 px-6 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
-        >
-          {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} · get receipt`}
-        </button>
+        {rpcPing && <p data-testid="shop-msg" className="text-[15px] text-emerald-400">{rpcPing}</p>}
       </div>
-
-      <PurchasesPanel
-        rows={purchases}
-        busy={busy !== null}
-        buyMppLabel={busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)}`}
-        buyLedgerLabel={busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
-        onBuyMpp={buyMpp}
-        onBuyLedger={buyLedger}
-      />
 
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -315,34 +224,13 @@ export const HomeSection: React.FC<Props> = ({
         </div>
       </div>
 
-      <div
-        data-testid="shop-demo-card"
-        className={`rounded-2xl border bg-[#131c39] p-5 space-y-4 ${highlightShop ? 'border-emerald-700/80' : 'border-[#243365]'}`}
-      >
+      <div data-testid="home-rpc-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">Shop · receipt</h3>
+          <Plug size={18} className="text-white" />
+          <h3 className="text-[20px] font-semibold text-white">RPC speed</h3>
         </div>
-        <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-2">
-          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">For sale · Solana Devnet</p>
-          <p className="text-[22px] font-semibold text-white">{formatMicroUsdc(receipt.captureMicroUsdc)} USDC metered call</p>
-          <p className="text-[15px] text-[#8a96c2]">
-            Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix 26).
-            Not Raydium / Pump.fun <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
-          </p>
-          <p className="text-[28px] font-bold text-white" data-testid="shop-balance">${SHOP_MPP_USD.toFixed(2)}</p>
-        </div>
-        <MppReceiptCard receipt={receipt} />
+        <p className="text-[15px] text-[#8a96c2]">Ping Helius cache vs WAN. Purchases and explorer live in Payments.</p>
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            data-testid="shop-buy"
-            disabled={busy !== null}
-            onClick={buyLedger}
-            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
-          >
-            {busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
-          </button>
           <button
             type="button"
             data-testid="shop-rpc"
@@ -358,8 +246,10 @@ export const HomeSection: React.FC<Props> = ({
                   const t1 = performance.now();
                   const second = await fetchKeychainHome(addr);
                   const ms2 = performance.now() - t1;
+                  const line = describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc);
                   setOk(true);
-                  setMsg(describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc));
+                  setRpcPing(line);
+                  setMsg(line);
                   onRefresh();
                 })
                 .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'RPC ping failed'); })
@@ -377,46 +267,15 @@ export const HomeSection: React.FC<Props> = ({
             Payments →
           </button>
         </div>
-        {msg && (busy === 'mpp' || busy === 'shop' || busy === 'rpc' || !lastCall) && (
+        {msg && busy === 'rpc' && (
           <p data-testid="shop-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
         )}
-        <div data-testid="shop-bazaar" className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3">
-          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">Third-party x402 · probed</p>
-          <p className="text-[14px] text-[#8a96c2]">
-            LIVE means Solana Devnet Circle USDC. KeyShield cannot settle these 402s.
-            Not Raydium / <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
-          </p>
-          {[...BAZAAR_OFFERS, ...PAYAI_LIVE_EXTRAS].map((offer) => (
-            <div
-              key={offer.id}
-              data-testid={`shop-bazaar-${offer.id}`}
-              className="rounded-lg border border-[#243365] px-3 py-3 space-y-1"
-            >
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className={`text-[11px] font-semibold uppercase ${offer.status === 'LIVE' ? 'text-emerald-400' : 'text-[#f87171]'}`}>
-                  {offer.status.replace('_', ' ')}
-                </span>
-                <span className="text-[15px] font-semibold text-white">{offer.name}</span>
-                {offer.amountLabel && <span className="text-[13px] text-[#a8b3d8]">{offer.amountLabel}</span>}
-              </div>
-              <p className="text-[13px] text-[#8a96c2]">{offer.method} · {offer.detail}</p>
-              <a
-                href={offer.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[12px] text-[#93b4ff] hover:underline break-all"
-              >
-                {offer.url}
-              </a>
-            </div>
-          ))}
-        </div>
       </div>
 
       <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">OpenRouter · NVIDIA Nemotron</h3>
+          <Key size={18} className="text-white" />
+          <h3 className="text-[20px] font-semibold text-white">API call</h3>
         </div>
         <p className="text-[15px] text-[#8a96c2]">
           Paste your own <code className="text-white">sk-or-…</code> from openrouter.ai/keys, Save to the vault, then Call.
@@ -468,7 +327,7 @@ export const HomeSection: React.FC<Props> = ({
         <h3 className="text-[20px] font-semibold text-white mb-3">More</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
-            { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
+            { id: 'activity', title: 'Payments', sub: 'Purchases, explorer, user vs agent wallets' },
             { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
             { id: 'troubleshooting', title: 'Troubleshooting', sub: 'Extension Sign-in and detect' },
             { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },

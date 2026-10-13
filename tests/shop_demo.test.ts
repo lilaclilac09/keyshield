@@ -65,22 +65,28 @@ describe("shop demo helpers", () => {
     expect(SHOP_PROOF_CLAWBACK_IX).toBe(28);
     expect(SHOP_PROOF_SETTLE_IX).toBe(26);
     const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
-    expect(home).toContain("shop-proof-strip");
-    expect(home).toContain("SHOP_PROOF_SETTLE_CU");
+    expect(home).toContain("home-metrics-strip");
+    expect(home).toContain("SHOP_PROOF_CACHE_MS");
     expect(home).toContain("text-[40px]");
-    expect(home).toContain("WebAuthn PRF");
-    expect(home).toContain("ForceClawback");
-    expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf("Stored APIs"));
-    expect(home.indexOf("shop-proof-strip")).toBeLessThan(home.indexOf(">Connection<"));
-    expect(home).toContain("PurchasesPanel");
-    expect(home).toContain("fetchAccountPurchases");
-    expect(home.indexOf("PurchasesPanel")).toBeLessThan(home.indexOf("Stored APIs"));
+    expect(home).not.toContain("shop-proof-strip");
+    expect(home).not.toContain("PurchasesPanel");
+    expect(home).not.toContain("SHOP_PROOF_SETTLE_CU");
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
+    const payments = readFileSync(resolve(__dirname, "../src/web/components/PaymentsLedger.tsx"), "utf8");
+    expect(payments).toContain("shop-proof-strip");
+    expect(payments).toContain("SHOP_PROOF_SETTLE_CU");
+    expect(payments).toContain("WebAuthn PRF");
+    expect(payments).toContain("ForceClawback");
+    expect(payments).toContain("PurchasesPanel");
+    const activity = readFileSync(resolve(__dirname, "../src/web/components/sections/ActivitySection.tsx"), "utf8");
+    expect(activity).toContain("PaymentsLedger");
     const panel = readFileSync(resolve(__dirname, "../src/web/components/PurchasesPanel.tsx"), "utf8");
     expect(panel).toContain('data-testid="purchases-panel"');
     expect(panel).toContain("purchase-explorer-link");
     expect(panel).toContain("Explorer ·");
-    expect(panel).toContain("item.explorer.map");
+    expect(panel).toContain("item.txType");
+    expect(panel).toContain("item.walletLabel");
+    expect(panel).toContain("<table");
   });
 
   it("lists every on-chain buy with explorer links, grouped", () => {
@@ -89,19 +95,11 @@ describe("shop demo helpers", () => {
     expect(row.explorer.length).toBeGreaterThanOrEqual(3);
     expect(row.explorer.some((link) => link.href.includes("/tx/") && link.href.includes("cluster=devnet"))).toBe(true);
     expect(explorerLinksForReceipt(LAST_LIVE_MPP_RECEIPT).some((link) => link.label.startsWith("Settle"))).toBe(true);
-    const grouped = groupPurchases(listPurchases([
-      {
-        id: "helius-1",
-        name: "Helius RPC · dashboard",
-        upstream: "helius",
-        prefix: "abcd12…wxyz",
-        family: "RPC",
-        product: "Solana RPC",
-        domain: "dashboard.helius.dev",
-      },
-    ]));
+    const grouped = groupPurchases(listPurchases([]));
     expect(grouped[0]?.category).toBe(ON_CHAIN_CATEGORY);
-    expect(grouped.some((g) => g.category === "RPC APIs" && g.items.length === 1)).toBe(true);
+    expect(row.walletRole).toBe("user");
+    expect(row.txType).toContain("MPP");
+    expect(row.sizeLabel).toContain("USDC");
     expect(row.explorer.some((link) => link.href.includes("/address/") && link.label.startsWith("ATA"))).toBe(true);
   });
 

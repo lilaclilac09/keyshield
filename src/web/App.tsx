@@ -51,9 +51,9 @@ const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' |
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
-  home: { title: 'Home', subtitle: 'Balance, stored APIs, connection' },
+  home: { title: 'Home', subtitle: 'RPC and API call speed' },
   vault: { title: 'Vault Management', subtitle: 'Saved keys — hidden until you reveal' },
-  activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
+  activity: { title: 'Payments', subtitle: 'Purchases, size, wallet, explorer' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },

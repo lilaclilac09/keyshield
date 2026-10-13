@@ -248,6 +248,71 @@ function collectScanText() {
   return chunks.join('\n');
 }
 
+function ksLooksLikePageKeyName(name) {
+  const text = String(name || '').trim();
+  if (!text || /^(name|names|api key|api keys|key|keys|expires|expiry|created|status|actions)$/i.test(text)) return false;
+  if (/https?:|[•…]|sk-|gsk_|helius_auth_/i.test(text)) return false;
+  if (/^[0-9a-f-]{8,}$/i.test(text)) return false;
+  return /^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(text);
+}
+
+function ksKeyPrefixFromCell(text) {
+  const cell = String(text || '').trim();
+  const uuid = cell.match(/[0-9a-f]{8}(?:-[0-9a-f*]{4}){3}-[0-9a-f*]{12}/i);
+  if (uuid) return uuid[0].slice(0, 8).toLowerCase();
+  return '';
+}
+
+function ksParseExpiryCell(text) {
+  const cell = String(text || '').trim();
+  const iso = cell.match(/(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const us = cell.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (!us) return '';
+  const a = Number(us[1]);
+  const b = Number(us[2]);
+  const month = a > 12 ? b : a;
+  const day = a > 12 ? a : b;
+  return `${us[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function ksCollectPageKeyRecords() {
+  const records = [];
+  const rows = document.querySelectorAll('tr, [role="row"]');
+  rows.forEach((row) => {
+    const cells = [...row.querySelectorAll('td, th, [role="cell"], [role="gridcell"]')]
+      .map((c) => String(c.innerText || c.textContent || '').trim())
+      .filter(Boolean);
+    if (cells.length < 2) return;
+    let name = '';
+    let prefix = '';
+    let expires = '';
+    for (const cell of cells) {
+      if (!name && ksLooksLikePageKeyName(cell)) name = cell;
+      const p = ksKeyPrefixFromCell(cell);
+      if (p) prefix = p;
+      const exp = ksParseExpiryCell(cell);
+      if (exp) expires = exp;
+    }
+    if (name && prefix) records.push({ name, prefix, expiresAt: expires });
+  });
+  const lines = collectScanText().split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!ksLooksLikePageKeyName(lines[i])) continue;
+    const prefix = ksKeyPrefixFromCell(lines[i + 1]);
+    if (!prefix) continue;
+    if (records.some((r) => r.prefix === prefix && r.name === lines[i])) continue;
+    records.push({ name: lines[i], prefix, expiresAt: ksParseExpiryCell(lines[i + 2] || '') });
+  }
+  return records;
+}
+
+function ksLabelForKey(key) {
+  const prefix = ksKeyPrefixFromCell(key) || String(key || '').slice(0, 8).toLowerCase();
+  const hit = ksCollectPageKeyRecords().find((r) => prefix && prefix.startsWith(r.prefix));
+  return hit || { name: '', prefix, expiresAt: '' };
+}
+
 let scanTimer = 0;
 function scheduleScan() {
   if (scanTimer) return;
@@ -612,10 +677,11 @@ async function bulkSave() {
       silent: true,
       payload: {
         upstream: info.provider.id,
-        name:     `${info.provider.name} (${HOST})`,
+        name:     ksLabelForKey(key).name || `${info.provider.name} (${HOST})`,
         value:    key,
         domain:   HOST,
         pageTitle: document.title || '',
+        expires_at: ksLabelForKey(key).expiresAt || '',
       },
     });
 
@@ -1204,7 +1270,14 @@ function isKeyShieldDashboardHost() {
         sendToBackground({
           type: 'SAVE_KEY',
           silent: true,
-          payload: { upstream: provider.id, name: `${provider.name} (${HOST})`, value: found[0], domain: HOST, pageTitle: document.title || '' },
+          payload: {
+            upstream: provider.id,
+            name: ksLabelForKey(found[0]).name || `${provider.name} (${HOST})`,
+            value: found[0],
+            domain: HOST,
+            pageTitle: document.title || '',
+            expires_at: ksLabelForKey(found[0]).expiresAt || '',
+          },
         }).then(() => refresh()).catch(() => {});
         return;
       }

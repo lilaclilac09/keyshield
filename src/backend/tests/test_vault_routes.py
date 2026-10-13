@@ -146,6 +146,44 @@ def test_five_helius_manage_store_lists_five_rows(tmp_path, monkeypatch):
     dumped = str(listed)
     for secret in secrets:
         assert secret not in dumped
+    names = {row["name"] for row in helius}
+    assert names == {"helius1", "helius2", "helius3", "helius4", "helius5"}
+
+
+def test_manage_store_keeps_helius_dashboard_names(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+    first = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "apiKey": "10470584-67a9-4abc-8def-123456787761",
+            "name": "Panthermaze",
+            "expires_at": "2027-04-01",
+            "domain": "dashboard.helius.dev",
+        },
+    )
+    second = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "apiKey": "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+            "name": "Heronplanet",
+            "domain": "dashboard.helius.dev",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    listed = client.get("/manage/vault", headers=headers).json()
+    names = {row["name"] for row in listed if row.get("upstream") == "helius"}
+    assert names == {"Panthermaze", "Heronplanet"}
+    panther = next(row for row in listed if row["name"] == "Panthermaze")
+    assert str(panther.get("expires_at") or "").startswith("2027-04-01")
+    assert "10470584-67a9-4abc-8def-123456787761" not in str(listed)
 
 
 def test_manage_store_rejects_empty_plaintext(tmp_path, monkeypatch):

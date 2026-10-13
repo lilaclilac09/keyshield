@@ -154,6 +154,8 @@ export function isGenericVaultName(name: string, upstream: string): boolean {
   const up = String(upstream || '').trim().toLowerCase();
   if (!n || n === 'unnamed' || n === 'untitled' || n === 'key') return true;
   if (n === up || n === `${up} key` || n === `${up}key`) return true;
+  const meta = providerMeta(up).name.toLowerCase();
+  if (n === meta || n.startsWith(`${meta} (`)) return true;
   return n.endsWith(' key') && n.startsWith(up);
 }
 
@@ -163,10 +165,14 @@ export function vaultStoreName(opts: {
   host?: string;
   pageTitle?: string;
   name?: string;
+  taken?: string[];
 }): string {
   const prefix = maskPrefix(opts.value);
   const meta = providerMeta(opts.upstream);
   const given = String(opts.name || '').trim();
+  if (given && !isGenericVaultName(given, opts.upstream) && /^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(given)) {
+    return given;
+  }
   if (given && !isGenericVaultName(given, opts.upstream)) {
     return given.includes(prefix) ? given : `${given} · ${prefix}`;
   }

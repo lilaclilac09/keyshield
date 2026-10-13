@@ -181,6 +181,44 @@ def infer_product(upstream: str, raw: str = "") -> str:
     return str(provider_meta(upstream)["product"])
 
 
+_PAGE_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]{2,47}$")
+_PAGE_NAME_BLOCK = frozenset(
+    {
+        "name",
+        "names",
+        "api key",
+        "api keys",
+        "key",
+        "keys",
+        "expires",
+        "expiry",
+        "created",
+        "status",
+        "actions",
+        "type",
+        "product",
+    }
+)
+
+
+def looks_like_page_key_name(name: str, upstream: str = "") -> bool:
+    text = (name or "").strip()
+    if not text or text.lower() in _PAGE_NAME_BLOCK:
+        return False
+    if "http" in text.lower() or "•" in text or "…" in text:
+        return False
+    if re.search(r"sk-|gsk_|helius_auth_|github_pat_|ghp_", text, re.I):
+        return False
+    if re.fullmatch(r"[0-9a-f-]{8,}", text, re.I):
+        return False
+    if re.search(r"\b(key|keys|rpc|api)$", text, re.I):
+        return False
+    up = (upstream or "").strip().lower()
+    if up and text.lower() in {up, str(provider_meta(up)["name"]).lower()}:
+        return False
+    return bool(_PAGE_NAME_RE.fullmatch(text))
+
+
 def is_generic_vault_name(name: str, upstream: str) -> bool:
     n = (name or "").strip().lower()
     up = (upstream or "").strip().lower()
@@ -188,7 +226,44 @@ def is_generic_vault_name(name: str, upstream: str) -> bool:
         return True
     if n in {up, f"{up} key", f"{up}key"}:
         return True
+    meta = str(provider_meta(up)["name"]).lower()
+    if n == meta or n.startswith(f"{meta} ("):
+        return True
     return n.endswith(" key") and n.startswith(up)
+
+
+def uniquify_vault_name(name: str, upstream: str, taken: list[str] | None = None) -> str:
+    given = (name or "").strip()
+    up = (upstream or "api").strip().lower() or "api"
+    taken_l = {str(row or "").strip().lower() for row in (taken or []) if str(row or "").strip()}
+    if looks_like_page_key_name(given, upstream) and given.lower() not in taken_l:
+        return given
+    if looks_like_page_key_name(given, upstream):
+        stem = re.sub(r"\s+\d+$", "", given)
+        i = 2
+        while f"{stem} {i}".lower() in taken_l or f"{stem}{i}".lower() in taken_l:
+            i += 1
+        return f"{stem} {i}"
+    i = 1
+    while f"{up}{i}" in taken_l or f"{up} {i}" in taken_l:
+        i += 1
+    return f"{up}{i}"
+
+
+def vault_item_name(
+    *,
+    upstream: str,
+    raw: str = "",
+    host: str = "",
+    name: str = "",
+    page_title: str = "",
+    taken: list[str] | None = None,
+) -> str:
+    del raw, host, page_title
+    given = (name or "").strip()
+    if looks_like_page_key_name(given, upstream) or (given and not is_generic_vault_name(given, upstream)):
+        return uniquify_vault_name(given, upstream, taken)
+    return uniquify_vault_name(upstream, upstream, taken)
 
 
 def distinguish_name(
@@ -203,6 +278,8 @@ def distinguish_name(
     prefix = mask_key(raw)
     meta = provider_meta(upstream)
     given = (name or "").strip()
+    if given and looks_like_page_key_name(given):
+        return given
     if given and not is_generic_vault_name(given, upstream):
         return given if prefix in given else f"{given} · {prefix}"
     parts = [str(meta["name"])]
@@ -418,7 +495,7 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
         out.append(
             {
                 "id": item_id,
-                "name": distinguish_name(
+                "name": str(row["name"] or "") or distinguish_name(
                     upstream=upstream,
                     raw=raw,
                     name=str(row["name"] or ""),

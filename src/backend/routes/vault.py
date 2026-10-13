@@ -185,12 +185,15 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         tags = []
     host = kc.tag_value(tags, "host")
     page_title = kc.tag_value(tags, "page")
+    page_name = kc.tag_value(tags, "name")
     note_bits = [str(meta["family"]), product, host or str(meta["domain"]), expiry_label]
+    if page_name:
+        note_bits.append(page_name)
     if page_title:
         note_bits.append(page_title)
     return {
         "id": row["id"],
-        "name": kc.distinguish_name(
+        "name": str(row["name"] or "") or kc.distinguish_name(
             upstream=upstream,
             raw=str(raw),
             name=str(row["name"] or ""),
@@ -248,6 +251,16 @@ async def vault_store(request: Request):
     now = time.time()
     expiry_days = body.get("expiry_days", 30)
     expires_at = now + (expiry_days * 86400) if expiry_days else None
+    raw_exp = str(body.get("expires_at") or body.get("expiry") or "").strip()
+    if raw_exp:
+        try:
+            expires_at = datetime.fromisoformat(raw_exp.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            try:
+                expires_at = datetime.strptime(raw_exp[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+            except ValueError:
+                pass
+
     stored_value = str(body.get("value") or body.get("apiKey") or body.get("api_key") or "").strip()
     upstream = body.get("upstream") or ""
     if not stored_value:
@@ -256,13 +269,6 @@ async def vault_store(request: Request):
 
     host = str(body.get("origin") or body.get("domain") or body.get("host") or "").strip()
     page_title = str(body.get("pageTitle") or body.get("page_title") or "").strip()
-    stored_name = kc.distinguish_name(
-        upstream=str(upstream),
-        raw=stored_value,
-        host=host,
-        name=str(body.get("name") or ""),
-        page_title=page_title,
-    )
     extra_tags = body.get("tags", [])
     if not isinstance(extra_tags, list):
         extra_tags = []
@@ -270,6 +276,9 @@ async def vault_store(request: Request):
         extra_tags = [*extra_tags, f"host:{host}"]
     if page_title:
         extra_tags = [*extra_tags, f"page:{page_title[:80]}"]
+    given_name = str(body.get("name") or "").strip()
+    if kc.looks_like_page_key_name(given_name, str(upstream)):
+        extra_tags = [*extra_tags, f"name:{given_name[:80]}"]
     tags_json = _json.dumps(kc.catalog_tags(str(upstream), [str(t) for t in extra_tags]))
 
     # Same plaintext key → same row. A second Helius UUID stays a new row.
@@ -292,6 +301,21 @@ async def vault_store(request: Request):
                 ).fetchone()
                 if blank:
                     item_id = blank[0]
+
+    with _db() as conn:
+        taken_rows = conn.execute(
+            "SELECT name FROM vault_items WHERE user_id = ? AND id != ?",
+            (uid, item_id),
+        ).fetchall()
+    taken = [str(row["name"] or "") for row in taken_rows]
+    stored_name = kc.vault_item_name(
+        upstream=str(upstream),
+        raw=stored_value,
+        host=host,
+        name=str(body.get("name") or ""),
+        page_title=page_title,
+        taken=taken,
+    )
 
     with _db() as conn:
         conn.execute(

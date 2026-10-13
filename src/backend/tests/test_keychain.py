@@ -68,12 +68,31 @@ def test_store_two_helius_keys_keep_distinct_names(tmp_path, monkeypatch):
     rows = [row for row in listed if row.get("upstream") == "helius"]
     assert len(rows) == 2
     names = {row["name"] for row in rows}
-    assert len(names) == 2
-    assert all("Helius" in name for name in names)
+    assert names == {"helius1", "helius2"}
     assert all(row.get("family") == "RPC" for row in rows)
     assert all(row.get("expires_at") for row in rows)
     dumped = str(listed)
     assert a not in dumped and b not in dumped
+
+
+def test_vault_item_name_keeps_page_label_and_numbers_dupes():
+    assert kc.looks_like_page_key_name("Panthermaze") is True
+    assert kc.looks_like_page_key_name("helius key") is False
+    first = kc.vault_item_name(upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", name="Panthermaze")
+    second = kc.vault_item_name(
+        upstream="helius",
+        raw="210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+        name="Panthermaze",
+        taken=[first],
+    )
+    third = kc.vault_item_name(upstream="helius", raw="310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2", name="helius key")
+    fourth = kc.vault_item_name(
+        upstream="helius", raw="410e4c2a-91b0-4c3d-a333-ccccccccccc3", name="helius key", taken=[third]
+    )
+    assert first == "Panthermaze"
+    assert second == "Panthermaze 2"
+    assert third == "helius1"
+    assert fourth == "helius2"
 
 
 def test_distinguish_name_separates_helius_uuids():
@@ -272,8 +291,7 @@ def test_five_helius_keys_store_then_manage_vault_lists_all(tmp_path, monkeypatc
     assert len(apis) == 5
     assert secrets[0] not in str(home.json())
     names = [str(row.get("name") or "") for row in apis]
-    assert len(set(names)) == 5
-    assert all("Helius" in name for name in names)
+    assert set(names) == {"helius1", "helius2", "helius3", "helius4", "helius5"}
     assert all(row.get("family") == "RPC" for row in apis)
     assert all(row.get("product") for row in apis)
     assert all(row.get("expires_at") for row in apis)
