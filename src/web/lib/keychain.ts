@@ -81,6 +81,7 @@ export interface KeychainHome {
 }
 
 const DETECTORS: { upstream: string; re: RegExp }[] = [
+  { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/ },
   { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/ },
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },

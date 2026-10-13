@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>NVIDIA NIM · API Key</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: #0b1020;
+      color: #d7dce8;
+      padding: 28px 36px;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; color: #f4f6fb; }
+    .sub { color: #8b93a7; font-size: 12px; margin-bottom: 22px; max-width: 44rem; line-height: 1.5; }
+    .card {
+      max-width: 520px;
+      background: #12182b;
+      border: 1px solid #243049;
+      border-radius: 12px;
+      padding: 18px 18px 16px;
+    }
+    label { display: block; font-size: 12px; color: #c5cce0; margin: 12px 0 6px; }
+    .hint { font-size: 11px; color: #7d869c; margin-top: 4px; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      height: 36px;
+      padding: 0 10px;
+      background: #0b0f1c;
+      border: 1px solid #33405c;
+      border-radius: 6px;
+      color: #e8ecf7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    input:focus { outline: 1px solid #5b8def; }
+    .login {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #243049;
+      max-width: 420px;
+    }
+    .note { margin-top: 20px; font-size: 11px; color: #6b7388; max-width: 44rem; }
+    code { color: #d7deef; }
+  </style>
+</head>
+<body>
+  <h1>NVIDIA NIM · API Key</h1>
+  <p class="sub">
+    Stand-in for <code>https://build.nvidia.com</code> / agent Settings blanks.
+    A vault row named NVIDIA (or an <code>nvapi-</code> key) must fill the empty
+    API Key box. Login password stays empty. Toolbar popup must open.
+  </p>
+
+  <div class="card" data-testid="nvidia-fill-card">
+    <p class="hint">Settings → NVIDIA NIM · API Key</p>
+    <label for="nvidia-api-key">NVIDIA API Key</label>
+    <input
+      type="password"
+      id="nvidia-api-key"
+      name="apiKey"
+      placeholder="Paste nvapi-…"
+      autocomplete="off"
+      aria-label="NVIDIA API Key"
+      data-testid="nvidia-api-key"
+    />
+    <p class="hint">Empty secret box. Saved vault NVIDIA key pastes here. No toast.</p>
+  </div>
+
+  <div class="login">
+    <label for="login-password">Password</label>
+    <input type="password" id="login-password" autocomplete="current-password" data-testid="login-password" />
+  </div>
+
+  <p class="note">
+    Do not paste this file into zsh. Open it as
+    <code>http://127.0.0.1:5173/nvidia-fill-demo.html</code>
+    after Remove + Load unpacked <code>src/extension</code>. Popup must show
+    <code>ok 1.2.5 &lt;all_urls&gt;</code>.
+  </p>
+</body>
+</html>

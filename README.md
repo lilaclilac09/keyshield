@@ -137,7 +137,7 @@ path is on your Mac; this repo cannot write it):
 3. Wallet / passkey. Home shows **Copy token for extension**.
 4. Popup → paste → **Register token**. Badge leaves `no token`.
 
-After pull: **Remove**, **Load unpacked** `src/extension` — card must read **1.2.4** (not 1.1.7). Do not only Reload. Popup first line must be `ok 1.2.4 <all_urls>`.
+After pull: **Remove**, **Load unpacked** `src/extension` — card must read **1.2.5** (not 1.1.7 / leftover 1.2.4). Do not only Reload. Popup first line must be `ok 1.2.5 <all_urls>`. See `src/extension/INSTALL-LOCAL.md`.
 
 ### 3. Pay for a stream (optional)
 

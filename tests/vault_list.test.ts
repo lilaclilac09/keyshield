@@ -63,6 +63,7 @@ describe("passkey is not required to save", () => {
 
   it("classifies Helius dashboard UUIDs so store does not 422", () => {
     expect(detectUpstream("10470584-67a9-4abc-8def-123456787761").upstream).toBe("helius");
+    expect(detectUpstream("nvapi-LOCALONLYFILLTEST1234").upstream).toBe("nvidia");
   });
 
   it("New Secret save reads a real key, not the sk-or-v1-… placeholder", () => {

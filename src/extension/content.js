@@ -49,6 +49,25 @@
 
 const PROVIDERS = [
   {
+    id:       'nvidia',
+    name:     'NVIDIA NIM',
+    label:    'NV',
+    patterns: [
+      /nvapi-[A-Za-z0-9_-]{16,}/g,
+    ],
+    domains:  [
+      'build.nvidia.com',
+      'integrate.api.nvidia.com',
+      'api.nvidia.com',
+      'nim.nvidia.com',
+      'catalog.ngc.nvidia.com',
+      'ngc.nvidia.com',
+      'nvidia.com',
+      'nvidia.demo.localhost',
+    ],
+    minLen:   16,
+  },
+  {
     id:       'cursor',
     name:     'Cursor',
     label:    'CUR',
@@ -592,7 +611,7 @@ function renderPanel(opts) {
     <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
     <div id="ks-filled" style="font-size:12px;color:#a1a1aa">${lastFill}</div>
-    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>
+    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.5</div>
     <div style="display:flex;gap:8px">
       <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
     </div>
@@ -751,7 +770,7 @@ const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([ty
   + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
   + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
 
-const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
+const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
 function ksIsCursorFillHost(domain) {
   const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
@@ -764,10 +783,12 @@ function ksIsLocalFillDemo() {
   const path = String(location.pathname || '').toLowerCase();
   if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
     return path.includes('cursor-settings-fill-demo')
+      || path.includes('nvidia-fill-demo')
       || path.includes('/journey/cursor')
       || /(?:^|\/)cursor\.html$/.test(path);
   }
   return path.includes('cursor-settings-fill-demo')
+    || path.includes('nvidia-fill-demo')
     || path.includes('/journey/cursor')
     || /(?:^|\/)cursor\.html$/.test(path)
     || path === '/story'
@@ -791,6 +812,16 @@ function ksIsKiloFillHost(domain) {
 function ksIsKiloByokPath(pathname) {
   const path = String(pathname || location.pathname || '').toLowerCase();
   return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+function ksIsNvidiaFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'nvidia.com' || host.endsWith('.nvidia.com') || host === 'nvidia.demo.localhost';
+}
+
+function ksIsNvidiaFillContext() {
+  if (ksIsNvidiaFillHost(location.hostname)) return true;
+  return String(location.pathname || '').toLowerCase().includes('nvidia-fill-demo');
 }
 
 function ksIsKiloFillContext() {
@@ -858,6 +889,7 @@ function ksInputHaystack(el) {
 
 function ksMatchUpstreamForHaystack(hay) {
   if (/\bcursor\b|\bcrsr\b/.test(hay)) return 'cursor';
+  if (/\bnvidia\b|\bnim\b|\bnvapi\b/.test(hay)) return 'nvidia';
   if (/\bopenrouter\b|\bsk-or\b/.test(hay)) return 'openrouter';
   if (/\banthropic\b|\bclaude\b|\bsk-ant\b/.test(hay)) return 'anthropic';
   if (/\bopenai\b|\bchatgpt\b|\bgpt\b|\bsk-proj\b/.test(hay)) return 'openai';
@@ -881,7 +913,7 @@ function ksLooksLikeKeyNameField(hay) {
 }
 
 function ksPreferredCursorFillKey(keys) {
-  const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+  const order = ['cursor', 'openai', 'nvidia', 'openrouter', 'anthropic', 'groq'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
@@ -890,7 +922,7 @@ function ksPreferredCursorFillKey(keys) {
 }
 
 function ksPreferredKiloFillKey(keys) {
-  const order = ['openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
+  const order = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
@@ -909,6 +941,12 @@ function ksPickKeyForInput(el, keys) {
     if (labeled) return labeled;
   }
   if (ksLooksLikeLoginPassword(hay)) return null;
+  if (ksIsNvidiaFillContext() || (ksIsNvidiaFillHost(location.hostname) && type === 'password')) {
+    return keys.find((k) => k.upstream === 'nvidia' && k.value)
+      || keys.find((k) => k.upstream === 'openrouter' && k.value)
+      || keys.find((k) => k.value)
+      || null;
+  }
   if (ksIsKiloFillContext() || (ksIsKiloFillHost(location.hostname) && type === 'password')) {
     return ksPreferredKiloFillKey(keys);
   }
@@ -950,7 +988,7 @@ function ksLooksLikeKeyInput(el) {
   const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
   if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
-  if (ksIsKiloFillContext() || ksIsCursorFillContext()) {
+  if (ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) {
     if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(hay)) return false;
     if (KS_KEY_FIELD_RE.test(hay)) return true;
     return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA';
@@ -1016,7 +1054,7 @@ function ksAutoFillEmptyInputs(keys) {
   for (const input of candidates) {
     if (String(input.value || '').trim()) continue;
     const key = ksPickKeyForInput(input, remaining)
-      || ((ksIsKiloFillContext() || ksIsCursorFillContext()) ? remaining[0] : null);
+      || ((ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) ? remaining[0] : null);
     if (key) take(input, key);
   }
   return filled;
@@ -1058,13 +1096,32 @@ function ksSetValue(el, value) {
   ksFlashGreen(el);
 }
 
+function ksCollectHints() {
+  const nodes = ksCollectFillInputs(document);
+  const hints = [];
+  let blanks = 0;
+  nodes.forEach((el) => {
+    if (!ksLooksLikeKeyInput(el)) return;
+    hints.push(ksInputHaystack(el));
+    if (!String(el.value || '').trim()) blanks += 1;
+  });
+  if (!hints.length) {
+    const title = String(document.title || '');
+    if (title) hints.push(title);
+  }
+  return { hints, hasKeyBlanks: blanks > 0 };
+}
+
 function ksRequestKeys() {
+  const extra = ksCollectHints();
   return sendToBackground({
     type: 'GET_KEYS_FOR_DOMAIN',
     domain: location.hostname,
     pathname: location.pathname,
     title: document.title,
     url: location.href,
+    hints: extra.hints,
+    hasKeyBlanks: extra.hasKeyBlanks,
   }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
@@ -1175,23 +1232,36 @@ function ksAttachFillButton(input) {
     display:         'none',
   });
 
-  // Position the button at the top-right of the input each tick — handles
-  // pages where layout shifts post-load.
-  const reposition = () => {
+  // Hover-only — do not park a 🔑 on every blank.
+  let hoverOpen = false;
+  const place = () => {
     const r = input.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) { btn.style.display = 'none'; return; }
-    btn.style.display = 'inline-block';
     btn.style.top     = `${Math.round(window.scrollY + r.top + (r.height - 22) / 2)}px`;
     btn.style.left    = `${Math.round(window.scrollX + r.right - 28)}px`;
     btn.style.position = 'absolute';
+    btn.style.display = hoverOpen ? 'inline-block' : 'none';
   };
-  reposition();
+  const showBtn = () => { hoverOpen = true; place(); };
+  const hideBtn = () => { hoverOpen = false; btn.style.display = 'none'; };
+  place();
   document.body.appendChild(btn);
+  input.addEventListener('mouseenter', showBtn);
+  input.addEventListener('focus', showBtn);
+  btn.addEventListener('mouseenter', showBtn);
+  input.addEventListener('mouseleave', (ev) => {
+    if (ev.relatedTarget === btn || (btn.contains && btn.contains(ev.relatedTarget))) return;
+    if (document.activeElement !== input) hideBtn();
+  });
+  input.addEventListener('blur', () => { if (!btn.matches(':hover')) hideBtn(); });
+  btn.addEventListener('mouseleave', (ev) => {
+    if (ev.relatedTarget === input) return;
+    if (document.activeElement !== input) hideBtn();
+  });
 
-  // Reposition on scroll/resize. Cheap — no observer per input.
   const repoInterval = setInterval(() => {
     if (!input.isConnected) { clearInterval(repoInterval); btn.remove(); return; }
-    reposition();
+    if (hoverOpen) place();
   }, 800);
 
   btn.onclick = async (ev) => {

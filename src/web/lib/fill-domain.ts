@@ -9,13 +9,33 @@ export const CURSOR_FILL_UPSTREAMS = [
   'openai',
   'anthropic',
   'openrouter',
+  'nvidia',
   'groq',
 ] as const;
 
 export const KILO_FILL_UPSTREAMS = ['openrouter'] as const;
 
+export const NVIDIA_FILL_UPSTREAMS = ['nvidia', 'openrouter'] as const;
+
+export const AI_FILL_UPSTREAMS = [
+  'nvidia',
+  'openrouter',
+  'openai',
+  'anthropic',
+  'groq',
+  'cursor',
+] as const;
+
 const DOMAIN_TO_UPSTREAMS: Record<string, readonly string[]> = {
   'openrouter.ai': ['openrouter'],
+  'build.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'integrate.api.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'api.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'nim.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'catalog.ngc.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'ngc.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'nvidia.demo.localhost': NVIDIA_FILL_UPSTREAMS,
   'scvd.store': ['openrouter'],
   'kilo.ai': KILO_FILL_UPSTREAMS,
   'app.kilo.ai': KILO_FILL_UPSTREAMS,
@@ -53,6 +73,7 @@ const DOMAIN_TO_UPSTREAMS: Record<string, readonly string[]> = {
 
 const INPUT_UPSTREAM_HINTS: Array<{ re: RegExp; upstream: string }> = [
   { re: /\bcursor\b|\bcrsr\b/, upstream: 'cursor' },
+  { re: /\bnvidia\b|\bnim\b|\bnvapi\b/, upstream: 'nvidia' },
   { re: /\bopenrouter\b|\bsk-or\b/, upstream: 'openrouter' },
   { re: /\banthropic\b|\bclaude\b|\bsk-ant\b/, upstream: 'anthropic' },
   { re: /\bopenai\b|\bchatgpt\b|\bgpt\b|\bsk-proj\b/, upstream: 'openai' },
@@ -102,6 +123,7 @@ export function isLocalFillDemoPath(pathname: string): boolean {
   const path = String(pathname || '').toLowerCase();
   return (
     path.includes('cursor-settings-fill-demo')
+    || path.includes('nvidia-fill-demo')
     || path.includes('/journey/cursor')
     || /(?:^|\/)cursor\.html$/.test(path)
     || path === '/story'
@@ -117,6 +139,68 @@ export function isKiloFillHost(domain: string): boolean {
 export function isKiloByokPath(pathname: string): boolean {
   const path = String(pathname || '').toLowerCase();
   return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+export function isNvidiaFillHost(domain: string): boolean {
+  const host = normalizeHostname(domain);
+  return host === 'nvidia.com' || host.endsWith('.nvidia.com')
+    || host === 'nvidia.demo.localhost';
+}
+
+export function isNvidiaDemoPath(pathname: string): boolean {
+  return String(pathname || '').toLowerCase().includes('nvidia-fill-demo');
+}
+
+export function isNvidiaKeyFetchContext(opts?: { hostname?: string; pathname?: string; url?: string }): boolean {
+  if (isNvidiaFillHost(opts?.hostname || '')) return true;
+  if (isNvidiaDemoPath(opts?.pathname || '')) return true;
+  try {
+    if (opts?.url && new URL(opts.url).pathname.toLowerCase().includes('nvidia-fill-demo')) return true;
+  } catch { /* noop */ }
+  return false;
+}
+
+function hintsText(hints?: string[] | string): string {
+  return (Array.isArray(hints) ? hints.join(' ') : String(hints || '')).toLowerCase();
+}
+
+export function hintsWantNvidia(hints?: string[] | string): boolean {
+  return /\bnvidia\b|\bnim\b|\bnvapi\b/.test(hintsText(hints));
+}
+
+export function hintsWantAi(hints?: string[] | string): boolean {
+  return /\bapi[\s_-]?key\b|\btoken\b|\bsecret\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b/.test(hintsText(hints));
+}
+
+export function vaultItemMatchesWanted(
+  item: { upstream?: string; name?: string; product?: string; family?: string; value?: string },
+  wanted: Iterable<string>,
+): boolean {
+  const set = new Set([...wanted].map((u) => String(u || '').toLowerCase()));
+  const up = String(item.upstream || '').toLowerCase();
+  if (set.has(up)) return true;
+  const blob = `${item.name || ''} ${item.product || ''} ${item.family || ''} ${item.value || ''}`.toLowerCase();
+  if (set.has('nvidia') && (/\bnvidia\b|\bnim\b|\bnvapi\b/.test(blob) || /^nvapi-/.test(String(item.value || '')))) {
+    return true;
+  }
+  return false;
+}
+
+/** Which vault upstreams the page may receive. Never unlock on a spoofed title alone. */
+export function unlockUpstreamsForFill(opts?: {
+  hostname?: string;
+  pathname?: string;
+  url?: string;
+  hints?: string[] | string;
+  hasKeyBlanks?: boolean;
+}): string[] {
+  const mapped = upstreamsForHostname(opts?.hostname || '');
+  if (mapped.length) return mapped;
+  if (isKiloKeyFetchContext(opts)) return [...KILO_FILL_UPSTREAMS];
+  if (isNvidiaKeyFetchContext(opts) || hintsWantNvidia(opts?.hints)) return [...NVIDIA_FILL_UPSTREAMS];
+  if (isCursorKeyFetchContext(opts)) return [...CURSOR_FILL_UPSTREAMS];
+  if (opts?.hasKeyBlanks && hintsWantAi(opts.hints)) return [...AI_FILL_UPSTREAMS];
+  return [];
 }
 
 /** Unlock OpenRouter keys for Kilo BYOK hosts or the local BYOK fixture — never a spoofed title. */
@@ -171,7 +255,7 @@ export function isCursorFillContext(opts?: { hostname?: string; pathname?: strin
   return title.includes('cursor') && isCursorSettingsPath(path, title);
 }
 
-const KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
+const KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
 export function looksLikeKeyField(haystack: string): boolean {
   return KEY_FIELD_RE.test(String(haystack || '').toLowerCase());
@@ -210,7 +294,7 @@ export function looksLikeCursorApiBlank(opts: {
 }
 
 export function preferredCursorFillKey(keys: FillKey[]): FillKey | null {
-  const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+  const order = ['cursor', 'openai', 'nvidia', 'openrouter', 'anthropic', 'groq'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
@@ -219,7 +303,7 @@ export function preferredCursorFillKey(keys: FillKey[]): FillKey | null {
 }
 
 export function preferredKiloFillKey(keys: FillKey[]): FillKey | null {
-  const order = ['openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
+  const order = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
@@ -261,6 +345,12 @@ export function pickKeyForInput(
     if (labeled) return labeled;
   }
   if (looksLikeLoginPassword(haystack)) return null;
+  if (isNvidiaFillHost(opts?.hostname || '') || String(opts?.pathname || '').includes('nvidia-fill-demo')) {
+    return keys.find((k) => k.upstream === 'nvidia' && k.value)
+      || keys.find((k) => k.upstream === 'openrouter' && k.value)
+      || keys.find((k) => k.value)
+      || null;
+  }
   if (isKiloFillContext(opts) || looksLikeKiloApiBlank({ ...opts, haystack })) {
     return preferredKiloFillKey(keys);
   }

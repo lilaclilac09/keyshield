@@ -68,10 +68,20 @@ async function _getVaultKeyBytes() {
 // ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
 // cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
 // app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
-const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'groq'];
+const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'nvidia', 'groq'];
 const KILO_FILL_UPSTREAMS = ['openrouter'];
+const NVIDIA_FILL_UPSTREAMS = ['nvidia', 'openrouter'];
+const AI_FILL_UPSTREAMS = ['nvidia', 'openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
 const DOMAIN_TO_UPSTREAMS = {
   'openrouter.ai':         ['openrouter'],
+  'build.nvidia.com':      NVIDIA_FILL_UPSTREAMS,
+  'integrate.api.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'api.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'nim.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'catalog.ngc.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'ngc.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'nvidia.com':            NVIDIA_FILL_UPSTREAMS,
+  'nvidia.demo.localhost': NVIDIA_FILL_UPSTREAMS,
   'scvd.store':            ['openrouter'],
   'kilo.ai':               KILO_FILL_UPSTREAMS,
   'app.kilo.ai':           KILO_FILL_UPSTREAMS,
@@ -133,10 +143,50 @@ function _isCursorFillHost(domain) {
 function _isLocalFillDemoPath(pathname) {
   const path = String(pathname || '').toLowerCase();
   return path.includes('cursor-settings-fill-demo')
+    || path.includes('nvidia-fill-demo')
     || path.includes('/journey/cursor')
     || /(?:^|\/)cursor\.html$/.test(path)
     || path === '/story'
     || path.startsWith('/story/');
+}
+
+function _isNvidiaFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'nvidia.com' || host.endsWith('.nvidia.com') || host === 'nvidia.demo.localhost';
+}
+
+function _isNvidiaKeyFetchContext(domain, pathname, url) {
+  if (_isNvidiaFillHost(domain)) return true;
+  const path = String(pathname || '').toLowerCase();
+  if (path.includes('nvidia-fill-demo')) return true;
+  try {
+    if (url && new URL(url).pathname.toLowerCase().includes('nvidia-fill-demo')) return true;
+  } catch { /* noop */ }
+  return false;
+}
+
+function _hintsText(hints) {
+  return (Array.isArray(hints) ? hints.join(' ') : String(hints || '')).toLowerCase();
+}
+
+function _hintsWantNvidia(hints) {
+  return /\bnvidia\b|\bnim\b|\bnvapi\b/.test(_hintsText(hints));
+}
+
+function _hintsWantAi(hints) {
+  return /\bapi[\s_-]?key\b|\btoken\b|\bsecret\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b/.test(_hintsText(hints));
+}
+
+function _valueLooksNvidia(value) {
+  return /^nvapi-[A-Za-z0-9_-]{16,}/.test(String(value || ''));
+}
+
+function _vaultItemMatchesWanted(it, wanted) {
+  const up = String((it && it.upstream) || '').toLowerCase();
+  if (wanted.has(up)) return true;
+  const blob = `${(it && it.name) || ''} ${(it && it.product) || ''} ${(it && it.family) || ''}`.toLowerCase();
+  if (wanted.has('nvidia') && /\bnvidia\b|\bnim\b|\bnvapi\b/.test(blob)) return true;
+  return false;
 }
 
 function _isKiloFillHost(domain) {
@@ -252,7 +302,10 @@ async function pendingKeysForUpstreams(upstreams) {
       const upstream = String((row && row.upstream) || '').toLowerCase();
       const value = String((row && row.value) || '');
       if (!upstream || !value || seen.has(value)) continue;
-      if (wanted.size && !wanted.has(upstream)) continue;
+      if (wanted.size && !wanted.has(upstream)
+        && !(wanted.has('nvidia') && (_valueLooksNvidia(value) || /\bnvidia\b|\bnim\b|\bnvapi\b/.test(`${upstream} ${(row && row.name) || ''}`)))) {
+        continue;
+      }
       seen.add(value);
       out.push({ id: `pending-${upstream}`, upstream, name: `${upstream} key`, value });
     }
@@ -268,8 +321,14 @@ async function getKeysForDomain(domain, extra) {
   if (!upstreams.length && _isKiloKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = KILO_FILL_UPSTREAMS.slice();
   }
+  if (!upstreams.length && (_isNvidiaKeyFetchContext(domain, extra.pathname, extra.url) || _hintsWantNvidia(extra.hints))) {
+    upstreams = NVIDIA_FILL_UPSTREAMS.slice();
+  }
   if (!upstreams.length && _isCursorKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = CURSOR_FILL_UPSTREAMS.slice();
+  }
+  if (!upstreams.length && extra.hasKeyBlanks && _hintsWantAi(extra.hints)) {
+    upstreams = AI_FILL_UPSTREAMS.slice();
   }
   if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
 
@@ -298,7 +357,7 @@ async function getKeysForDomain(domain, extra) {
     }
   } catch { /* pending fill still runs */ }
 
-  const matched = items.filter((it) => it && wanted.has(String(it.upstream || '').toLowerCase()));
+  const matched = items.filter((it) => it && _vaultItemMatchesWanted(it, wanted));
   const out = [];
   for (const it of matched) {
     let value = '';
@@ -311,7 +370,13 @@ async function getKeysForDomain(domain, extra) {
     } catch {
       value = '';
     }
-    if (value) out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
+    if (!value) continue;
+    let upstream = String(it.upstream || '').toLowerCase();
+    if (_valueLooksNvidia(value)) upstream = 'nvidia';
+    if (!wanted.has(upstream) && !(wanted.has('nvidia') && (_valueLooksNvidia(value) || _vaultItemMatchesWanted({ ...it, value }, wanted)))) {
+      continue;
+    }
+    out.push({ id: it.id, upstream: upstream || it.upstream, name: it.name, value });
   }
   for (const row of pending) {
     if (!out.some((k) => k.value === row.value)) out.push(row);
@@ -777,6 +842,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           pathname: message.pathname || '',
           title: message.title || '',
           url: message.url || '',
+          hints: message.hints || [],
+          hasKeyBlanks: !!message.hasKeyBlanks,
         });
         sendResponse(result);
       } catch (e) {
@@ -927,7 +994,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         expires_at: payload.expires_at || payload.expiresAt || '',
       });
       if (result.ok) {
-        notify('KeyShield', `Saved ${upstream} key to KeyShield`);
+        if (!message.silent) notify('KeyShield', `Saved ${upstream} key to KeyShield`);
         sendResponse({ ok: true, mode: 'direct' });
         return;
       }
@@ -1053,6 +1120,7 @@ function harvestVisibleKeysFromText(text, hostname, href) {
       .map((s) => s.toLowerCase()),
   );
   const shapes = [
+    { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/g },
     { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/g },
     { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/g },
     { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/g },
@@ -1202,7 +1270,7 @@ function paintLiveDetectPanel(state) {
     + '<ul class="ks-list" style="list-style:none;margin:0;padding:0;max-height:170px;overflow:auto">' + rows + '</ul>'
     + '<div style="font-size:12px;color:' + (failed ? '#f87171' : '#34d399') + '">' + save + '</div>'
     + '<div style="font-size:12px;color:#a1a1aa">' + filled + '</div>'
-    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>';
+    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.5</div>';
 }
 
 async function pushDetectState(tabId, state) {
@@ -1455,9 +1523,7 @@ async function injectDetectOnAllTabs(opts) {
   }
   let filledAll = 0;
   try { filledAll = await fillCursorTabsFromPending(); } catch { /* cursor tab missing */ }
-  if (saved > 0 || filledAll > 0) {
-    try { notify('KeyShield', `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault`); } catch { /* noop */ }
-  }
+  // Silent harvest — toolbar popup lists saved keys. Do not toast.
   return { injected, saved, failed, filled: filledAll };
 }
 

@@ -439,7 +439,7 @@ def print_find(hits: list[tuple[str, Path]], ext: Path) -> None:
             ver = str(json.loads((path / "manifest.json").read_text(encoding="utf-8")).get("version") or "")
         except Exception:
             pass
-        print("#", src, path, "v" + ver)
+        print("#", src, path, "v" + ver, "leftover-stamp", VER)
     print("export KS_ROOT=" + shlex.quote(str(repo_root(ext))))
     print("export KS_EXT=" + shlex.quote(str(ext)))
 

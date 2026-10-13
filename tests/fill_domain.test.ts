@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assignKeysToInputs,
+  hintsWantNvidia,
   isCursorFillHost,
   isCursorKeyFetchContext,
   isCursorSettingsPath,
@@ -10,6 +11,8 @@ import {
   isKiloFillHost,
   isKiloKeyFetchContext,
   isLocalFillDemoPath,
+  isNvidiaFillHost,
+  isNvidiaKeyFetchContext,
   looksLikeCursorApiBlank,
   looksLikeKiloApiBlank,
   matchInputToUpstream,
@@ -17,7 +20,9 @@ import {
   preferredCursorFillKey,
   preferredKiloFillKey,
   shouldAutoFillInput,
+  unlockUpstreamsForFill,
   upstreamsForHostname,
+  vaultItemMatchesWanted,
 } from "../src/web/lib/fill-domain";
 
 describe("upstreamsForHostname", () => {
@@ -27,6 +32,7 @@ describe("upstreamsForHostname", () => {
       "openai",
       "anthropic",
       "openrouter",
+      "nvidia",
       "groq",
     ]);
     expect(upstreamsForHostname("cursor.sh")).toContain("openai");
@@ -41,6 +47,16 @@ describe("upstreamsForHostname", () => {
     expect(upstreamsForHostname("kilo.ai")).toEqual(["openrouter"]);
     expect(upstreamsForHostname("www.kilo.ai")).toEqual(["openrouter"]);
     expect(upstreamsForHostname("kilo.demo.localhost")).toEqual(["openrouter"]);
+  });
+
+  it("maps NVIDIA NIM hosts to nvidia plus OpenRouter fallback", () => {
+    expect(isNvidiaFillHost("build.nvidia.com")).toBe(true);
+    expect(upstreamsForHostname("build.nvidia.com")).toEqual(["nvidia", "openrouter"]);
+    expect(upstreamsForHostname("integrate.api.nvidia.com")).toContain("nvidia");
+    expect(isNvidiaKeyFetchContext({
+      hostname: "127.0.0.1",
+      pathname: "/nvidia-fill-demo.html",
+    })).toBe(true);
   });
 });
 
@@ -179,6 +195,36 @@ describe("pickKeyForInput", () => {
     expect(assigned[1]).toBeNull();
   });
 
+  it("pastes a vault NVIDIA key into an NVIDIA / unlabeled agent API blank", () => {
+    const nvidia = { upstream: "nvidia", name: "NVIDIA NIM", value: "nvapi-LOCALONLYFILLTEST1234" };
+    const mixed = [
+      { upstream: "openrouter", value: "sk-or-v1-LOCALONLY" },
+      nvidia,
+    ];
+    expect(matchInputToUpstream("NVIDIA API Key")).toBe("nvidia");
+    expect(hintsWantNvidia(["NVIDIA API Key"])).toBe(true);
+    expect(pickKeyForInput("NVIDIA API Key", mixed)?.value).toBe("nvapi-LOCALONLYFILLTEST1234");
+    expect(pickKeyForInput("API Key", [nvidia], {
+      hostname: "build.nvidia.com",
+      inputType: "password",
+    })?.upstream).toBe("nvidia");
+    expect(pickKeyForInput("API Key", [nvidia], {
+      hostname: "127.0.0.1",
+      pathname: "/nvidia-fill-demo.html",
+    })?.value).toBe("nvapi-LOCALONLYFILLTEST1234");
+    expect(unlockUpstreamsForFill({ hostname: "build.nvidia.com" })).toEqual(["nvidia", "openrouter"]);
+    expect(unlockUpstreamsForFill({
+      hostname: "agent.example",
+      hints: ["NVIDIA API Key"],
+      hasKeyBlanks: true,
+    })).toEqual(["nvidia", "openrouter"]);
+    expect(unlockUpstreamsForFill({ hostname: "evil.example", pathname: "/" })).toEqual([]);
+    expect(vaultItemMatchesWanted({ upstream: "custom", name: "NVIDIA API key" }, ["nvidia"])).toBe(true);
+    expect(vaultItemMatchesWanted({ upstream: "openai", name: "openai key" }, ["nvidia"])).toBe(false);
+    expect(isLocalFillDemoPath("/nvidia-fill-demo.html")).toBe(true);
+    expect(isFillablePageUrl("http://127.0.0.1:5173/nvidia-fill-demo.html")).toBe(true);
+  });
+
   it("falls through to the leftover key when the labeled upstream was already used", () => {
     const leftover = pickKeyForInput("OpenAI API Key", [
       { upstream: "openrouter", value: "sk-or-v1-LOCALONLY" },
@@ -213,7 +259,17 @@ describe("extension fill uses queued vault keys", () => {
     expect(demo).toContain("OpenAI API Key");
     expect(demo).toContain("127.0.0.1:5173/cursor-settings-fill-demo.html");
     expect(content).toContain("isKeyShieldDashboardHost() && !ksIsLocalFillDemo() && !ksIsKiloFillContext()");
-    expect(content).toContain("(ksIsKiloFillContext() || ksIsCursorFillContext()) ? remaining[0]");
+    expect(content).toContain("(ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) ? remaining[0]");
+    expect(content).toContain("function ksIsNvidiaFillContext");
+    expect(content).toContain("nvapi-");
+    expect(bg).toContain("NVIDIA_FILL_UPSTREAMS");
+    expect(bg).toContain("_hintsWantNvidia");
+    expect(bg).toContain("if (!message.silent) notify");
+    expect(popup).toContain('ver === "1.2.5"');
+    const nvidiaDemo = readFileSync(resolve(__dirname, "../src/web/public/nvidia-fill-demo.html"), "utf8");
+    expect(nvidiaDemo).toContain("NVIDIA API Key");
+    expect(nvidiaDemo).toContain("127.0.0.1:5173/nvidia-fill-demo.html");
+    expect(nvidiaDemo).toContain("data-testid=\"nvidia-api-key\"");
     expect(bg).toContain("'app.kilo.ai'");
     expect(bg).toContain("function _isKiloKeyFetchContext");
     expect(content).toContain("function ksIsKiloFillContext");

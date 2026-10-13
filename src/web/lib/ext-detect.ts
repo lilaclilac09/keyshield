@@ -11,6 +11,7 @@ export type DetectedShape = {
 };
 
 const SHAPES: { upstream: string; re: RegExp }[] = [
+  { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/ },
   { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/ },
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },
@@ -100,17 +101,18 @@ export function shouldPopupForKey(opts: {
   return !opts.alreadySaved;
 }
 
-/** Popup must show this exact line after Remove + Load unpacked 1.2.4. */
-export const DETECT_READY_VERSION = '1.2.4';
+/** Popup must show this exact line after Remove + Load unpacked 1.2.5. Leftover 1.2.4 still counts as ready. */
+export const DETECT_READY_VERSION = '1.2.5';
 export const DETECT_READY_OK = `ok ${DETECT_READY_VERSION} <all_urls>`;
+export const DETECT_READY_LEGACY = '1.2.4';
 
 export function formatDetectReadyLine(opts: {
   version: string;
   hasAllUrls: boolean;
 }): { ok: boolean; text: string } {
   const ver = String(opts.version || '').trim();
-  if (ver === DETECT_READY_VERSION && opts.hasAllUrls) {
-    return { ok: true, text: DETECT_READY_OK };
+  if ((ver === DETECT_READY_VERSION || ver === DETECT_READY_LEGACY) && opts.hasAllUrls) {
+    return { ok: true, text: `ok ${ver} <all_urls>` };
   }
   if (!opts.hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || '?'} missing <all_urls>` };
@@ -167,8 +169,8 @@ export function formatSignedStatus(signed: boolean): string {
 export const DETECT_STATUS_CARD_ID = 'keyshield-status-card';
 export const DETECT_STALE_NOTICE_ID = 'keyshield-detection-notice';
 
-/** Toolbar click paints the on-page card. A second popup window is leftover clutter. */
-export function manifestDropsDefaultPopup(man: {
+/** Toolbar click opens popup.html. Leftover 1.2.4 stamps still drop the ugly extra popup. */
+export function manifestHasDefaultPopup(man: {
   action?: { default_popup?: string } | unknown;
   browser_action?: { default_popup?: string } | unknown;
 }): boolean {
@@ -178,7 +180,15 @@ export function manifestDropsDefaultPopup(man: {
   const browser = man && typeof man.browser_action === 'object' && man.browser_action
     ? (man.browser_action as { default_popup?: string }).default_popup
     : '';
-  return !action && !browser;
+  return action === 'popup.html' || browser === 'popup.html';
+}
+
+/** @deprecated leftover stamps still drop default_popup. Repo 1.2.5 keeps it. */
+export function manifestDropsDefaultPopup(man: {
+  action?: { default_popup?: string } | unknown;
+  browser_action?: { default_popup?: string } | unknown;
+}): boolean {
+  return !manifestHasDefaultPopup(man);
 }
 
 export function shouldShowDetectSignin(signed: boolean): boolean {

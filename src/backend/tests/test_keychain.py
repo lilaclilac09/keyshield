@@ -120,6 +120,8 @@ def test_detect_specific_prefixes_beat_generic_sk():
     assert kc.detect_upstream("10470584-67a9-4abc-8def-123456787761")["upstream"] == "helius"
     assert kc.detect_upstream("vercel_DEMOKEYSHIELDLOCALONLY99xx")["upstream"] == "vercel"
     assert kc.detect_upstream("github_pat_DEMOKEYSHIELDLOCALONLY99")["upstream"] == "github"
+    assert kc.detect_upstream("nvapi-LOCALONLYFILLTEST1234")["upstream"] == "nvidia"
+    assert kc.infer_product("nvidia", "nvapi-LOCALONLYFILLTEST1234") == "NVIDIA NIM"
     dumped = str(kc.detect_upstream(or_key))
     assert or_key not in dumped
 

@@ -22,6 +22,7 @@ import {
   shouldShowDetectSignin,
   DETECT_STATUS_CARD_ID,
   manifestDropsDefaultPopup,
+  manifestHasDefaultPopup,
   isCompactPopupHtml,
   shouldRewritePopupHtml,
   isExtensionContextDead,
@@ -189,32 +190,36 @@ describe("1.2 popup status lines", () => {
     expect(DETECT_STATUS_CARD_ID).toBe("keyshield-status-card");
   });
 
-  it("toolbar click does not open a second popup window", () => {
+  it("toolbar click opens popup.html on 1.2.5", () => {
     const root = resolve(__dirname, "..");
     const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
     const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
-    expect(manifestDropsDefaultPopup(man)).toBe(true);
-    expect(manifestDropsDefaultPopup(firefox)).toBe(true);
-    expect(JSON.stringify(man.action || {})).not.toContain("popup.html");
+    expect(manifestHasDefaultPopup(man)).toBe(true);
+    expect(manifestHasDefaultPopup(firefox)).toBe(true);
+    expect(manifestDropsDefaultPopup(man)).toBe(false);
+    expect(JSON.stringify(man.action || {})).toContain("popup.html");
     const background = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
     expect(background).toContain("function pushDetectState");
     expect(background).toContain("toolbarAction.onClicked");
     expect(background).toContain("KS_DETECT_STATE");
-    expect(background).not.toContain("default_popup");
     const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
     expect(content).toContain("function applyHarvestState");
     expect(content).toContain("KS_SHOW_DETECT_PANEL");
-    expect(content).toContain("detect on · ok 1.2.4");
+    expect(content).toContain("detect on · ok 1.2.5");
   });
 });
 
 describe("formatDetectReadyLine", () => {
-  it("prints the exact ok 1.2.4 <all_urls> line", () => {
+  it("prints the exact ok 1.2.5 <all_urls> line and still accepts leftover 1.2.4", () => {
+    expect(formatDetectReadyLine({ version: "1.2.5", hasAllUrls: true })).toEqual({
+      ok: true,
+      text: "ok 1.2.5 <all_urls>",
+    });
     expect(formatDetectReadyLine({ version: "1.2.4", hasAllUrls: true })).toEqual({
       ok: true,
       text: "ok 1.2.4 <all_urls>",
     });
-    expect(DETECT_READY_OK).toBe("ok 1.2.4 <all_urls>");
+    expect(DETECT_READY_OK).toBe("ok 1.2.5 <all_urls>");
   });
 
   it("tells the user to Remove + Load unpacked when <all_urls> is missing", () => {
@@ -224,7 +229,7 @@ describe("formatDetectReadyLine", () => {
     expect(formatDetectReadyLine({ version: "1.1.3", hasAllUrls: true }).ok).toBe(false);
   });
 
-  it("Load unpacked src/extension is 1.2.4 and popup.js parses without merge markers", () => {
+  it("Load unpacked src/extension is 1.2.5 and popup.js parses without merge markers", () => {
     const root = resolve(__dirname, "..");
     const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
     const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
@@ -237,13 +242,13 @@ describe("formatDetectReadyLine", () => {
     expect(manifestHasSessionBridge(man)).toBe(true);
     expect(JSON.stringify(man.content_scripts)).toContain("session-bridge.js");
     expect(firefox.version).toBe(DETECT_READY_VERSION);
-    expect(DETECT_READY_VERSION).toBe("1.2.4");
+    expect(DETECT_READY_VERSION).toBe("1.2.5");
     expect(popup).not.toMatch(/<<<<<<<|>>>>>>>/);
-    expect(popup).toContain('if (ver === "1.2.4" && hasAllUrls)');
-    expect(popup).toContain("ok 1.2.4 <all_urls>");
+    expect(popup).toContain('ver === "1.2.5"');
+    expect(popup).toContain("ok ${ver} <all_urls>");
     expect(popup).toContain("function bootPopup");
     expect(popup).toContain("function applySignedInChrome");
-    expect(html).toContain("ok 1.2.4");
+    expect(html).toContain("ok 1.2.5");
     expect(html).toContain('id="signed-pane"');
     expect(html).toContain('id="saved-count"');
     expect(html).toContain('id="saved-apis"');

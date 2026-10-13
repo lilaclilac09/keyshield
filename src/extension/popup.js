@@ -62,7 +62,7 @@ function paintLoadedBuild() {
   const build = $("build");
   if (build) build.textContent = `v${ver} · KeyShield — Sovereign Vault`;
   const ready = $("detect-ready");
-  if (ready && !/ok 1\.2\.4/.test(ready.textContent || "")) {
+  if (ready && !/ok 1\.2\.[45]/.test(ready.textContent || "")) {
     ready.textContent = `checking ${ver} + <all_urls>…`;
     ready.style.display = "block";
   }
@@ -128,11 +128,11 @@ function paintSignedStatus(signed) {
 
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
-  if (ver === "1.2.4" && hasAllUrls) return { ok: true, text: "ok 1.2.4 <all_urls>" };
+  if ((ver === "1.2.5" || ver === "1.2.4") && hasAllUrls) return { ok: true, text: `ok ${ver} <all_urls>` };
   if (!hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
   }
-  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.4)` };
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.5)` };
 }
 
 async function hasAllUrlsPermission() {
@@ -162,7 +162,7 @@ async function refreshDetectReady() {
   const line = $("detect-line");
   if (line) {
     line.textContent = ready.ok
-      ? (auto ? "detect on · ok 1.2.4" : "detect ready · ok 1.2.4")
+      ? (auto ? `detect on · ok ${ver}` : `detect ready · ok ${ver}`)
       : `detect · ${ready.text}`;
     line.className = `line ${ready.ok ? "ok" : "err"}`;
   }

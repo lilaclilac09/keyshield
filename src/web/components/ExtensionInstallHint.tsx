@@ -38,10 +38,10 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             Chrome extension <span className="text-[#93b4ff] font-medium">(preferred)</span>
           </p>
           <p className={`${compact ? 'text-[12px] mt-1' : 'text-[14px] mt-1.5'} text-[#a8b3d8] leading-relaxed`}>
-            Auto-detects API keys on OpenAI, Anthropic, OpenRouter, Groq, Helius pages and offers Save to vault. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
+            Auto-detects API keys on OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Groq, Helius pages and offers Save to vault. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
           </p>
           <p className={`${compact ? 'text-[12px] mt-2' : 'text-[14px] mt-2'} text-[#e8ecff] leading-relaxed`}>
-            Load unpacked <strong className="text-white">v1.2.4</strong> from <code className="text-white">src/extension</code>.
+            Load unpacked <strong className="text-white">v1.2.5</strong> from <code className="text-white">src/extension</code>.
             Sign-in then opens already logged in when a token is in the popup or on{' '}
             <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>.
             Sign-in stuck? Open the Docs & Troubleshooting tab.

@@ -48,6 +48,14 @@ export const PROVIDER_CATALOG: Record<string, ProviderMeta> = {
     domain: 'openrouter.ai',
     tags: ['AI', 'NEMOTRON', 'OPENROUTER'],
   },
+  nvidia: {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    family: 'AI',
+    product: 'NVIDIA NIM',
+    domain: 'build.nvidia.com',
+    tags: ['AI', 'NVIDIA', 'NIM', 'NVAPI'],
+  },
   mistral: {
     id: 'mistral',
     name: 'Mistral AI',

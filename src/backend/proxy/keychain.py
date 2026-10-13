@@ -19,6 +19,7 @@ from .openrouter_interface import DEMO_CHAT_PATH, DEMO_MODEL, chat_body_bytes
 # Specific prefixes first — generic `sk-` must be last so it cannot steal
 # OpenRouter (`sk-or-`) or Anthropic (`sk-ant-`) keys.
 _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("nvidia", re.compile(r"nvapi-[A-Za-z0-9_-]{16,}")),
     ("openrouter", re.compile(r"sk-or-[A-Za-z0-9_-]{12,}")),
     ("anthropic", re.compile(r"sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}")),
     ("groq", re.compile(r"gsk_[A-Za-z0-9]{32,}")),
@@ -62,6 +63,13 @@ _PROVIDERS: dict[str, dict[str, str | tuple[str, ...]]] = {
         "product": "NVIDIA Nemotron",
         "domain": "openrouter.ai",
         "tags": ("AI", "NEMOTRON", "OPENROUTER"),
+    },
+    "nvidia": {
+        "name": "NVIDIA NIM",
+        "family": "AI",
+        "product": "NVIDIA NIM",
+        "domain": "build.nvidia.com",
+        "tags": ("AI", "NVIDIA", "NIM", "NVAPI"),
     },
     "mistral": {
         "name": "Mistral AI",
@@ -158,6 +166,8 @@ def provider_meta(upstream: str) -> dict[str, Any]:
 
 def infer_product(upstream: str, raw: str = "") -> str:
     text = (raw or "").strip()
+    if text.startswith("nvapi-"):
+        return "NVIDIA NIM"
     if text.startswith("sk-or-"):
         return "NVIDIA Nemotron"
     if text.startswith("sk-ant-"):
