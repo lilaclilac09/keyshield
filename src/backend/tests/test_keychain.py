@@ -78,16 +78,23 @@ def test_store_two_helius_keys_keep_distinct_names(tmp_path, monkeypatch):
 def test_vault_item_name_keeps_page_label_and_numbers_dupes():
     assert kc.looks_like_page_key_name("Panthermaze") is True
     assert kc.looks_like_page_key_name("helius key") is False
-    first = kc.vault_item_name(upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", name="Panthermaze")
+    first = kc.vault_item_name(
+        upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", name="Panthermaze"
+    )
     second = kc.vault_item_name(
         upstream="helius",
         raw="210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
         name="Panthermaze",
         taken=[first],
     )
-    third = kc.vault_item_name(upstream="helius", raw="310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2", name="helius key")
+    third = kc.vault_item_name(
+        upstream="helius", raw="310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2", name="helius key"
+    )
     fourth = kc.vault_item_name(
-        upstream="helius", raw="410e4c2a-91b0-4c3d-a333-ccccccccccc3", name="helius key", taken=[third]
+        upstream="helius",
+        raw="410e4c2a-91b0-4c3d-a333-ccccccccccc3",
+        name="helius key",
+        taken=[third],
     )
     assert first == "Panthermaze"
     assert second == "Panthermaze 2"

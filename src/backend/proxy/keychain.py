@@ -271,7 +271,9 @@ def vault_item_name(
 ) -> str:
     del raw, host, page_title
     given = (name or "").strip()
-    if looks_like_page_key_name(given, upstream) or (given and not is_generic_vault_name(given, upstream)):
+    if looks_like_page_key_name(given, upstream) or (
+        given and not is_generic_vault_name(given, upstream)
+    ):
         return uniquify_vault_name(given, upstream, taken)
     return uniquify_vault_name(upstream, upstream, taken)
 
@@ -505,7 +507,8 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
         out.append(
             {
                 "id": item_id,
-                "name": str(row["name"] or "") or distinguish_name(
+                "name": str(row["name"] or "")
+                or distinguish_name(
                     upstream=upstream,
                     raw=raw,
                     name=str(row["name"] or ""),

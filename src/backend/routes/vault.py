@@ -193,7 +193,8 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         note_bits.append(page_title)
     return {
         "id": row["id"],
-        "name": str(row["name"] or "") or kc.distinguish_name(
+        "name": str(row["name"] or "")
+        or kc.distinguish_name(
             upstream=upstream,
             raw=str(raw),
             name=str(row["name"] or ""),
@@ -257,7 +258,11 @@ async def vault_store(request: Request):
             expires_at = datetime.fromisoformat(raw_exp.replace("Z", "+00:00")).timestamp()
         except ValueError:
             try:
-                expires_at = datetime.strptime(raw_exp[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+                expires_at = (
+                    datetime.strptime(raw_exp[:10], "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
             except ValueError:
                 pass
 
