@@ -56,6 +56,13 @@ def _db() -> sqlite3.Connection:
             deleted_at INTEGER NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS credentials (
+            user_id       TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            created_at    INTEGER NOT NULL
+        )
+    """)
     conn.execute("DELETE FROM sessions WHERE expires_at < ?", (int(time.time()),))
     conn.commit()
     return conn
@@ -342,6 +349,81 @@ def _consume_nonce(nonce: str) -> bool:
     if not nonce:
         return False
     return _nonce_store.pop(str(nonce), None) is not None
+
+
+# ─── Registered password (userId + password login) ────────────────────────
+# First successful /auth/login stores a PBKDF2 hash. Later logins must match.
+# Wallet / passkey paths do not write this table.
+
+_PBKDF2_ITERS = 210_000
+_HASH_ALGO = "pbkdf2_sha256"
+
+
+def _b64(data: bytes) -> str:
+    return urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def _b64d(raw: str) -> bytes:
+    pad = "=" * ((4 - len(raw) % 4) % 4)
+    return urlsafe_b64decode(raw + pad)
+
+
+def _hash_password(password: str, salt: bytes | None = None) -> str:
+    salt = salt or os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERS)
+    return f"{_HASH_ALGO}${_PBKDF2_ITERS}${_b64(salt)}${_b64(dk)}"
+
+
+def _verify_password_hash(password: str, stored: str) -> bool:
+    try:
+        algo, iters_s, salt_b64, hash_b64 = stored.split("$", 3)
+        if algo != _HASH_ALGO:
+            return False
+        expected = _b64d(hash_b64)
+        got = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            _b64d(salt_b64),
+            int(iters_s),
+        )
+        return _hmac.compare_digest(got, expected)
+    except Exception:
+        return False
+
+
+def has_password(user_id: str) -> bool:
+    if not user_id:
+        return False
+    with _db() as conn:
+        row = conn.execute("SELECT 1 FROM credentials WHERE user_id = ?", (user_id,)).fetchone()
+    return row is not None
+
+
+def register_password(user_id: str, password: str) -> bool:
+    """Store a password hash if this userId has none. Returns True if created."""
+    if not user_id or not password:
+        return False
+    with _db() as conn:
+        row = conn.execute("SELECT 1 FROM credentials WHERE user_id = ?", (user_id,)).fetchone()
+        if row:
+            return False
+        conn.execute(
+            "INSERT INTO credentials (user_id, password_hash, created_at) VALUES (?, ?, ?)",
+            (user_id, _hash_password(password), int(time.time())),
+        )
+    return True
+
+
+def verify_password(user_id: str, password: str) -> bool:
+    if not user_id or not password:
+        return False
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM credentials WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    if not row:
+        return False
+    return _verify_password_hash(password, row[0])
 
 
 # Backward compat — server.py and tests import `session.create`

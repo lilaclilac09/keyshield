@@ -96,10 +96,42 @@ def _origin_rp_id(request: Request) -> tuple[str | None, list[str] | None]:
 # ─── Auth routes ────────────────────────────────────────────────
 
 
+def _auth_error(message: str, status: int) -> JSONResponse:
+    """SDK reads `detail`; the dashboard reads `error`."""
+    return JSONResponse({"error": message, "detail": message}, status_code=status)
+
+
 @router.post("/auth/login")
 async def auth_login(request: Request):
-    # Dev-only shim disabled in production — use /auth/wallet-login or /auth/passkey/auth-verify.
-    return JSONResponse({"error": "direct login disabled; use wallet or passkey"}, status_code=403)
+    """Registered userId + password opens a session.
+
+    First login for a userId stores the password hash. Later logins must
+    match that hash. Wallet and passkey stay available; this path is for
+    SDK / CLI / the AuthScreen password form.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return _auth_error("invalid json", 400)
+    if not isinstance(body, dict):
+        return _auth_error("userId and password required", 400)
+    user_id = str(body.get("userId") or body.get("user_id") or "").strip()
+    password = body.get("password")
+    if not isinstance(password, str):
+        password = "" if password is None else str(password)
+    if not user_id or not password:
+        return _auth_error("userId and password required", 400)
+    if sess_mod.is_deleted(user_id):
+        return _auth_error("account deleted", 403)
+    if sess_mod.has_password(user_id):
+        if not sess_mod.verify_password(user_id, password):
+            return _auth_error("invalid credentials", 401)
+        registered = False
+    else:
+        sess_mod.register_password(user_id, password)
+        registered = True
+    token = sess_mod.create_token(user_id, password)
+    return JSONResponse({"token": token, "userId": user_id, "registered": registered})
 
 
 @router.post("/auth/logout")
