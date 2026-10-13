@@ -54,7 +54,7 @@ node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
 npm run gitnexus -- detect-changes --scope all
 ```
 
-Do not paste `<符号>`. `node src/scripts/gitnexus.cjs` from `$HOME` resolves to `/Users/you/src/scripts/gitnexus.cjs`.
+Do not paste `<symbol>`. `node src/scripts/gitnexus.cjs` from `$HOME` resolves to `/Users/you/src/scripts/gitnexus.cjs`.
 
 ## Manual launch (separate terminals)
 

@@ -32,32 +32,33 @@ import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StoryJourney } from './components/StoryJourney';
 
-type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'reports' | 'trust';
+type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'troubleshooting' | 'reports' | 'trust';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' | 'more' }[] = [
   { id: 'home', label: 'Home', icon: <Home size={16} />, group: 'focus' },
   { id: 'vault', label: 'Vault', icon: <Key size={16} />, group: 'focus' },
   { id: 'activity', label: 'Payments', icon: <Activity size={16} />, group: 'focus' },
   { id: 'developer', label: 'Developer', icon: <Terminal size={16} />, group: 'focus' },
+  { id: 'docs', label: 'Docs & Troubleshooting', icon: <BookOpen size={16} />, group: 'focus' },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} />, group: 'more' },
   { id: 'sharing', label: 'Sharing', icon: <Share2 size={14} />, group: 'more' },
   { id: 'sessions', label: 'Sessions', icon: <Users size={14} />, group: 'more' },
   { id: 'settings', label: 'Settings', icon: <Settings size={14} />, group: 'more' },
-  { id: 'docs', label: 'Docs', icon: <BookOpen size={14} />, group: 'more' },
   { id: 'reports', label: 'Reports', icon: <FileText size={14} />, group: 'more' },
   { id: 'trust', label: 'X402 Trust', icon: <ShieldCheck size={14} />, group: 'more' },
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
-  home: { title: 'Home', subtitle: 'Balance, stored APIs, connection' },
-  vault: { title: 'Vault Management', subtitle: 'Encrypted secrets — AES-256-GCM at rest' },
-  activity: { title: 'Activity & Billing', subtitle: 'Proxy calls, usage metrics, and balance' },
+  home: { title: 'Home', subtitle: 'RPC, API timings, subscription, one-click buy or call' },
+  vault: { title: 'Vault Management', subtitle: 'Saved keys — hidden until you reveal' },
+  activity: { title: 'Payments', subtitle: 'Portal, rail, explorer, receipt — grouped by wallet and human or agent' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
   settings: { title: 'Settings', subtitle: 'Account, security, and preferences' },
   developer: { title: 'Developer', subtitle: 'API tokens, SDK snippets, and endpoint reference' },
-  docs: { title: 'Documentation', subtitle: 'Architecture, integration guides, and specs' },
+  docs: { title: 'Docs & Troubleshooting', subtitle: 'Chapters first · leftover 1.2.4 at the bottom' },
+  troubleshooting: { title: 'Docs & Troubleshooting', subtitle: 'Leftover 1.2.4 · missing session-bridge' },
   reports: { title: 'Reports', subtitle: 'Vault audit log — detections, autofills, and saved keys' },
   trust: { title: 'X402 Trust', subtitle: 'Trusted domains for x402 micropayment auto-pay' },
 };
@@ -87,6 +88,7 @@ const MainContent: React.FC = () => {
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeMs, setHomeMs] = useState<number | null>(null);
+  const [scrollTrouble, setScrollTrouble] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -106,11 +108,31 @@ const MainContent: React.FC = () => {
     window.history.replaceState({}, '', window.location.pathname);
   }, [isAuthenticated]);
 
+  const goSection = React.useCallback((id: string) => {
+    if (id === 'trouble' || id === 'troubleshooting') {
+      setSection('docs');
+      setScrollTrouble(true);
+      return;
+    }
+    setSection(id as Section);
+  }, []);
+
   useEffect(() => {
-    const onNav = (e: Event) => { const detail = (e as CustomEvent<Section>).detail; if (detail) setSection(detail); };
+    if (section !== 'docs' || !scrollTrouble) return;
+    const el = document.getElementById('docs-troubleshooting');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setScrollTrouble(false);
+  }, [section, scrollTrouble]);
+
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail) goSection(detail);
+    };
     window.addEventListener('ks-nav', onNav as EventListener);
     return () => window.removeEventListener('ks-nav', onNav as EventListener);
-  }, []);
+  }, [goSection]);
 
   useEffect(() => {
     const syncAuth = () => {
@@ -209,7 +231,7 @@ const MainContent: React.FC = () => {
       {isSearchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }} />}
       <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={async (data) => { await addItem(data); refreshHome(); }} initialData={prefilledData} />
       <div className="flex flex-1 min-h-0">
-        <Sidebar items={NAV} active={section} onNavigate={(id: string) => setSection(id as Section)} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
+        <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
           <Header title={config.title} subtitle={config.subtitle} onSearch={section === 'home' ? undefined : () => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
@@ -225,7 +247,7 @@ const MainContent: React.FC = () => {
                   onRefresh={() => { refreshHome(); refresh(); }}
                   onUnlock={unlock}
                   unlocking={vaultLoading}
-                  onGo={(id) => setSection(id as Section)}
+                  onGo={goSection}
                 />
               )}
               {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} />}
@@ -236,6 +258,7 @@ const MainContent: React.FC = () => {
               {section === 'settings' && <SettingsSection addr={fullAddr} />}
               {section === 'developer' && <DeveloperSection vaultUpstreams={(home?.apis ?? []).map((row) => row.upstream)} />}
               {section === 'docs' && <DocsSection />}
+              {section === 'troubleshooting' && <DocsSection />}
               {section === 'reports' && <ReportPage />}
               {section === 'trust' && <X402TrustManager />}
             </div>

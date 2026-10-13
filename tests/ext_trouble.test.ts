@@ -24,7 +24,7 @@ import {
 
 const root = resolve(__dirname, "..");
 
-describe("leftover 1.2.1 Trouble case", () => {
+describe("leftover 1.2.4 Troubleshooting tab", () => {
   it("finds a KeyShield ext folder and repo root without a hardcoded Downloads path", () => {
     expect(repoRootFromExt("/Users/me/src/keyshield/src/extension")).toBe("/Users/me/src/keyshield");
     expect(repoRootFromExt("/Users/me/extension")).toBe("/Users/me");
@@ -46,7 +46,7 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(shouldSkipGitPull("nodename nor servname provided, or not known")).toBe(true);
     expect(shouldSkipGitPull("Name or service not known")).toBe(true);
     expect(TRY_PULL_THEN_PATCH_SH).toContain(`git fetch origin ${PATCH_BRANCH}`);
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com 解析失败就跳过，直接跑下面的 python3");
+    expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com DNS failed — skip git, run python3 below");
     expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
     expect(TRY_PULL_THEN_PATCH_SH).not.toContain("eval ");
     expect(isZshSafePullBlock(LOCAL_PULL_BRIDGE_SH)).toBe(true);
@@ -84,6 +84,12 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(OFFLINE_PATCH_PY).not.toContain("<summary>Settings");
     expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
     expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
+    expect(OFFLINE_PATCH_PY).toContain("function paintSavedCount");
+    expect(OFFLINE_PATCH_PY).toContain("1 saved");
+    expect(OFFLINE_PATCH_PY).toContain("paintSavedCount(Math.max");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("1 saved");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("signed-status");
+    expect(ZSH_SAFE_STAMP_PY).toContain("1 saved");
     expect(OFFLINE_PATCH_PY).toContain("Library/Application Support/Google/Chrome");
     expect(OFFLINE_PATCH_PY).toContain("*/Preferences");
     expect(OFFLINE_PATCH_PY).toContain('print("ver"');
@@ -101,17 +107,64 @@ describe("leftover 1.2.1 Trouble case", () => {
     expect(LEFTOVER_121_CASE.symptom).toContain("content.js");
     const docs = readFileSync(resolve(root, "src/web/components/sections/DocsSection.tsx"), "utf8");
     const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
+    const app = readFileSync(resolve(root, "src/web/App.tsx"), "utf8");
     const caseUi = readFileSync(resolve(root, "src/web/components/ExtTroubleCase.tsx"), "utf8");
     const hint = readFileSync(resolve(root, "src/web/components/ExtensionInstallHint.tsx"), "utf8");
     const token = readFileSync(resolve(root, "src/web/components/ExtensionTokenCopy.tsx"), "utf8");
     const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
-    expect(docs).toContain("ExtTroubleCase");
-    expect(home).toContain("ExtTroubleCase");
+    const trouble = readFileSync(
+      resolve(root, "src/web/components/sections/TroubleshootingSection.tsx"),
+      "utf8",
+    );
+    expect(app).toContain("label: 'Docs & Troubleshooting'");
+    expect(app).toContain("section === 'troubleshooting'");
+    expect(app).toContain("docs-troubleshooting");
+    expect(app).not.toContain("label: 'Trouble'");
+    expect(app).not.toContain("TroubleSection");
+    expect(docs).toContain("TroubleshootingSection");
+    expect(docs).toContain("docs-toc");
+    expect(docs).toContain("docs-ch-1");
+    expect(home).not.toContain("ExtTroubleCase");
+    expect(home).not.toContain("ext-trouble-leftover-121");
+    expect(home).not.toContain("LOCAL_PULL_BRIDGE_SH");
+    expect(home).not.toContain("FIND_LOCAL_PATH_PY");
+    expect(home).not.toContain("OFFLINE_BRIDGE_STAMP_PY");
+    expect(home).not.toContain("OFFLINE_PATCH_PY");
+    expect(home).not.toContain("Leftover 1.2.4 · missing session-bridge");
+    expect(home).not.toContain("onGo('trouble')");
+    expect(home).not.toContain("Docs → Troubleshooting");
+    expect(home).toContain("onGo('troubleshooting')");
+    expect(home).toContain("Docs & Troubleshooting →");
+    expect(trouble).toContain("ExtTroubleCase");
+    expect(trouble).toContain("LEFTOVER_121_CASE");
+    expect(trouble).toContain("docs-troubleshooting");
+    expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(JSON.stringify(LEFTOVER_121_CASE)).not.toMatch(/[\u4e00-\u9fff]/);
+    expect("titleZh" in LEFTOVER_121_CASE).toBe(false);
+    expect("symptomZh" in LEFTOVER_121_CASE).toBe(false);
+    expect(caseUi).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(home).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(docs).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(app).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(hint).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(token).not.toMatch(/[\u4e00-\u9fff]/);
     expect(caseUi).toContain("ext-trouble-leftover-121");
-    expect(hint).toContain("Chrome internals");
+    expect(caseUi).toContain("LEFTOVER_121_CASE.title");
+    expect(hint).toContain("Open Docs & Troubleshooting");
+    expect(hint).not.toContain("is on Home");
+    expect(hint).not.toContain("Leftover 1.2.4 ↓");
+    expect(hint).not.toContain("Chrome internals");
     expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
-    expect(token).toContain("Trouble");
+    expect(token).toContain("Open the Docs & Troubleshooting tab");
+    expect(token).not.toContain("missing session-bridge is on this page");
+    expect(token).not.toContain("Register token");
+    expect(token).not.toContain("Old v1");
+    expect(OFFLINE_PATCH_PY).toContain("api.name||api.upstream");
+    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("api.name||api.upstream");
+    expect(ZSH_SAFE_STAMP_PY).toContain("api.name||api.upstream");
     expect(localDetect).toContain("Chrome internals");
+    expect(localDetect).toContain("Troubleshooting leftover");
+    expect(localDetect).not.toContain("Home leftover");
     expect(localDetect).toContain('man["version"] = "1.2.4"');
     expect(localDetect).toContain("signed-pane");
     expect(localDetect).toContain("patch-signed-popup.py");
@@ -257,6 +310,45 @@ print("one-panel", True)
 `;
     const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
     expect(out).toContain("one-panel True");
+  });
+
+  it("rewrites leftover 0 saved over listed helius rows", () => {
+    const leftover = readFileSync(
+      resolve(root, "tests/fixtures/leftover-zero-saved-popup.html"),
+      "utf8",
+    );
+    expect(leftover).toContain(">0 saved<");
+    expect(leftover.match(/class="api-row"/g)?.length).toBe(5);
+    const tmp = mkdtempSync(join(tmpdir(), "ks-zero-saved-"));
+    writeFileSync(
+      join(tmp, "manifest.json"),
+      readFileSync(resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"), "utf8"),
+    );
+    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "content.js"), "/* stub */\n");
+    writeFileSync(join(tmp, "popup.html"), leftover);
+    const py = `
+import importlib.util
+from pathlib import Path
+tmp = Path(${JSON.stringify(tmp)})
+spec = importlib.util.spec_from_file_location("bridge", ${JSON.stringify(resolve(root, "src/extension/patch-leftover-bridge.py"))})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert mod.popup_is_three_line((tmp / "popup.html").read_text()) is False
+mod.stamp(tmp)
+html = (tmp / "popup.html").read_text()
+js = (tmp / "popup.js").read_text()
+assert mod.popup_is_three_line(html) is True
+assert 'id="signed-status" class="saved-count">0 saved' in html
+assert "1 saved" in js
+assert "paintSavedCount" in js
+assert "api-row" in js
+print("rewrote-zero-saved", True)
+`;
+    const out = execFileSync("python3", ["-c", py], { cwd: root, encoding: "utf8" });
+    expect(out).toContain("rewrote-zero-saved True");
+    expect(readFileSync(join(tmp, "popup.html"), "utf8")).toContain("0 saved");
+    expect(readFileSync(join(tmp, "popup.html"), "utf8")).not.toContain("Copy Cursor key</button></body>");
   });
 
   it("rewrites leftover old three-line that hid copy in extra", () => {

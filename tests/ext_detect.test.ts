@@ -12,6 +12,9 @@ import {
   formatBulkSaveFailure,
   formatSavedCount,
   formatCollectedCount,
+  listedVaultCount,
+  popupVaultHero,
+  popupHeroAgreesWithListed,
   formatFilledLine,
   formatPopupMs,
   formatSignedStatus,
@@ -19,6 +22,7 @@ import {
   shouldShowDetectSignin,
   DETECT_STATUS_CARD_ID,
   manifestDropsDefaultPopup,
+  manifestHasDefaultPopup,
   isCompactPopupHtml,
   shouldRewritePopupHtml,
   isExtensionContextDead,
@@ -29,7 +33,10 @@ import {
   shouldArmLiveScan,
   shouldPopupForKey,
   summarizeSavedApis,
+  formatApiRowTitle,
+  formatApiRowNote,
 } from "../src/web/lib/ext-detect";
+import { formatStoredApiCard } from "../src/web/lib/provider-catalog";
 
 describe("classifyDetectedKey", () => {
   it("matches OpenAI project keys anywhere", () => {
@@ -117,6 +124,34 @@ describe("formatSavedCount", () => {
     expect(looksLikeSessionToken("ksv2_abcdefghij")).toBe(true);
     expect(looksLikeSessionToken("short")).toBe(false);
   });
+
+  it("hero matches listed vault rows — leftover 0 saved over 5 helius is wrong", () => {
+    const helius = [
+      { upstream: "helius", masked: "396e9e••••e555" },
+      { upstream: "helius", masked: "e38b4e••••736a" },
+      { upstream: "helius", masked: "ba5bbc••••3876" },
+      { upstream: "helius", masked: "104705••••7761" },
+      { upstream: "helius", masked: "encrypted" },
+    ];
+    expect(listedVaultCount(helius, 5)).toBe(5);
+    expect(listedVaultCount([], 5)).toBe(5);
+    expect(popupVaultHero(5)).toEqual({ saved: "5 saved", collected: "5 collected" });
+    expect(popupHeroAgreesWithListed("0 saved", 5)).toBe(false);
+    expect(popupHeroAgreesWithListed("5 saved", 5)).toBe(true);
+    const popup = readFileSync(resolve(__dirname, "../src/extension/popup.js"), "utf8");
+    const html = readFileSync(resolve(__dirname, "../src/extension/popup.html"), "utf8");
+    expect(popup).toContain("function listedApiCount");
+    expect(popup).toContain("hideLeftoverCopyButtons");
+    expect(popup).toContain("signedEl.textContent = signedIn ? saved");
+    expect(popup).not.toContain("return formatCollectedCount(n)");
+    expect(html).toContain('id="signed-status" class="saved-count">0 saved');
+    expect(html).toContain('id="saved-count" class="sub">0 saved');
+    const leftover = readFileSync(resolve(__dirname, "fixtures/leftover-zero-saved-popup.html"), "utf8");
+    expect(leftover).toContain(">0 saved<");
+    expect(leftover.match(/class="api-row"/g)?.length).toBe(5);
+    expect(popupHeroAgreesWithListed("0 saved", leftover.match(/class="api-row"/g)?.length || 0)).toBe(false);
+    expect(shouldRewritePopupHtml(leftover)).toBe(true);
+  });
 });
 
 describe("1.2 popup status lines", () => {
@@ -155,32 +190,36 @@ describe("1.2 popup status lines", () => {
     expect(DETECT_STATUS_CARD_ID).toBe("keyshield-status-card");
   });
 
-  it("toolbar click does not open a second popup window", () => {
+  it("toolbar click opens popup.html on 1.2.5", () => {
     const root = resolve(__dirname, "..");
     const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
     const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
-    expect(manifestDropsDefaultPopup(man)).toBe(true);
-    expect(manifestDropsDefaultPopup(firefox)).toBe(true);
-    expect(JSON.stringify(man.action || {})).not.toContain("popup.html");
+    expect(manifestHasDefaultPopup(man)).toBe(true);
+    expect(manifestHasDefaultPopup(firefox)).toBe(true);
+    expect(manifestDropsDefaultPopup(man)).toBe(false);
+    expect(JSON.stringify(man.action || {})).toContain("popup.html");
     const background = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
     expect(background).toContain("function pushDetectState");
     expect(background).toContain("toolbarAction.onClicked");
     expect(background).toContain("KS_DETECT_STATE");
-    expect(background).not.toContain("default_popup");
     const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
     expect(content).toContain("function applyHarvestState");
     expect(content).toContain("KS_SHOW_DETECT_PANEL");
-    expect(content).toContain("detect on · ok 1.2.4");
+    expect(content).toContain("detect on · ok 1.2.5");
   });
 });
 
 describe("formatDetectReadyLine", () => {
-  it("prints the exact ok 1.2.4 <all_urls> line", () => {
+  it("prints the exact ok 1.2.5 <all_urls> line and still accepts leftover 1.2.4", () => {
+    expect(formatDetectReadyLine({ version: "1.2.5", hasAllUrls: true })).toEqual({
+      ok: true,
+      text: "ok 1.2.5 <all_urls>",
+    });
     expect(formatDetectReadyLine({ version: "1.2.4", hasAllUrls: true })).toEqual({
       ok: true,
       text: "ok 1.2.4 <all_urls>",
     });
-    expect(DETECT_READY_OK).toBe("ok 1.2.4 <all_urls>");
+    expect(DETECT_READY_OK).toBe("ok 1.2.5 <all_urls>");
   });
 
   it("tells the user to Remove + Load unpacked when <all_urls> is missing", () => {
@@ -190,7 +229,7 @@ describe("formatDetectReadyLine", () => {
     expect(formatDetectReadyLine({ version: "1.1.3", hasAllUrls: true }).ok).toBe(false);
   });
 
-  it("Load unpacked src/extension is 1.2.4 and popup.js parses without merge markers", () => {
+  it("Load unpacked src/extension is 1.2.5 and popup.js parses without merge markers", () => {
     const root = resolve(__dirname, "..");
     const man = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.json"), "utf8"));
     const firefox = JSON.parse(readFileSync(resolve(root, "src/extension/manifest.firefox.json"), "utf8"));
@@ -203,13 +242,13 @@ describe("formatDetectReadyLine", () => {
     expect(manifestHasSessionBridge(man)).toBe(true);
     expect(JSON.stringify(man.content_scripts)).toContain("session-bridge.js");
     expect(firefox.version).toBe(DETECT_READY_VERSION);
-    expect(DETECT_READY_VERSION).toBe("1.2.4");
+    expect(DETECT_READY_VERSION).toBe("1.2.5");
     expect(popup).not.toMatch(/<<<<<<<|>>>>>>>/);
-    expect(popup).toContain('if (ver === "1.2.4" && hasAllUrls)');
-    expect(popup).toContain("ok 1.2.4 <all_urls>");
+    expect(popup).toContain('ver === "1.2.5"');
+    expect(popup).toContain("ok ${ver} <all_urls>");
     expect(popup).toContain("function bootPopup");
     expect(popup).toContain("function applySignedInChrome");
-    expect(html).toContain("ok 1.2.4");
+    expect(html).toContain("ok 1.2.5");
     expect(html).toContain('id="signed-pane"');
     expect(html).toContain('id="saved-count"');
     expect(html).toContain('id="saved-apis"');
@@ -274,8 +313,53 @@ describe("summarizeSavedApis", () => {
 
   it("accepts {items} payloads and cipher-only rows", () => {
     expect(summarizeSavedApis({ items: [{ upstream: "groq", cipher: "abc" }] })).toEqual([
-      { id: "groq", upstream: "groq", name: "groq key", masked: "encrypted" },
+      {
+        id: "groq",
+        upstream: "groq",
+        name: "groq key",
+        masked: "encrypted",
+        family: "",
+        product: "",
+        domain: "",
+        expires_at: null,
+        created_at: null,
+        notes: "",
+      },
     ]);
+  });
+
+  it("keeps family, product, expiry so two Helius rows stay distinct", () => {
+    const rows = summarizeSavedApis([
+      {
+        id: "1",
+        upstream: "helius",
+        name: "Helius RPC · Solana RPC · 104705••••7761 · dashboard.helius.dev",
+        family: "RPC",
+        product: "Solana RPC",
+        domain: "dashboard.helius.dev",
+        masked_value: "104705••••7761",
+        expires_at: "2026-11-11T00:00:00Z",
+      },
+      {
+        id: "2",
+        upstream: "helius",
+        name: "Helius RPC · Solana RPC · 210e4c••••aaa1 · dashboard.helius.dev",
+        family: "RPC",
+        product: "Solana RPC",
+        domain: "dashboard.helius.dev",
+        masked_value: "210e4c••••aaa1",
+        expires_at: "2026-11-11T00:00:00Z",
+      },
+    ]);
+    expect(rows[0].name).not.toBe(rows[1].name);
+    expect(formatApiRowTitle(rows[0])).toContain("104705");
+    expect(formatApiRowTitle(rows[1])).toContain("210e4c");
+    expect(formatApiRowNote(rows[0])).toContain("RPC");
+    const a = formatStoredApiCard({ upstream: "helius", prefix: "104705••••7761" });
+    const b = formatStoredApiCard({ upstream: "helius", prefix: "210e4c••••aaa1" });
+    expect(a.title).not.toBe(b.title);
+    expect(a.subtitle).toContain("RPC");
+    expect(formatStoredApiCard({ upstream: "anthropic", family: "AI", product: "Claude" }).subtitle).toContain("AI");
   });
 });
 
@@ -320,7 +404,9 @@ describe("extension context after Remove + Load unpacked", () => {
     expect(background).toContain("function collectPageSecrets");
     expect(background).toContain("function paintLiveDetectPanel");
     expect(background).toContain("dashboard.helius.dev");
-    expect(background).toContain("directStore({ upstream: hit.upstream, value: hit.key })");
+    expect(background).toContain("directStore({");
+    expect(background).toContain("upstream: hit.upstream");
+    expect(background).toContain("value: hit.key");
     expect(background).not.toContain("function stripStaleDetectPanel");
   });
 });

@@ -6,6 +6,7 @@ vault/env key already stored for the session user.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from typing import Any
@@ -18,6 +19,7 @@ from .openrouter_interface import DEMO_CHAT_PATH, DEMO_MODEL, chat_body_bytes
 # Specific prefixes first — generic `sk-` must be last so it cannot steal
 # OpenRouter (`sk-or-`) or Anthropic (`sk-ant-`) keys.
 _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("nvidia", re.compile(r"nvapi-[A-Za-z0-9_-]{16,}")),
     ("openrouter", re.compile(r"sk-or-[A-Za-z0-9_-]{12,}")),
     ("anthropic", re.compile(r"sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}")),
     ("groq", re.compile(r"gsk_[A-Za-z0-9]{32,}")),
@@ -33,6 +35,100 @@ _DETECTORS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("openai", re.compile(r"sk-(?:proj-|svcacct-|admin-)?(?!or-|ant-)[A-Za-z0-9_-]{20,}")),
 )
 
+_PROVIDERS: dict[str, dict[str, str | tuple[str, ...]]] = {
+    "openai": {
+        "name": "OpenAI",
+        "family": "AI",
+        "product": "GPT",
+        "domain": "platform.openai.com",
+        "tags": ("AI", "GPT", "OPENAI"),
+    },
+    "anthropic": {
+        "name": "Anthropic Claude",
+        "family": "AI",
+        "product": "Claude",
+        "domain": "console.anthropic.com",
+        "tags": ("AI", "CLAUDE", "ANTHROPIC"),
+    },
+    "groq": {
+        "name": "Groq",
+        "family": "AI",
+        "product": "Groq LPU",
+        "domain": "console.groq.com",
+        "tags": ("AI", "GROQ", "FAST"),
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "family": "AI",
+        "product": "NVIDIA Nemotron",
+        "domain": "openrouter.ai",
+        "tags": ("AI", "NEMOTRON", "OPENROUTER"),
+    },
+    "nvidia": {
+        "name": "NVIDIA NIM",
+        "family": "AI",
+        "product": "NVIDIA NIM",
+        "domain": "build.nvidia.com",
+        "tags": ("AI", "NVIDIA", "NIM", "NVAPI"),
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "family": "AI",
+        "product": "Mistral",
+        "domain": "console.mistral.ai",
+        "tags": ("AI", "MISTRAL"),
+    },
+    "cohere": {
+        "name": "Cohere",
+        "family": "AI",
+        "product": "Command",
+        "domain": "dashboard.cohere.com",
+        "tags": ("AI", "COHERE"),
+    },
+    "cursor": {
+        "name": "Cursor",
+        "family": "AI",
+        "product": "Cursor",
+        "domain": "cursor.com",
+        "tags": ("AI", "CURSOR"),
+    },
+    "helius": {
+        "name": "Helius RPC",
+        "family": "RPC",
+        "product": "Solana RPC",
+        "domain": "dashboard.helius.dev",
+        "tags": ("RPC", "SOLANA", "HELIUS"),
+    },
+    "0x": {
+        "name": "0x Protocol",
+        "family": "DEX",
+        "product": "0x Swap",
+        "domain": "dashboard.0x.org",
+        "tags": ("DEX", "0X"),
+    },
+    "alchemy": {
+        "name": "Alchemy",
+        "family": "RPC",
+        "product": "EVM RPC",
+        "domain": "dashboard.alchemy.com",
+        "tags": ("RPC", "ALCHEMY"),
+    },
+    "vercel": {
+        "name": "Vercel",
+        "family": "INFRA",
+        "product": "Vercel",
+        "domain": "vercel.com",
+        "tags": ("INFRA", "VERCEL"),
+    },
+    "github": {
+        "name": "GitHub",
+        "family": "GIT",
+        "product": "GitHub PAT",
+        "domain": "github.com",
+        "tags": ("GIT", "GITHUB"),
+    },
+}
+
 _PUBKEY_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _USDC_MAINNET = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 _USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
@@ -43,6 +139,197 @@ def mask_key(raw: str) -> str:
     if len(text) < 10:
         return "••••"
     return f"{text[:6]}…{text[-4:]}"
+
+
+def provider_meta(upstream: str) -> dict[str, Any]:
+    ident = (upstream or "").strip().lower()
+    row = _PROVIDERS.get(ident)
+    if row:
+        tags = row["tags"]
+        return {
+            "id": ident,
+            "name": str(row["name"]),
+            "family": str(row["family"]),
+            "product": str(row["product"]),
+            "domain": str(row["domain"]),
+            "tags": list(tags) if isinstance(tags, tuple) else list(tags or []),
+        }
+    return {
+        "id": ident or "custom",
+        "name": ident or "API",
+        "family": "INFRA",
+        "product": "API key",
+        "domain": "",
+        "tags": ["KEY"],
+    }
+
+
+def infer_product(upstream: str, raw: str = "") -> str:
+    text = (raw or "").strip()
+    if text.startswith("nvapi-"):
+        return "NVIDIA NIM"
+    if text.startswith("sk-or-"):
+        return "NVIDIA Nemotron"
+    if text.startswith("sk-ant-"):
+        return "Claude"
+    if text.startswith("sk-proj-"):
+        return "GPT project"
+    if text.startswith("sk-svcacct-"):
+        return "OpenAI service account"
+    if text.startswith("sk-admin-"):
+        return "OpenAI admin"
+    if text.startswith("gsk_"):
+        return "Groq LPU"
+    if text.startswith("key_") or text.lower().startswith("crsr"):
+        return "Cursor"
+    if text.startswith("github_pat_") or text.startswith("ghp_"):
+        return "GitHub PAT"
+    if text.startswith("vercel_") or text.startswith("vcp_"):
+        return "Vercel"
+    if text.startswith("helius_auth_") or (len(text) == 36 and text.count("-") == 4):
+        return "Solana RPC"
+    return str(provider_meta(upstream)["product"])
+
+
+_PAGE_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]{2,47}$")
+_PAGE_NAME_BLOCK = frozenset(
+    {
+        "name",
+        "names",
+        "api key",
+        "api keys",
+        "key",
+        "keys",
+        "expires",
+        "expiry",
+        "created",
+        "status",
+        "actions",
+        "type",
+        "product",
+    }
+)
+
+
+def looks_like_page_key_name(name: str, upstream: str = "") -> bool:
+    text = (name or "").strip()
+    if not text or text.lower() in _PAGE_NAME_BLOCK:
+        return False
+    if "http" in text.lower() or "•" in text or "…" in text:
+        return False
+    if re.search(r"sk-|gsk_|helius_auth_|github_pat_|ghp_", text, re.I):
+        return False
+    if re.fullmatch(r"[0-9a-f-]{8,}", text, re.I):
+        return False
+    if re.search(r"\b(key|keys|rpc|api)$", text, re.I):
+        return False
+    up = (upstream or "").strip().lower()
+    if up and text.lower() in {up, str(provider_meta(up)["name"]).lower()}:
+        return False
+    return bool(_PAGE_NAME_RE.fullmatch(text))
+
+
+def is_generic_vault_name(name: str, upstream: str) -> bool:
+    n = (name or "").strip().lower()
+    up = (upstream or "").strip().lower()
+    if not n or n in {"unnamed", "untitled", "key"}:
+        return True
+    if n in {up, f"{up} key", f"{up}key"}:
+        return True
+    meta = str(provider_meta(up)["name"]).lower()
+    if n == meta or n.startswith(f"{meta} ("):
+        return True
+    return n.endswith(" key") and n.startswith(up)
+
+
+def uniquify_vault_name(name: str, upstream: str, taken: list[str] | None = None) -> str:
+    given = (name or "").strip()
+    up = (upstream or "api").strip().lower() or "api"
+    taken_l = {str(row or "").strip().lower() for row in (taken or []) if str(row or "").strip()}
+    if looks_like_page_key_name(given, upstream) and given.lower() not in taken_l:
+        return given
+    if looks_like_page_key_name(given, upstream):
+        stem = re.sub(r"\s+\d+$", "", given)
+        i = 2
+        while f"{stem} {i}".lower() in taken_l or f"{stem}{i}".lower() in taken_l:
+            i += 1
+        return f"{stem} {i}"
+    i = 1
+    while f"{up}{i}" in taken_l or f"{up} {i}" in taken_l:
+        i += 1
+    return f"{up}{i}"
+
+
+def vault_item_name(
+    *,
+    upstream: str,
+    raw: str = "",
+    host: str = "",
+    name: str = "",
+    page_title: str = "",
+    taken: list[str] | None = None,
+) -> str:
+    del raw, host, page_title
+    given = (name or "").strip()
+    if looks_like_page_key_name(given, upstream) or (
+        given and not is_generic_vault_name(given, upstream)
+    ):
+        return uniquify_vault_name(given, upstream, taken)
+    return uniquify_vault_name(upstream, upstream, taken)
+
+
+def distinguish_name(
+    *,
+    upstream: str,
+    raw: str,
+    host: str = "",
+    name: str = "",
+    page_title: str = "",
+) -> str:
+    """Human label + prefix + host so two Helius UUIDs are not the same card."""
+    prefix = mask_key(raw)
+    meta = provider_meta(upstream)
+    given = (name or "").strip()
+    if given and looks_like_page_key_name(given):
+        return given
+    if given and not is_generic_vault_name(given, upstream):
+        return given if prefix in given else f"{given} · {prefix}"
+    parts = [str(meta["name"])]
+    product = infer_product(upstream, raw)
+    if product and product.lower() not in str(meta["name"]).lower():
+        parts.append(product)
+    parts.append(prefix)
+    host = (host or "").strip()
+    if host:
+        parts.append(host)
+    title = " ".join((page_title or "").split())[:48]
+    if title and not any(title.lower() in str(p).lower() for p in parts):
+        parts.append(title)
+    return " · ".join(p for p in parts if p)
+
+
+def tag_value(tags: list[Any] | None, prefix: str) -> str:
+    needle = f"{prefix.lower().rstrip(':')}:"
+    for tag in tags or []:
+        text = str(tag or "")
+        if text.lower().startswith(needle):
+            return text.split(":", 1)[1].strip()
+    return ""
+
+
+def catalog_tags(upstream: str, extra: list[str] | None = None) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for tag in list(provider_meta(upstream)["tags"]) + list(extra or []):
+        text = str(tag or "").strip()
+        if not text:
+            continue
+        key = text.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
 
 
 def extract_key(raw: str) -> str:
@@ -167,7 +454,7 @@ def parse_usdc_micro(rpc_result: Any) -> int | None:
     return total if found else 0
 
 
-def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
+def list_stored_upstreams(user_id: str) -> list[dict[str, Any]]:
     """Names + prefixes only. Never returns the raw key.
 
     One card per vault row. Five Helius keys stay five rows — do not
@@ -175,11 +462,11 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
     """
     from ..routes import vault as vault_mod
 
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     with vault_mod._db() as conn:
         rows = conn.execute(
-            "SELECT id, name, upstream, value, cipher_v FROM vault_items "
-            "WHERE user_id = ? ORDER BY updated_at DESC",
+            "SELECT id, name, upstream, value, tags, created_at, updated_at, expires_at "
+            "FROM vault_items WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
     seen: set[str] = set()
@@ -192,15 +479,51 @@ def list_stored_upstreams(user_id: str) -> list[dict[str, str]]:
             continue
         seen.add(item_id)
         raw = str(row["value"] or "")
-        prefix = (
-            "encrypted" if (not raw.strip() and int(row["cipher_v"] or 0) == 1) else mask_key(raw)
-        )
+        if not raw.strip():
+            continue
+        prefix = mask_key(raw)
+        meta = provider_meta(upstream)
+        product = infer_product(upstream, raw)
+        expires_at = vault_mod._iso(row["expires_at"]) if row["expires_at"] else None
+        created_at = vault_mod._iso(row["created_at"])
+        try:
+            parsed_tags = json.loads(row["tags"] or "[]")
+        except Exception:
+            parsed_tags = []
+        if not isinstance(parsed_tags, list):
+            parsed_tags = []
+        host = tag_value(parsed_tags, "host")
+        page_title = tag_value(parsed_tags, "page")
+        expiry_label = f"expires {expires_at[:10]}" if expires_at else "no expiry"
+        note_bits = [
+            str(meta["family"]),
+            product,
+            prefix,
+            host or str(meta["domain"]),
+            expiry_label,
+        ]
+        if page_title:
+            note_bits.append(page_title)
         out.append(
             {
                 "id": item_id,
-                "name": str(row["name"] or upstream),
+                "name": str(row["name"] or "")
+                or distinguish_name(
+                    upstream=upstream,
+                    raw=raw,
+                    name=str(row["name"] or ""),
+                    host=host,
+                    page_title=page_title,
+                ),
                 "upstream": upstream,
                 "prefix": prefix,
+                "family": meta["family"],
+                "product": product,
+                "domain": host or meta["domain"],
+                "expires_at": expires_at,
+                "created_at": created_at,
+                "tags": catalog_tags(upstream, [str(t) for t in parsed_tags]),
+                "notes": " · ".join(b for b in note_bits if b),
             }
         )
     return out

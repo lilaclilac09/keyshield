@@ -1,13 +1,8 @@
-"""Vault routes — SQLite-backed store for the Python backend.
+"""Vault routes — SQLite store for the Python backend.
 
-Path A production: vault lives on Cloudflare Worker (client-side AES-GCM).
-Local dev / Railway: this shim stores to SQLite at
-`src/backend/data/vault_shim.db` so:
-  - Keys survive Python restarts.
-  - The Rust hot-path proxy (`/proxy/helius/*`) can resolve the user's
-    upstream API key via `ks_vault::sqlite::lookup_upstream_key`.
-  - Extension `IMPORT_VAULT` + manual `/manage/store` both land in the
-    same row, queryable by (user_id, upstream).
+Plaintext in `vault_items.value`. List is masked. Reveal is
+`GET /manage/decrypt/{id}`. Cipher-only rows cannot be decrypted on
+Railway and must not be stored.
 
 Schema is shared with the Rust reader (see
 `src/proxy/crates/ks-vault/src/sqlite.rs::lookup_upstream_key`):
@@ -16,11 +11,11 @@ Schema is shared with the Rust reader (see
                 cipher, iv, cipher_v)
 
 Endpoints:
-  GET    /manage/vault         → list (masked values + optional cipher)
-  POST   /manage/store         → upsert one item (idempotent by id)
-  GET    /manage/decrypt/{id}  → return plaintext value (local-dev only)
+  GET    /manage/vault         → list (masked; empty-value rows dropped)
+  POST   /manage/store         → upsert plaintext (apiKey / value required)
+  GET    /manage/decrypt/{id}  → plaintext; 404 if the row is empty
   DELETE /manage/vault/{id}    → delete one item
-  PUT    /manage/vault/{id}    → partial update
+  PUT    /manage/vault/{id}    → partial update (will not wipe value)
 """
 
 from __future__ import annotations
@@ -174,19 +169,54 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         tags = _json.loads(row["tags"] or "[]")
     except Exception:
         tags = []
+    raw = row["value"] or ""
+    if not str(raw).strip() and int(row["cipher_v"] or 0) == 1:
+        masked = "encrypted"
+    else:
+        masked = _mask(raw)
+    from ..proxy import keychain as kc
+
+    upstream = str(row["upstream"] or "")
+    meta = kc.provider_meta(upstream)
+    product = kc.infer_product(upstream, str(raw))
+    expires_iso = _iso(row["expires_at"]) if row["expires_at"] else None
+    expiry_label = f"expires {expires_iso[:10]}" if expires_iso else "no expiry"
+    if not isinstance(tags, list):
+        tags = []
+    host = kc.tag_value(tags, "host")
+    page_title = kc.tag_value(tags, "page")
+    page_name = kc.tag_value(tags, "name")
+    note_bits = [str(meta["family"]), product, host or str(meta["domain"]), expiry_label]
+    if page_name:
+        note_bits.append(page_name)
+    if page_title:
+        note_bits.append(page_title)
     return {
         "id": row["id"],
-        "name": row["name"],
+        "name": str(row["name"] or "")
+        or kc.distinguish_name(
+            upstream=upstream,
+            raw=str(raw),
+            name=str(row["name"] or ""),
+            host=host,
+            page_title=page_title,
+        ),
         "type": row["type"],
         "upstream": row["upstream"],
-        "masked_value": _mask(row["value"] or ""),
+        "masked_value": masked,
+        "prefix": masked if str(raw).strip() else "",
+        "family": meta["family"],
+        "product": product,
+        "domain": host or meta["domain"],
+        "notes": " · ".join(b for b in note_bits if b),
+        "has_plaintext": bool(str(raw).strip()),
         "cipher": row["cipher"] or "",
         "iv": row["iv"] or "",
         "cipher_v": row["cipher_v"] or 0,
-        "tags": tags,
+        "tags": kc.catalog_tags(upstream, [str(t) for t in tags]),
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
-        "expires_at": _iso(row["expires_at"]) if row["expires_at"] else None,
+        "expires_at": expires_iso,
     }
 
 
@@ -198,8 +228,14 @@ async def vault_list(request: Request):
     with _db() as conn:
         if _may_claim_default(request):
             _claim_default_rows(conn, uid)
+        # Cipher-only leftovers listed as 4 cards with a blank RAW field.
+        conn.execute(
+            "DELETE FROM vault_items WHERE user_id = ? AND TRIM(value) = ''",
+            (uid,),
+        )
         rows = conn.execute(
-            "SELECT * FROM vault_items WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM vault_items WHERE user_id = ? AND TRIM(value) != '' "
+            "ORDER BY created_at DESC",
             (uid,),
         ).fetchall()
     return JSONResponse([_row_to_dict(r) for r in rows])
@@ -216,19 +252,43 @@ async def vault_store(request: Request):
     now = time.time()
     expiry_days = body.get("expiry_days", 30)
     expires_at = now + (expiry_days * 86400) if expiry_days else None
-    tags = body.get("tags", [])
-    if isinstance(tags, list):
-        tags_json = _json.dumps(tags)
-    else:
-        tags_json = "[]"
-    # SDK + dashboard paste send `apiKey`; Path A cipher rows send `value`.
-    stored_value = body.get("value") or body.get("apiKey") or body.get("api_key") or ""
+    raw_exp = str(body.get("expires_at") or body.get("expiry") or "").strip()
+    if raw_exp:
+        try:
+            expires_at = datetime.fromisoformat(raw_exp.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            try:
+                expires_at = (
+                    datetime.strptime(raw_exp[:10], "%Y-%m-%d")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+            except ValueError:
+                pass
+
+    stored_value = str(body.get("value") or body.get("apiKey") or body.get("api_key") or "").strip()
     upstream = body.get("upstream") or ""
-    has_cipher = bool(body.get("cipher") and body.get("iv"))
-    if not str(stored_value).strip() and not has_cipher:
+    if not stored_value:
         return JSONResponse({"detail": "Paste the API key"}, status_code=400)
+    from ..proxy import keychain as kc
+
+    host = str(body.get("origin") or body.get("domain") or body.get("host") or "").strip()
+    page_title = str(body.get("pageTitle") or body.get("page_title") or "").strip()
+    extra_tags = body.get("tags", [])
+    if not isinstance(extra_tags, list):
+        extra_tags = []
+    if host:
+        extra_tags = [*extra_tags, f"host:{host}"]
+    if page_title:
+        extra_tags = [*extra_tags, f"page:{page_title[:80]}"]
+    given_name = str(body.get("name") or "").strip()
+    if kc.looks_like_page_key_name(given_name, str(upstream)):
+        extra_tags = [*extra_tags, f"name:{given_name[:80]}"]
+    tags_json = _json.dumps(kc.catalog_tags(str(upstream), [str(t) for t in extra_tags]))
 
     # Same plaintext key → same row. A second Helius UUID stays a new row.
+    # Cipher-only leftovers (empty value) get the next pasted secret instead
+    # of stacking a fifth blank card.
     if not body.get("id") and stored_value:
         with _db() as conn:
             existing = conn.execute(
@@ -238,6 +298,29 @@ async def vault_store(request: Request):
             ).fetchone()
             if existing:
                 item_id = existing[0]
+            else:
+                blank = conn.execute(
+                    "SELECT id FROM vault_items WHERE user_id = ? AND upstream = ? "
+                    "AND TRIM(value) = '' ORDER BY created_at DESC LIMIT 1",
+                    (uid, upstream),
+                ).fetchone()
+                if blank:
+                    item_id = blank[0]
+
+    with _db() as conn:
+        taken_rows = conn.execute(
+            "SELECT name FROM vault_items WHERE user_id = ? AND id != ?",
+            (uid, item_id),
+        ).fetchall()
+    taken = [str(row["name"] or "") for row in taken_rows]
+    stored_name = kc.vault_item_name(
+        upstream=str(upstream),
+        raw=stored_value,
+        host=host,
+        name=str(body.get("name") or ""),
+        page_title=page_title,
+        taken=taken,
+    )
 
     with _db() as conn:
         conn.execute(
@@ -251,7 +334,7 @@ async def vault_store(request: Request):
                 name       = excluded.name,
                 type       = excluded.type,
                 upstream   = excluded.upstream,
-                value      = excluded.value,
+                value      = CASE WHEN excluded.value = '' THEN vault_items.value ELSE excluded.value END,
                 tags       = excluded.tags,
                 updated_at = excluded.updated_at,
                 expires_at = excluded.expires_at,
@@ -262,7 +345,7 @@ async def vault_store(request: Request):
             (
                 item_id,
                 uid,
-                body.get("name") or "unnamed",
+                stored_name,
                 body.get("type") or "api_key",
                 upstream,
                 stored_value,
@@ -280,9 +363,7 @@ async def vault_store(request: Request):
 
 @router.get("/manage/decrypt/{item_id}")
 async def vault_decrypt(item_id: str, request: Request):
-    """Return plaintext value. Production should NOT call this — the CF
-    Worker path decrypts client-side. This is the local-dev fallback so
-    the dashboard's "reveal" button works without Path A."""
+    """Return the stored plaintext. Empty cipher leftovers 404."""
     uid, err = _require_user_id(request)
     if err:
         return err
@@ -293,7 +374,16 @@ async def vault_decrypt(item_id: str, request: Request):
         ).fetchone()
     if not row:
         return JSONResponse({"detail": "item not found"}, status_code=404)
-    return JSONResponse({"id": item_id, "value": row["value"] or ""})
+    plaintext = str(row["value"] or "").strip()
+    if not plaintext:
+        return JSONResponse(
+            {
+                "detail": "no plaintext in vault_shim.db — save the API key again",
+                "code": "empty_plaintext",
+            },
+            status_code=404,
+        )
+    return JSONResponse({"id": item_id, "value": plaintext, "key": plaintext})
 
 
 @router.delete("/manage/vault/{item_id}")
@@ -331,6 +421,8 @@ async def vault_update(item_id: str, request: Request):
     updates = {k: v for k, v in body.items() if k in allowed}
     if "tags" in updates and isinstance(updates["tags"], list):
         updates["tags"] = _json.dumps(updates["tags"])
+    if "value" in updates and not str(updates["value"] or "").strip():
+        updates.pop("value")
     if not updates:
         return JSONResponse({"ok": True})
     updates["updated_at"] = time.time()

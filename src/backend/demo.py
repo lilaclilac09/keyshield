@@ -9,6 +9,7 @@ not a public unauthenticated proxy. Upstream keys stay on the server.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -201,9 +202,11 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
     import time
     import uuid
 
+    from .proxy import keychain as kc
     from .routes import vault as vault_mod
 
     now = time.time()
+    tags = kc.catalog_tags(upstream, ["keychain"])
     vault_mod._DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with vault_mod._db() as conn:
         existing = conn.execute(
@@ -211,10 +214,18 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
             "ORDER BY created_at DESC LIMIT 1",
             (user_id, upstream, api_key),
         ).fetchone()
+        taken = [
+            str(row["name"] or "")
+            for row in conn.execute(
+                "SELECT name FROM vault_items WHERE user_id = ? AND id != ?",
+                (user_id, existing[0] if existing else ""),
+            ).fetchall()
+        ]
+        label = kc.vault_item_name(upstream=upstream, raw=api_key, taken=taken)
         if existing:
             conn.execute(
-                "UPDATE vault_items SET updated_at = ?, name = ? WHERE id = ? AND user_id = ?",
-                (now, f"{upstream} key", existing[0], user_id),
+                "UPDATE vault_items SET updated_at = ?, name = ?, tags = ? WHERE id = ? AND user_id = ?",
+                (now, label, json.dumps(tags), existing[0], user_id),
             )
             return str(existing[0])
         item_id = f"ks_{upstream}_{uuid.uuid4().hex[:8]}"
@@ -229,14 +240,14 @@ def store_upstream_key(user_id: str, upstream: str, api_key: str) -> str:
             (
                 item_id,
                 user_id,
-                f"{upstream} key",
+                label,
                 "api_key",
                 upstream,
                 api_key,
-                '["keychain"]',
+                json.dumps(tags),
                 now,
                 now,
-                None,
+                now + 30 * 86400,
             ),
         )
     return item_id

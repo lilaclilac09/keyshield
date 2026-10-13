@@ -24,7 +24,7 @@ Lead with **one live Solana Devnet shop SKU** and **one receipt**.
 | SKU **2.00 USDC MPP capture** — open 5.00 escrow, capture 2.00 | “OpenRouter sold us credit” |
 | Receipt **KS-MPP-509959477** | A made-up shop token |
 | Owner `GHpmxvrXbAfc5XWG7mPrJFqchWEQC6mc2hyStP5P4bhq` | Settler secret / keystore JSON |
-| Extension **1.2.4** `ok 1.2.4 <all_urls>` | “Load 1.1.7” |
+| Extension **1.2.5** `ok 1.2.5 <all_urls>` (leftover repair still `ok 1.2.4 <all_urls>`) | “Load 1.1.7” |
 
 Home already shows this receipt (`LAST_LIVE_MPP_RECEIPT` in
 `src/web/lib/mpp-receipt.ts`). Do **not** buy again on `:8001` (wrong vault
@@ -153,15 +153,17 @@ github / vercel. USDC 12.89 matches the receipt after-balance.
 3. **Payments** → Usage Log (Payment column) → Billing → Top Up
    (Ledger / Phantom SOL / Credit USDC) → MPP Streams.
 4. **X402 Trust** in More — trusted domains, not a token shop.
-5. Extension: Remove + Load unpacked `src/extension` → `ok 1.2.4 <all_urls>`.
+5. Extension: Remove + Load unpacked `src/extension` → `ok 1.2.5 <all_urls>`.
+   Leftover repair still accepts `ok 1.2.4 <all_urls>`.
    Sign-in, leave the tab open, save, return to Vault.
 
 ---
 
-## 6. Extension 1.2.4 (so Load unpacked is not 1.1.7)
+## 6. Extension 1.2.5 (so Load unpacked is not 1.1.7)
 
-Card name stays **KeyShield — Sovereign Vault**. Version **1.2.4**.
-Popup first line `ok 1.2.4 <all_urls>`. Do not only Reload.
+Card name stays **KeyShield — Sovereign Vault**. Version **1.2.5**.
+Popup first line `ok 1.2.5 <all_urls>`. Leftover stamp is still **1.2.4**.
+Do not only Reload.
 
 If `git pull` cannot resolve github.com, run the python3 patch in
 `src/extension/LOCAL-DETECT.md` (now stamps **1.2.4**). Do not paste HTML

@@ -64,10 +64,10 @@ Firefox MV2 add-ons loaded this way are removed when the browser closes — that
 
 ## Troubleshooting
 
-- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.2.4). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
-- **Sign-in should open already logged in:** Load unpacked **1.2.4**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`. `127.0.0.1:5173` refused means Vite is off — Sign-in must fall back to the hosted app.
-- **No toast when a key is on the page:** popup must show **`ok 1.2.4 <all_urls>`**. If it does not, `chrome://extensions` → **Remove** then **Load unpacked** `src/extension`. Do not only Reload — Chrome often keeps the old permission set. After Sign-in the scanner stays on and saves `sk-proj-` / `sk-or-` / `key_` / `crsr_` / `helius_auth_`. Saved keys paste into the matching API blank (Cursor Settings black box included). Chrome cannot inject into Cursor desktop — use **Copy key for Cursor API box**. Cursor Settings: click **Show** first. Ordinary English does not toast.
-- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Card stays **KeyShield — Sovereign Vault**, version **1.2.4**. Popup must say `ok 1.2.4 <all_urls>`. Sign-in, then leave the tab open — scan hangs and saves.
+- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.2.5). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
+- **Sign-in should open already logged in:** Load unpacked **1.2.5**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`. `127.0.0.1:5173` refused means Vite is off — Sign-in must fall back to the hosted app.
+- **Popup does not open / NVIDIA blank stays empty:** `chrome://extensions` → **Remove** then **Load unpacked** `src/extension`. Card **1.2.5**. Toolbar click must open `popup.html` with **`ok 1.2.5 <all_urls>`**. Saved `nvapi-` keys fill empty API Key blanks silently. No toast. 🔑 only on hover. See `INSTALL-LOCAL.md`.
+- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Leftover repair stays **1.2.4**. Product Load unpacked is **1.2.5**.
 - **Passkey after jump-out:** a preregistered `ks_passkey_user` / wallet id must show **Sign In as abcd…wxyz**. A stale token 401 must not wipe that id.
 - **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
 - **Want local Vite instead:** popup Settings → **Use local dev** only after `curl http://127.0.0.1:5173` works.

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bring Your Own Key (BYOK) · Kilo</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: #0b1020;
+      color: #d7dce8;
+      padding: 28px 36px;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; color: #f4f6fb; }
+    .sub { color: #8b93a7; font-size: 12px; margin-bottom: 22px; max-width: 44rem; line-height: 1.5; }
+    .card {
+      max-width: 520px;
+      background: #12182b;
+      border: 1px solid #243049;
+      border-radius: 12px;
+      padding: 18px 18px 16px;
+    }
+    label { display: block; font-size: 12px; color: #c5cce0; margin: 12px 0 6px; }
+    .hint { font-size: 11px; color: #7d869c; margin-top: 4px; }
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      height: 36px;
+      padding: 0 10px;
+      background: #0b0f1c;
+      border: 1px solid #33405c;
+      border-radius: 6px;
+      color: #e8ecf7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    input:focus, select:focus { outline: 1px solid #5b8def; }
+    .save {
+      margin-top: 16px;
+      height: 36px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 8px;
+      background: #4f7dff;
+      color: #fff;
+      font-weight: 600;
+      cursor: default;
+    }
+    .login {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #243049;
+      max-width: 420px;
+    }
+    .note { margin-top: 20px; font-size: 11px; color: #6b7388; max-width: 44rem; }
+    code { color: #d7deef; }
+  </style>
+</head>
+<body>
+  <h1>Kilo · Bring Your Own Key (BYOK)</h1>
+  <p class="sub">
+    Stand-in for <code>https://app.kilo.ai/byok</code>. Add Key → provider OpenRouter →
+    paste the saved <code>sk-or-</code> vault key. KeyShield must fill the empty API Key
+    box and leave the login password empty. Chrome cannot inject into a signed-out
+    Kilo SPA the same way — this page is the local BYOK fixture.
+  </p>
+
+  <div class="card" data-testid="kilo-byok-card">
+    <p class="hint">Account → Bring Your Own Key · Add Your First Key</p>
+    <label for="kilo-provider">Provider</label>
+    <select id="kilo-provider" aria-label="Provider">
+      <option>Anthropic</option>
+      <option selected>OpenRouter</option>
+      <option>OpenAI</option>
+    </select>
+    <label for="kilo-openrouter-key">OpenRouter API Key</label>
+    <input
+      type="password"
+      id="kilo-openrouter-key"
+      name="apiKey"
+      placeholder="Paste sk-or-v1-…"
+      autocomplete="off"
+      aria-label="API Key"
+      data-testid="kilo-openrouter-key"
+    />
+    <p class="hint">Empty BYOK secret box after OpenRouter is selected. Paste happens here.</p>
+    <button class="save" type="button">Save</button>
+  </div>
+
+  <div class="login">
+    <label for="login-password">Password</label>
+    <input type="password" id="login-password" autocomplete="current-password" data-testid="login-password" />
+  </div>
+
+  <p class="note">
+    Do not paste this file into zsh. Open it as
+    <code>http://127.0.0.1:5173/kilo-byok-fill-demo.html</code>
+    after Remove + Load unpacked <code>src/extension</code>. A stored OpenRouter
+    key auto-fills the empty BYOK boxes. Popup must show
+    <code>ok 1.2.4 &lt;all_urls&gt;</code>.
+  </p>
+</body>
+</html>

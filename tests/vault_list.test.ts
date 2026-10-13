@@ -16,6 +16,7 @@ import {
   pendingHitsToFillKeys,
   maskVaultPreview,
 } from "../src/web/lib/vault-list";
+import { vaultStoreName } from "../src/web/lib/provider-catalog";
 
 const root = resolve(__dirname, "..");
 
@@ -51,17 +52,18 @@ describe("shouldRefreshVaultOnVisit", () => {
 });
 
 describe("passkey is not required to save", () => {
-  it("only gates paste / reveal / unlock — never detect, save, or call", () => {
+  it("only gates Device Vault unlock — never detect, save, call, paste, or reveal", () => {
     expect(needsPasskey("save")).toBe(false);
     expect(needsPasskey("detect")).toBe(false);
     expect(needsPasskey("call")).toBe(false);
-    expect(needsPasskey("paste")).toBe(true);
-    expect(needsPasskey("reveal")).toBe(true);
+    expect(needsPasskey("paste")).toBe(false);
+    expect(needsPasskey("reveal")).toBe(false);
     expect(needsPasskey("unlock")).toBe(true);
   });
 
   it("classifies Helius dashboard UUIDs so store does not 422", () => {
     expect(detectUpstream("10470584-67a9-4abc-8def-123456787761").upstream).toBe("helius");
+    expect(detectUpstream("nvapi-LOCALONLYFILLTEST1234").upstream).toBe("nvidia");
   });
 
   it("New Secret save reads a real key, not the sk-or-v1-… placeholder", () => {
@@ -97,7 +99,7 @@ describe("passkey is not required to save", () => {
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(vault).toContain("storeDetectedKey");
     expect(vault).not.toContain("ensureVerified");
-    expect(home).toContain("storeDetectedKey");
+    expect(home).not.toContain("storeDetectedKey");
     expect(home).not.toContain("ensureVerified");
     expect(home).not.toContain("Verifying with passkey");
     expect(hook).toContain("Detect + save never prompts passkey");
@@ -115,6 +117,14 @@ describe("Vault page saved-key hero", () => {
     expect(src).toContain("/manage/vault");
     expect(src).toContain("storeDetectedKeys");
     expect(src).toContain("extractDetectedKeys");
+    expect(src).not.toContain("Unlock Device Vault");
+    const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
+    expect(hook).toContain("/manage/decrypt/");
+    expect(hook).toContain("Save the API key again");
+    const card = readFileSync(resolve(root, "src/web/components/VaultItemCard.tsx"), "utf8");
+    expect(card).toContain("if (!v)");
+    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
+    expect(bg).toContain("apiKey: String(value ?? '')");
   });
 });
 
@@ -134,8 +144,15 @@ describe("pending vault preview", () => {
     expect(merged).toHaveLength(2);
     const fill = pendingHitsToFillKeys(hits, ["openai", "anthropic"]);
     expect(fill).toEqual([
-      { id: "pending-openai", upstream: "openai", name: "openai key", value: "sk-proj-LOCALONLYFILLTEST123456" },
+      {
+        id: "pending-openai",
+        upstream: "openai",
+        name: vaultStoreName({ upstream: "openai", value: hits[1].value }),
+        value: "sk-proj-LOCALONLYFILLTEST123456",
+      },
     ]);
+    expect(rows[0].name).toContain("Helius");
+    expect(rows[0].family).toBe("RPC");
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(hook).toContain("previewPendingVaultHits");
     expect(hook).toContain("__ks_pending_vault");

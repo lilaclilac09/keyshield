@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, AlertCircle, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
+import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
@@ -7,24 +7,39 @@ import { Button } from '../ui/Button';
 import { API_BASE, getToken } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
-import { ExtTroubleCase } from '../ExtTroubleCase';
+import { TroubleshootingSection } from './TroubleshootingSection';
+
+const CHAPTERS = [
+  { id: 'docs-ch-1', label: '1 · Quickstart' },
+  { id: 'docs-ch-2', label: '2 · Core Concepts' },
+  { id: 'docs-ch-3', label: '3 · Agent Setup' },
+  { id: 'docs-ch-4', label: '4 · Billing & x402' },
+  { id: 'docs-ch-5', label: '5 · Security' },
+  { id: 'docs-troubleshooting', label: 'Troubleshooting' },
+] as const;
 
 export const DocsSection: React.FC = () => {
   const installCmd = `curl -fsSL ${API_BASE}/install.sh | bash`;
 
   return (
     <div className="space-y-8">
-      <div>
-        <div className="flex items-center gap-2 text-[11px] text-white mb-1"><AlertCircle size={12} />TROUBLE</div>
-        <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Leftover 1.2.1</h2>
-        <p className="text-[14px] text-[#a8b3d8] mt-1">
-          Links &amp; troubleshooting — find your local clone from Chrome internals, try pull, skip github.com DNS, then python3.
-        </p>
-      </div>
-      <ExtTroubleCase variant="docs" />
+      <nav data-testid="docs-toc" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+        <p className="text-[12px] uppercase tracking-wider text-[#8a96c2] mb-3">Chapters</p>
+        <div className="flex flex-wrap gap-2">
+          {CHAPTERS.map((ch) => (
+            <a
+              key={ch.id}
+              href={`#${ch.id}`}
+              className="h-9 px-3 rounded-lg border border-[#243365] text-[13px] text-white hover:border-zinc-400"
+            >
+              {ch.label}
+            </a>
+          ))}
+        </div>
+      </nav>
 
       {/* Quickstart */}
-      <div>
+      <div id="docs-ch-1">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Quickstart</h2>
         <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute — or install the Chrome extension (preferred, next card) to save keys detected on provider sites while signed in here.</p>
@@ -82,7 +97,7 @@ export const DocsSection: React.FC = () => {
       </Card>
 
       {/* Core concepts */}
-      <div>
+      <div id="docs-ch-2">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Shield size={12} />CHAPTER 2</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Core Concepts</h2>
       </div>
@@ -105,7 +120,7 @@ export const DocsSection: React.FC = () => {
       </Card>
 
       {/* Agent setup */}
-      <div>
+      <div id="docs-ch-3">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Bot size={12} />CHAPTER 3</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Agent Setup</h2>
       </div>
@@ -119,7 +134,7 @@ export const DocsSection: React.FC = () => {
       </div>
 
       {/* Billing */}
-      <div>
+      <div id="docs-ch-4">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><CreditCard size={12} />CHAPTER 4</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Billing & x402</h2>
         <p className="text-[14px] text-[#a8b3d8] mt-1">How payment works for non-self-custodian calls.</p>
@@ -134,7 +149,7 @@ export const DocsSection: React.FC = () => {
       </ol>
 
       {/* Security */}
-      <div>
+      <div id="docs-ch-5">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Lock size={12} />CHAPTER 5</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Security Model</h2>
       </div>
@@ -156,6 +171,8 @@ export const DocsSection: React.FC = () => {
       <div className="pt-4 border-t border-[#243365]/50">
         <p className="text-[11px] text-[#5e6a91]">KeyShield {VERSION} \xb7 built {BUILD_DATE} \xb7 <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#8a96c2] hover:text-white">GitHub</a></p>
       </div>
+
+      <TroubleshootingSection />
     </div>
   );
 };

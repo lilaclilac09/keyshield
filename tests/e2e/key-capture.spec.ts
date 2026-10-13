@@ -131,6 +131,10 @@ const installMockApi = async (page: Page) => {
       });
     }
 
+    if (path === '/billing/topup-history') {
+      return respond(route, { topups: [] });
+    }
+
     if (path === '/mpp/streams') {
       return respond(route, {
         streams: [],

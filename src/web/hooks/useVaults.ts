@@ -1,16 +1,9 @@
 /**
- * useVaults — Path A vault hook backed by the CF Worker + client-side crypto.
+ * useVaults — SQLite `/manage/*` vault.
  *
- * State machine:
- *   - locked    → no PRF-derived master key in module state; user must
- *                 trigger `unlock()` to do a passkey ceremony
- *   - unlocked  → reads + writes go through `vault-session` (CF Worker R2)
- *
- * Device Vault (Path A) plus the Python `/manage/*` shim. Detect + save
- * write `/manage/store` without a passkey. Demo login lists `/manage/vault`
- * without unlock; reveal / paste-elsewhere uses passkey or
- * `/manage/decrypt/{id}`. Use `getDecryptedKey(upstream)` when Device Vault
- * is unlocked and you need a raw key for `/proxy/*`.
+ * Detect + save POST `/manage/store` with the API key. List GET
+ * `/manage/vault` (masked). Reveal GET `/manage/decrypt/{id}`. No
+ * passkey / Device Vault unlock on this path.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
@@ -20,7 +13,6 @@ import {
   removeEntry,
   listEntries,
   isVaultUnlocked,
-  getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
 import {
@@ -30,16 +22,7 @@ import {
   VAULT_CHANGED_EVENT,
   type PendingVaultHit,
 } from '../lib/vault-list';
-
-const UPSTREAM_META: Record<string, { name: string; domain: string; tags: string[] }> = {
-  openai: { name: 'OpenAI', domain: 'openai.com', tags: ['AI', 'PROD'] },
-  anthropic: { name: 'Anthropic Claude', domain: 'anthropic.com', tags: ['AI', 'CLAUDE'] },
-  helius: { name: 'Helius RPC', domain: 'helius.dev', tags: ['RPC', 'SOLANA'] },
-  mistral: { name: 'Mistral AI', domain: 'mistral.ai', tags: ['AI'] },
-  cohere: { name: 'Cohere', domain: 'cohere.ai', tags: ['AI'] },
-  groq: { name: 'Groq', domain: 'groq.com', tags: ['AI', 'FAST'] },
-  openrouter: { name: 'OpenRouter', domain: 'openrouter.ai', tags: ['AI', 'NEMOTRON'] },
-};
+import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
   const idx = slug.indexOf('__');
@@ -52,6 +35,11 @@ function serverRowToVault(row: {
   type?: string;
   upstream?: string;
   masked_value?: string;
+  prefix?: string;
+  family?: string;
+  product?: string;
+  domain?: string;
+  notes?: string;
   tags?: string[];
   created_at?: string | null;
   updated_at?: string | null;
@@ -59,26 +47,32 @@ function serverRowToVault(row: {
 }): VaultItem {
   const upstream = (row.upstream || row.id || 'custom').toLowerCase();
   const type = inferType(upstream);
-  const meta = UPSTREAM_META[upstream] ?? { name: row.name || upstream, domain: '', tags: ['KEY'] };
+  const meta = providerMeta(upstream);
   const created = row.created_at ? Date.parse(row.created_at) : Date.now();
   const updated = row.updated_at ? Date.parse(row.updated_at) : created;
+  const prefix = row.prefix || row.masked_value || '';
   return {
     id: row.id,
     name: row.name || meta.name,
     type,
-    value: row.masked_value || `${API_BASE}/proxy/${upstream}/`,
-    domain: meta.domain,
+    value: `${API_BASE}/proxy/${upstream}/`,
+    domain: row.domain || meta.domain,
     createdAt: Number.isFinite(created) ? created : Date.now(),
     lastUsedAt: Number.isFinite(updated) ? updated : Date.now(),
-    tags: [...(Array.isArray(row.tags) ? row.tags : meta.tags), 'PROXY'],
+    tags: catalogTags(upstream, Array.isArray(row.tags) ? row.tags.map(String) : []),
     expiryDate: row.expires_at ?? undefined,
+    notes: row.notes || `${meta.family} · ${row.product || meta.product} · ${formatExpiry(row.expires_at)}`,
+    prefix,
+    family: row.family || meta.family,
+    product: row.product || meta.product,
+    upstream,
   };
 }
 
 function entryToVault(entry: VaultEntry): VaultItem {
   const type = inferType(entry.upstream);
   if (type === 'api_key') {
-    const meta = UPSTREAM_META[entry.upstream] ?? { name: entry.upstream, domain: '', tags: ['KEY'] };
+    const meta = providerMeta(entry.upstream);
     return {
       id: entry.upstream,
       name: meta.name,
@@ -87,7 +81,10 @@ function entryToVault(entry: VaultEntry): VaultItem {
       domain: meta.domain,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
-      tags: [...meta.tags, 'VAULT'],
+      tags: catalogTags(entry.upstream, ['VAULT']),
+      family: meta.family,
+      product: meta.product,
+      upstream: entry.upstream,
     };
   }
   return {
@@ -210,7 +207,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      // Detect + save never prompts passkey. Unlock is only for reveal / paste-elsewhere.
+      // Detect + save never prompts passkey. Reveal is GET /manage/decrypt.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
@@ -219,7 +216,12 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       }
       const stored = await apiFetch('/manage/store', {
         method: 'POST',
-        body: JSON.stringify({ upstream, apiKey: rawKey, name: data.name || upstream }),
+        body: JSON.stringify({
+          upstream,
+          apiKey: rawKey,
+          value: rawKey,
+          name: vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }),
+        }),
       });
       if (!stored.ok) {
         const err = await stored.json().catch(() => ({ detail: 'store failed' }));
@@ -249,17 +251,15 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
-    if (isVaultUnlocked()) {
-      const key = getDecryptedKey(id);
-      if (key) return key;
-    }
     const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: 'decrypt failed' }));
-      throw new Error((err as { detail?: string }).detail ?? 'Vault locked — unlock first');
+      throw new Error((err as { detail?: string; code?: string }).detail ?? 'Save the API key again');
     }
     const data = await r.json();
-    return String(data.value ?? '');
+    const plaintext = String(data.value ?? data.key ?? '').trim();
+    if (!plaintext) throw new Error('Save the API key again');
+    return plaintext;
   }, []);
 
   return {

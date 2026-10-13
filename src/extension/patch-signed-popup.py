@@ -14,10 +14,10 @@ MARK_JS = "/* KS-SIGNED-1.2.4 */"
 MARK_BG = "/* KS-LIST-SAVED-1.2.4 */"
 
 HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>KeyShield</title>
-<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.line.err{color:#f87171}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}#copy-status,#fill-ms,#saved-count{display:none}</style></head>
+<style>body{width:280px;margin:0;padding:12px 14px 14px;background:#0a0d1a;color:#e4e4e7;font:13px/1.45 -apple-system,system-ui,sans-serif}h1{margin:0 0 10px;font-size:14px;font-weight:600}.row{margin:0 0 10px;padding:10px;border:1px solid #1c2238;border-radius:8px;background:#020408}.line{margin:0 0 8px;font-size:12px;color:#a1a1aa}.line.ok{color:#34d399}.line.err{color:#f87171}.saved-count{margin:0 0 8px;font-size:22px;font-weight:700}button{display:block;width:100%;margin:0;padding:8px 10px;background:#5b8cff;color:#fff;border:1px solid #5b8cff;border-radius:8px}button.secondary{background:transparent;color:#e4e4e7;border-color:#27272a}button.danger{background:transparent;color:#f87171;border-color:rgba(239,68,68,.3);margin-top:8px}.status{margin:8px 0 0;padding:7px 10px;border-radius:8px;font-size:12px;display:none}.status.ok{display:block;background:rgba(16,185,129,.12);color:#34d399}.status.err{display:block;background:rgba(239,68,68,.12);color:#f87171}.sub{margin:0 0 8px;color:#71717a;font-size:12px}.api-row{display:flex;flex-direction:column;gap:2px;padding:6px 0}.api-note{font-size:11px;color:#8a96c2}body.signed-in .guest-only{display:none!important}body:not(.signed-in) .signed-only{display:none!important}.extra{display:none!important}#copy-status,#fill-ms,#saved-count{display:none}</style></head>
 <body data-ui="three-line">
 <h1>KeyShield — Sovereign Vault</h1>
-<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="signed-status" class="saved-count">signed</p><p id="collected-line" class="line ok">0 collected</p><p id="saved-count" class="sub">0 collected</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
+<section class="row" id="row-auth"><button id="signin" class="guest-only">Sign in</button><div id="signed-pane" class="signed-only"><p id="signed-status" class="saved-count">0 saved</p><p id="collected-line" class="line ok">0 collected</p><p id="saved-count" class="sub">0 saved</p><div id="saved-apis"></div><p id="saved-empty" class="sub">None yet. Detect stays on.</p><button id="clear-top" class="danger">Sign out</button></div></section>
 <section class="row" id="row-detect"><p id="detect-line" class="line">detect · checking…</p><div id="detect-ready" class="status" style="display:block">ok 1.2.4 &lt;all_urls&gt;</div></section>
 <section class="row" id="row-copy"><p id="filled-line" class="line">0 filled · —</p><p id="copy-status" class="line">0 filled · —</p><p id="fill-ms" class="line">—</p></section>
 <div id="status" class="status"></div>
@@ -58,7 +58,7 @@ function summarizeSavedApis(data) {
     if (!upstream) continue;
     let masked = String(it.masked_value || "").trim();
     if (!masked) masked = it.cipher ? "encrypted" : "saved";
-    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked });
+    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked, family: String(it.family || ""), product: String(it.product || ""), domain: String(it.domain || ""), notes: String(it.notes || "") });
   }
   return out;
 }
@@ -69,7 +69,15 @@ function formatCollectedCount(n) {
   const count = Math.max(0, Math.floor(Number(n) || 0));
   return count === 1 ? "1 collected" : count + " collected";
 }
-function formatSavedCount(n) { return formatCollectedCount(n); }
+function formatSavedCount(n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 saved" : count + " saved";
+}
+function listedApiCount(box, apis) {
+  const fromApis = Array.isArray(apis) ? apis.length : 0;
+  const fromDom = box && box.querySelectorAll ? box.querySelectorAll(".api-row").length : 0;
+  return Math.max(fromApis, fromDom);
+}
 function formatFilledLine(filled, ms) {
   const n = Math.max(0, Math.floor(Number(filled) || 0));
   const speed = (ms == null || !isFinite(Number(ms)) || Number(ms) < 0) ? "—" : (Math.round(Number(ms)) + "ms");
@@ -77,16 +85,22 @@ function formatFilledLine(filled, ms) {
 }
 function paintSignedStatus(signed) {
   const el = document.getElementById("signed-status");
-  if (el) el.textContent = signed ? "signed" : "Sign in";
+  if (!el) return;
+  if (!signed) el.textContent = "Sign in";
 }
 function paintSavedCount(n) {
-  const label = formatCollectedCount(n);
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  const saved = formatSavedCount(count);
+  const collected = formatCollectedCount(count);
+  const signedIn = count > 0 || document.body.classList.contains("signed-in");
+  const signedEl = document.getElementById("signed-status");
+  if (signedEl) signedEl.textContent = signedIn ? saved : "Sign in";
   const hero = document.getElementById("saved-count");
-  if (hero) hero.textContent = label;
-  const collected = document.getElementById("collected-line");
-  if (collected) collected.textContent = label;
+  if (hero) hero.textContent = saved;
+  const collectedEl = document.getElementById("collected-line");
+  if (collectedEl) { collectedEl.textContent = collected; collectedEl.className = "line ok"; }
   const badge = document.getElementById("conn");
-  if (badge && document.body.classList.contains("signed-in")) badge.textContent = label;
+  if (badge && document.body.classList.contains("signed-in")) badge.textContent = saved;
 }
 function paintFilledLine(filled, ms, kind) {
   const text = formatFilledLine(filled, ms);
@@ -141,15 +155,18 @@ async function refreshSavedApis() {
       const row = document.createElement("div");
       row.className = "api-row";
       const name = document.createElement("strong");
-      name.textContent = api.upstream;
+      name.textContent = api.name || api.upstream;
+      const note = document.createElement("span");
+      note.className = "api-note";
+      note.textContent = api.notes || [api.family, api.product].filter(Boolean).join(" · ");
       const mask = document.createElement("code");
       mask.textContent = api.masked;
-      row.append(name, mask);
+      row.append(name, note, mask);
       box.appendChild(row);
     }
   }
   if (empty) empty.style.display = apis.length ? "none" : "block";
-  paintSavedCount(apis.length);
+  paintSavedCount(listedApiCount(box, apis));
   return apis;
 }
 async function ksBootSignedPane() {
@@ -207,7 +224,7 @@ function summarizeSavedApis(data) {
     if (!upstream) continue;
     let masked = String(it.masked_value || "").trim();
     if (!masked) masked = it.cipher ? "encrypted" : "saved";
-    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked });
+    out.push({ id: String(it.id || upstream), upstream, name: String(it.name || upstream + " key"), masked, family: String(it.family || ""), product: String(it.product || ""), domain: String(it.domain || ""), notes: String(it.notes || "") });
   }
   return out;
 }
@@ -422,7 +439,7 @@ def print_find(hits: list[tuple[str, Path]], ext: Path) -> None:
             ver = str(json.loads((path / "manifest.json").read_text(encoding="utf-8")).get("version") or "")
         except Exception:
             pass
-        print("#", src, path, "v" + ver)
+        print("#", src, path, "v" + ver, "leftover-stamp", VER)
     print("export KS_ROOT=" + shlex.quote(str(repo_root(ext))))
     print("export KS_EXT=" + shlex.quote(str(ext)))
 

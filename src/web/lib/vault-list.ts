@@ -3,6 +3,8 @@
  * must show those rows when the user returns to Vault.
  */
 
+import { catalogTags, providerMeta, vaultStoreName } from './provider-catalog';
+
 export const VAULT_CHANGED_EVENT = 'ks-vault-changed';
 
 export type VaultListRow = {
@@ -15,6 +17,11 @@ export type VaultListRow = {
   created_at?: string | null;
   updated_at?: string | null;
   expires_at?: string | null;
+  family?: string;
+  product?: string;
+  prefix?: string;
+  domain?: string;
+  notes?: string;
   cipher?: string;
   iv?: string;
   cipher_v?: number;
@@ -76,11 +83,17 @@ export function previewPendingVaultHits(hits: PendingVaultHit[]): VaultListRow[]
     const id = `${upstream}:${value}`;
     if (seen.has(id)) continue;
     seen.add(id);
+    const meta = providerMeta(upstream);
     out.push({
       id: `pending-${out.length}-${upstream}`,
-      name: `${upstream} key`,
+      name: vaultStoreName({ upstream, value }),
       upstream,
       masked_value: maskVaultPreview(value),
+      prefix: maskVaultPreview(value),
+      family: meta.family,
+      product: meta.product,
+      domain: meta.domain,
+      tags: catalogTags(upstream),
     });
   }
   return out;
@@ -115,7 +128,12 @@ export function pendingHitsToFillKeys(
     if (wanted.size && !wanted.has(upstream)) continue;
     if (seen.has(value)) continue;
     seen.add(value);
-    out.push({ id: `pending-${upstream}`, upstream, name: `${upstream} key`, value });
+    out.push({
+      id: `pending-${upstream}`,
+      upstream,
+      name: vaultStoreName({ upstream, value }),
+      value,
+    });
   }
   return out;
 }
@@ -133,7 +151,12 @@ export async function flushPendingVaultHits(hits: PendingVaultHit[]): Promise<nu
     seen.add(id);
     const r = await apiFetch('/manage/store', {
       method: 'POST',
-      body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
+      body: JSON.stringify({
+        upstream,
+        apiKey: value,
+        value,
+        name: vaultStoreName({ upstream, value }),
+      }),
     });
     if (r.ok) saved += 1;
   }

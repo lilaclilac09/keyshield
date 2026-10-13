@@ -22,7 +22,7 @@ function usage(code, extra) {
   console.error(`GitNexus is not installed as a global binary (macOS PATH has no \`gitnexus\`).
 
 Wrong — from $HOME (~):
-  ~ % gitnexus impact "<符号>"
+  ~ % gitnexus impact "<symbol>"
       → zsh: command not found: gitnexus
   ~ % node src/scripts/gitnexus.cjs impact "status_strip" --direction upstream
       → Cannot find module '/Users/you/src/scripts/gitnexus.cjs'
@@ -34,7 +34,7 @@ Right — cd into the clone first (prompt must not be ~):
   node src/scripts/gitnexus.cjs detect-changes --scope all
   npm run gitnexus -- impact status_strip --direction upstream
 
-Do not paste <符号>. Use a real symbol: status_strip, fetch_wallet_balances, App.
+Do not paste <symbol>. Use a real symbol: status_strip, fetch_wallet_balances, App.
 
 Optional ~/.zshrc (absolute path to THIS clone):
   alias gitnexus='node ${repo}/src/scripts/gitnexus.cjs'
@@ -50,7 +50,7 @@ if (impactAt >= 0) {
   const placeholder =
     !target ||
     target.startsWith('<') ||
-    target === '符号' ||
+    /[\u4e00-\u9fff]/.test(target) ||
     /^<.+>$/.test(target) ||
     target === 'symbolName' ||
     target === 'SYMBOL';

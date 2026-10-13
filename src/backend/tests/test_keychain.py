@@ -30,6 +30,91 @@ def _token(tmp_path, monkeypatch) -> tuple[TestClient, str]:
     return TestClient(app), token
 
 
+def test_tag_value_reads_host_and_page():
+    tags = ["AI", "host:dashboard.helius.dev", "page:API Keys"]
+    assert kc.tag_value(tags, "host") == "dashboard.helius.dev"
+    assert kc.tag_value(tags, "page") == "API Keys"
+    assert kc.tag_value(tags, "missing") == ""
+
+
+def test_store_two_helius_keys_keep_distinct_names(tmp_path, monkeypatch):
+    client, token = _token(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {token}"}
+    a = "10470584-67a9-4abc-8def-123456787761"
+    b = "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1"
+    first = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "value": a,
+            "domain": "dashboard.helius.dev",
+            "pageTitle": "API Keys",
+        },
+    )
+    second = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "value": b,
+            "domain": "dashboard.helius.dev",
+            "pageTitle": "API Keys",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    listed = client.get("/manage/vault", headers=headers).json()
+    rows = [row for row in listed if row.get("upstream") == "helius"]
+    assert len(rows) == 2
+    names = {row["name"] for row in rows}
+    assert names == {"helius1", "helius2"}
+    assert all(row.get("family") == "RPC" for row in rows)
+    assert all(row.get("expires_at") for row in rows)
+    dumped = str(listed)
+    assert a not in dumped and b not in dumped
+
+
+def test_vault_item_name_keeps_page_label_and_numbers_dupes():
+    assert kc.looks_like_page_key_name("Panthermaze") is True
+    assert kc.looks_like_page_key_name("helius key") is False
+    first = kc.vault_item_name(
+        upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", name="Panthermaze"
+    )
+    second = kc.vault_item_name(
+        upstream="helius",
+        raw="210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+        name="Panthermaze",
+        taken=[first],
+    )
+    third = kc.vault_item_name(
+        upstream="helius", raw="310e4c2a-91b0-4c3d-a222-bbbbbbbbbbb2", name="helius key"
+    )
+    fourth = kc.vault_item_name(
+        upstream="helius",
+        raw="410e4c2a-91b0-4c3d-a333-ccccccccccc3",
+        name="helius key",
+        taken=[third],
+    )
+    assert first == "Panthermaze"
+    assert second == "Panthermaze 2"
+    assert third == "helius1"
+    assert fourth == "helius2"
+
+
+def test_distinguish_name_separates_helius_uuids():
+    a = kc.distinguish_name(
+        upstream="helius", raw="10470584-67a9-4abc-8def-123456787761", host="dashboard.helius.dev"
+    )
+    b = kc.distinguish_name(
+        upstream="helius", raw="210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1", host="dashboard.helius.dev"
+    )
+    assert a != b
+    assert "Helius" in a and "Helius" in b
+    assert "104705" in a or "7761" in a
+    assert kc.is_generic_vault_name("helius key", "helius") is True
+
+
 def test_detect_specific_prefixes_beat_generic_sk():
     or_key = "sk-or-v1-" + ("a" * 24)
     ant_key = "sk-ant-api03-" + ("b" * 48)
@@ -42,6 +127,8 @@ def test_detect_specific_prefixes_beat_generic_sk():
     assert kc.detect_upstream("10470584-67a9-4abc-8def-123456787761")["upstream"] == "helius"
     assert kc.detect_upstream("vercel_DEMOKEYSHIELDLOCALONLY99xx")["upstream"] == "vercel"
     assert kc.detect_upstream("github_pat_DEMOKEYSHIELDLOCALONLY99")["upstream"] == "github"
+    assert kc.detect_upstream("nvapi-LOCALONLYFILLTEST1234")["upstream"] == "nvidia"
+    assert kc.infer_product("nvidia", "nvapi-LOCALONLYFILLTEST1234") == "NVIDIA NIM"
     dumped = str(kc.detect_upstream(or_key))
     assert or_key not in dumped
 
@@ -212,6 +299,11 @@ def test_five_helius_keys_store_then_manage_vault_lists_all(tmp_path, monkeypatc
     apis = [row for row in home.json()["apis"] if row["upstream"] == "helius"]
     assert len(apis) == 5
     assert secrets[0] not in str(home.json())
+    names = [str(row.get("name") or "") for row in apis]
+    assert set(names) == {"helius1", "helius2", "helius3", "helius4", "helius5"}
+    assert all(row.get("family") == "RPC" for row in apis)
+    assert all(row.get("product") for row in apis)
+    assert all(row.get("expires_at") for row in apis)
 
 
 def test_home_unauthorized():

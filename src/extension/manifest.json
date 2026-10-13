@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KeyShield — Sovereign Vault",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Auto-detect API keys on any page and store them in your encrypted KeyShield vault.",
 
   "permissions": [
@@ -32,7 +32,10 @@
     "https://*.up.railway.app/*"
   ],
 
-  "action": {},
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "KeyShield — Sovereign Vault"
+  },
 
   "background": {
     "service_worker": "background.js"

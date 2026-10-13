@@ -146,6 +146,36 @@ export const StoryJourney: React.FC = () => {
   }, [scene, runHandshake]);
 
   useEffect(() => {
+    if (scene !== 'fill' || filled) return;
+    if (saved.openrouter) {
+      setFilled(saved.openrouter);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await apiFetch('/manage/vault');
+        if (!r.ok || cancelled) return;
+        const payload = await r.json();
+        const list = Array.isArray(payload) ? payload : [];
+        const order = ['openrouter', 'openai', 'cursor', 'anthropic', 'groq'];
+        const hit = order
+          .map((u) => list.find((row: { upstream?: string }) => String(row.upstream || '').toLowerCase() === u))
+          .find(Boolean) as { id?: string } | undefined;
+        if (!hit?.id) return;
+        const dec = await apiFetch(`/manage/decrypt/${encodeURIComponent(hit.id)}`);
+        if (!dec.ok || cancelled) return;
+        const body = await dec.json() as { value?: string; key?: string };
+        const value = String(body.value || body.key || '').trim();
+        if (value && !cancelled) setFilled(value);
+      } catch {
+        /* no session */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [scene, filled, saved.openrouter]);
+
+  useEffect(() => {
     if (!auto) return undefined;
     const order: SceneId[] = SCENES.map((s) => s.id);
     let i = 0;
@@ -212,7 +242,7 @@ export const StoryJourney: React.FC = () => {
           <FillScene
             filled={filled}
             hasVault={!!saved.openrouter}
-            onFill={() => setFilled(saved.openrouter || DEMO_KEYS.openrouter)}
+            onFill={(value) => setFilled(value || saved.openrouter || DEMO_KEYS.openrouter)}
           />
         )}
         {scene === 'catalog' && (
@@ -291,7 +321,7 @@ function OpenRouterScene({
   );
 }
 
-function FillScene({ filled, hasVault, onFill }: { filled: string; hasVault: boolean; onFill: () => void }) {
+function FillScene({ filled, hasVault, onFill }: { filled: string; hasVault: boolean; onFill: (value?: string) => void }) {
   return (
     <ChromeFrame host="cursor / devin · settings · models">
       <h1 className="text-xl font-bold">OpenAI-compatible API key</h1>
@@ -299,17 +329,23 @@ function FillScene({ filled, hasVault, onFill }: { filled: string; hasVault: boo
       <label className="block mt-6 text-[10px] uppercase tracking-wider text-[#8a96c2]">API Key</label>
       <div className="relative mt-1">
         <input
-          readOnly
-          value={filled ? mask(filled) : ''}
-          placeholder="sk-… paste or let KeyShield fill"
+          type="password"
+          name="api_key"
+          data-testid="story-fill-input"
+          autoComplete="off"
+          value={filled}
+          onChange={(e) => onFill(e.target.value)}
+          placeholder="sk-… stored keys auto-fill this blank"
           className="w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-3 font-mono text-sm"
         />
-        <button type="button" onClick={onFill} className="absolute right-2 top-2 px-2 py-1 rounded bg-[#0a0d1a] border border-[#1c2550] text-[#5b8cff] text-xs">
+        <button type="button" onClick={() => onFill()} className="absolute right-2 top-2 px-2 py-1 rounded bg-[#0a0d1a] border border-[#1c2550] text-[#5b8cff] text-xs">
           🔑 Fill
         </button>
       </div>
       <p className="mt-3 text-[12px] text-[#8a96c2]">
-        {hasVault ? 'Vault has the OpenRouter row. Fill injects locally — no clipboard.' : 'Save the OpenRouter key first (scene 1).'}
+        {hasVault || filled
+          ? 'Stored key popped into the empty box — no clipboard.'
+          : 'Save the OpenRouter key first (scene 1), then this blank auto-fills.'}
       </p>
       <p className="mt-2 text-[12px] text-emerald-300">{filled ? `Filled ${mask(filled)} · agent still holds KS_TOKEN, not this secret` : 'Waiting for fill…'}</p>
     </ChromeFrame>

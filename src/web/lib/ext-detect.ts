@@ -3,12 +3,15 @@
  * A visible key on any page must match one of these and pop the panel.
  */
 
+import { formatStoredApiCard } from './provider-catalog';
+
 export type DetectedShape = {
   upstream: string;
   key: string;
 };
 
 const SHAPES: { upstream: string; re: RegExp }[] = [
+  { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/ },
   { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/ },
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },
@@ -98,17 +101,18 @@ export function shouldPopupForKey(opts: {
   return !opts.alreadySaved;
 }
 
-/** Popup must show this exact line after Remove + Load unpacked 1.2.4. */
-export const DETECT_READY_VERSION = '1.2.4';
+/** Popup must show this exact line after Remove + Load unpacked 1.2.5. Leftover 1.2.4 still counts as ready. */
+export const DETECT_READY_VERSION = '1.2.5';
 export const DETECT_READY_OK = `ok ${DETECT_READY_VERSION} <all_urls>`;
+export const DETECT_READY_LEGACY = '1.2.4';
 
 export function formatDetectReadyLine(opts: {
   version: string;
   hasAllUrls: boolean;
 }): { ok: boolean; text: string } {
   const ver = String(opts.version || '').trim();
-  if (ver === DETECT_READY_VERSION && opts.hasAllUrls) {
-    return { ok: true, text: DETECT_READY_OK };
+  if ((ver === DETECT_READY_VERSION || ver === DETECT_READY_LEGACY) && opts.hasAllUrls) {
+    return { ok: true, text: `ok ${ver} <all_urls>` };
   }
   if (!opts.hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || '?'} missing <all_urls>` };
@@ -126,6 +130,22 @@ export function formatSavedCount(n: number): string {
 export function formatCollectedCount(n: number): string {
   const count = Math.max(0, Math.floor(Number(n) || 0));
   return count === 1 ? '1 collected' : `${count} collected`;
+}
+
+/** Vault list length wins over a stale detect-session 0. */
+export function listedVaultCount(apis: unknown, listedDomRows = 0): number {
+  const fromApis = Array.isArray(apis) ? apis.length : 0;
+  const fromDom = Math.max(0, Math.floor(Number(listedDomRows) || 0));
+  return Math.max(fromApis, fromDom);
+}
+
+export function popupVaultHero(n: number): { saved: string; collected: string } {
+  return { saved: formatSavedCount(n), collected: formatCollectedCount(n) };
+}
+
+/** Leftover 1.2.4 painted LIST_SAVED_APIS rows but left the 22px hero at "0 saved". */
+export function popupHeroAgreesWithListed(hero: string, listedCount: number): boolean {
+  return String(hero || '').trim() === formatSavedCount(listedCount);
 }
 
 export function formatFilledCount(n: number): string {
@@ -149,8 +169,8 @@ export function formatSignedStatus(signed: boolean): string {
 export const DETECT_STATUS_CARD_ID = 'keyshield-status-card';
 export const DETECT_STALE_NOTICE_ID = 'keyshield-detection-notice';
 
-/** Toolbar click paints the on-page card. A second popup window is leftover clutter. */
-export function manifestDropsDefaultPopup(man: {
+/** Toolbar click opens popup.html. Leftover 1.2.4 stamps still drop the ugly extra popup. */
+export function manifestHasDefaultPopup(man: {
   action?: { default_popup?: string } | unknown;
   browser_action?: { default_popup?: string } | unknown;
 }): boolean {
@@ -160,7 +180,15 @@ export function manifestDropsDefaultPopup(man: {
   const browser = man && typeof man.browser_action === 'object' && man.browser_action
     ? (man.browser_action as { default_popup?: string }).default_popup
     : '';
-  return !action && !browser;
+  return action === 'popup.html' || browser === 'popup.html';
+}
+
+/** @deprecated leftover stamps still drop default_popup. Repo 1.2.5 keeps it. */
+export function manifestDropsDefaultPopup(man: {
+  action?: { default_popup?: string } | unknown;
+  browser_action?: { default_popup?: string } | unknown;
+}): boolean {
+  return !manifestHasDefaultPopup(man);
 }
 
 export function shouldShowDetectSignin(signed: boolean): boolean {
@@ -303,7 +331,42 @@ export type SavedApiRow = {
   upstream: string;
   name: string;
   masked: string;
+  family: string;
+  product: string;
+  domain: string;
+  expires_at: string | null;
+  created_at: string | null;
+  notes: string;
 };
+
+export function formatApiRowTitle(api: SavedApiRow): string {
+  return formatStoredApiCard({
+    name: api.name,
+    upstream: api.upstream,
+    masked: api.masked,
+    family: api.family,
+    product: api.product,
+    domain: api.domain,
+    expires_at: api.expires_at,
+    created_at: api.created_at,
+    notes: api.notes,
+  }).title;
+}
+
+export function formatApiRowNote(api: SavedApiRow): string {
+  if (api.notes) return api.notes;
+  const card = formatStoredApiCard({
+    name: api.name,
+    upstream: api.upstream,
+    masked: api.masked,
+    family: api.family,
+    product: api.product,
+    domain: api.domain,
+    expires_at: api.expires_at,
+    created_at: api.created_at,
+  });
+  return `${card.subtitle} · ${card.meta}`;
+}
 
 /** Signed-in popup lists only these — never raw `value`. */
 export function summarizeSavedApis(data: unknown): SavedApiRow[] {
@@ -326,16 +389,29 @@ export function summarizeSavedApis(data: unknown): SavedApiRow[] {
       masked_value?: string;
       cipher?: string;
       value?: string;
+      family?: string;
+      product?: string;
+      domain?: string;
+      expires_at?: string | null;
+      created_at?: string | null;
+      notes?: string;
+      prefix?: string;
     };
     const upstream = String(it.upstream || '').toLowerCase().trim();
     if (!upstream) continue;
-    let masked = String(it.masked_value || '').trim();
+    let masked = String(it.masked_value || it.prefix || '').trim();
     if (!masked) masked = it.cipher ? 'encrypted' : 'saved';
     out.push({
       id: String(it.id || upstream),
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ''),
+      product: String(it.product || ''),
+      domain: String(it.domain || ''),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ''),
     });
   }
   return out;

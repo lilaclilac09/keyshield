@@ -49,6 +49,25 @@
 
 const PROVIDERS = [
   {
+    id:       'nvidia',
+    name:     'NVIDIA NIM',
+    label:    'NV',
+    patterns: [
+      /nvapi-[A-Za-z0-9_-]{16,}/g,
+    ],
+    domains:  [
+      'build.nvidia.com',
+      'integrate.api.nvidia.com',
+      'api.nvidia.com',
+      'nim.nvidia.com',
+      'catalog.ngc.nvidia.com',
+      'ngc.nvidia.com',
+      'nvidia.com',
+      'nvidia.demo.localhost',
+    ],
+    minLen:   16,
+  },
+  {
     id:       'cursor',
     name:     'Cursor',
     label:    'CUR',
@@ -66,7 +85,7 @@ const PROVIDERS = [
     patterns: [
       /sk-or-[A-Za-z0-9_-]{12,}/g,
     ],
-    domains:  ['openrouter.ai', 'openrouter.demo.localhost'],
+    domains:  ['openrouter.ai', 'openrouter.demo.localhost', 'kilo.ai', 'app.kilo.ai', 'www.kilo.ai', 'kilo.demo.localhost'],
     minLen:   16,
   },
   {
@@ -246,6 +265,71 @@ function collectScanText() {
     chunks.push(el.value || el.textContent || '');
   }
   return chunks.join('\n');
+}
+
+function ksLooksLikePageKeyName(name) {
+  const text = String(name || '').trim();
+  if (!text || /^(name|names|api key|api keys|key|keys|expires|expiry|created|status|actions)$/i.test(text)) return false;
+  if (/https?:|[•…]|sk-|gsk_|helius_auth_/i.test(text)) return false;
+  if (/^[0-9a-f-]{8,}$/i.test(text)) return false;
+  return /^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(text);
+}
+
+function ksKeyPrefixFromCell(text) {
+  const cell = String(text || '').trim();
+  const uuid = cell.match(/[0-9a-f]{8}(?:-[0-9a-f*]{4}){3}-[0-9a-f*]{12}/i);
+  if (uuid) return uuid[0].slice(0, 8).toLowerCase();
+  return '';
+}
+
+function ksParseExpiryCell(text) {
+  const cell = String(text || '').trim();
+  const iso = cell.match(/(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const us = cell.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (!us) return '';
+  const a = Number(us[1]);
+  const b = Number(us[2]);
+  const month = a > 12 ? b : a;
+  const day = a > 12 ? a : b;
+  return `${us[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function ksCollectPageKeyRecords() {
+  const records = [];
+  const rows = document.querySelectorAll('tr, [role="row"]');
+  rows.forEach((row) => {
+    const cells = [...row.querySelectorAll('td, th, [role="cell"], [role="gridcell"]')]
+      .map((c) => String(c.innerText || c.textContent || '').trim())
+      .filter(Boolean);
+    if (cells.length < 2) return;
+    let name = '';
+    let prefix = '';
+    let expires = '';
+    for (const cell of cells) {
+      if (!name && ksLooksLikePageKeyName(cell)) name = cell;
+      const p = ksKeyPrefixFromCell(cell);
+      if (p) prefix = p;
+      const exp = ksParseExpiryCell(cell);
+      if (exp) expires = exp;
+    }
+    if (name && prefix) records.push({ name, prefix, expiresAt: expires });
+  });
+  const lines = collectScanText().split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!ksLooksLikePageKeyName(lines[i])) continue;
+    const prefix = ksKeyPrefixFromCell(lines[i + 1]);
+    if (!prefix) continue;
+    if (records.some((r) => r.prefix === prefix && r.name === lines[i])) continue;
+    records.push({ name: lines[i], prefix, expiresAt: ksParseExpiryCell(lines[i + 2] || '') });
+  }
+  return records;
+}
+
+function ksLabelForKey(key) {
+  const prefix = ksKeyPrefixFromCell(key) || String(key || '').slice(0, 8).toLowerCase();
+  const hit = ksCollectPageKeyRecords().find((r) => prefix && prefix.startsWith(r.prefix));
+  return hit || { name: '', prefix, expiresAt: '' };
 }
 
 let scanTimer = 0;
@@ -527,7 +611,7 @@ function renderPanel(opts) {
     <ul class="ks-list">${listHtml}</ul>
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
     <div id="ks-filled" style="font-size:12px;color:#a1a1aa">${lastFill}</div>
-    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>
+    <div style="font-size:12px;color:#34d399">detect on · ok 1.2.5</div>
     <div style="display:flex;gap:8px">
       <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
     </div>
@@ -612,9 +696,11 @@ async function bulkSave() {
       silent: true,
       payload: {
         upstream: info.provider.id,
-        name:     `${info.provider.name} (${HOST})`,
+        name:     ksLabelForKey(key).name || `${info.provider.name} (${HOST})`,
         value:    key,
         domain:   HOST,
+        pageTitle: document.title || '',
+        expires_at: ksLabelForKey(key).expiresAt || '',
       },
     });
 
@@ -684,7 +770,7 @@ const KS_FILL_INPUT_SEL = 'input[type=password], input[type=text], input:not([ty
   + 'input[name*=token i], input[placeholder*=token i], input[name*=secret i], '
   + 'input[aria-label*=key i], input[aria-label*=API i], textarea[name*=key i]';
 
-const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b/;
+const KS_KEY_FIELD_RE = /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bgroq\b|\bhelius\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/;
 
 function ksIsCursorFillHost(domain) {
   const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
@@ -693,13 +779,59 @@ function ksIsCursorFillHost(domain) {
     || host === 'cursor.demo.localhost';
 }
 
+function ksIsLocalFillDemo() {
+  const path = String(location.pathname || '').toLowerCase();
+  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+    return path.includes('cursor-settings-fill-demo')
+      || path.includes('nvidia-fill-demo')
+      || path.includes('/journey/cursor')
+      || /(?:^|\/)cursor\.html$/.test(path);
+  }
+  return path.includes('cursor-settings-fill-demo')
+    || path.includes('nvidia-fill-demo')
+    || path.includes('/journey/cursor')
+    || /(?:^|\/)cursor\.html$/.test(path)
+    || path === '/story'
+    || path.startsWith('/story/');
+}
+
 function ksIsCursorFillContext() {
   const host = location.hostname;
   const path = String(location.pathname || '').toLowerCase();
   const title = String(document.title || '').toLowerCase();
   if (ksIsCursorFillHost(host)) return true;
-  if (path.includes('cursor-settings-fill-demo')) return true;
+  if (ksIsLocalFillDemo()) return true;
   return title.includes('cursor') && /setting|api key|models/.test(`${path} ${title}`);
+}
+
+function ksIsKiloFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
+}
+
+function ksIsKiloByokPath(pathname) {
+  const path = String(pathname || location.pathname || '').toLowerCase();
+  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+function ksIsNvidiaFillHost(domain) {
+  const host = String(domain || '').trim().toLowerCase().replace(/\.+$/, '');
+  return host === 'nvidia.com' || host.endsWith('.nvidia.com') || host === 'nvidia.demo.localhost';
+}
+
+function ksIsNvidiaFillContext() {
+  if (ksIsNvidiaFillHost(location.hostname)) return true;
+  return String(location.pathname || '').toLowerCase().includes('nvidia-fill-demo');
+}
+
+function ksIsKiloFillContext() {
+  const host = location.hostname;
+  if (ksIsKiloFillHost(host)) return true;
+  const local = host === '127.0.0.1' || host === 'localhost';
+  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+    return ksIsKiloByokPath(location.pathname);
+  }
+  return local && ksIsKiloByokPath(location.pathname);
 }
 
 function ksAncestorHaystack(el) {
@@ -757,6 +889,7 @@ function ksInputHaystack(el) {
 
 function ksMatchUpstreamForHaystack(hay) {
   if (/\bcursor\b|\bcrsr\b/.test(hay)) return 'cursor';
+  if (/\bnvidia\b|\bnim\b|\bnvapi\b/.test(hay)) return 'nvidia';
   if (/\bopenrouter\b|\bsk-or\b/.test(hay)) return 'openrouter';
   if (/\banthropic\b|\bclaude\b|\bsk-ant\b/.test(hay)) return 'anthropic';
   if (/\bopenai\b|\bchatgpt\b|\bgpt\b|\bsk-proj\b/.test(hay)) return 'openai';
@@ -764,6 +897,7 @@ function ksMatchUpstreamForHaystack(hay) {
   if (/\bhelius\b/.test(hay)) return 'helius';
   if (/\bvercel\b/.test(hay)) return 'vercel';
   if (/\bgithub\b|\bghp_|\bgithub_pat_/.test(hay)) return 'github';
+  if (/\bkilo\b|\bbyok\b/.test(hay)) return 'openrouter';
   return null;
 }
 
@@ -779,7 +913,16 @@ function ksLooksLikeKeyNameField(hay) {
 }
 
 function ksPreferredCursorFillKey(keys) {
-  const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+  const order = ['cursor', 'openai', 'nvidia', 'openrouter', 'anthropic', 'groq'];
+  for (const upstream of order) {
+    const hit = keys.find((k) => k.upstream === upstream && k.value);
+    if (hit) return hit;
+  }
+  return keys.find((k) => k.value) || null;
+}
+
+function ksPreferredKiloFillKey(keys) {
+  const order = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
@@ -798,15 +941,34 @@ function ksPickKeyForInput(el, keys) {
     if (labeled) return labeled;
   }
   if (ksLooksLikeLoginPassword(hay)) return null;
+  if (ksIsNvidiaFillContext() || (ksIsNvidiaFillHost(location.hostname) && type === 'password')) {
+    return keys.find((k) => k.upstream === 'nvidia' && k.value)
+      || keys.find((k) => k.upstream === 'openrouter' && k.value)
+      || keys.find((k) => k.value)
+      || null;
+  }
+  if (ksIsKiloFillContext() || (ksIsKiloFillHost(location.hostname) && type === 'password')) {
+    return ksPreferredKiloFillKey(keys);
+  }
   if (ksIsCursorFillContext() || (ksIsCursorFillHost(location.hostname) && type === 'password')) {
     return ksPreferredCursorFillKey(keys);
   }
-  if (keys.length === 1) return keys[0];
+  if (KS_KEY_FIELD_RE.test(hay)) return keys.find((k) => k.value) || null;
+  const unique = new Set(keys.map((k) => k.upstream));
+  if (unique.size === 1 || keys.length === 1) return keys.find((k) => k.value) || null;
   return null;
 }
 
 function ksLooksLikeCursorApiBlank(el, hay, type) {
   if (!ksIsCursorFillContext()) return false;
+  if (ksLooksLikeLoginPassword(hay)) return false;
+  if (ksLooksLikeKeyNameField(hay)) return false;
+  if (KS_KEY_FIELD_RE.test(hay)) return true;
+  return type === 'password' || !String(hay || '').trim();
+}
+
+function ksLooksLikeKiloApiBlank(el, hay, type) {
+  if (!ksIsKiloFillContext()) return false;
   if (ksLooksLikeLoginPassword(hay)) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
@@ -823,10 +985,17 @@ function ksLooksLikeKeyInput(el) {
     return false;
   }
   const hay = ksInputHaystack(el);
-  if (ksLooksLikeLoginPassword(hay)) return false;
+  const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+  if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return false;
   if (ksLooksLikeKeyNameField(hay)) return false;
+  if (ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) {
+    if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(hay)) return false;
+    if (KS_KEY_FIELD_RE.test(hay)) return true;
+    return type === 'password' || type === 'text' || type === '' || el.tagName === 'TEXTAREA';
+  }
+  if (ksLooksLikeLoginPassword(hay)) return false;
   if (KS_KEY_FIELD_RE.test(hay)) return true;
-  return ksLooksLikeCursorApiBlank(el, hay, type);
+  return ksLooksLikeCursorApiBlank(el, hay, type) || ksLooksLikeKiloApiBlank(el, hay, type);
 }
 
 function ksIsFillableInput(el) {
@@ -865,14 +1034,28 @@ function ksAutoFillEmptyInputs(keys) {
   });
   const remaining = keys.filter((k) => k && k.value);
   let filled = 0;
-  for (const input of candidates) {
-    const key = ksPickKeyForInput(input, remaining);
-    if (!key || !key.value) continue;
+  const take = (input, key) => {
+    if (!key || !key.value) return false;
     ksSetValue(input, key.value);
     if (input.dataset) input.dataset.ksAutofilled = '1';
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
     if (idx >= 0) remaining.splice(idx, 1);
     filled += 1;
+    return true;
+  };
+  for (const input of candidates) {
+    if (String(input.value || '').trim()) continue;
+    const hay = ksInputHaystack(input);
+    const wanted = ksMatchUpstreamForHaystack(hay);
+    if (!wanted) continue;
+    const key = remaining.find((k) => k.upstream === wanted);
+    take(input, key);
+  }
+  for (const input of candidates) {
+    if (String(input.value || '').trim()) continue;
+    const key = ksPickKeyForInput(input, remaining)
+      || ((ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) ? remaining[0] : null);
+    if (key) take(input, key);
   }
   return filled;
 }
@@ -897,19 +1080,48 @@ function ksSetValue(el, value) {
   // React/Vue use a native value setter that bypasses property descriptors.
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value');
+  const last = el.value;
+  try {
+    const tracker = el._valueTracker;
+    if (tracker && typeof tracker.setValue === 'function') tracker.setValue(last);
+  } catch { /* noop */ }
   if (setter && setter.set) setter.set.call(el, value);
   else el.value = value;
-  el.dispatchEvent(new Event('input',  { bubbles: true }));
+  try {
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: value, inputType: 'insertFromPaste' }));
+  } catch {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
   el.dispatchEvent(new Event('change', { bubbles: true }));
   ksFlashGreen(el);
 }
 
+function ksCollectHints() {
+  const nodes = ksCollectFillInputs(document);
+  const hints = [];
+  let blanks = 0;
+  nodes.forEach((el) => {
+    if (!ksLooksLikeKeyInput(el)) return;
+    hints.push(ksInputHaystack(el));
+    if (!String(el.value || '').trim()) blanks += 1;
+  });
+  if (!hints.length) {
+    const title = String(document.title || '');
+    if (title) hints.push(title);
+  }
+  return { hints, hasKeyBlanks: blanks > 0 };
+}
+
 function ksRequestKeys() {
+  const extra = ksCollectHints();
   return sendToBackground({
     type: 'GET_KEYS_FOR_DOMAIN',
     domain: location.hostname,
     pathname: location.pathname,
     title: document.title,
+    url: location.href,
+    hints: extra.hints,
+    hasKeyBlanks: extra.hasKeyBlanks,
   }).then((response) => {
     if (!response || !response.ok) {
       return { ok: false, reason: response?.reason || 'extension', detail: response?.detail };
@@ -926,7 +1138,12 @@ async function ksFillPageNow() {
   ksFillEnabled = true;
   ksCachedKeys = resp.keys;
   ksScanForInputs();
-  const filled = ksAutoFillEmptyInputs(resp.keys);
+  let filled = ksAutoFillEmptyInputs(resp.keys);
+  if (!filled) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    ksScanForInputs();
+    filled = ksAutoFillEmptyInputs(resp.keys);
+  }
   return { ok: true, filled, keys: resp.keys.length };
 }
 
@@ -1015,23 +1232,36 @@ function ksAttachFillButton(input) {
     display:         'none',
   });
 
-  // Position the button at the top-right of the input each tick — handles
-  // pages where layout shifts post-load.
-  const reposition = () => {
+  // Hover-only — do not park a 🔑 on every blank.
+  let hoverOpen = false;
+  const place = () => {
     const r = input.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) { btn.style.display = 'none'; return; }
-    btn.style.display = 'inline-block';
     btn.style.top     = `${Math.round(window.scrollY + r.top + (r.height - 22) / 2)}px`;
     btn.style.left    = `${Math.round(window.scrollX + r.right - 28)}px`;
     btn.style.position = 'absolute';
+    btn.style.display = hoverOpen ? 'inline-block' : 'none';
   };
-  reposition();
+  const showBtn = () => { hoverOpen = true; place(); };
+  const hideBtn = () => { hoverOpen = false; btn.style.display = 'none'; };
+  place();
   document.body.appendChild(btn);
+  input.addEventListener('mouseenter', showBtn);
+  input.addEventListener('focus', showBtn);
+  btn.addEventListener('mouseenter', showBtn);
+  input.addEventListener('mouseleave', (ev) => {
+    if (ev.relatedTarget === btn || (btn.contains && btn.contains(ev.relatedTarget))) return;
+    if (document.activeElement !== input) hideBtn();
+  });
+  input.addEventListener('blur', () => { if (!btn.matches(':hover')) hideBtn(); });
+  btn.addEventListener('mouseleave', (ev) => {
+    if (ev.relatedTarget === input) return;
+    if (document.activeElement !== input) hideBtn();
+  });
 
-  // Reposition on scroll/resize. Cheap — no observer per input.
   const repoInterval = setInterval(() => {
     if (!input.isConnected) { clearInterval(repoInterval); btn.remove(); return; }
-    reposition();
+    if (hoverOpen) place();
   }, 800);
 
   btn.onclick = async (ev) => {
@@ -1085,7 +1315,7 @@ function isKeyShieldDashboardHost() {
 // On load: ping background. Retry after login — a first miss used to disable
 // fill forever, which left the Cursor Settings black space empty.
 (function ksInitFillUI() {
-  if (isKeyShieldDashboardHost()) {
+  if (isKeyShieldDashboardHost() && !ksIsLocalFillDemo() && !ksIsKiloFillContext()) {
     ksFillEnabled = false;
     return;
   }
@@ -1110,7 +1340,14 @@ function isKeyShieldDashboardHost() {
         sendToBackground({
           type: 'SAVE_KEY',
           silent: true,
-          payload: { upstream: provider.id, name: `${provider.name} key`, value: found[0], domain: HOST },
+          payload: {
+            upstream: provider.id,
+            name: ksLabelForKey(found[0]).name || `${provider.name} (${HOST})`,
+            value: found[0],
+            domain: HOST,
+            pageTitle: document.title || '',
+            expires_at: ksLabelForKey(found[0]).expiresAt || '',
+          },
         }).then(() => refresh()).catch(() => {});
         return;
       }
@@ -1120,7 +1357,19 @@ function isKeyShieldDashboardHost() {
   setInterval(() => {
     if (!ksCachedKeys || !ksCachedKeys.length) refresh();
     else ksScanForInputs();
-  }, 2000);
+  }, 1500);
+  try {
+    let scanTimer = 0;
+    const mo = new MutationObserver(() => {
+      if (!ksCachedKeys || !ksCachedKeys.length) return;
+      if (scanTimer) return;
+      scanTimer = window.setTimeout(() => {
+        scanTimer = 0;
+        ksScanForInputs();
+      }, 80);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  } catch { /* noop */ }
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
       if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();

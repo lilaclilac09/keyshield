@@ -62,7 +62,7 @@ function paintLoadedBuild() {
   const build = $("build");
   if (build) build.textContent = `v${ver} · KeyShield — Sovereign Vault`;
   const ready = $("detect-ready");
-  if (ready && !/ok 1\.2\.4/.test(ready.textContent || "")) {
+  if (ready && !/ok 1\.2\.[45]/.test(ready.textContent || "")) {
     ready.textContent = `checking ${ver} + <all_urls>…`;
     ready.style.display = "block";
   }
@@ -121,16 +121,18 @@ function paintFilledLine(filled, ms, kind = "ok") {
 
 function paintSignedStatus(signed) {
   const el = $("signed-status");
-  if (el) el.textContent = formatSignedStatus(signed);
+  if (!el) return;
+  // Signed-in hero is the vault count ("5 saved"), not the word "signed".
+  if (!signed) el.textContent = formatSignedStatus(false);
 }
 
 function formatDetectReadyLine(version, hasAllUrls) {
   const ver = String(version || "").trim();
-  if (ver === "1.2.4" && hasAllUrls) return { ok: true, text: "ok 1.2.4 <all_urls>" };
+  if ((ver === "1.2.5" || ver === "1.2.4") && hasAllUrls) return { ok: true, text: `ok ${ver} <all_urls>` };
   if (!hasAllUrls) {
     return { ok: false, text: `need Remove + Load unpacked · v${ver || "?"} missing <all_urls>` };
   }
-  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.4)` };
+  return { ok: false, text: `need Remove + Load unpacked · v${ver} (want 1.2.5)` };
 }
 
 async function hasAllUrlsPermission() {
@@ -160,7 +162,7 @@ async function refreshDetectReady() {
   const line = $("detect-line");
   if (line) {
     line.textContent = ready.ok
-      ? (auto ? "detect on · ok 1.2.4" : "detect ready · ok 1.2.4")
+      ? (auto ? `detect on · ok ${ver}` : `detect ready · ok ${ver}`)
       : `detect · ${ready.text}`;
     line.className = `line ${ready.ok ? "ok" : "err"}`;
   }
@@ -195,9 +197,30 @@ function summarizeSavedApis(data) {
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ""),
+      product: String(it.product || ""),
+      domain: String(it.domain || ""),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ""),
     });
   }
   return out;
+}
+
+function formatApiRowTitle(api) {
+  const name = String((api && api.name) || "").trim();
+  return name || String((api && api.upstream) || "API");
+}
+
+function formatApiRowNote(api) {
+  if (!api) return "";
+  if (api.notes) return String(api.notes);
+  const bits = [api.family, api.product, api.domain].filter(Boolean);
+  const exp = api.expires_at ? `expires ${String(api.expires_at).slice(0, 10)}` : "";
+  if (exp) bits.push(exp);
+  if (api.masked) bits.push(api.masked);
+  return bits.join(" · ");
 }
 
 function applySignedInChrome(signed) {
@@ -205,7 +228,14 @@ function applySignedInChrome(signed) {
 }
 
 function formatSavedCount(n) {
-  return formatCollectedCount(n);
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  return count === 1 ? "1 saved" : `${count} saved`;
+}
+
+function listedApiCount(box, apis) {
+  const fromApis = Array.isArray(apis) ? apis.length : 0;
+  const fromDom = box && box.querySelectorAll ? box.querySelectorAll(".api-row").length : 0;
+  return Math.max(fromApis, fromDom);
 }
 
 function looksLikeSessionToken(raw) {
@@ -213,19 +243,33 @@ function looksLikeSessionToken(raw) {
 }
 
 function paintSavedCount(n) {
-  const label = formatCollectedCount(n);
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  const saved = formatSavedCount(count);
+  const collected = formatCollectedCount(count);
+  const signedIn = count > 0 || document.body.classList.contains("signed-in");
+  const signedEl = $("signed-status");
+  if (signedEl) signedEl.textContent = signedIn ? saved : formatSignedStatus(false);
   const hero = $("saved-count");
-  if (hero) hero.textContent = label;
-  const collected = $("collected-line");
-  if (collected) {
-    collected.textContent = label;
-    collected.className = "line ok";
+  if (hero) hero.textContent = saved;
+  const collectedEl = $("collected-line");
+  if (collectedEl) {
+    collectedEl.textContent = collected;
+    collectedEl.className = "line ok";
   }
   const badge = $("conn");
   if (badge && document.body.classList.contains("signed-in")) {
-    badge.textContent = label;
-    badge.title = label;
+    badge.textContent = saved;
+    badge.title = saved;
   }
+}
+
+function hideLeftoverCopyButtons() {
+  ["copy-cursor-key", "copy-cursor-key-signed"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.hidden = true;
+    try { el.style.display = "none"; } catch { /* leftover node */ }
+  });
 }
 
 const DASHBOARD_HARVEST_URLS = [
@@ -284,15 +328,18 @@ async function refreshSavedApis() {
       const row = document.createElement("div");
       row.className = "api-row";
       const name = document.createElement("strong");
-      name.textContent = api.upstream;
+      name.textContent = formatApiRowTitle(api);
+      const note = document.createElement("span");
+      note.className = "api-note";
+      note.textContent = formatApiRowNote(api);
       const mask = document.createElement("code");
       mask.textContent = api.masked;
-      row.append(name, mask);
+      row.append(name, note, mask);
       box.appendChild(row);
     }
   }
   if (empty) empty.style.display = apis.length ? "none" : "block";
-  paintSavedCount(apis.length);
+  paintSavedCount(listedApiCount(box, apis));
   return apis;
 }
 
@@ -787,6 +834,7 @@ function onClick(id, handler) {
 function bootPopup() {
   if (bootPopup._done) return;
   bootPopup._done = true;
+  hideLeftoverCopyButtons();
   paintLoadedBuild();
   Promise.resolve(refreshDetectReady()).catch(() => {});
   Promise.resolve(loadSettings()).catch((e) => {

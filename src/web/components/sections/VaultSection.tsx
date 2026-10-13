@@ -4,6 +4,7 @@ import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
 import { callKeychain, detectUpstream, extractDetectedKeys, storeDetectedKeys } from '../../lib/keychain';
+import { formatStoredApiCard } from '../../lib/provider-catalog';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -12,7 +13,7 @@ interface Props {
   onStored?: () => void;
 }
 
-export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlocked, unlocking, unlockError, onUnlock, onStored }) => {
+export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlockError, onStored }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -57,16 +58,32 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <p className="text-[28px] font-bold tracking-tight text-white leading-none">
           {total === 1 ? '1 saved' : `${total} saved`}
         </p>
-        <p className="text-[12px] text-[#8a96c2]">Extension + Vault · 登录后这里就是已存的 key</p>
+        <p className="text-[12px] text-[#8a96c2]">`/manage/vault` · hidden until you click reveal</p>
       </div>
       {items.length > 0 ? (
         <div className="space-y-2">
-          {items.map((item) => (
+          {items.map((item) => {
+            const card = formatStoredApiCard({
+              name: item.name,
+              upstream: item.upstream || '',
+              prefix: item.prefix,
+              family: item.family,
+              product: item.product,
+              domain: item.domain,
+              expires_at: item.expiryDate,
+              created_at: Number.isFinite(item.createdAt) ? new Date(item.createdAt).toISOString() : null,
+              notes: item.notes,
+            });
+            return (
             <div key={item.id} className="flex items-baseline justify-between gap-3 rounded-lg border border-[#243365] bg-[#131c39] px-3 py-2">
-              <strong className="text-[13px] text-white">{item.name}</strong>
-              <code className="text-[11px] text-[#93b4ff] break-all">{item.value}</code>
+              <div className="min-w-0">
+                <strong className="text-[13px] text-white">{card.title}</strong>
+                <p className="text-[11px] text-[#8a96c2]">{card.subtitle} · {card.meta}</p>
+              </div>
+              <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || item.value}</code>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p className="text-[13px] text-[#8a96c2]">
@@ -77,23 +94,17 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       )}
     </div>
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <StatCard label="Total Secrets" value={total} hint="encrypted with AES-256-GCM" />
+      <StatCard label="Total Secrets" value={total} hint="hidden until you reveal" />
       <StatCard label="Used This Week" value={items.filter(i => Date.now() - i.lastUsedAt < 86400000 * 7).length} hint="across agents and apps" />
       <StatCard label="Expiring Soon" value={items.filter(i => { if (!i.expiryDate) return false; const d = (new Date(i.expiryDate).getTime() - Date.now()) / 86400000; return d >= 0 && d <= 14; }).length} hint="within 14 days" />
     </div>
-    {onUnlock && !unlocked && (
-      <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3 flex items-center justify-between gap-3">
-        <p className="text-[12px] text-[#8a96c2]">Device Vault is locked. Proxy vault (`/manage/vault`) still lists stored keys.</p>
-        <button onClick={onUnlock} disabled={unlocking} className="h-8 px-3 rounded-lg bg-white text-black text-[12px] font-semibold disabled:opacity-50">{unlocking ? 'Unlocking…' : 'Unlock Device Vault'}</button>
-      </div>
-    )}
     {unlockError && <p className="text-[12px] text-red-400">{unlockError}</p>}
     {items.length === 0 ? (
       <div className="rounded-xl border border-dashed border-[#243365]/50 py-16 flex flex-col items-center justify-center text-center px-6">
         <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
-        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty / 金库是空的'}</p>
+        <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty'}</p>
         <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Detect on a key page. This block is where saved keys show.'}</p>
         {!searchQuery && (
           <>
@@ -108,14 +119,14 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
               <div className="flex items-center justify-center gap-2 text-[11px] text-[#8a96c2] flex-wrap">
                 <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Add key here</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
-                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Encrypted on device</span>
+                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Stored in vault</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
                 <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Agent calls /proxy/...</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
                 <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Key injected per-request</span>
               </div>
               <p className="text-[10px] text-[#5e6a91] mt-2">
-                Your agent never sees the raw API key. Keys are decrypted in-memory and forwarded via the proxy.
+                Agents use the proxy URL. The raw key stays hidden until you click reveal.
               </p>
             </div>
           </>

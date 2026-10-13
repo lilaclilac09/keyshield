@@ -67,10 +67,26 @@ async function _getVaultKeyBytes() {
 
 // ── Domain → upstreams for auto-fill (keep in sync with fill-domain.ts) ────
 // cursor.com Settings blanks take Cursor + OpenAI + Anthropic + OpenRouter + Groq.
-const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'groq'];
+// app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
+const CURSOR_FILL_UPSTREAMS = ['cursor', 'openai', 'anthropic', 'openrouter', 'nvidia', 'groq'];
+const KILO_FILL_UPSTREAMS = ['openrouter'];
+const NVIDIA_FILL_UPSTREAMS = ['nvidia', 'openrouter'];
+const AI_FILL_UPSTREAMS = ['nvidia', 'openrouter', 'openai', 'anthropic', 'groq', 'cursor'];
 const DOMAIN_TO_UPSTREAMS = {
   'openrouter.ai':         ['openrouter'],
+  'build.nvidia.com':      NVIDIA_FILL_UPSTREAMS,
+  'integrate.api.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'api.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'nim.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'catalog.ngc.nvidia.com': NVIDIA_FILL_UPSTREAMS,
+  'ngc.nvidia.com':        NVIDIA_FILL_UPSTREAMS,
+  'nvidia.com':            NVIDIA_FILL_UPSTREAMS,
+  'nvidia.demo.localhost': NVIDIA_FILL_UPSTREAMS,
   'scvd.store':            ['openrouter'],
+  'kilo.ai':               KILO_FILL_UPSTREAMS,
+  'app.kilo.ai':           KILO_FILL_UPSTREAMS,
+  'www.kilo.ai':           KILO_FILL_UPSTREAMS,
+  'kilo.demo.localhost':   KILO_FILL_UPSTREAMS,
   'platform.openai.com':   ['openai'],
   'openai.com':            ['openai'],
   'console.anthropic.com': ['anthropic'],
@@ -124,13 +140,129 @@ function _isCursorFillHost(domain) {
     || host === 'cursor.demo.localhost';
 }
 
-/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
-function _isCursorKeyFetchContext(domain, pathname) {
-  if (_isCursorFillHost(domain)) return true;
-  const host = _normalizeHostname(domain);
+function _isLocalFillDemoPath(pathname) {
   const path = String(pathname || '').toLowerCase();
+  return path.includes('cursor-settings-fill-demo')
+    || path.includes('nvidia-fill-demo')
+    || path.includes('/journey/cursor')
+    || /(?:^|\/)cursor\.html$/.test(path)
+    || path === '/story'
+    || path.startsWith('/story/');
+}
+
+function _isNvidiaFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'nvidia.com' || host.endsWith('.nvidia.com') || host === 'nvidia.demo.localhost';
+}
+
+function _isNvidiaKeyFetchContext(domain, pathname, url) {
+  if (_isNvidiaFillHost(domain)) return true;
+  const path = String(pathname || '').toLowerCase();
+  if (path.includes('nvidia-fill-demo')) return true;
+  try {
+    if (url && new URL(url).pathname.toLowerCase().includes('nvidia-fill-demo')) return true;
+  } catch { /* noop */ }
+  return false;
+}
+
+function _hintsText(hints) {
+  return (Array.isArray(hints) ? hints.join(' ') : String(hints || '')).toLowerCase();
+}
+
+function _hintsWantNvidia(hints) {
+  return /\bnvidia\b|\bnim\b|\bnvapi\b/.test(_hintsText(hints));
+}
+
+function _hintsWantAi(hints) {
+  return /\bapi[\s_-]?key\b|\btoken\b|\bsecret\b|\bnvidia\b|\bnim\b|\bnvapi\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b/.test(_hintsText(hints));
+}
+
+function _valueLooksNvidia(value) {
+  return /^nvapi-[A-Za-z0-9_-]{16,}/.test(String(value || ''));
+}
+
+function _vaultItemMatchesWanted(it, wanted) {
+  const up = String((it && it.upstream) || '').toLowerCase();
+  if (wanted.has(up)) return true;
+  const blob = `${(it && it.name) || ''} ${(it && it.product) || ''} ${(it && it.family) || ''}`.toLowerCase();
+  if (wanted.has('nvidia') && /\bnvidia\b|\bnim\b|\bnvapi\b/.test(blob)) return true;
+  return false;
+}
+
+function _isKiloFillHost(domain) {
+  const host = _normalizeHostname(domain);
+  return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
+}
+
+function _isKiloByokPath(pathname) {
+  const path = String(pathname || '').toLowerCase();
+  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+}
+
+function _isKiloKeyFetchContext(domain, pathname, url) {
+  if (_isKiloFillHost(domain)) return true;
+  try {
+    if (url) {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'chrome-extension:' && _isKiloByokPath(parsed.pathname || pathname)) return true;
+    }
+  } catch { /* noop */ }
+  const host = _normalizeHostname(domain);
   const local = host === '127.0.0.1' || host === 'localhost';
-  return local && path.includes('cursor-settings-fill-demo');
+  return local && _isKiloByokPath(pathname);
+}
+
+function _isOwnExtensionFillDemo(url) {
+  const raw = String(url || '');
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'chrome-extension:') return false;
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id
+      && parsed.host !== chrome.runtime.id) return false;
+    return _isLocalFillDemoPath(parsed.pathname) || _isKiloByokPath(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function _isFillableTabUrl(url) {
+  const raw = String(url || '');
+  if (/^https?:/i.test(raw)) return true;
+  return _isOwnExtensionFillDemo(raw);
+}
+
+/** Unlock Cursor/model keys only for cursor hosts or our local demo path — never a spoofed title. */
+function _isCursorKeyFetchContext(domain, pathname, url) {
+  if (_isCursorFillHost(domain)) return true;
+  if (_isOwnExtensionFillDemo(url) && !_isKiloByokPath(pathname) && !_isKiloByokPath(url)) return true;
+  const host = _normalizeHostname(domain);
+  const local = host === '127.0.0.1' || host === 'localhost';
+  return local && _isLocalFillDemoPath(pathname);
+}
+
+function distinguishStoreName({ upstream, value, name, domain, pageTitle }) {
+  const raw = String(value || '');
+  const prefix = raw.length < 10 ? '••••' : `${raw.slice(0, 6)}…${raw.slice(-4)}`;
+  const given = String(name || '').trim();
+  const up = String(upstream || '').toLowerCase();
+  const pageName = /^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(given)
+    && !/^(name|api key|key)$/i.test(given)
+    && given.toLowerCase() !== up
+    && given.toLowerCase() !== `${up} key`;
+  if (pageName) return given;
+  const generic = !given
+    || given.toLowerCase() === up
+    || given.toLowerCase() === `${up} key`
+    || given.toLowerCase() === `${up}key`
+    || given.toLowerCase().startsWith(`${up} rpc (`);
+  if (given && !generic) return given.includes(prefix) ? given : `${given} · ${prefix}`;
+  const parts = [upstream || 'API', prefix];
+  const host = String(domain || '').trim();
+  if (host) parts.push(host);
+  const title = String(pageTitle || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+  if (title) parts.push(title);
+  return parts.filter(Boolean).join(' · ');
 }
 
 async function _decryptCipher(keyBytes, cipherB64u, ivB64u) {
@@ -170,7 +302,10 @@ async function pendingKeysForUpstreams(upstreams) {
       const upstream = String((row && row.upstream) || '').toLowerCase();
       const value = String((row && row.value) || '');
       if (!upstream || !value || seen.has(value)) continue;
-      if (wanted.size && !wanted.has(upstream)) continue;
+      if (wanted.size && !wanted.has(upstream)
+        && !(wanted.has('nvidia') && (_valueLooksNvidia(value) || /\bnvidia\b|\bnim\b|\bnvapi\b/.test(`${upstream} ${(row && row.name) || ''}`)))) {
+        continue;
+      }
       seen.add(value);
       out.push({ id: `pending-${upstream}`, upstream, name: `${upstream} key`, value });
     }
@@ -181,15 +316,24 @@ async function pendingKeysForUpstreams(upstreams) {
 }
 
 async function getKeysForDomain(domain, extra) {
+  extra = extra || {};
   let upstreams = _upstreamsForDomain(domain);
-  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra && extra.pathname)) {
+  if (!upstreams.length && _isKiloKeyFetchContext(domain, extra.pathname, extra.url)) {
+    upstreams = KILO_FILL_UPSTREAMS.slice();
+  }
+  if (!upstreams.length && (_isNvidiaKeyFetchContext(domain, extra.pathname, extra.url) || _hintsWantNvidia(extra.hints))) {
+    upstreams = NVIDIA_FILL_UPSTREAMS.slice();
+  }
+  if (!upstreams.length && _isCursorKeyFetchContext(domain, extra.pathname, extra.url)) {
     upstreams = CURSOR_FILL_UPSTREAMS.slice();
+  }
+  if (!upstreams.length && extra.hasKeyBlanks && _hintsWantAi(extra.hints)) {
+    upstreams = AI_FILL_UPSTREAMS.slice();
   }
   if (!upstreams.length) return { ok: false, reason: 'no-upstream-match' };
 
-  const wanted = new Set(upstreams);
+  const wanted = new Set(upstreams.map((u) => String(u || '').toLowerCase()));
   const pending = await pendingKeysForUpstreams(upstreams);
-  const keyBytes = await _getVaultKeyBytes();
   const { token } = await getStoredToken();
   if (!token) {
     if (pending.length) return { ok: true, keys: pending };
@@ -213,38 +357,32 @@ async function getKeysForDomain(domain, extra) {
     }
   } catch { /* pending fill still runs */ }
 
-  const matched = items.filter((it) => it && wanted.has(it.upstream));
+  const matched = items.filter((it) => it && _vaultItemMatchesWanted(it, wanted));
   const out = [];
   for (const it of matched) {
     let value = '';
-    const cipherOk = Number(it.cipher_v) === 1
-      && typeof it.cipher === 'string' && it.cipher !== ''
-      && typeof it.iv === 'string' && it.iv !== '';
-    if (cipherOk && keyBytes) {
-      try {
-        value = await _decryptCipher(keyBytes, it.cipher, it.iv);
-      } catch {
-        value = '';
+    try {
+      const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
+      if (dec.ok) {
+        const body = await dec.json();
+        value = typeof body.value === 'string' ? body.value : (typeof body.key === 'string' ? body.key : '');
       }
+    } catch {
+      value = '';
     }
-    if (!value) {
-      try {
-        const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
-        if (dec.ok) {
-          const body = await dec.json();
-          value = typeof body.value === 'string' ? body.value : '';
-        }
-      } catch {
-        value = '';
-      }
+    if (!value) continue;
+    let upstream = String(it.upstream || '').toLowerCase();
+    if (_valueLooksNvidia(value)) upstream = 'nvidia';
+    if (!wanted.has(upstream) && !(wanted.has('nvidia') && (_valueLooksNvidia(value) || _vaultItemMatchesWanted({ ...it, value }, wanted)))) {
+      continue;
     }
-    if (value) out.push({ id: it.id, upstream: it.upstream, name: it.name, value });
+    out.push({ id: it.id, upstream: upstream || it.upstream, name: it.name, value });
   }
   for (const row of pending) {
     if (!out.some((k) => k.value === row.value)) out.push(row);
   }
   if (out.length === 0) {
-    return { ok: false, reason: keyBytes ? 'decrypt-failed' : 'no-keys' };
+    return { ok: false, reason: 'no-keys' };
   }
   return { ok: true, keys: out };
 }
@@ -329,6 +467,12 @@ function summarizeSavedApis(data) {
       upstream,
       name: String(it.name || `${upstream} key`),
       masked,
+      family: String(it.family || ''),
+      product: String(it.product || ''),
+      domain: String(it.domain || ''),
+      expires_at: it.expires_at ? String(it.expires_at) : null,
+      created_at: it.created_at ? String(it.created_at) : null,
+      notes: String(it.notes || ''),
     });
   }
   return out;
@@ -390,7 +534,7 @@ async function queuePendingVault(hit) {
   } catch { /* noop */ }
 }
 
-async function directStore({ upstream, value }) {
+async function directStore({ upstream, value, name, domain, pageTitle, expires_at }) {
   try {
     const { token } = await getStoredToken();
     if (!token) {
@@ -401,32 +545,21 @@ async function directStore({ upstream, value }) {
 
     const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
-    let body;
-    const keyBytes = await _getVaultKeyBytes();
-    if (keyBytes) {
-      try {
-        const aesKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const ct = new Uint8Array(await crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv },
-          aesKey,
-          new TextEncoder().encode(String(value ?? '')),
-        ));
-        body = JSON.stringify({
-          upstream,
-          name:     `${upstream} key`,
-          cipher:   _b64uEnc(ct),
-          iv:       _b64uEnc(iv),
-          cipher_v: 1,
-        });
-      } catch (encErr) {
-        console.warn('[KeyShield] client encrypt failed — falling back to plaintext:', encErr);
-        body = JSON.stringify({ upstream, value, name: `${upstream} key` });
-      }
-    } else {
-      console.warn('[KeyShield] vault key not registered — saving plaintext (less secure). Sign into the dashboard at app.ks.aileena.xyz to enable client-side encryption.');
-      body = JSON.stringify({ upstream, value: String(value ?? ''), name: `${upstream} key` });
-    }
+    // Vault page reveal reads SQLite `value`. Cipher-only rows showed
+    // "hides in Ns" with an empty RAW field. Always send plaintext.
+    const storedName = distinguishStoreName({
+      upstream, value, name, domain, pageTitle,
+    });
+    const body = JSON.stringify({
+      upstream,
+      apiKey: String(value ?? ''),
+      value: String(value ?? ''),
+      name: storedName,
+      domain: domain || '',
+      origin: domain || '',
+      pageTitle: pageTitle || '',
+      expires_at: expires_at || undefined,
+    });
 
     try {
       const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
@@ -441,6 +574,7 @@ async function directStore({ upstream, value }) {
       }
       try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
       try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
+      try { await fillCursorTabsFromPending(); } catch { /* empty boxes on other tabs */ }
       return { ok: true };
     } catch (e) {
       try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* dashboard flush */ }
@@ -532,13 +666,14 @@ async function importVault(jsonStr) {
 
   for (const it of backup.items) {
     if (!it || typeof it.id !== 'string') { skipped++; continue; }
+    const plaintext = String(it.value || it.apiKey || it.api_key || '').trim();
+    if (!plaintext) { skipped++; continue; }
     const body = JSON.stringify({
       id:       it.id,
       upstream: it.upstream,
       name:     it.name,
-      cipher:   it.cipher,
-      iv:       it.iv,
-      cipher_v: it.cipher_v,
+      apiKey:   plaintext,
+      value:    plaintext,
     });
     try {
       const r = await fetch(`${apiBase}/manage/store`, { method: 'POST', headers, body });
@@ -706,6 +841,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = await getKeysForDomain(message.domain || '', {
           pathname: message.pathname || '',
           title: message.title || '',
+          url: message.url || '',
+          hints: message.hints || [],
+          hasKeyBlanks: !!message.hasKeyBlanks,
         });
         sendResponse(result);
       } catch (e) {
@@ -735,8 +873,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabUrl = (tab && tab.url) || '';
           } catch { /* noop */ }
         }
-        if (tabUrl && !/^https?:/i.test(tabUrl)) {
-          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or the fill demo.' });
+        if (tabUrl && !_isFillableTabUrl(tabUrl)) {
+          sendResponse({ ok: false, reason: 'restricted-tab', detail: 'Chrome cannot fill Cursor desktop Settings. Open cursor.com or http://127.0.0.1:5173/cursor-settings-fill-demo.html.' });
           return;
         }
         try {
@@ -847,9 +985,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       const { upstream, name, value, domain } = payload;
 
-      const result = await directStore({ upstream, value });
+      const result = await directStore({
+        upstream,
+        value,
+        name,
+        domain,
+        pageTitle: payload.pageTitle || '',
+        expires_at: payload.expires_at || payload.expiresAt || '',
+      });
       if (result.ok) {
-        notify('KeyShield', `Saved ${upstream} key to KeyShield`);
+        if (!message.silent) notify('KeyShield', `Saved ${upstream} key to KeyShield`);
         sendResponse({ ok: true, mode: 'direct' });
         return;
       }
@@ -946,6 +1091,26 @@ function isHeliusDashboardHost(hostname) {
     || host === 'helius.xyz' || host.endsWith('.helius.xyz');
 }
 
+function harvestPageKeyLabels(text) {
+  const lines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < lines.length - 1; i++) {
+    const name = lines[i];
+    if (!/^[A-Za-z][A-Za-z0-9 _-]{2,47}$/.test(name)) continue;
+    if (/^(name|api key|api keys|key|keys|expires|created|status)$/i.test(name)) continue;
+    const next = lines[i + 1];
+    const uuid = String(next).match(/[0-9a-f]{8}(?:-[0-9a-f*]{4}){3}-[0-9a-f*]{12}/i);
+    if (!uuid) continue;
+    out.push({ name, prefix: uuid[0].slice(0, 8).toLowerCase() });
+  }
+  return out;
+}
+
+function labelForHarvestedKey(key, labels) {
+  const prefix = String(key || '').slice(0, 8).toLowerCase();
+  return (labels || []).find((row) => prefix.startsWith(row.prefix))?.name || '';
+}
+
 function harvestVisibleKeysFromText(text, hostname, href) {
   const src = String(text || '');
   const host = String(hostname || '').toLowerCase();
@@ -955,6 +1120,7 @@ function harvestVisibleKeysFromText(text, hostname, href) {
       .map((s) => s.toLowerCase()),
   );
   const shapes = [
+    { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/g },
     { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/g },
     { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/g },
     { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/g },
@@ -1035,6 +1201,7 @@ function collectPageSecrets() {
   return {
     text: chunks.join('\n'),
     hostname: location.hostname,
+    title: document.title || '',
     href: location.href,
     stalePanel: !!(
       document.getElementById('keyshield-detection-notice')
@@ -1103,7 +1270,7 @@ function paintLiveDetectPanel(state) {
     + '<ul class="ks-list" style="list-style:none;margin:0;padding:0;max-height:170px;overflow:auto">' + rows + '</ul>'
     + '<div style="font-size:12px;color:' + (failed ? '#f87171' : '#34d399') + '">' + save + '</div>'
     + '<div style="font-size:12px;color:#a1a1aa">' + filled + '</div>'
-    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.4</div>';
+    + '<div style="font-size:12px;color:#34d399">detect on · ok 1.2.5</div>';
 }
 
 async function pushDetectState(tabId, state) {
@@ -1121,6 +1288,10 @@ async function pushDetectState(tabId, state) {
 
 function injectedAutoFill(keys) {
   if (!keys || !keys.length) return 0;
+  const href = String(location.href || '');
+  const cursorish = /cursor\.com|cursor\.sh|cursor-settings-fill-demo|\/journey\/cursor|cursor\.html|\/story/i.test(href)
+    || location.hostname === 'cursor.demo.localhost';
+  const kiloish = /(?:^|\.)kilo\.ai(?:[:/]|$)|kilo-byok-fill-demo|kilo\.demo\.localhost/i.test(href);
   function hay(el) {
     const bits = [
       el.getAttribute('name') || '',
@@ -1133,6 +1304,10 @@ function injectedAutoFill(keys) {
       const lab = item.querySelector('.setting-item-label, .setting-item-title, label');
       if (lab) bits.push(lab.textContent || '');
     }
+    const wrapped = el.closest && el.closest('label');
+    if (wrapped) bits.push(wrapped.textContent || '');
+    const prev = el.previousElementSibling;
+    if (prev && /^(LABEL|SPAN|P|DIV|H[1-6])$/.test(prev.tagName)) bits.push(prev.textContent || '');
     return bits.join(' ').toLowerCase();
   }
   function match(h) {
@@ -1141,18 +1316,31 @@ function injectedAutoFill(keys) {
     if (/openai|chatgpt|gpt|sk-proj/.test(h)) return 'openai';
     if (/groq|gsk_/.test(h)) return 'groq';
     if (/cursor|crsr/.test(h)) return 'cursor';
+    if (/kilo|byok/.test(h)) return 'openrouter';
     return null;
   }
   function login(h) {
     if (/(sign[\s-]?in|log[\s-]?in|email|username|account password)/.test(h)) return true;
     return /\bpassword\b/.test(h) && !/\b(key|token|secret|api|openai|anthropic|cursor|claude|openrouter)\b/.test(h);
   }
+  function looksKey(h) {
+    return /\bkey\b|api[\s_-]?key|\bapi\b|\btoken\b|\bsecret\b|\bopenai\b|\banthropic\b|\bopenrouter\b|\bgroq\b|\bcursor\b|\bclaude\b|\bkilo\b|\bbyok\b/.test(h);
+  }
   function setVal(el, value) {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    const last = el.value;
+    try {
+      const tracker = el._valueTracker;
+      if (tracker && typeof tracker.setValue === 'function') tracker.setValue(last);
+    } catch { /* noop */ }
     if (desc && desc.set) desc.set.call(el, value);
     else el.value = value;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    try {
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: value, inputType: 'insertFromPaste' }));
+    } catch {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
   const remaining = keys.filter((k) => k && k.value);
@@ -1161,17 +1349,22 @@ function injectedAutoFill(keys) {
   nodes.forEach((el) => {
     if (el.disabled || el.readOnly) return;
     if (String(el.value || '').trim()) return;
+    const ac = String(el.getAttribute('autocomplete') || '').toLowerCase();
+    if (ac.includes('current-password') || ac.includes('username') || ac.includes('email')) return;
     const h = hay(el);
     if (login(h)) return;
     const wanted = match(h);
     let key = wanted ? remaining.find((k) => k.upstream === wanted) : null;
-    if (!key) {
-      const order = ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
+    if (!key && (cursorish || kiloish || looksKey(h))) {
+      const order = kiloish
+        ? ['openrouter', 'openai', 'anthropic', 'groq', 'cursor']
+        : ['cursor', 'openai', 'openrouter', 'anthropic', 'groq'];
       for (const u of order) {
         key = remaining.find((k) => k.upstream === u);
         if (key) break;
       }
     }
+    if (!key && (cursorish || kiloish)) key = remaining[0];
     if (!key) return;
     setVal(el, key.value);
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
@@ -1182,18 +1375,51 @@ function injectedAutoFill(keys) {
 }
 
 function isCursorFillTabUrl(url) {
-  return /cursor\.com|cursor\.sh|cursor-settings-fill-demo/i.test(String(url || ''));
+  const raw = String(url || '');
+  if (/cursor\.com|cursor\.sh|cursor-settings-fill-demo|\/journey\/cursor|cursor\.html/i.test(raw)) return true;
+  try {
+    const parsed = new URL(raw);
+    const local = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+    const dash = /ks\.aileena\.xyz|keyshield\.dev|up\.railway\.app|vercel\.app/.test(parsed.hostname);
+    if ((local || dash) && (parsed.pathname === '/story' || parsed.pathname.startsWith('/story/'))) return true;
+  } catch { /* noop */ }
+  return false;
 }
 
 async function fillCursorTabsFromPending() {
-  const keys = await pendingKeysForUpstreams(CURSOR_FILL_UPSTREAMS);
-  if (!keys.length) return 0;
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch { return 0; }
   let filled = 0;
   for (const tab of tabs) {
-    if (!tab.id || !tab.url || !/^https?:/i.test(tab.url)) continue;
-    if (!isCursorFillTabUrl(tab.url)) continue;
+    if (!tab.id || !tab.url || !_isFillableTabUrl(tab.url)) continue;
+    let host = '';
+    let path = '';
+    try {
+      const parsed = new URL(tab.url);
+      host = parsed.hostname;
+      path = parsed.pathname;
+    } catch { continue; }
+    const mapped = _upstreamsForDomain(host);
+    const cursorish = isCursorFillTabUrl(tab.url) || _isCursorKeyFetchContext(host, path, tab.url);
+    const kiloish = _isKiloKeyFetchContext(host, path, tab.url);
+    if (!cursorish && !kiloish && !mapped.length) continue;
+    let keys = [];
+    try {
+      const fetched = await getKeysForDomain(host, { pathname: path, title: tab.title || '', url: tab.url });
+      if (fetched && fetched.ok && Array.isArray(fetched.keys)) keys = fetched.keys;
+    } catch { keys = []; }
+    if (!keys.length) {
+      keys = await pendingKeysForUpstreams(
+        mapped.length ? mapped : (kiloish ? KILO_FILL_UPSTREAMS : CURSOR_FILL_UPSTREAMS),
+      );
+    }
+    if (!keys.length) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js'],
+      });
+    } catch { /* already injected or restricted */ }
     try {
       const injected = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
@@ -1201,7 +1427,7 @@ async function fillCursorTabsFromPending() {
         args: [keys],
       });
       for (const row of injected || []) {
-        if (typeof row.result === 'number') filled += row.result;
+        if (typeof row.result === 'number' && row.result > filled) filled = row.result;
       }
     } catch { /* restricted */ }
     try {
@@ -1239,6 +1465,7 @@ async function injectDetectOnAllTabs(opts) {
     const painted = [];
     if (page) {
       const keys = harvestVisibleKeysFromText(page.text, page.hostname, page.href);
+      const labels = harvestPageKeyLabels(page.text);
       for (const hit of keys) {
         let queued = false;
         try {
@@ -1247,7 +1474,13 @@ async function injectDetectOnAllTabs(opts) {
         } catch { /* dashboard flush */ }
         let ok = false;
         if (again.token) {
-          const result = await directStore({ upstream: hit.upstream, value: hit.key });
+          const result = await directStore({
+            upstream: hit.upstream,
+            value: hit.key,
+            name: labelForHarvestedKey(hit.key, labels),
+            domain: page.hostname,
+            pageTitle: page.title || tab.title || '',
+          });
           ok = !!(result && result.ok);
           if (ok) saved += 1;
           else failed += 1;
@@ -1290,21 +1523,21 @@ async function injectDetectOnAllTabs(opts) {
   }
   let filledAll = 0;
   try { filledAll = await fillCursorTabsFromPending(); } catch { /* cursor tab missing */ }
-  if (saved > 0 || filledAll > 0) {
-    try { notify('KeyShield', `Saved ${saved} key${saved === 1 ? '' : 's'} to KeyShield vault`); } catch { /* noop */ }
-  }
+  // Silent harvest — toolbar popup lists saved keys. Do not toast.
   return { injected, saved, failed, filled: filledAll };
 }
 
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     if (info.status !== 'complete') return;
-    if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return;
-    chrome.storage.local.get(['ks_token', 'ks_auto_store'], (out) => {
-      if (!out || (!out.ks_token && !out.ks_auto_store)) return;
+    if (!tab || !tab.url || !_isFillableTabUrl(tab.url)) return;
+    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_vault'], (out) => {
+      if (!out || (!out.ks_token && !out.ks_auto_store && !(out.ks_pending_vault || []).length)) return;
       chrome.scripting.executeScript({
         target: { tabId, allFrames: true },
         files: ['content.js'],
+      }).then(() => {
+        chrome.tabs.sendMessage(tabId, { type: 'FILL_PAGE_NOW' }).catch(() => {});
       }).catch(() => {});
     });
   });

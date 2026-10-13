@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Key, Copy, Trash2, Check, Shield, Lock, FileText, Terminal, KeyRound } from 'lucide-react';
 import { VaultItem, PasswordPayload, NotePayload, EnvPayload, SSHKeyPayload } from '../types';
 import { getPrefs } from '../lib/preferences';
+import { formatCreated, formatExpiry } from '../lib/provider-catalog';
 import { ConfirmButton } from './ui/ConfirmButton';
 import { CopyButton } from './ui/CopyButton';
 
@@ -40,7 +41,11 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
   const handleReveal = async () => {
     if (isRevealed) { clearReveal(); return; }
     setIsDecrypting(true); setDecryptErr('');
-    try { const v = await onDecrypt(item.id); setRawValue(v); setIsRevealed(true); startTimer(); }
+    try {
+      const v = String(await onDecrypt(item.id) || '').trim();
+      if (!v) { setDecryptErr('Save the API key again'); return; }
+      setRawValue(v); setIsRevealed(true); startTimer();
+    }
     catch (e) { setDecryptErr(e instanceof Error ? e.message : 'Decrypt failed'); }
     finally { setIsDecrypting(false); }
   };
@@ -59,9 +64,20 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
         <div className="flex items-center gap-2 min-w-0">
           <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${TYPE_BG[item.type]}`}>{TYPE_ICON[item.type]}</div>
           <div className="min-w-0">
-            <h3 className="text-[14px] font-medium text-white truncate leading-tight">{item.name || 'Untitled'}</h3>
-            {item.domain && <p className="text-[11px] text-[#8a96c2] truncate">{item.domain}</p>}
-            {item.type !== 'api_key' && !item.domain && <p className="text-[11px] text-[#8a96c2] capitalize">{item.type.replace('_', ' ')}</p>}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="text-[14px] font-medium text-white truncate leading-tight">{item.name || 'Untitled'}</h3>
+              {item.family && (
+                <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded border border-[#243365] text-[#93b4ff] uppercase tracking-wider">{item.family}</span>
+              )}
+            </div>
+            {(item.family || item.product) && (
+              <p className="text-[11px] text-[#93b4ff] truncate">{[item.family, item.product].filter(Boolean).join(' · ')}</p>
+            )}
+            {item.prefix && <p className="text-[11px] font-mono text-[#8a96c2] truncate">{item.prefix}</p>}
+            <p className="text-[11px] text-[#5e6a91] truncate">
+              {[formatExpiry(item.expiryDate), formatCreated(undefined, item.createdAt), item.domain].filter(Boolean).join(' · ')}
+            </p>
+            {item.type !== 'api_key' && !item.domain && !item.family && <p className="text-[11px] text-[#8a96c2] capitalize">{item.type.replace('_', ' ')}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">

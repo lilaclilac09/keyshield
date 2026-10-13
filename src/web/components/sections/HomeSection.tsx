@@ -1,25 +1,23 @@
-import React, { useState } from 'react';
-import { Key, Wallet, Plug, ArrowRight } from 'lucide-react';
-import { ExtensionInstallHint } from '../ExtensionInstallHint';
-import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
-import { ExtTroubleCase } from '../ExtTroubleCase';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plug } from 'lucide-react';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
-import { describeBalanceChange, describeRpcPing, SHOP_CREDIT_USD, SHOP_ITEM_NAME, SHOP_MPP_USD, wantsShopDemo } from '../../lib/shop-demo';
-import { buyMppShopSku, downloadMppReceipt, loadStoredMppReceipt } from '../../lib/mpp-shop';
-import { formatMicroUsdc, type MppShopReceipt } from '../../lib/mpp-receipt';
-import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from '../../lib/x402-bazaar';
-import { MppReceiptCard } from '../MppReceiptCard';
+import { describeRpcPing, formatUsd, SHOP_MPP_USD, SHOP_PROOF_CACHE_MS, SHOP_PROOF_WAN_MS } from '../../lib/shop-demo';
 import { isVaultUnlocked } from '../../lib/vault-session';
-import { OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL } from '../../lib/openrouter-interface';
 import {
   callKeychain,
-  detectUpstream,
-  extractDetectedKeys,
   fetchKeychainHome,
-  storeDetectedKeys,
   type KeychainCallResult,
   type KeychainHome,
 } from '../../lib/keychain';
+import { buyMppShopSku } from '../../lib/mpp-shop';
+import { formatExpiry } from '../../lib/provider-catalog';
+import {
+  fetchAccountPurchases,
+  listPurchases,
+  summarizeConsumption,
+  type PurchaseRow,
+} from '../../lib/purchases';
+import type { PlanSnapshot } from '../PlanCatalog';
 
 interface Props {
   home: KeychainHome | null;
@@ -40,6 +38,14 @@ function fmt(n: number | null | undefined, digits = 4): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+function planExpiry(snap: PlanSnapshot | null, planName?: string): string {
+  const billing = snap?.plan.billing || (planName && planName !== 'Free' ? 'subscription+payg' : 'payg');
+  if (billing === 'payg') return 'PAYG · no calendar expiry';
+  const period = snap?.period;
+  if (period) return `Included credit period ${period} · renews next UTC month`;
+  return 'Monthly subscription · PAYG overage · no hard expiry';
+}
+
 const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, label, sub }) => (
   <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
     <div className="flex items-center gap-2">
@@ -53,38 +59,38 @@ const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, labe
 export const HomeSection: React.FC<Props> = ({
   home, loading, error, homeMs, walletConnected, onRefresh, onConnectWallet, onUnlock, unlocking, onGo,
 }) => {
-  const [paste, setPaste] = useState('');
-  const [busy, setBusy] = useState<'save' | 'call' | string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
-  const [receipt, setReceipt] = useState<MppShopReceipt>(() => loadStoredMppReceipt());
-  const highlightShop = typeof window !== 'undefined' && wantsShopDemo(window.location.search);
+  const [rpcPing, setRpcPing] = useState<string | null>(null);
+  const [account, setAccount] = useState<PurchaseRow[]>([]);
+  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
 
-  const detected = detectUpstream(paste);
   const passkey = !!getPasskeyTrust();
   const vaultOpen = isVaultUnlocked();
   const wallet = home?.wallet;
   const apis = home?.apis ?? [];
   const conn = home?.connection;
+  const intervalSec = conn?.lowest_ttl_sec ?? home?.rpc_cache.lowest_ttl_sec ?? 2;
+  const firstApi = apis[0];
 
-  const savePaste = async () => {
-    const hits = extractDetectedKeys(paste);
-    if (!hits.length) { setOk(false); setMsg('Paste a key first'); return; }
-    setBusy('save'); setMsg(null);
-    try {
-      const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
-      setOk(true);
-      setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
-      setPaste('');
-      onRefresh();
-    } catch (err) {
-      setOk(false);
-      setMsg(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setBusy(null);
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    void apiFetch('/billing/plan')
+      .then(async (r) => (r.ok ? r.json() as Promise<PlanSnapshot> : null))
+      .then((snap) => { if (!cancelled && snap) setPlanSnap(snap); })
+      .catch(() => { /* unsigned */ });
+    void fetchAccountPurchases()
+      .then((rows) => { if (!cancelled) setAccount(rows); })
+      .catch(() => { /* unsigned */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const consume = useMemo(
+    () => summarizeConsumption(listPurchases([], account)),
+    [account],
+  );
 
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
@@ -101,82 +107,233 @@ export const HomeSection: React.FC<Props> = ({
     }
   };
 
+  const buyOnChain = () => {
+    setBusy('buy');
+    setMsg(null);
+    void buyMppShopSku()
+      .then((next) => {
+        setOk(true);
+        setMsg(`On-chain buy ${next.sku} · ${next.settleTx ? 'settled' : 'opened'} · detail in Payments`);
+        onRefresh();
+      })
+      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Buy failed'); })
+      .finally(() => setBusy(null));
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-testid="home-metrics">
       <div>
-        <p className="text-[15px] text-[#8a96c2]">Balance · stored APIs · connection</p>
-        <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Keychain</h2>
+        <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency · subscription</p>
+        <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Speed</h2>
+        <p className="text-[14px] text-[#8a96c2] mt-2">
+          Metrics, saved API timings, and one-click buy or call. Purchase explorer links and receipts live in Payments.
+        </p>
       </div>
 
-      <ExtensionTokenCopy />
-      <ExtensionInstallHint variant="home" onOpenDocs={() => onGo('docs')} />
-      <ExtTroubleCase variant="home" />
+      <section data-testid="home-metrics-strip" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">1 · RPC</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_CACHE_MS}ms</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Cache hit</p>
+          </div>
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_WAN_MS}ms</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">WAN</p>
+          </div>
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+              {home?.latency?.wallet_ms != null ? `${Math.round(home.latency.wallet_ms)}ms` : '—'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Wallet ping</p>
+          </div>
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{intervalSec}s</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">RPC TTL / interval</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          data-testid="shop-rpc"
+          disabled={busy !== null}
+          onClick={() => {
+            setBusy('rpc');
+            setMsg(null);
+            const addr = home?.wallet.address ?? '';
+            const t0 = performance.now();
+            void fetchKeychainHome(addr)
+              .then(async (first) => {
+                const ms1 = performance.now() - t0;
+                const t1 = performance.now();
+                const second = await fetchKeychainHome(addr);
+                const ms2 = performance.now() - t1;
+                const line = describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc);
+                setOk(true);
+                setRpcPing(line);
+                setMsg(line);
+                onRefresh();
+              })
+              .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'RPC ping failed'); })
+              .finally(() => setBusy(null));
+          }}
+          className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
+        >
+          {busy === 'rpc' ? 'Pinging…' : 'RPC speed check'}
+        </button>
+        {rpcPing && <p data-testid="shop-msg" className="text-[15px] text-emerald-400">{rpcPing}</p>}
+      </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
-          <p className="text-[16px] text-[#8a96c2]">SOL</p>
-          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">{fmt(wallet?.sol)}</p>
-          <p className="text-[15px] text-[#5e6a91] mt-3">{walletConnected ? 'Connected wallet' : 'Connect wallet to load'}</p>
-          {!walletConnected && onConnectWallet && (
-            <button type="button" onClick={onConnectWallet} className="mt-3 h-11 px-4 rounded-xl bg-white text-black text-[16px] font-semibold">Connect wallet</button>
+      <section className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">2 · API call</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+              {lastCall ? `${Math.round(lastCall.latency_ms)}ms` : '—'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Last call</p>
+          </div>
+          <div>
+            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+              {homeMs != null ? `${Math.round(homeMs)}ms` : '—'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Health</p>
+          </div>
+          <div>
+            <p className="text-[20px] font-semibold text-white leading-tight mt-1">
+              {lastCall ? `${lastCall.upstream} · ${lastCall.cache}` : 'No call yet'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">Upstream / cache</p>
+          </div>
+        </div>
+        <div data-testid="home-saved-apis" className="space-y-2">
+          <p className="text-[13px] text-[#8a96c2]">{apis.length} saved API{apis.length === 1 ? '' : 's'} · interval {intervalSec}s</p>
+          {apis.length === 0 ? (
+            <p className="text-[14px] text-[#5e6a91]">No stored APIs yet. Save a key in Vault, then Call from here.</p>
+          ) : (
+            apis.slice(0, 8).map((api) => {
+              const active = lastCall?.upstream === api.upstream;
+              const connecting = active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
+              return (
+                <div key={api.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3">
+                  <div>
+                    <p className="text-[15px] font-semibold text-white">{api.name || api.upstream}</p>
+                    <p className="text-[12px] text-[#8a96c2] mt-1">
+                      {api.upstream} · connect {active ? `${Math.round(lastCall.latency_ms)}ms` : 'not called'} · interval {intervalSec}s · {formatExpiry(api.expires_at)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[12px] ${active && lastCall?.live ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>{connecting}</span>
+                    <button
+                      type="button"
+                      data-testid={`api-call-${api.upstream}`}
+                      disabled={busy !== null}
+                      onClick={() => void runCall(api.upstream)}
+                      className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
+                    >
+                      {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
-          <p className="text-[16px] text-[#8a96c2]">USDC</p>
-          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">{fmt(wallet?.usdc)}</p>
-          <p className="text-[15px] text-[#5e6a91] mt-3">{wallet?.rpc === 'helius-cache' ? `RPC cache ${wallet.cache}` : wallet?.rpc === 'public' ? 'Public RPC' : 'Waiting for address'}</p>
-        </div>
-        <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-6 py-6">
-          <p className="text-[16px] text-[#8a96c2]">Credit</p>
-          <p className="text-[56px] font-bold tracking-tight text-white leading-none mt-3">${fmt(home?.ledger.balance_usd, 2)}</p>
-          <p className="text-[15px] text-[#5e6a91] mt-3">Proxy ledger · free ${fmt(home?.ledger.free_credit_usd, 2)}</p>
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[20px] font-semibold text-white">Stored APIs</h3>
-          <button type="button" onClick={() => onGo('vault')} className="text-[15px] text-[#93b4ff] hover:underline">Vault →</button>
-        </div>
-        {apis.length === 0 ? (
-          <p className="text-[16px] text-[#8a96c2]">None yet. Paste a key below, or install the Chrome extension (above) and save one from a provider page.</p>
-        ) : (
-          <div className="flex flex-wrap gap-3">
-            {apis.map((api) => (
-              <div key={api.id} className="flex items-center gap-3 rounded-2xl border border-[#243365] bg-[#0e1631] px-4 py-3">
-                <Key size={18} className="text-white" />
-                <div>
-                  <p className="text-[17px] font-semibold text-white">{api.upstream}</p>
-                  <p className="text-[13px] font-mono text-[#8a96c2]">{api.prefix}</p>
-                </div>
-                <button
-                  type="button"
-                  data-testid={`api-call-${api.upstream}`}
-                  disabled={busy !== null}
-                  onClick={() => void runCall(api.upstream)}
-                  className="ml-2 h-10 px-4 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
-                >
-                  {busy === api.upstream ? 'Calling…' : 'Call'}
-                </button>
-              </div>
-            ))}
-          </div>
+        {lastCall && (
+          <p data-testid="call-latency" className="text-[16px] font-mono text-white">
+            Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
+          </p>
         )}
-      </div>
+        {msg && busy !== 'rpc' && (
+          <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
+        )}
+      </section>
 
-      <div>
-        <h3 className="text-[20px] font-semibold text-white mb-3">Connection</h3>
+      <section data-testid="home-one-click" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-4">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">One-click</p>
+        <p className="text-[14px] text-[#8a96c2]">Buy makes an on-chain Solana Devnet MPP tx. Call hits the first saved API through the proxy.</p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            data-testid="home-buy-mpp"
+            disabled={busy !== null}
+            onClick={buyOnChain}
+            className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'buy' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} on-chain`}
+          </button>
+          <button
+            type="button"
+            data-testid="home-call-first"
+            disabled={busy !== null || !firstApi}
+            onClick={() => firstApi && void runCall(firstApi.upstream)}
+            className="h-12 px-5 rounded-xl border border-zinc-500 text-white text-[16px] font-semibold disabled:opacity-50"
+          >
+            {firstApi ? (busy === firstApi.upstream ? 'Calling…' : `Call ${firstApi.upstream}`) : 'Call API (none saved)'}
+          </button>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">3 · Status</p>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">SOL</p>
+            <p className="text-[28px] font-bold text-white leading-none mt-2">{fmt(wallet?.sol)}</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">USDC</p>
+            <p className="text-[28px] font-bold text-white leading-none mt-2">{fmt(wallet?.usdc)}</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Credit</p>
+            <p className="text-[28px] font-bold text-white leading-none mt-2">${fmt(home?.ledger.balance_usd, 2)}</p>
+          </div>
+        </div>
+        <div data-testid="home-consumption" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Human consumption</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.humanUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.humanCount} txs · detail in Payments</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Agent consumption</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.agentUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.agentCount} txs · detail in Payments</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Ledger credit</p>
+            <p className="text-[24px] font-bold text-white leading-none mt-2">{formatUsd(consume.ledgerUsd)}</p>
+            <p className="text-[12px] text-[#5e6a91] mt-2">{consume.ledgerCount} credits</p>
+          </div>
+        </div>
+        {!walletConnected && onConnectWallet && (
+          <button type="button" onClick={onConnectWallet} className="h-11 px-4 rounded-xl bg-white text-black text-[16px] font-semibold">Connect wallet</button>
+        )}
         <div className="flex flex-wrap gap-3">
           <Pill ok={!!conn?.api && !error} label="API" sub={loading ? 'Connecting…' : error ? `Offline · ${error}` : `Online${homeMs != null ? ` · ${Math.round(homeMs)}ms` : ''}`} />
           <Pill ok={walletConnected && !!wallet?.address} label="Wallet" sub={wallet?.address ? `${wallet.address.slice(0, 4)}…${wallet.address.slice(-4)}` : 'Not connected'} />
           <div data-testid="passkey-pill">
-            <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'You keep the secret — unlock to verify'} />
+            <Pill ok={passkey || vaultOpen} label="Passkey" sub={vaultOpen ? 'Device Vault open' : passkey ? 'Trusted on this device' : 'Unlock to verify'} />
           </div>
-          <Pill ok={!!home?.plan} label={home?.plan?.name ?? 'Free'} sub={home?.plan?.auto_plugin ? (home.plan.low_latency ? 'Accelerate · cache on' : 'Plugin · biometric ZK') : 'Vault + passkeys · PAYG calls'} />
-          <Pill ok={!!conn?.autosign} label="Autosign" sub={conn?.autosign ? 'Owner keystore ready' : 'Off'} />
-          <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'}${home?.latency?.wallet_ms != null ? ` · ${Math.round(home.latency.wallet_ms)}ms` : ''} · ${conn?.lowest_ttl_sec ?? 2}s TTL`} />
+          <Pill ok={home?.latency?.online !== false && (conn?.rpc === 'helius-cache' || conn?.rpc === 'public')} label="RPC" sub={`${home?.latency?.online === false ? 'Offline' : 'Online'} · ${wallet?.rpc === 'helius-cache' ? `cache ${wallet.cache}` : wallet?.rpc || '—'}`} />
         </div>
-        <div className="flex flex-wrap gap-3 mt-4">
+        <div data-testid="home-subscription" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Subscription</p>
+            <p className="text-[20px] font-semibold text-white mt-1">{planSnap?.plan.name || home?.plan?.name || 'Free'}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">{planExpiry(planSnap, home?.plan?.name)}</p>
+          </div>
+          <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
+            <p className="text-[13px] text-[#8a96c2]">Auto-approve</p>
+            <p className="text-[20px] font-semibold text-white mt-1">{conn?.autosign ? 'On' : 'Off'}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">
+              {conn?.autosign
+                ? `MPP autosign ${conn.autosign_pubkey ? `${conn.autosign_pubkey.slice(0, 4)}…${conn.autosign_pubkey.slice(-4)}` : 'loaded'}`
+                : 'Wallet must sign each stream open'}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
           {onUnlock && !vaultOpen && (
             <button
               type="button"
@@ -192,226 +349,20 @@ export const HomeSection: React.FC<Props> = ({
             onClick={() => onGo('activity')}
             className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[16px] font-semibold"
           >
-            Plans →
-          </button>
-        </div>
-      </div>
-
-      <div
-        data-testid="shop-demo-card"
-        className={`rounded-2xl border bg-[#131c39] p-5 space-y-4 ${highlightShop ? 'border-emerald-700/80' : 'border-[#243365]'}`}
-      >
-        <div className="flex items-center gap-2">
-          <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">Shop</h3>
-        </div>
-        <div className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-2">
-          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">For sale · Solana Devnet</p>
-          <p className="text-[22px] font-semibold text-white">{formatMicroUsdc(receipt.captureMicroUsdc)} USDC metered call</p>
-          <p className="text-[15px] text-[#8a96c2]">
-            Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix 26).
-            Not Raydium / Pump.fun <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
-          </p>
-          <p className="text-[28px] font-bold text-white" data-testid="shop-balance">${SHOP_MPP_USD.toFixed(2)}</p>
-        </div>
-        <MppReceiptCard receipt={receipt} />
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            data-testid="shop-buy-mpp"
-            disabled={busy !== null}
-            onClick={() => {
-              setBusy('mpp');
-              setMsg(null);
-              void buyMppShopSku()
-                .then((next) => {
-                  setReceipt(next);
-                  setOk(true);
-                  setMsg(`Bought ${next.sku} · receipt ready`);
-                  downloadMppReceipt(next, 'html');
-                  onRefresh();
-                })
-                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
-                .finally(() => setBusy(null));
-            }}
-            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
-          >
-            {busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} · get receipt`}
-          </button>
-          <button
-            type="button"
-            data-testid="shop-buy"
-            disabled={busy !== null}
-            onClick={() => {
-              const before = home?.ledger.balance_usd ?? 0;
-              setBusy('shop');
-              setMsg(null);
-              void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
-                .then(async (r) => {
-                  const d = await r.json().catch(() => ({}));
-                  if (!r.ok) throw new Error((d as { detail?: string }).detail ?? 'Shop credit failed');
-                  const after = typeof (d as { balance_usd?: number }).balance_usd === 'number'
-                    ? (d as { balance_usd: number }).balance_usd
-                    : before + SHOP_CREDIT_USD;
-                  setOk(true);
-                  setMsg(`Bought ${SHOP_ITEM_NAME} (ledger, no Solana tx) · ${describeBalanceChange(before, after).label}`);
-                  onRefresh();
-                })
-                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
-                .finally(() => setBusy(null));
-            }}
-            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
-          >
-            {busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
-          </button>
-          <button
-            type="button"
-            data-testid="shop-rpc"
-            disabled={busy !== null}
-            onClick={() => {
-              setBusy('rpc');
-              setMsg(null);
-              const addr = home?.wallet.address ?? '';
-              const t0 = performance.now();
-              void fetchKeychainHome(addr)
-                .then(async (first) => {
-                  const ms1 = performance.now() - t0;
-                  const t1 = performance.now();
-                  const second = await fetchKeychainHome(addr);
-                  const ms2 = performance.now() - t1;
-                  setOk(true);
-                  setMsg(describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc));
-                  onRefresh();
-                })
-                .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'RPC ping failed'); })
-                .finally(() => setBusy(null));
-            }}
-            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
-          >
-            {busy === 'rpc' ? 'Pinging…' : 'RPC speed check'}
-          </button>
-          <button
-            type="button"
-            onClick={() => onGo('activity')}
-            className="h-11 px-5 rounded-xl border border-[#243365] text-white text-[15px] font-semibold"
-          >
             Payments →
           </button>
-        </div>
-        {msg && (busy === 'mpp' || busy === 'shop' || busy === 'rpc' || !lastCall) && (
-          <p data-testid="shop-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
-        )}
-        <div data-testid="shop-bazaar" className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3">
-          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">Third-party x402 · probed</p>
-          <p className="text-[14px] text-[#8a96c2]">
-            LIVE means Solana Devnet Circle USDC. KeyShield cannot settle these 402s.
-            Not Raydium / <code className="text-white">$X402</code> / <code className="text-white">$M32</code>.
-          </p>
-          {[...BAZAAR_OFFERS, ...PAYAI_LIVE_EXTRAS].map((offer) => (
-            <div
-              key={offer.id}
-              data-testid={`shop-bazaar-${offer.id}`}
-              className="rounded-lg border border-[#243365] px-3 py-3 space-y-1"
-            >
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className={`text-[11px] font-semibold uppercase ${offer.status === 'LIVE' ? 'text-emerald-400' : 'text-[#f87171]'}`}>
-                  {offer.status.replace('_', ' ')}
-                </span>
-                <span className="text-[15px] font-semibold text-white">{offer.name}</span>
-                {offer.amountLabel && <span className="text-[13px] text-[#a8b3d8]">{offer.amountLabel}</span>}
-              </div>
-              <p className="text-[13px] text-[#8a96c2]">{offer.method} · {offer.detail}</p>
-              <a
-                href={offer.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[12px] text-[#93b4ff] hover:underline break-all"
-              >
-                {offer.url}
-              </a>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div data-testid="nemotron-save-card" className="rounded-2xl border border-[#243365] bg-[#131c39] p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Wallet size={18} className="text-white" />
-          <h3 className="text-[20px] font-semibold text-white">OpenRouter · NVIDIA Nemotron</h3>
-        </div>
-        <p className="text-[15px] text-[#8a96c2]">
-          Paste your own <code className="text-white">sk-or-…</code> from openrouter.ai/keys, Save to the vault, then Call.
-          Default model is free{' '}
-          <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-          The number below is milliseconds this Call timed — not a marketing claim.
-        </p>
-        <textarea
-          data-testid="key-paste"
-          value={paste}
-          onChange={(e) => setPaste(e.target.value)}
-          rows={3}
-          placeholder="sk-or-…  sk-proj-…  sk-ant-…  gsk_…  helius UUID…"
-          className="w-full rounded-xl bg-[#0e1631] border border-[#243365] px-4 py-3 text-[16px] font-mono text-white placeholder:text-[#3e4a72]"
-        />
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-[15px] text-[#a8b3d8]">
-            {detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : paste.trim() ? 'Unrecognized shape — pick Vault to choose a provider' : 'Waiting for paste'}
-          </span>
           <button
             type="button"
-            data-testid="key-save"
-            disabled={busy !== null || !paste.trim()}
-            onClick={() => void savePaste()}
-            className="h-11 px-5 rounded-xl bg-white text-black text-[15px] font-semibold disabled:opacity-50"
+            onClick={() => onGo('troubleshooting')}
+            className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[16px] font-semibold"
           >
-            {busy === 'save' ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            type="button"
-            data-testid="key-call"
-            disabled={busy !== null || !detected.upstream}
-            onClick={() => detected.upstream && void runCall(detected.upstream)}
-            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
-          >
-            Call
+            Docs & Troubleshooting →
           </button>
         </div>
-        {msg && <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
-        {lastCall && (
-          <p data-testid="call-latency" className="text-[16px] font-mono text-white">
-            Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
-            {lastCall.model ? ` · ${lastCall.model}` : ''}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <h3 className="text-[20px] font-semibold text-white mb-3">More</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { id: 'activity', title: 'Payments', sub: 'Open stream, meter, capture' },
-            { id: 'developer', title: 'Framework snippets', sub: 'curl / Python / JS for every stored API' },
-            { id: 'docs', title: 'Links & troubleshooting', sub: 'Leftover 1.2.1 · github.com DNS · find path' },
-            { id: 'settings', title: 'Settings', sub: 'Passkey, sessions, account' },
-          ].map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => onGo(row.id)}
-              className="text-left rounded-2xl border border-[#243365] bg-[#0e1631] px-5 py-4 hover:border-white/30"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-[18px] font-semibold text-white">{row.title}</p>
-                <ArrowRight size={18} className="text-[#8a96c2]" />
-              </div>
-              <p className="text-[14px] text-[#8a96c2] mt-1">{row.sub}</p>
-            </button>
-          ))}
-        </div>
-      </div>
+      </section>
 
       <button type="button" onClick={onRefresh} className="text-[14px] text-[#8a96c2] hover:text-white inline-flex items-center gap-2">
-        <Plug size={14} /> Refresh balances
+        <Plug size={14} /> Refresh
       </button>
     </div>
   );

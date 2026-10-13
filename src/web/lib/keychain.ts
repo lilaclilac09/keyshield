@@ -2,6 +2,8 @@
 
 import { API_BASE, apiFetch } from './auth';
 import { emitVaultChanged } from './vault-list';
+import { vaultStoreName } from './provider-catalog';
+import { extractPageKeyRecords, labelForDetectedKey } from './page-key-labels';
 
 export interface DetectedKey {
   upstream: string | null;
@@ -32,6 +34,13 @@ export interface KeychainStoredApi {
   name: string;
   upstream: string;
   prefix: string;
+  family?: string;
+  product?: string;
+  domain?: string;
+  expires_at?: string | null;
+  created_at?: string | null;
+  tags?: string[];
+  notes?: string;
 }
 
 export interface KeychainHome {
@@ -72,6 +81,7 @@ export interface KeychainHome {
 }
 
 const DETECTORS: { upstream: string; re: RegExp }[] = [
+  { upstream: 'nvidia', re: /nvapi-[A-Za-z0-9_-]{16,}/ },
   { upstream: 'openrouter', re: /sk-or-[A-Za-z0-9_-]{12,}/ },
   { upstream: 'anthropic', re: /sk-ant-api\d{2}-[A-Za-z0-9_-]{40,}/ },
   { upstream: 'groq', re: /gsk_[A-Za-z0-9]{32,}/ },
@@ -196,24 +206,38 @@ export async function fetchKeychainHome(address?: string): Promise<KeychainHome>
 async function writeManageStore(
   value: string,
   upstream: string,
+  extra: { name?: string; expiresAt?: string; domain?: string; pageTitle?: string } = {},
 ): Promise<{ id?: string }> {
+  const pageName = extra.name || labelForDetectedKey(value, extractPageKeyRecords(value));
   const stored = await apiFetch('/manage/store', {
     method: 'POST',
-    body: JSON.stringify({ upstream, apiKey: value, name: `${upstream} key` }),
+    body: JSON.stringify({
+      upstream,
+      apiKey: value,
+      value,
+      name: vaultStoreName({ upstream, value, name: pageName, host: extra.domain, pageTitle: extra.pageTitle }),
+      expires_at: extra.expiresAt || undefined,
+      domain: extra.domain || undefined,
+      pageTitle: extra.pageTitle || undefined,
+    }),
   });
   const body = await stored.json().catch(() => ({ detail: 'store failed' }));
   if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
   return body as { id?: string };
 }
 
-export async function storeDetectedKey(value: string, upstream?: string): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
+export async function storeDetectedKey(
+  value: string,
+  upstream?: string,
+  extra: { name?: string; expiresAt?: string; domain?: string; pageTitle?: string } = {},
+): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }> {
   const detected = detectUpstream(value);
   const up = (upstream || detected.upstream || '').trim();
   if (!value.trim()) throw new Error('Paste a key first');
   if (!up) throw new Error('unrecognized key shape — pick a provider or paste a known prefix');
   // Write /manage/store only. /keychain/store used to overwrite the latest
   // helius row, so a sixth UUID ate one of the five already in Vault.
-  const saved = await writeManageStore(value, up);
+  const saved = await writeManageStore(value, up, extra);
   emitVaultChanged();
   return {
     stored: true,
@@ -228,6 +252,7 @@ export async function storeDetectedKeys(
   forcedUpstream?: string,
 ): Promise<{ stored: boolean; id: string; upstream: string; prefix: string }[]> {
   const hits = extractDetectedKeys(raw);
+  const records = extractPageKeyRecords(raw);
   if (!hits.length) {
     const fallback = extractDetectedKey(raw);
     if (!fallback) throw new Error('Paste a key first');
@@ -238,7 +263,11 @@ export async function storeDetectedKeys(
   }
   const stored = [];
   for (const hit of hits) {
-    stored.push(await storeDetectedKey(hit.key, forcedUpstream || hit.upstream));
+    const rec = records.find((row) => hit.key.toLowerCase().startsWith(row.prefix));
+    stored.push(await storeDetectedKey(hit.key, forcedUpstream || hit.upstream, {
+      name: rec?.name || labelForDetectedKey(hit.key, records),
+      expiresAt: rec?.expiresAt,
+    }));
   }
   return stored;
 }

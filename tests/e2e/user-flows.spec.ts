@@ -78,6 +78,7 @@ const installMockApi = async (page: Page) => {
     if (path === '/usage/history')   return respond(route, { history: [] });
     if (path === '/usage/stats')     return respond(route, { stats: [] });
     if (path === '/billing/balance') return respond(route, { balance_usd: 0, total_spent_usd: 0, free_credit_usd: 0 });
+    if (path === '/billing/topup-history') return respond(route, { topups: [] });
     if (path === '/mpp/streams')     return respond(route, { streams: [], summary: { streams_total: 0, streams_open: 0, tokens_total: 0, calls_total: 0, settled_usd: 0, pending_usd: 0 } });
     if (path === '/mpp/events')      return respond(route, { events: [] });
 
@@ -741,7 +742,8 @@ test.describe('navigation', () => {
       ['Sessions',  'Active sessions across devices'],
       ['Settings',  'Account, security, and preferences'],
       ['Developer', 'API token, CLI commands, SDK snippets'],
-      ['Docs',      'Quickstart, agent setup, and full reference'],
+      ['Troubleshooting', 'Leftover 1.2.4 · missing session-bridge'],
+      ['Docs',      'Architecture, integration guides, and specs'],
     ];
 
     for (const [navLabel, subtitle] of sections) {

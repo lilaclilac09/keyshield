@@ -19,32 +19,39 @@ def _iso(tmp_path, monkeypatch):
     monkeypatch.setenv("SERVER_SECRET", "test-vault-routes-secret")
 
 
-def test_manage_store_preserves_cipher_fields(tmp_path, monkeypatch):
+def test_manage_store_roundtrip_plaintext(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     client = TestClient(app)
+    secret = "sk-proj-LOCALONLYFILLTEST123456"
 
     payload = {
         "upstream": "openai",
         "name": "openai key",
+        "apiKey": secret,
         "cipher": "testcipher",
         "iv": "testiv",
         "cipher_v": 1,
     }
     store_resp = client.post("/manage/store", json=payload, headers=_DEV_HEADERS)
     assert store_resp.status_code == 200
-    assert "id" in store_resp.json()
+    item_id = store_resp.json()["id"]
 
     list_resp = client.get("/manage/vault", headers=_DEV_HEADERS)
     assert list_resp.status_code == 200
     items = list_resp.json()
     assert isinstance(items, list)
-    assert any(
-        item.get("upstream") == "openai"
-        and item.get("cipher") == "testcipher"
-        and item.get("iv") == "testiv"
-        and item.get("cipher_v") == 1
-        for item in items
-    )
+    dumped = str(items)
+    assert secret not in dumped
+    row = next(item for item in items if item.get("id") == item_id)
+    assert row.get("upstream") == "openai"
+    assert row.get("has_plaintext") is True
+    assert row.get("masked_value")
+    assert secret not in row.get("masked_value")
+
+    dec = client.get(f"/manage/decrypt/{item_id}", headers=_DEV_HEADERS)
+    assert dec.status_code == 200
+    assert dec.json()["value"] == secret
+    assert dec.json()["key"] == secret
 
 
 def test_manage_store_requires_auth_without_dev_header():
@@ -139,6 +146,44 @@ def test_five_helius_manage_store_lists_five_rows(tmp_path, monkeypatch):
     dumped = str(listed)
     for secret in secrets:
         assert secret not in dumped
+    names = {row["name"] for row in helius}
+    assert names == {"helius1", "helius2", "helius3", "helius4", "helius5"}
+
+
+def test_manage_store_keeps_helius_dashboard_names(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+    first = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "apiKey": "10470584-67a9-4abc-8def-123456787761",
+            "name": "Panthermaze",
+            "expires_at": "2027-04-01",
+            "domain": "dashboard.helius.dev",
+        },
+    )
+    second = client.post(
+        "/manage/store",
+        headers=headers,
+        json={
+            "upstream": "helius",
+            "apiKey": "210e4c2a-91b0-4c3d-a111-aaaaaaaaaaa1",
+            "name": "Heronplanet",
+            "domain": "dashboard.helius.dev",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    listed = client.get("/manage/vault", headers=headers).json()
+    names = {row["name"] for row in listed if row.get("upstream") == "helius"}
+    assert names == {"Panthermaze", "Heronplanet"}
+    panther = next(row for row in listed if row["name"] == "Panthermaze")
+    assert str(panther.get("expires_at") or "").startswith("2027-04-01")
+    assert "10470584-67a9-4abc-8def-123456787761" not in str(listed)
 
 
 def test_manage_store_rejects_empty_plaintext(tmp_path, monkeypatch):
@@ -151,6 +196,81 @@ def test_manage_store_rejects_empty_plaintext(tmp_path, monkeypatch):
     )
     assert empty.status_code == 400
     assert "Paste" in empty.json().get("detail", "")
+    cipher_only = client.post(
+        "/manage/store",
+        headers=_DEV_HEADERS,
+        json={"upstream": "helius", "cipher": "c", "iv": "i", "cipher_v": 1},
+    )
+    assert cipher_only.status_code == 400
+    assert "Paste" in cipher_only.json().get("detail", "")
+
+
+def _insert_empty_row(item_id: str = "ks_empty") -> None:
+    from src.backend.routes import vault as vault_mod
+
+    with vault_mod._db() as conn:
+        conn.execute(
+            "INSERT INTO vault_items (id, user_id, name, type, upstream, value, tags, "
+            "created_at, updated_at, cipher, iv, cipher_v) "
+            "VALUES (?, 'default', 'helius key', 'api_key', 'helius', '', '[]', "
+            "1, 1, 'c', 'i', 1)",
+            (item_id,),
+        )
+
+
+def test_decrypt_empty_plaintext_404(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    _insert_empty_row()
+    client = TestClient(app)
+    r = client.get("/manage/decrypt/ks_empty", headers=_DEV_HEADERS)
+    assert r.status_code == 404
+    assert r.json().get("code") == "empty_plaintext"
+
+
+def test_list_drops_empty_value_rows(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    _insert_empty_row("ks_ghost")
+    client = TestClient(app)
+    listed = client.get("/manage/vault", headers=_DEV_HEADERS).json()
+    assert listed == []
+
+
+def test_store_backfills_blank_row(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    _insert_empty_row("ks_blank")
+    client = TestClient(app)
+    secret = "10470584-67a9-4abc-8def-123456787761"
+    stored = client.post(
+        "/manage/store",
+        headers=_DEV_HEADERS,
+        json={"upstream": "helius", "apiKey": secret, "name": "helius key"},
+    )
+    assert stored.status_code == 200
+    assert stored.json()["id"] == "ks_blank"
+    dec = client.get("/manage/decrypt/ks_blank", headers=_DEV_HEADERS)
+    assert dec.status_code == 200
+    assert dec.json()["value"] == secret
+
+
+def test_store_does_not_wipe_existing_value(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    client = TestClient(app)
+    secret = "sk-proj-keep-me"
+    stored = client.post(
+        "/manage/store",
+        headers=_DEV_HEADERS,
+        json={"upstream": "openai", "apiKey": secret, "name": "openai key"},
+    )
+    item_id = stored.json()["id"]
+    wiped = client.put(
+        f"/manage/vault/{item_id}",
+        headers=_DEV_HEADERS,
+        json={"value": ""},
+    )
+    assert wiped.status_code == 200
+    dec = client.get(f"/manage/decrypt/{item_id}", headers=_DEV_HEADERS)
+    assert dec.status_code == 200
+    assert dec.json()["value"] == secret
 
 
 def test_vault_db_path_honors_ks_vault_db_path(monkeypatch, tmp_path):

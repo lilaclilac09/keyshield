@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>KeyShield</title>
+  <style>
+    body { width: 280px; margin: 0; padding: 12px 14px 14px; background: #0a0d1a; color: #e4e4e7; font: 13px/1.45 sans-serif; }
+    .saved-count { margin: 0 0 8px; font-size: 22px; font-weight: 700; }
+    .api-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; }
+    .line { margin: 0 0 8px; color: #a1a1aa; }
+  </style>
+</head>
+<body>
+  <h1>KeyShield — Sovereign Vault</h1>
+  <p id="saved-count" class="saved-count">0 saved</p>
+  <div id="saved-apis">
+    <div class="api-row"><strong>helius</strong><code>396e9e••••e555</code></div>
+    <div class="api-row"><strong>helius</strong><code>e38b4e••••736a</code></div>
+    <div class="api-row"><strong>helius</strong><code>ba5bbc••••3876</code></div>
+    <div class="api-row"><strong>helius</strong><code>104705••••7761</code></div>
+    <div class="api-row"><strong>helius</strong><code>encrypted</code></div>
+  </div>
+  <p id="copy-status" class="line">copy · idle</p>
+  <button id="copy-cursor-key">Copy Cursor key</button>
+</body>
+</html>

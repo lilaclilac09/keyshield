@@ -28,7 +28,8 @@ def test_auth_options_without_passkey_does_not_start_face_id(tmp_path, monkeypat
     assert body["code"] == "no_passkey"
     assert body["error"]
     assert "wallet" in body["detail"].lower()
-    assert "指纹" in body["detail"]
+    assert "enroll passkey again" in body["detail"]
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["detail"])
 
 
 def test_verify_without_options_keeps_detail_not_generic(tmp_path, monkeypatch):
@@ -45,6 +46,7 @@ def test_verify_without_options_keeps_detail_not_generic(tmp_path, monkeypatch):
     assert body["code"] == "challenge_expired"
     assert body["error"]
     assert "Sign In" in body["detail"]
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["detail"] + body["error"])
 
 
 def test_challenge_survives_in_memory_clear(tmp_path, monkeypatch):
@@ -77,6 +79,7 @@ def test_unknown_credential_after_challenge(tmp_path, monkeypatch):
     body = res.json()
     assert body["code"] == "unknown_credential"
     assert "Forget this device" in body["detail"]
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["detail"] + body["error"])
 
 
 def test_cred_id_candidates_include_padding():
@@ -97,3 +100,4 @@ def test_json_error_has_both_error_and_detail():
     assert b'"error"' in payload
     assert b'"detail"' in payload
     assert b'"code"' in payload
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in payload.decode("utf-8"))

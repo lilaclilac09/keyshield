@@ -19,6 +19,7 @@ import {
   readOpenRouterKeyFromClipboard, type OpenRouterStatus,
 } from '../../lib/openrouter-interface';
 import { PlanCatalog, type DeviceLevelCopy, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
+import { PaymentsLedger } from '../PaymentsLedger';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -568,6 +569,7 @@ export const ActivitySection: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      <PaymentsLedger ledgerUsd={billing?.balance_usd} onRefresh={refresh} />
       {/* Tab bar */}
       <div className="flex gap-1 rounded-lg border border-[#243365] bg-[#0e1631] p-1 text-[11px]">
         {TABS.map(t => (
