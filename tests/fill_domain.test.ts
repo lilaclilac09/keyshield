@@ -8,6 +8,7 @@ import {
   isCursorKeyFetchContext,
   isCursorSettingsPath,
   isFillablePageUrl,
+  isKiloByokPath,
   isKiloFillHost,
   isKiloKeyFetchContext,
   isLocalFillDemoPath,
@@ -42,11 +43,21 @@ describe("upstreamsForHostname", () => {
     expect(upstreamsForHostname("platform.openai.com")).toEqual(["openai"]);
   });
 
-  it("maps Kilo BYOK hosts to a saved OpenRouter key", () => {
-    expect(upstreamsForHostname("app.kilo.ai")).toEqual(["openrouter"]);
-    expect(upstreamsForHostname("kilo.ai")).toEqual(["openrouter"]);
-    expect(upstreamsForHostname("www.kilo.ai")).toEqual(["openrouter"]);
-    expect(upstreamsForHostname("kilo.demo.localhost")).toEqual(["openrouter"]);
+  it("maps Kilo BYOK hosts to OpenRouter plus other AI vault keys", () => {
+    expect(upstreamsForHostname("app.kilo.ai")).toEqual([
+      "openrouter",
+      "nvidia",
+      "openai",
+      "anthropic",
+      "groq",
+    ]);
+    expect(upstreamsForHostname("kilo.ai")).toEqual(upstreamsForHostname("app.kilo.ai"));
+    expect(upstreamsForHostname("www.kilo.ai")).toContain("nvidia");
+    expect(upstreamsForHostname("kilo.demo.localhost")).toContain("openai");
+    expect(isKiloByokPath("/inference/byok")).toBe(true);
+    expect(isKiloByokPath("/", "https://app.kilo.ai/#/byok")).toBe(true);
+    expect(isKiloByokPath("/", "https://app.kilo.ai/?tab=byok")).toBe(true);
+    expect(isKiloByokPath("/account", "https://app.kilo.ai/account?bring-your-own-key=1")).toBe(true);
   });
 
   it("maps NVIDIA NIM hosts to nvidia plus OpenRouter fallback", () => {
@@ -193,6 +204,21 @@ describe("pickKeyForInput", () => {
     );
     expect(assigned[0]?.value).toBe("sk-or-v1-LOCALONLY");
     expect(assigned[1]).toBeNull();
+    const nvidia = { upstream: "nvidia", name: "NVIDIA NIM", value: "nvapi-LOCALONLYFILLTEST1234" };
+    expect(pickKeyForInput("API Key", [nvidia], {
+      hostname: "app.kilo.ai",
+      pathname: "/byok",
+      inputType: "password",
+    })?.value).toBe("nvapi-LOCALONLYFILLTEST1234");
+    expect(unlockUpstreamsForFill({ hostname: "app.kilo.ai", pathname: "/byok" })).toContain("nvidia");
+    expect(isKiloKeyFetchContext({ hostname: "app.kilo.ai", pathname: "/users/sign_in" })).toBe(true);
+    expect(looksLikeKiloApiBlank({
+      haystack: "Email address",
+      hostname: "app.kilo.ai",
+      pathname: "/users/sign_in",
+      url: "https://app.kilo.ai/users/sign_in?callbackPath=%2Fbyok",
+      inputType: "email",
+    })).toBe(false);
   });
 
   it("pastes a vault NVIDIA key into an NVIDIA / unlabeled agent API blank", () => {
@@ -272,11 +298,21 @@ describe("extension fill uses queued vault keys", () => {
     expect(nvidiaDemo).toContain("data-testid=\"nvidia-api-key\"");
     expect(bg).toContain("'app.kilo.ai'");
     expect(bg).toContain("function _isKiloKeyFetchContext");
+    expect(bg).toContain("function ensureFillSession");
+    expect(bg).toContain("function fillTabNow");
+    expect(bg).toContain("function scheduleKiloFillRetries");
+    expect(bg).toContain("['openrouter', 'nvidia', 'openai', 'anthropic', 'groq']");
     expect(content).toContain("function ksIsKiloFillContext");
     expect(content).toContain("function ksPreferredKiloFillKey");
+    expect(content).toContain("window.__ksFillPageNow");
+    expect(content).toContain("function ksKiloRouteBlob");
+    expect(popup).toContain("function autoDetectAndFill");
+    expect(popup).toContain("Sign in with passkey");
     const kiloDemo = readFileSync(resolve(__dirname, "../src/web/public/kilo-byok-fill-demo.html"), "utf8");
     expect(kiloDemo).toContain("OpenRouter API Key");
     expect(kiloDemo).toContain("127.0.0.1:5173/kilo-byok-fill-demo.html");
     expect(kiloDemo).toContain("data-testid=\"kilo-openrouter-key\"");
+    expect(kiloDemo).toContain("ok 1.2.5");
+    expect(kiloDemo).toContain("NVIDIA");
   });
 });

@@ -27,7 +27,7 @@ export const ExtensionTokenCopy: React.FC = () => {
     >
       <p className="text-[16px] font-semibold text-white">Signed in — token is on this page</p>
       <p className="text-[14px] text-[#a8b3d8] mt-1.5 leading-relaxed">
-        Load unpacked <strong className="text-white">v1.2.5</strong>. Sign-in on this tab
+        Load unpacked <strong className="text-white">v1.2.5 · latest</strong>. Sign-in on this tab
         should already show logged in. Stuck? Open the Docs & Troubleshooting tab.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">

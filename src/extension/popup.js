@@ -154,6 +154,11 @@ async function refreshDetectReady() {
     el.className = `status ${ready.ok ? "ok" : "err"}`;
     el.style.display = "block";
   }
+  const latest = $("ext-latest");
+  if (latest) {
+    latest.textContent = ver === "1.2.5" ? "1.2.5 · latest" : "";
+    latest.style.display = ver === "1.2.5" ? "block" : "none";
+  }
   let auto = false;
   try {
     const stored = await chrome.storage.local.get("ks_auto_store");
@@ -287,6 +292,7 @@ async function harvestTokenFromDashboardTabs() {
   } catch {
     try { tabs = await chrome.tabs.query({}); } catch { return null; }
   }
+  let foundUser = null;
   for (const tab of tabs) {
     if (!tab.id || !tab.url) continue;
     if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
@@ -307,7 +313,11 @@ async function harvestTokenFromDashboardTabs() {
         });
         return result.token;
       }
+      if (result && result.user && !foundUser) foundUser = result.user;
     } catch { /* restricted tab */ }
+  }
+  if (foundUser) {
+    try { await chrome.storage.local.set({ ks_user: foundUser }); } catch { /* noop */ }
   }
   return null;
 }
@@ -422,11 +432,10 @@ async function loadSettings() {
   if (signed) {
     await armLiveScanAfterLogin();
     await refreshSavedApis();
-    await refreshFillStatus();
   } else {
     paintSavedCount(0);
-    paintFilledLine(0, null, "");
   }
+  await refreshFillStatus();
 
   // Pre-fill the "Remote API base" input if we're currently pointed at one
   // (i.e. not the local default). Leaves the placeholder visible otherwise.
@@ -463,7 +472,30 @@ async function loadSettings() {
       badge.textContent = "no token";
       badge.title = "Sign in on app.ks.aileena.xyz — this popup reads that tab.";
     }
-    if (signinBtn) signinBtn.textContent = "Sign in";
+    if (signinBtn) signinBtn.textContent = ks_user ? "Sign in with passkey" : "Sign in";
+  }
+}
+
+async function autoDetectAndFill() {
+  const stored = await chrome.storage.local.get(["ks_token", "ks_user", "ks_auto_store", "ks_pending_vault"]);
+  if (!looksLikeSessionToken(stored.ks_token)) {
+    await harvestTokenFromDashboardTabs();
+  }
+  const again = await chrome.storage.local.get(["ks_token", "ks_user", "ks_pending_vault"]);
+  const signed = looksLikeSessionToken(again.ks_token);
+  const pending = Array.isArray(again.ks_pending_vault) && again.ks_pending_vault.length;
+  if (signed) {
+    try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  }
+  if (signed || pending) {
+    await refreshFillStatus();
+    [400, 1200, 2500].forEach((ms) => {
+      setTimeout(() => { Promise.resolve(refreshFillStatus()).catch(() => {}); }, ms);
+    });
+    return;
+  }
+  if (again.ks_user) {
+    setStatus("Passkey session needed — Sign in, then this tab fills.", "ok", 5000);
   }
 }
 
@@ -837,9 +869,11 @@ function bootPopup() {
   hideLeftoverCopyButtons();
   paintLoadedBuild();
   Promise.resolve(refreshDetectReady()).catch(() => {});
-  Promise.resolve(loadSettings()).catch((e) => {
-    setStatus(`Popup load failed: ${String(e)}`, "err", 4000);
-  });
+  Promise.resolve(loadSettings())
+    .then(() => autoDetectAndFill())
+    .catch((e) => {
+      setStatus(`Popup load failed: ${String(e)}`, "err", 4000);
+    });
   Promise.resolve(refreshFingerprint()).catch(() => {});
   onClick("signin", openDashboardForSignin);
   onClick("allow-detect", allowDetectAndStore);

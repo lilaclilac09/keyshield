@@ -57,14 +57,15 @@ export const DocsSection: React.FC = () => {
           <span className="text-[13px] font-semibold uppercase tracking-wider">Chrome extension (preferred)</span>
         </div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
-          Preferred browser is <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Use the unpacked extension while signed in here. The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below. The same steps are on the login screen and Home.
+          Preferred browser is <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Latest Load unpacked is <strong className="text-white">1.2.5 · latest</strong>. The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below.
         </p>
         <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
-          <li>Clone or download the repo: <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">GitHub</a> — or open the extension folder directly: <a href={`${REPO_URL}/tree/main/src/extension`} target="_blank" rel="noreferrer" className="text-[#93b4ff] hover:underline">src/extension</a>.</li>
-          <li>Open <code className="text-white">chrome://extensions</code> (Chrome, Edge, Brave, Arc, or other Chromium).</li>
-          <li>Turn on <strong className="text-white">Developer mode</strong>, then click <strong className="text-white">Load unpacked</strong>.</li>
-          <li>Select the <code className="text-white">src/extension</code> directory (the one that contains <code className="text-white">manifest.json</code>).</li>
-          <li>Pin the KeyShield icon. Open this tab again, sign in with wallet + passkey — the extension should show a token (use the popup if you see &quot;No token&quot;).</li>
+          <li>Print the folder (do not paste HTML into zsh): <code className="text-white">python3 -c &quot;import os; print(os.path.abspath(&apos;src/extension&apos;))&quot;</code></li>
+          <li>Open <code className="text-white">chrome://extensions</code>. Developer mode ON.</li>
+          <li>Remove every KeyShield card (Reload is not enough).</li>
+          <li>Load unpacked → the printed folder. Card must read <strong className="text-white">KeyShield — Sovereign Vault · 1.2.5</strong>.</li>
+          <li>Click the toolbar icon. First green line must be exactly <code className="text-white">ok 1.2.5 &lt;all_urls&gt;</code>. Popup also shows <code className="text-white">1.2.5 · latest</code>.</li>
+          <li>Open a page with an empty API Key blank, or <code className="text-white">http://127.0.0.1:5173/nvidia-fill-demo.html</code> after <code className="text-white">node dev.cjs</code>. The saved NVIDIA key fills. No toast.</li>
         </ol>
         <p className="text-[11px] text-[#8a96c2] mt-3">
           <strong className="text-[#a8b3d8]">Firefox:</strong> <code className="text-white">about:debugging</code> → This Firefox → Load Temporary Add-on → choose <code className="text-white">manifest.firefox.json</code> under the same folder. Temporary loads clear when you quit the browser.

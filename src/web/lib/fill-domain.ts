@@ -1,7 +1,7 @@
 /**
  * Domain → vault upstreams for extension auto-fill.
  * cursor.com Settings blanks take OpenAI / Anthropic / OpenRouter / Groq / Cursor.
- * app.kilo.ai/byok pastes a saved OpenRouter (sk-or-) key into the BYOK blank.
+ * app.kilo.ai/byok pastes a saved OpenRouter / NVIDIA / OpenAI / Anthropic / Groq key.
  */
 
 export const CURSOR_FILL_UPSTREAMS = [
@@ -13,7 +13,13 @@ export const CURSOR_FILL_UPSTREAMS = [
   'groq',
 ] as const;
 
-export const KILO_FILL_UPSTREAMS = ['openrouter'] as const;
+export const KILO_FILL_UPSTREAMS = [
+  'openrouter',
+  'nvidia',
+  'openai',
+  'anthropic',
+  'groq',
+] as const;
 
 export const NVIDIA_FILL_UPSTREAMS = ['nvidia', 'openrouter'] as const;
 
@@ -136,9 +142,16 @@ export function isKiloFillHost(domain: string): boolean {
   return host === 'kilo.ai' || host.endsWith('.kilo.ai') || host === 'kilo.demo.localhost';
 }
 
-export function isKiloByokPath(pathname: string): boolean {
-  const path = String(pathname || '').toLowerCase();
-  return path.includes('/byok') || path.includes('kilo-byok-fill-demo');
+/** Path, hash, or query that means Kilo Bring-Your-Own-Key — not a spoofed title. */
+export function isKiloByokPath(pathname: string, href = ''): boolean {
+  const blob = `${pathname || ''} ${href || ''}`.toLowerCase();
+  return (
+    blob.includes('/byok')
+    || blob.includes('kilo-byok-fill-demo')
+    || blob.includes('bring-your-own-key')
+    || blob.includes('bring_your_own_key')
+    || /[#?&=/]byok\b/.test(blob)
+  );
 }
 
 export function isNvidiaFillHost(domain: string): boolean {
@@ -203,19 +216,27 @@ export function unlockUpstreamsForFill(opts?: {
   return [];
 }
 
-/** Unlock OpenRouter keys for Kilo BYOK hosts or the local BYOK fixture — never a spoofed title. */
-export function isKiloKeyFetchContext(opts?: { hostname?: string; pathname?: string }): boolean {
+/** Unlock AI vault keys for Kilo BYOK hosts or the local BYOK fixture — never a spoofed title. */
+export function isKiloKeyFetchContext(opts?: { hostname?: string; pathname?: string; url?: string }): boolean {
   if (isKiloFillHost(opts?.hostname || '')) return true;
+  try {
+    if (opts?.url) {
+      const parsed = new URL(opts.url);
+      if (parsed.protocol === 'chrome-extension:' && isKiloByokPath(parsed.pathname, opts.url)) return true;
+    }
+  } catch { /* noop */ }
   const host = normalizeHostname(opts?.hostname || '');
   const local = host === '127.0.0.1' || host === 'localhost';
-  return local && isKiloByokPath(opts?.pathname || '');
+  return local && isKiloByokPath(opts?.pathname || '', opts?.url || '');
 }
 
-export function isKiloFillContext(opts?: { hostname?: string; pathname?: string; title?: string }): boolean {
-  if (isKiloKeyFetchContext(opts)) return true;
+export function isKiloFillContext(opts?: { hostname?: string; pathname?: string; title?: string; url?: string }): boolean {
+  const path = opts?.pathname || '';
+  const href = opts?.url || '';
+  if (isKiloFillHost(opts?.hostname || '') && isKiloByokPath(path, href)) return true;
   const host = normalizeHostname(opts?.hostname || '');
   if (host && !isKiloFillHost(host) && host !== '127.0.0.1' && host !== 'localhost') return false;
-  return isKiloByokPath(opts?.pathname || '');
+  return isKiloByokPath(path, href);
 }
 
 /** http(s) pages plus our own chrome-extension fill demo. */
@@ -317,6 +338,7 @@ export function looksLikeKiloApiBlank(opts: {
   pathname?: string;
   title?: string;
   inputType?: string;
+  url?: string;
 }): boolean {
   if (!isKiloFillContext(opts)) return false;
   const hay = String(opts.haystack || '');
@@ -324,8 +346,7 @@ export function looksLikeKiloApiBlank(opts: {
   if (looksLikeKeyNameField(hay)) return false;
   if (looksLikeKeyField(hay)) return true;
   const type = String(opts.inputType || '').toLowerCase();
-  const onByok = isKiloByokPath(opts.pathname || '')
-    || isKiloFillHost(opts.hostname || '');
+  const onByok = isKiloByokPath(opts.pathname || '', opts.url || '');
   if (!onByok) return false;
   return type === 'password' || !hay.trim();
 }
