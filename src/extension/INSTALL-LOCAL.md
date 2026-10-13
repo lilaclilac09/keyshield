@@ -1,4 +1,4 @@
-# KeyShield extension 1.2.5 — local Load unpacked
+# KeyShield extension 1.2.5 · latest — local Load unpacked
 
 Do not paste HTML into zsh. Do not run `eval`. Do not run `$(...)`.
 
@@ -15,8 +15,8 @@ Then:
 3. Remove every KeyShield card (Reload is not enough)
 4. Load unpacked → the folder printed above (`src/extension`)
 5. Card must read: **KeyShield — Sovereign Vault** · **1.2.5**
-6. Click the toolbar icon. First green line must be exactly `ok 1.2.5 <all_urls>`
-7. Saved NVIDIA (`nvapi-`) keys fill empty API Key blanks. No toast. The 🔑 only appears when you hover a blank.
+6. Click the toolbar icon. First green line must be exactly `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`
+7. Open a page with an empty API Key blank, or `http://127.0.0.1:5173/nvidia-fill-demo.html` after `node dev.cjs`. The saved NVIDIA key fills. No toast. The 🔑 only appears when you hover a blank.
 
 If GitHub DNS fails, use the clone you already have. Do not `git pull` through a broken resolver.
 

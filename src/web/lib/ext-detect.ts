@@ -105,6 +105,13 @@ export function shouldPopupForKey(opts: {
 export const DETECT_READY_VERSION = '1.2.5';
 export const DETECT_READY_OK = `ok ${DETECT_READY_VERSION} <all_urls>`;
 export const DETECT_READY_LEGACY = '1.2.4';
+export const DETECT_READY_LATEST_LABEL = `${DETECT_READY_VERSION} · latest`;
+
+export function formatLatestVersionLine(version: string): string {
+  const ver = String(version || '').trim();
+  if (ver === DETECT_READY_VERSION) return DETECT_READY_LATEST_LABEL;
+  return ver ? `${ver}` : '';
+}
 
 export function formatDetectReadyLine(opts: {
   version: string;

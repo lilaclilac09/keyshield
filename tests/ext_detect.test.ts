@@ -7,7 +7,9 @@ import {
   formatHarvestSaveResult,
   DETECT_READY_OK,
   DETECT_READY_VERSION,
+  DETECT_READY_LATEST_LABEL,
   formatDetectReadyLine,
+  formatLatestVersionLine,
   ensureManifestContentScripts,
   formatBulkSaveFailure,
   formatSavedCount,
@@ -220,6 +222,9 @@ describe("formatDetectReadyLine", () => {
       text: "ok 1.2.4 <all_urls>",
     });
     expect(DETECT_READY_OK).toBe("ok 1.2.5 <all_urls>");
+    expect(DETECT_READY_LATEST_LABEL).toBe("1.2.5 · latest");
+    expect(formatLatestVersionLine("1.2.5")).toBe("1.2.5 · latest");
+    expect(formatLatestVersionLine("1.2.4")).toBe("1.2.4");
   });
 
   it("tells the user to Remove + Load unpacked when <all_urls> is missing", () => {
@@ -245,12 +250,16 @@ describe("formatDetectReadyLine", () => {
     expect(DETECT_READY_VERSION).toBe("1.2.5");
     expect(popup).not.toMatch(/<<<<<<<|>>>>>>>/);
     expect(popup).toContain('ver === "1.2.5"');
+    expect(popup).toContain("1.2.5 · latest");
+    expect(popup).toContain('$("ext-latest")');
     expect(popup).toContain("ok ${ver} <all_urls>");
     expect(popup).toContain("function bootPopup");
     expect(popup).toContain("function autoDetectAndFill");
     expect(popup).toContain("Sign in with passkey");
     expect(popup).toContain("function applySignedInChrome");
     expect(html).toContain("ok 1.2.5");
+    expect(html).toContain('id="ext-latest"');
+    expect(html).toContain("1.2.5 · latest");
     expect(html).toContain('id="signed-pane"');
     expect(html).toContain('id="saved-count"');
     expect(html).toContain('id="saved-apis"');

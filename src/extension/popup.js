@@ -154,6 +154,11 @@ async function refreshDetectReady() {
     el.className = `status ${ready.ok ? "ok" : "err"}`;
     el.style.display = "block";
   }
+  const latest = $("ext-latest");
+  if (latest) {
+    latest.textContent = ver === "1.2.5" ? "1.2.5 · latest" : "";
+    latest.style.display = ver === "1.2.5" ? "block" : "none";
+  }
   let auto = false;
   try {
     const stored = await chrome.storage.local.get("ks_auto_store");
