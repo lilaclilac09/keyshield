@@ -113,12 +113,6 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 ### Chrome extension Sign in
 
-| You are using | Popup Settings → Dashboard URL | Why |
-|---|---|---|
-| Hosted login | `https://app.ks.aileena.xyz` (**Sign-in**) | Live vault. Not `ks.app.aileena.xyz` |
-| `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
-| `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
-
 Seeing **KeyShield — Sovereign Vault / 1.2.5** on the Chrome card is not
 enough. The old cwd-relative one-liner fails from `$HOME`. Paste the
 `python3 - <<'PY'` block in `src/extension/INSTALL-LOCAL.md` from any

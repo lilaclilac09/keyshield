@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 const root = resolve(__dirname, "..");
 const script = resolve(root, "scripts/mac_ready.py");
 const installLocal = readFileSync(resolve(root, "src/extension/INSTALL-LOCAL.md"), "utf8");
+const readme = readFileSync(resolve(root, "README.md"), "utf8");
 const macReady = readFileSync(script, "utf8");
 
 function runReady(cwd: string, extraEnv: NodeJS.ProcessEnv = {}) {
@@ -46,6 +47,10 @@ describe("mac_ready.py — any cwd", () => {
     expect(macReady).toContain("/Users/aileen/Downloads/privacy_hack/keyshield");
     expect(macReady).not.toContain("cd to ~/Downloads/privacy_hack/keyshield first");
     expect(macReady).not.toContain("eval $(");
+    expect(readme).toContain("### Chrome extension Sign in");
+    expect(readme).not.toContain("Popup Settings → Dashboard URL");
+    expect(readme).not.toContain("ks.app.aileena.xyz");
+    expect(readme).not.toContain("Keep UI with `?local=1`");
   });
 
   it("INSTALL-LOCAL heredoc prints READY from /tmp when KS_ROOT is set", () => {
