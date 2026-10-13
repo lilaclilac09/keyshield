@@ -77,17 +77,7 @@ Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 1. Open the vault UI and connect a Solana wallet (Phantom / Solflare).
 2. Unlock the Device Vault (passkey / WebAuthn-PRF). Encryption stays
    on this device; the server stores ciphertext only.
-3. **Chrome extension (preferred)** — Load unpacked from
-   `src/extension`. Sign-in is
-   [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz)
-   (not `ks.app.aileena.xyz`, not `https://keyshield.dev`).
-   Wallet / passkey on that tab. If the badge stays `no token`,
-   Developer → copy token → **Register token**.
-   Local `node dev.cjs` only: popup **Use local dev**
-   (`http://127.0.0.1:5173`). If GitHub DNS fails, edit the three
-   files on disk — see `src/extension/LOCAL-SIGNIN.md`.
-   No Chrome Web Store listing yet. Firefox is a temporary add-on only
-   (`manifest.firefox.json`).
+3. **Chrome extension (preferred)** — see [Chrome extension Sign in](#chrome-extension-sign-in). Print must be **1.2.5**, not leftover **1.2.4**.
 4. **Vault** — paste a provider key (OpenAI, Anthropic, Helius,
    OpenRouter, Groq, …), or let the Chrome extension save one from
    the provider page.
@@ -129,15 +119,17 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 | `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
 | `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
 
-Login **without** editing `~/Downloads/privacy_hack/keyshield` (that
-path is on your Mac; this repo cannot write it):
+Print from that clone (do not paste HTML into zsh; do not `eval`):
 
-1. Do **not** click Sign-in on a **v1.1.1** card — it opens dead `keyshield.dev`.
-2. Open [`https://app.ks.aileena.xyz`](https://app.ks.aileena.xyz) in the same Chrome.
-3. Wallet / passkey. Home shows **Copy token for extension**.
-4. Popup → paste → **Register token**. Badge leaves `no token`.
+```
+cd /Users/aileen/Downloads/privacy_hack/keyshield
+git pull origin main
+python3 -c "import json, os; m=json.load(open('src/extension/manifest.json')); print(m['name']); print(m['version']); print(os.path.abspath('src/extension'))"
+```
 
-After pull: **Remove**, **Load unpacked** `src/extension` — card must read **1.2.5** (not 1.1.7 / leftover 1.2.4). Do not only Reload. Popup first line must be `ok 1.2.5 <all_urls>`. See `src/extension/INSTALL-LOCAL.md`.
+Must print `KeyShield — Sovereign Vault` then `1.2.5` then that `src/extension` path. If it still prints `1.2.4`, you loaded leftover files.
+
+Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
 
 ### 3. Pay for a stream (optional)
 
