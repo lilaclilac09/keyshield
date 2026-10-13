@@ -133,7 +133,7 @@ describe("leftover 1.2.4 Troubleshooting tab", () => {
     expect(home).not.toContain("onGo('trouble')");
     expect(home).not.toContain("Docs → Troubleshooting");
     expect(home).toContain("onGo('troubleshooting')");
-    expect(home).toContain("title: 'Troubleshooting'");
+    expect(home).toContain("Troubleshooting →");
     expect(trouble).toContain("ExtTroubleCase");
     expect(trouble).toContain("LEFTOVER_121_CASE");
     expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);

@@ -1,7 +1,7 @@
 /**
- * Home purchases: every buy, grouped, with Solana explorer links.
- * On-chain MPP / Solana top-up / ledger credit / stored vault APIs.
- * Not Raydium / $X402 / $M32.
+ * Payments ledger: every buy, grouped, with Solana explorer links.
+ * On-chain MPP / Solana top-up / ledger credit / x402 probed.
+ * Not Raydium / $X402 / $M32. Tempo settlement is archived.
  */
 
 import { apiFetch } from './auth';
@@ -15,9 +15,12 @@ import {
 import { loadMppReceiptHistory } from './mpp-shop';
 import { formatStoredApiCard, providerMeta } from './provider-catalog';
 import { formatUsd, SHOP_CREDIT_USD, SHOP_ITEM_NAME } from './shop-demo';
+import { BAZAAR_OFFERS, PAYAI_LIVE_EXTRAS } from './x402-bazaar';
 import type { KeychainStoredApi } from './keychain';
 
-export type PurchaseKind = 'on-chain-mpp' | 'ledger' | 'solana-topup' | 'vault-api';
+export type PurchaseKind = 'on-chain-mpp' | 'ledger' | 'solana-topup' | 'vault-api' | 'x402';
+
+export type PurchaseRail = 'solana-mpp' | 'solana-topup' | 'ledger' | 'x402' | 'tempo';
 
 export type ExplorerLink = { label: string; href: string };
 
@@ -31,11 +34,22 @@ export type PurchaseRow = {
   amountLabel: string;
   sizeLabel: string;
   txType: string;
+  rail: PurchaseRail;
+  railLabel: string;
   walletRole: WalletRole;
   walletLabel: string;
   detail: string;
   explorer: ExplorerLink[];
+  receipt?: MppShopReceipt;
 };
+
+export function railLabel(rail: PurchaseRail): string {
+  if (rail === 'solana-mpp') return 'Solana Devnet · MPP';
+  if (rail === 'solana-topup') return 'Solana Devnet · top-up';
+  if (rail === 'ledger') return 'Ledger · off-chain';
+  if (rail === 'x402') return 'x402 · probed';
+  return 'Tempo · archived';
+}
 
 function shortWallet(addr: string): string {
   const text = String(addr || '').trim();
@@ -76,16 +90,20 @@ const LEDGER_KEY = 'ks_ledger_purchases';
 export const ON_CHAIN_CATEGORY = 'On-chain MPP';
 export const SOLANA_TOPUP_CATEGORY = 'Solana top-up';
 export const LEDGER_CATEGORY = 'Ledger credit';
+export const X402_CATEGORY = 'x402 probed';
+
+export const LAST_LIVE_LEDGER: LedgerPurchase = {
+  id: 'ledger-shop-credit-010',
+  name: SHOP_ITEM_NAME,
+  amountUsd: SHOP_CREDIT_USD,
+  at: 1,
+};
 
 export const PURCHASE_CATEGORY_ORDER = [
   ON_CHAIN_CATEGORY,
   SOLANA_TOPUP_CATEGORY,
   LEDGER_CATEGORY,
-  'AI APIs',
-  'RPC APIs',
-  'INFRA APIs',
-  'GIT APIs',
-  'DEX APIs',
+  X402_CATEGORY,
 ] as const;
 
 function ledgerStore(): Storage | null {
@@ -124,10 +142,13 @@ export function mppPurchaseFromReceipt(receipt: MppShopReceipt): PurchaseRow {
     amountLabel: `${formatMicroUsdc(receipt.captureMicroUsdc)} USDC`,
     sizeLabel: `${formatMicroUsdc(receipt.captureMicroUsdc)} USDC`,
     txType: 'On-chain MPP settle',
+    rail: 'solana-mpp',
+    railLabel: railLabel('solana-mpp'),
     walletRole: 'user',
     walletLabel: receipt.owner ? `User · ${shortWallet(receipt.owner)}` : 'User wallet',
     detail: `${receipt.network}${cu}`,
     explorer: explorerLinksForReceipt(receipt),
+    receipt,
   };
 }
 
@@ -151,6 +172,8 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     amountLabel: `${formatMicroUsdc(settled)} USDC`,
     sizeLabel: `${formatMicroUsdc(settled)} USDC`,
     txType: 'On-chain MPP stream',
+    rail: 'solana-mpp',
+    railLabel: railLabel('solana-mpp'),
     walletRole: 'agent',
     walletLabel: stream.agent_name
       ? `Agent · ${stream.agent_name}`
@@ -173,6 +196,8 @@ export function purchaseFromSolanaTopup(row: SolanaTopup): PurchaseRow | null {
     amountLabel: formatUsd(Number(row.amount_usd || 0)),
     sizeLabel: formatUsd(Number(row.amount_usd || 0)),
     txType: 'Solana top-up',
+    rail: 'solana-topup',
+    railLabel: railLabel('solana-topup'),
     walletRole: 'user',
     walletLabel: 'User wallet',
     detail: `${row.chain || 'solana'} · on-chain credit`,
@@ -241,6 +266,8 @@ export function ledgerPurchaseRow(row: LedgerPurchase): PurchaseRow {
     amountLabel: formatUsd(row.amountUsd),
     sizeLabel: formatUsd(row.amountUsd),
     txType: 'Ledger credit',
+    rail: 'ledger',
+    railLabel: railLabel('ledger'),
     walletRole: 'ledger',
     walletLabel: 'Ledger · no chain wallet',
     detail: 'Proxy ledger · no Solana tx',
@@ -260,6 +287,8 @@ export function vaultPurchases(apis: KeychainStoredApi[]): PurchaseRow[] {
       amountLabel: card.subtitle,
       sizeLabel: card.subtitle,
       txType: 'Stored API',
+      rail: 'ledger',
+      railLabel: railLabel('ledger'),
       walletRole: 'none',
       walletLabel: '—',
       detail: card.meta,
@@ -287,6 +316,24 @@ export function mergePurchaseRows(rows: PurchaseRow[]): PurchaseRow[] {
   return out;
 }
 
+export function x402Purchases(): PurchaseRow[] {
+  return [...BAZAAR_OFFERS, ...PAYAI_LIVE_EXTRAS].map((offer) => ({
+    id: `x402-${offer.id}`,
+    kind: 'x402' as const,
+    category: X402_CATEGORY,
+    title: offer.name,
+    amountLabel: offer.amountLabel || '—',
+    sizeLabel: offer.amountLabel || '—',
+    txType: offer.status === 'LIVE' ? 'x402 HTTP 402' : 'x402 not surfaced',
+    rail: 'x402' as const,
+    railLabel: railLabel('x402'),
+    walletRole: 'none',
+    walletLabel: 'No KeyShield settle',
+    detail: `${offer.method} · ${offer.detail}`,
+    explorer: [{ label: offer.url, href: offer.url }],
+  }));
+}
+
 export function listPurchases(
   _apis: KeychainStoredApi[] = [],
   extra: PurchaseRow[] = [],
@@ -294,7 +341,9 @@ export function listPurchases(
   return mergePurchaseRows([
     ...loadMppReceiptHistory().map(mppPurchaseFromReceipt),
     ...extra,
+    ledgerPurchaseRow(LAST_LIVE_LEDGER),
     ...loadLedgerPurchases().map(ledgerPurchaseRow),
+    ...x402Purchases(),
   ]);
 }
 
@@ -336,7 +385,21 @@ export function groupPurchases(rows: PurchaseRow[]): { category: string; items: 
   }
   if (!map.has(ON_CHAIN_CATEGORY)) map.set(ON_CHAIN_CATEGORY, []);
   if (!map.has(LEDGER_CATEGORY)) map.set(LEDGER_CATEGORY, []);
+  if (!map.has(X402_CATEGORY)) map.set(X402_CATEGORY, []);
   const known = PURCHASE_CATEGORY_ORDER.filter((cat) => map.has(cat));
   const extra = [...map.keys()].filter((cat) => !PURCHASE_CATEGORY_ORDER.includes(cat as typeof PURCHASE_CATEGORY_ORDER[number]));
   return [...known, ...extra].map((category) => ({ category, items: map.get(category) || [] }));
+}
+
+export function groupPurchasesByWallet(
+  items: PurchaseRow[],
+): { walletLabel: string; items: PurchaseRow[] }[] {
+  const map = new Map<string, PurchaseRow[]>();
+  for (const row of items) {
+    const key = row.walletLabel || '—';
+    const list = map.get(key) || [];
+    list.push(row);
+    map.set(key, list);
+  }
+  return [...map.entries()].map(([walletLabel, rows]) => ({ walletLabel, items: rows }));
 }

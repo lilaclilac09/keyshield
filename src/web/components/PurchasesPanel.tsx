@@ -2,10 +2,12 @@ import React from 'react';
 import { Receipt } from 'lucide-react';
 import {
   groupPurchases,
+  groupPurchasesByWallet,
   LEDGER_CATEGORY,
   ON_CHAIN_CATEGORY,
   type PurchaseRow,
 } from '../lib/purchases';
+import { downloadMppReceipt } from '../lib/mpp-shop';
 
 interface Props {
   rows: PurchaseRow[];
@@ -22,76 +24,40 @@ export const PurchasesPanel: React.FC<Props> = ({
   const groups = groupPurchases(rows);
   const total = rows.length;
   return (
-    <div data-testid="purchases-panel" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-6">
-      <div className="flex items-center gap-2">
-        <Receipt size={18} className="text-white" />
-        <h3 className="text-[20px] font-semibold text-white">Purchases</h3>
-        <span data-testid="purchases-count" className="text-[13px] text-[#8a96c2]">{total} on this account</span>
+    <div data-testid="purchases-panel" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-7">
+      <div>
+        <div className="flex items-center gap-2">
+          <Receipt size={18} className="text-white" />
+          <h3 className="text-[20px] font-semibold text-white">Transaction record</h3>
+          <span data-testid="purchases-count" className="text-[13px] text-[#8a96c2]">{total} rows</span>
+        </div>
+        <p className="text-[14px] text-[#8a96c2] mt-2">
+          Every buy on this account, English only. Grouped by rail, then wallet.
+          Each row shows size, type, and Solana Devnet explorer (or the probed URL).
+          Tempo settlement is archived — these rows are MPP, top-up, ledger, or x402.
+        </p>
       </div>
-      <p className="text-[14px] text-[#8a96c2]">
-        Every buy, grouped in English: on-chain MPP, Solana top-up, ledger credit.
-        Size, type, user vs agent wallet, and Solana Devnet explorer links.
-      </p>
       {groups.map((group) => (
         <section
           key={group.category}
           data-testid={`purchases-cat-${group.category.replace(/\s+/g, '-').toLowerCase()}`}
           className="space-y-3"
         >
-          <p className="text-[12px] uppercase tracking-wider text-[#8a96c2]">{group.category}</p>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[12px] uppercase tracking-wider text-[#8a96c2]">{group.category}</p>
+            <p className="text-[12px] text-[#5e6a91]">{group.items.length} {group.items.length === 1 ? 'tx' : 'txs'}</p>
+          </div>
           {group.items.length === 0 ? (
             <p className="text-[14px] text-[#5e6a91]">None yet in this category.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-[#243365]">
-              <table className="w-full min-w-[720px] text-left">
-                <thead className="bg-[#0d0d0d] text-[10px] uppercase tracking-wider text-[#8a96c2]">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Item</th>
-                    <th className="px-3 py-2 font-semibold">Type</th>
-                    <th className="px-3 py-2 font-semibold">Size</th>
-                    <th className="px-3 py-2 font-semibold">Wallet</th>
-                    <th className="px-3 py-2 font-semibold">On-chain</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.items.map((item) => (
-                    <tr
-                      key={item.id}
-                      data-testid={`purchase-${item.id}`}
-                      className="border-t border-[#243365]/40 bg-[#0e1631]"
-                    >
-                      <td className="px-3 py-3 align-top">
-                        <p className="text-[14px] font-semibold text-white">{item.title}</p>
-                        <p className="text-[12px] text-[#8a96c2] mt-0.5">{item.detail}</p>
-                      </td>
-                      <td className="px-3 py-3 align-top text-[13px] text-[#e8ecff]">{item.txType}</td>
-                      <td className="px-3 py-3 align-top text-[14px] text-emerald-400 font-semibold">{item.sizeLabel || item.amountLabel}</td>
-                      <td className="px-3 py-3 align-top text-[13px] text-[#93b4ff]">{item.walletLabel}</td>
-                      <td className="px-3 py-3 align-top">
-                        {item.explorer.length > 0 ? (
-                          <div className="flex flex-col gap-1">
-                            {item.explorer.map((link) => (
-                              <a
-                                key={link.href}
-                                href={link.href}
-                                target="_blank"
-                                rel="noreferrer"
-                                data-testid="purchase-explorer-link"
-                                className="text-[12px] text-[#93b4ff] hover:underline font-mono"
-                              >
-                                Explorer · {link.label}
-                              </a>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-[12px] text-[#5e6a91]">{item.kind === 'ledger' ? 'No chain tx' : '—'}</p>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            groupPurchasesByWallet(group.items).map((wallet) => (
+              <div key={wallet.walletLabel} className="space-y-2">
+                <p className="text-[13px] text-[#93b4ff]">{wallet.walletLabel}</p>
+                {wallet.items.map((item) => (
+                  <PurchaseCard key={item.id} item={item} />
+                ))}
+              </div>
+            ))
           )}
           {group.category === ON_CHAIN_CATEGORY && (
             <button
@@ -120,3 +86,53 @@ export const PurchasesPanel: React.FC<Props> = ({
     </div>
   );
 };
+
+const PurchaseCard: React.FC<{ item: PurchaseRow }> = ({ item }) => (
+  <article
+    data-testid={`purchase-${item.id}`}
+    className="rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-4 space-y-3"
+  >
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p className="text-[28px] font-bold tracking-tight text-white leading-none">{item.sizeLabel || item.amountLabel}</p>
+        <p className="text-[12px] uppercase tracking-wider text-[#8a96c2] mt-2">Size</p>
+      </div>
+      <div className="text-right space-y-1">
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-emerald-400">{item.txType}</p>
+        <p className="text-[12px] text-[#8a96c2]">{item.railLabel}</p>
+      </div>
+    </div>
+    <div>
+      <p className="text-[16px] font-semibold text-white">{item.title}</p>
+      <p className="text-[13px] text-[#8a96c2] mt-1">{item.detail}</p>
+    </div>
+    {item.explorer.length > 0 ? (
+      <div className="flex flex-col gap-1">
+        {item.explorer.map((link) => (
+          <a
+            key={link.href}
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="purchase-explorer-link"
+            className="text-[12px] text-[#93b4ff] hover:underline font-mono break-all"
+          >
+            {link.href.includes('explorer.solana.com') ? `Explorer · ${link.label}` : link.label}
+          </a>
+        ))}
+      </div>
+    ) : (
+      <p className="text-[12px] text-[#5e6a91]">{item.kind === 'ledger' ? 'No chain tx' : '—'}</p>
+    )}
+    {item.receipt && (
+      <button
+        type="button"
+        data-testid={`purchase-receipt-${item.id}`}
+        onClick={() => downloadMppReceipt(item.receipt!, 'html')}
+        className="text-[13px] text-[#93b4ff] hover:underline"
+      >
+        Download receipt
+      </button>
+    )}
+  </article>
+);

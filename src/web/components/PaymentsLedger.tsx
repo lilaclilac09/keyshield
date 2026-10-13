@@ -7,7 +7,7 @@ import {
   recordLedgerPurchase,
   type PurchaseRow,
 } from '../lib/purchases';
-import { buyMppShopSku, downloadMppReceipt } from '../lib/mpp-shop';
+import { buyMppShopSku } from '../lib/mpp-shop';
 import {
   describeBalanceChange,
   SHOP_CREDIT_USD,
@@ -80,8 +80,22 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
 
   return (
     <div className="space-y-6" data-testid="payments-ledger">
+      <div>
+        <p className="text-[15px] text-[#8a96c2]">Size · type · rail · explorer</p>
+        <h2 className="text-[28px] font-bold text-white mt-1">Payments</h2>
+      </div>
+      <PurchasesPanel
+        rows={rows}
+        busy={busy !== null}
+        buyMppLabel={busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)}`}
+        buyLedgerLabel={busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
+        onBuyMpp={buyMpp}
+        onBuyLedger={buyLedger}
+      />
+      {msg && <p className={`text-[14px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
+
       <div data-testid="shop-proof-strip" className="rounded-2xl border border-emerald-900/50 bg-emerald-950/20 px-5 py-5 space-y-4">
-        <p className="text-[13px] uppercase tracking-wider text-emerald-400">How to buy an API · Solana Devnet MPP</p>
+        <p className="text-[13px] uppercase tracking-wider text-emerald-400">How to buy · Solana Devnet MPP</p>
         <p className="text-[16px] text-white leading-snug">
           Click <strong>Buy ${SHOP_MPP_USD.toFixed(2)}</strong> · get a receipt. Open 5.00 USDC escrow, capture {SHOP_MPP_USD.toFixed(2)} (ix {SHOP_PROOF_SETTLE_IX}).
           That receipt is the paid API proof — not Raydium / $X402 / $M32.
@@ -105,16 +119,6 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
           </div>
         </div>
       </div>
-
-      <PurchasesPanel
-        rows={rows}
-        busy={busy !== null}
-        buyMppLabel={busy === 'mpp' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)}`}
-        buyLedgerLabel={busy === 'shop' ? 'Buying…' : `Ledger $${SHOP_CREDIT_USD.toFixed(2)}`}
-        onBuyMpp={buyMpp}
-        onBuyLedger={buyLedger}
-      />
-      {msg && <p className={`text-[14px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>}
     </div>
   );
 };

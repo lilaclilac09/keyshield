@@ -32,10 +32,13 @@ import {
   listPurchases,
   mergePurchaseRows,
   mppPurchaseFromReceipt,
+  LAST_LIVE_LEDGER,
   ON_CHAIN_CATEGORY,
   purchaseFromMppStream,
   purchaseFromSolanaTopup,
   SOLANA_TOPUP_CATEGORY,
+  X402_CATEGORY,
+  x402Purchases,
 } from "../src/web/lib/purchases";
 
 describe("shop demo helpers", () => {
@@ -67,10 +70,14 @@ describe("shop demo helpers", () => {
     const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
     expect(home).toContain("home-metrics-strip");
     expect(home).toContain("SHOP_PROOF_CACHE_MS");
+    expect(home).toContain("1 · RPC");
+    expect(home).toContain("2 · API call");
     expect(home).toContain("text-[40px]");
     expect(home).not.toContain("shop-proof-strip");
     expect(home).not.toContain("PurchasesPanel");
     expect(home).not.toContain("SHOP_PROOF_SETTLE_CU");
+    expect(home).not.toContain("key-paste");
+    expect(home).not.toContain("ExtensionInstallHint");
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     const payments = readFileSync(resolve(__dirname, "../src/web/components/PaymentsLedger.tsx"), "utf8");
     expect(payments).toContain("shop-proof-strip");
@@ -85,8 +92,10 @@ describe("shop demo helpers", () => {
     expect(panel).toContain("purchase-explorer-link");
     expect(panel).toContain("Explorer ·");
     expect(panel).toContain("item.txType");
-    expect(panel).toContain("item.walletLabel");
-    expect(panel).toContain("<table");
+    expect(panel).toContain("item.railLabel");
+    expect(panel).toContain("item.sizeLabel");
+    expect(panel).toContain("Download receipt");
+    expect(panel).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it("lists every on-chain buy with explorer links, grouped", () => {
@@ -99,7 +108,9 @@ describe("shop demo helpers", () => {
     expect(grouped[0]?.category).toBe(ON_CHAIN_CATEGORY);
     expect(row.walletRole).toBe("user");
     expect(row.txType).toContain("MPP");
+    expect(row.rail).toBe("solana-mpp");
     expect(row.sizeLabel).toContain("USDC");
+    expect(row.receipt?.settleTx).toBeTruthy();
     expect(row.explorer.some((link) => link.href.includes("/address/") && link.label.startsWith("ATA"))).toBe(true);
   });
 
@@ -134,6 +145,11 @@ describe("shop demo helpers", () => {
     expect(merged.some((g) => g.category === SOLANA_TOPUP_CATEGORY && g.items.length === 1)).toBe(true);
     expect(merged.some((g) => g.category === ON_CHAIN_CATEGORY && g.items.length >= 2)).toBe(true);
     expect(mergePurchaseRows([stream!, stream!])).toHaveLength(1);
+    expect(x402Purchases().some((row) => row.category === X402_CATEGORY)).toBe(true);
+    expect(LAST_LIVE_LEDGER.amountUsd).toBe(0.1);
+    const listed = listPurchases([]);
+    expect(listed.some((row) => row.id === "ledger-shop-credit-010")).toBe(true);
+    expect(listed.some((row) => row.kind === "x402")).toBe(true);
   });
 
   it("keeps the 2.00 USDC MPP shop SKU separate from ledger credit", () => {
