@@ -409,3 +409,13 @@ export function assignKeysToInputs(
 export function shouldAutoFillInput(currentValue: string): boolean {
   return String(currentValue || '').trim().length === 0;
 }
+
+/** Mirrors content.js ksWantedUpstream: on Kilo BYOK the provider picker beats a static key label. */
+export function wantedUpstreamForKilo(selectedProvider: string, haystack: string): string | null {
+  return matchInputToUpstream(String(selectedProvider || "").toLowerCase()) || matchInputToUpstream(haystack);
+}
+
+/** Mirrors content.js ksRefillAfterProviderChange: only replace a value KeyShield itself auto-filled. */
+export function shouldRefillAfterProviderChange(currentValue: string, autofilledValue: string | undefined): boolean {
+  return Boolean(autofilledValue) && String(currentValue || "").trim() === autofilledValue;
+}

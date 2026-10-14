@@ -20,6 +20,8 @@ import {
   pickKeyForInput,
   preferredCursorFillKey,
   preferredKiloFillKey,
+  shouldRefillAfterProviderChange,
+  wantedUpstreamForKilo,
   shouldAutoFillInput,
   unlockUpstreamsForFill,
   upstreamsForHostname,
@@ -329,5 +331,27 @@ describe("extension fill uses queued vault keys", () => {
     expect(kiloDemo).toContain("data-testid=\"kilo-openrouter-key\"");
     expect(kiloDemo).toContain("ok 1.2.5");
     expect(kiloDemo).toContain("NVIDIA");
+  });
+});
+
+describe("Kilo BYOK provider change refill", () => {
+  it("selected provider wins over a static OpenRouter label", () => {
+    expect(wantedUpstreamForKilo("Anthropic", "openrouter api key")).toBe("anthropic");
+    expect(wantedUpstreamForKilo("", "openrouter api key")).toBe("openrouter");
+  });
+
+  it("refills only values KeyShield auto-filled, never user-typed ones", () => {
+    expect(shouldRefillAfterProviderChange("sk-or-v1-LOCALONLY", "sk-or-v1-LOCALONLY")).toBe(true);
+    expect(shouldRefillAfterProviderChange("sk-user-typed", "sk-or-v1-LOCALONLY")).toBe(false);
+    expect(shouldRefillAfterProviderChange("sk-user-typed", undefined)).toBe(false);
+  });
+
+  it("content.js wires the refill and an idempotency guard", () => {
+    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
+    expect(content).toContain("function ksRefillAfterProviderChange");
+    expect(content).toContain("function ksWantedUpstream");
+    expect(content).toContain("document.addEventListener('change', ksOnProviderPickerEvent, true)");
+    expect(content).toContain("if (window.__ksContentLoaded) return;");
+    expect(content.indexOf("window.__ksContentLoaded")).toBeLessThan(content.indexOf("const PROVIDERS"));
   });
 });

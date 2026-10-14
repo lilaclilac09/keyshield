@@ -47,6 +47,14 @@
 //   domains    — hostnames where this key is most likely (priority boost)
 //   minLen     — sanity floor
 
+// background.js re-runs chrome.scripting.executeScript({files:['content.js']})
+// (fill tab / fill-from-pending / popup reinject) on tabs that already have the
+// manifest content script. Guard so a second run is a no-op instead of
+// "Identifier 'PROVIDERS' has already been declared".
+(function ksContentMain() {
+if (window.__ksContentLoaded) return;
+window.__ksContentLoaded = true;
+
 const PROVIDERS = [
   {
     id:       'nvidia',
@@ -937,6 +945,15 @@ function ksMatchUpstreamForHaystack(hay) {
   return null;
 }
 
+/** Kilo BYOK: the provider picker beats a static key label ("OpenRouter API Key"). */
+function ksWantedUpstream(el, hay) {
+  if (ksIsKiloFillContext()) {
+    const picked = ksMatchUpstreamForHaystack(String(ksKiloSelectedProvider(el) || '').toLowerCase());
+    if (picked) return picked;
+  }
+  return ksMatchUpstreamForHaystack(hay);
+}
+
 function ksLooksLikeLoginPassword(hay) {
   const text = String(hay || '').toLowerCase();
   if (/\b(sign[\s-]?in|log[\s-]?in|email|username|account password)\b/.test(text)) return true;
@@ -972,7 +989,7 @@ function ksPickKeyForInput(el, keys) {
   const hay = ksInputHaystack(el);
   const type = (el.getAttribute('type') || '').toLowerCase();
   if (ksLooksLikeKeyNameField(hay)) return null;
-  const wanted = ksMatchUpstreamForHaystack(hay);
+  const wanted = ksWantedUpstream(el, hay);
   if (wanted) {
     const labeled = keys.find((k) => k.upstream === wanted);
     if (labeled) return labeled;
@@ -1069,6 +1086,42 @@ function ksCurrentInputValue(el) {
   return String(el.value || '').trim();
 }
 
+const ksAutofilledValues = new WeakMap();
+
+/** Kilo BYOK: provider picker changed → refill key inputs in the same dialog/form,
+ *  but only when the current value is still exactly what KeyShield auto-filled. */
+function ksRefillAfterProviderChange(picker) {
+  if (!ksIsKiloFillContext() || !ksCachedKeys || !ksCachedKeys.length) return 0;
+  const scope = (picker && picker.closest && picker.closest('[role="dialog"], form')) || document;
+  let cleared = 0;
+  ksCollectFillInputs(scope).forEach((input) => {
+    if (!input.dataset || !input.dataset.ksAutofilled) return;
+    const ours = ksAutofilledValues.get(input);
+    if (!ours || ksCurrentInputValue(input) !== ours) return; // user typed: leave it
+    delete input.dataset.ksAutofilled;
+    ksAutofilledValues.delete(input);
+    ksSetValue(input, '');
+    cleared += 1;
+  });
+  return cleared ? ksAutoFillEmptyInputs(ksCachedKeys) : 0;
+}
+
+function ksOnProviderPickerEvent(ev) {
+  const t = ev && ev.target;
+  if (!t || !t.closest) return;
+  if (ev.type === 'change' && t.tagName === 'SELECT') { ksRefillAfterProviderChange(t); return; }
+  // Radix combobox: option click updates the trigger text a tick later.
+  const opt = t.closest('[role="option"]');
+  if (ev.type === 'click' && opt) {
+    const trigger = document.querySelector('[role="combobox"][aria-expanded="true"], button[aria-haspopup="listbox"][aria-expanded="true"]');
+    setTimeout(() => ksRefillAfterProviderChange(trigger || opt), 50);
+  }
+}
+try {
+  document.addEventListener('change', ksOnProviderPickerEvent, true);
+  document.addEventListener('click', ksOnProviderPickerEvent, true);
+} catch { /* noop */ }
+
 function ksAutoFillEmptyInputs(keys) {
   if (!keys || !keys.length) return 0;
   const nodes = ksCollectFillInputs(document);
@@ -1085,6 +1138,7 @@ function ksAutoFillEmptyInputs(keys) {
     if (!key || !key.value) return false;
     ksSetValue(input, key.value);
     if (input.dataset) input.dataset.ksAutofilled = '1';
+    ksAutofilledValues.set(input, key.value);
     const idx = remaining.findIndex((k) => k.value === key.value && k.upstream === key.upstream);
     if (idx >= 0) remaining.splice(idx, 1);
     filled += 1;
@@ -1093,7 +1147,7 @@ function ksAutoFillEmptyInputs(keys) {
   for (const input of candidates) {
     if (ksCurrentInputValue(input)) continue;
     const hay = ksInputHaystack(input);
-    const wanted = ksMatchUpstreamForHaystack(hay);
+    const wanted = ksWantedUpstream(input, hay);
     if (!wanted) continue;
     const key = remaining.find((k) => k.upstream === wanted);
     take(input, key);
@@ -1884,4 +1938,5 @@ function ksParseX402Accept(first) {
 
     return response;
   };
+})();
 })();
