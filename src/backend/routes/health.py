@@ -11,6 +11,13 @@ router = APIRouter()
 
 @router.get("/health")
 async def health():
+    from .. import demo as demo_mod
+
+    if demo_mod.demo_enabled() and demo_mod.is_production():
+        return JSONResponse(
+            {"status": "error", "version": "2.0", "error": "KS_DEMO_MODE set in production"},
+            status_code=503,
+        )
     return JSONResponse({"status": "ok", "version": "2.0"})
 
 

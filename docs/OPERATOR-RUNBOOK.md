@@ -259,7 +259,7 @@ docker compose run --rm python sqlite3 /app/data/keyshield.db "ALTER TABLE passk
 Before going public:
 
 - [ ] `KS_INTERNAL_SECRET` is a fresh 32-byte random hex (not the example value)
-- [ ] `KS_DEMO_MODE` is `0` (or unset)
+- [ ] `KS_DEMO_MODE` is `0` (or unset). Enforced: with `RAILWAY_ENVIRONMENT_NAME=production` (or `KS_ENV=production`) the app refuses to start and `/health` returns 503 if it is set.
 - [ ] Python service is NOT exposed to the internet (only the internal Docker network)
 - [ ] TLS is terminated in front of the Rust proxy (nginx, Cloudflare, etc.)
 - [ ] `HELIUS_API_KEY` has appropriate RPC rate limits set in the Helius dashboard

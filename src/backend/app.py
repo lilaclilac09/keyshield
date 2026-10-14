@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 async def _lifespan(app: FastAPI):
     """App lifecycle — startup and shutdown hooks."""
     logger.info("KeyShield app starting up")
+    from . import demo as demo_mod
+
+    demo_mod.assert_safe_for_env()
     yield
     logger.info("KeyShield app shutting down")
 

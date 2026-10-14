@@ -30,6 +30,21 @@ def demo_enabled() -> bool:
     return os.getenv("KS_DEMO_MODE", "").strip() in {"1", "true", "TRUE", "yes"}
 
 
+def is_production() -> bool:
+    """Railway sets RAILWAY_ENVIRONMENT_NAME (legacy RAILWAY_ENVIRONMENT);
+    KS_ENV lets other hosts opt in."""
+    for var in ("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT", "KS_ENV"):
+        if os.getenv(var, "").strip().lower() in {"production", "prod"}:
+            return True
+    return False
+
+
+def assert_safe_for_env() -> None:
+    """Refuse to boot a production process with KS_DEMO_MODE on."""
+    if demo_enabled() and is_production():
+        raise RuntimeError("KS_DEMO_MODE must not be set in production; unset it and redeploy")
+
+
 def demo_status() -> dict:
     """Public health shape — never includes keys."""
     from .mpp import owner_keystore
