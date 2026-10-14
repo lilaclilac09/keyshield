@@ -797,8 +797,8 @@ export const ActivitySection: React.FC = () => {
                 {mppEvents.slice(0, 10).map(e => (
                   <div key={e.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]">
                     <Badge variant={e.kind === 'open' ? 'success' : e.kind === 'settle' ? 'info' : 'default'}>{e.kind}</Badge>
-                    <span className="text-[11px] text-[#e8ecff] flex-1">{e.agent_name || e.agent_pubkey.slice(0, 8)} \xb7 {e.upstream}</span>
-                    <span className="text-[11px] text-[#8a96c2] font-mono">{e.calls} calls \xb7 {e.tokens} tok \xb7 {fmtCost(e.cost_usd)}</span>
+                    <span className="text-[11px] text-[#e8ecff] flex-1">{e.agent_name || e.agent_pubkey.slice(0, 8)} · {e.upstream}</span>
+                    <span className="text-[11px] text-[#8a96c2] font-mono">{e.calls} calls · {e.tokens} tok · {fmtCost(e.cost_usd)}</span>
                     <span className="text-[10px] text-[#3e4a72]">{fmtTs(e.ts)}</span>
                   </div>
                 ))}

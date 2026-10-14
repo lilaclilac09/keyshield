@@ -45,7 +45,9 @@ export function describeBalanceChange(before: number, after: number): {
 
 export function formatUsd(n: number): string {
   const abs = Math.abs(n);
-  const body = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Sub-cent amounts (e.g. 0.003 USDC agent streams) must not round to $0.00.
+  const maxDigits = abs > 0 && abs < 0.01 ? 6 : 2;
+  const body = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: maxDigits });
   return n < 0 ? `-$${body}` : `$${body}`;
 }
 

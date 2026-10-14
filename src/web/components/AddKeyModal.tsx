@@ -127,9 +127,9 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           </>)}
 
           {type === 'note' && <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Content</label><textarea required rows={8} className={inputCls + ' resize-y font-mono'} value={noteContent} onChange={e => setNoteContent(e.target.value)} placeholder="Recovery codes, license keys, anything encrypted." /></div>}
-          {type === 'env' && <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Environment Variables</label><textarea required rows={8} className={inputCls + ' resize-y font-mono text-[12px]'} value={envText} onChange={e => setEnvText(e.target.value)} placeholder="DATABASE_URL=postgres://localhost/myapp\nSTRIPE_SECRET=sk_live_\u2026" /><p className="text-[10px] text-[#3e4a72]">One KEY=VALUE per line.</p></div>}
+          {type === 'env' && <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Environment Variables</label><textarea required rows={8} className={inputCls + ' resize-y font-mono text-[12px]'} value={envText} onChange={e => setEnvText(e.target.value)} placeholder="DATABASE_URL=postgres://localhost/myapp\nSTRIPE_SECRET=sk_live_…" /><p className="text-[10px] text-[#3e4a72]">One KEY=VALUE per line.</p></div>}
           {type === 'ssh_key' && (<>
-            <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Public Key</label><textarea rows={2} className={inputCls + ' resize-y font-mono text-[11px]'} value={sshPublic} onChange={e => setSshPublic(e.target.value)} placeholder="ssh-ed25519 AAAA\u2026 alice@laptop" /></div>
+            <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Public Key</label><textarea rows={2} className={inputCls + ' resize-y font-mono text-[11px]'} value={sshPublic} onChange={e => setSshPublic(e.target.value)} placeholder="ssh-ed25519 AAAA… alice@laptop" /></div>
             <div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Private Key</label><textarea required rows={6} className={inputCls + ' resize-y font-mono text-[11px]'} value={sshPrivate} onChange={e => setSshPrivate(e.target.value)} placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n\u2026\n-----END OPENSSH PRIVATE KEY-----'} /></div>
             <div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Passphrase</label><input type="password" className={inputCls + ' font-mono'} value={sshPassphrase} onChange={e => setSshPassphrase(e.target.value)} /></div><div className="space-y-1.5"><label className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Comment</label><input className={inputCls} value={sshComment} onChange={e => setSshComment(e.target.value)} placeholder="alice@laptop" /></div></div>
           </>)}
@@ -139,7 +139,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           {saveError && <div className="px-3 py-2 rounded-lg bg-red-950/30 border border-red-900/50"><p className="text-[12px] text-red-400">{saveError}</p></div>}
 
           <div className="pt-3 flex items-center justify-between border-t border-[#243365]/50">
-            <span className="text-[11px] text-[#5e6a91]">AES-256-GCM \xb7 zero-knowledge</span>
+            <span className="text-[11px] text-[#5e6a91]">AES-256-GCM · zero-knowledge</span>
             <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] text-[#a8b3d8] hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
               <button type="submit" disabled={busy} className="px-5 py-2 rounded-lg bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-[#5e6a91] text-black text-[13px] font-semibold uppercase tracking-wider transition-colors">{busy ? 'Encrypting\u2026' : 'Save Secret'}</button>
             </div>

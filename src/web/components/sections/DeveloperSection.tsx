@@ -41,11 +41,11 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
         </div>
       </Card>
 
-      <Card title="CLI \u2014 keyshield-cli.sh" headerRight={<a href={`${API_BASE}/static/keyshield-cli.sh`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download \u2192</a>}>
+      <Card title="CLI — keyshield-cli.sh" headerRight={<a href={`${API_BASE}/static/keyshield-cli.sh`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download →</a>}>
         <div className="space-y-3">
           <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Login & Store</p><CodeBlock code={`bash keyshield-cli.sh login <wallet-address> <passphrase>\nbash keyshield-cli.sh store openai sk-proj-your-openai-key`} /></div>
           <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy a request</p><CodeBlock code={`curl -sS ${API_BASE}/proxy/openai/v1/models \\\n  -H "Authorization: Bearer ${t}"`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">REST \u2014 store & list</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openai","apiKey":"sk-proj-your-key"}'`} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">REST — store & list</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openai","apiKey":"sk-proj-your-key"}'`} /></div>
         </div>
       </Card>
 
@@ -78,7 +78,7 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
         })}
       </Card>
 
-      <Card title="Python SDK" headerRight={<a href={`${API_BASE}/static/keyshield_sdk.py`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download \u2192</a>}>
+      <Card title="Python SDK" headerRight={<a href={`${API_BASE}/static/keyshield_sdk.py`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download →</a>}>
         <CodeBlock code={`from keyshield_sdk import KeyShield\nks = KeyShield(token="${t}")\n\n# Store a key\nks.store("anthropic", "sk-ant-your-key")\n\n# Call Anthropic through the zero-trust proxy\nimport anthropic\nclient = anthropic.Anthropic(\n    base_url=ks.proxy_url("anthropic"),\n    api_key="placeholder",\n)\nmsg = client.messages.create(\n    model="claude-opus-4-5",\n    max_tokens=256,\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(msg.content[0].text)`} />
       </Card>
 
