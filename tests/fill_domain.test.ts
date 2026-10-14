@@ -20,6 +20,8 @@ import {
   pickKeyForInput,
   preferredCursorFillKey,
   preferredKiloFillKey,
+  shouldRefillAfterProviderChange,
+  wantedUpstreamForKilo,
   shouldAutoFillInput,
   unlockUpstreamsForFill,
   upstreamsForHostname,
@@ -169,7 +171,22 @@ describe("pickKeyForInput", () => {
     expect(assigned[3]).toBeNull();
   });
 
-  it("pastes the saved OpenRouter key into Kilo BYOK API Key blanks", () => {
+  it("Kilo BYOK fills the provider picked in the dialog, never OpenRouter by default", () => {
+    const vault = [
+      { upstream: "openrouter", value: "sk-or-v1-LOCALONLY" },
+      { upstream: "anthropic", value: "sk-ant-LOCALONLY" },
+      { upstream: "openai", value: "sk-proj-LOCALONLY" },
+    ];
+    const kilo = { hostname: "app.kilo.ai", pathname: "/byok", inputType: "password" };
+    // content.js appends the selected provider (Radix combobox / <select>) to the haystack.
+    expect(pickKeyForInput("api key anthropic", vault, kilo)?.upstream).toBe("anthropic");
+    expect(pickKeyForInput("api key openai", vault, kilo)?.upstream).toBe("openai");
+    // Page/heading words are not a provider: "BYOK" used to force the OpenRouter key.
+    expect(pickKeyForInput("bring your own key (byok) api key", vault, kilo)?.upstream).toBe("anthropic");
+    expect(preferredKiloFillKey(vault)?.upstream).toBe("anthropic");
+  });
+
+  it("pastes a Kilo-supported key into Kilo BYOK API Key blanks", () => {
     expect(isKiloFillHost("app.kilo.ai")).toBe(true);
     expect(isKiloKeyFetchContext({ hostname: "app.kilo.ai", pathname: "/byok" })).toBe(true);
     expect(isKiloKeyFetchContext({ hostname: "evil.example", pathname: "/byok" })).toBe(false);
@@ -177,12 +194,12 @@ describe("pickKeyForInput", () => {
       hostname: "127.0.0.1",
       pathname: "/kilo-byok-fill-demo.html",
     })).toBe(true);
-    expect(preferredKiloFillKey(keys)?.upstream).toBe("openrouter");
+    expect(preferredKiloFillKey(keys)?.upstream).toBe("anthropic");
     expect(pickKeyForInput("API Key", keys, {
       hostname: "app.kilo.ai",
       pathname: "/byok",
       inputType: "password",
-    })?.value).toBe("sk-or-v1-LOCALONLY");
+    })?.value).toBe("sk-ant-api03-LOCALONLY");
     expect(pickKeyForInput("OpenRouter API Key", keys)?.upstream).toBe("openrouter");
     expect(looksLikeKiloApiBlank({
       haystack: "API Key",
@@ -314,5 +331,27 @@ describe("extension fill uses queued vault keys", () => {
     expect(kiloDemo).toContain("data-testid=\"kilo-openrouter-key\"");
     expect(kiloDemo).toContain("ok 1.2.5");
     expect(kiloDemo).toContain("NVIDIA");
+  });
+});
+
+describe("Kilo BYOK provider change refill", () => {
+  it("selected provider wins over a static OpenRouter label", () => {
+    expect(wantedUpstreamForKilo("Anthropic", "openrouter api key")).toBe("anthropic");
+    expect(wantedUpstreamForKilo("", "openrouter api key")).toBe("openrouter");
+  });
+
+  it("refills only values KeyShield auto-filled, never user-typed ones", () => {
+    expect(shouldRefillAfterProviderChange("sk-or-v1-LOCALONLY", "sk-or-v1-LOCALONLY")).toBe(true);
+    expect(shouldRefillAfterProviderChange("sk-user-typed", "sk-or-v1-LOCALONLY")).toBe(false);
+    expect(shouldRefillAfterProviderChange("sk-user-typed", undefined)).toBe(false);
+  });
+
+  it("content.js wires the refill and an idempotency guard", () => {
+    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
+    expect(content).toContain("function ksRefillAfterProviderChange");
+    expect(content).toContain("function ksWantedUpstream");
+    expect(content).toContain("document.addEventListener('change', ksOnProviderPickerEvent, true)");
+    expect(content).toContain("if (window.__ksContentLoaded) return;");
+    expect(content.indexOf("window.__ksContentLoaded")).toBeLessThan(content.indexOf("const PROVIDERS"));
   });
 });
