@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plug } from 'lucide-react';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
-import { describeRpcPing, formatUsd, SHOP_MPP_USD, SHOP_PROOF_CACHE_MS, SHOP_PROOF_WAN_MS } from '../../lib/shop-demo';
+import { describeRpcPing, formatUsd, SHOP_MPP_USD, formatRpcMs, loadRpcPing, saveRpcPing, type RpcPingSample } from '../../lib/shop-demo';
 import { isVaultUnlocked } from '../../lib/vault-session';
 import {
   callKeychain,
@@ -64,6 +64,7 @@ export const HomeSection: React.FC<Props> = ({
   const [ok, setOk] = useState(false);
   const [lastCall, setLastCall] = useState<KeychainCallResult | null>(null);
   const [rpcPing, setRpcPing] = useState<string | null>(null);
+  const [rpcSample, setRpcSample] = useState<RpcPingSample | null>(() => loadRpcPing());
   const [account, setAccount] = useState<PurchaseRow[]>([]);
   const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
 
@@ -134,12 +135,12 @@ export const HomeSection: React.FC<Props> = ({
         <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">1 · RPC</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_CACHE_MS}ms</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">Cache hit</p>
+            <p data-testid="rpc-repeat-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.secondMs)}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? `Repeat call · cache ${rpcSample.cache || 'n/a'}` : 'Repeat call · run RPC speed check'}</p>
           </div>
           <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_WAN_MS}ms</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">WAN</p>
+            <p data-testid="rpc-first-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.firstMs)}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? 'First call (measured)' : 'First call · no data yet'}</p>
           </div>
           <div>
             <p className="text-[40px] font-bold text-white leading-none tracking-tight">
@@ -168,6 +169,9 @@ export const HomeSection: React.FC<Props> = ({
                 const second = await fetchKeychainHome(addr);
                 const ms2 = performance.now() - t1;
                 const line = describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc);
+                const sample = { firstMs: ms1, secondMs: ms2, cache: second.wallet.cache || first.wallet.cache || '', rpc: second.wallet.rpc || '', at: Date.now() };
+                saveRpcPing(sample);
+                setRpcSample(sample);
                 setOk(true);
                 setRpcPing(line);
                 setMsg(line);

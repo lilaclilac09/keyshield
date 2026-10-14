@@ -5,11 +5,10 @@ import {
   SHOP_CREDIT_USD,
   SHOP_MPP_ITEM_NAME,
   SHOP_MPP_USD,
-  SHOP_PROOF_CACHE_MS,
   SHOP_PROOF_CLAWBACK_IX,
   SHOP_PROOF_SETTLE_CU,
   SHOP_PROOF_SETTLE_IX,
-  SHOP_PROOF_WAN_MS,
+  formatRpcMs,
   describeBalanceChange,
   describeRpcPing,
   formatUsd,
@@ -78,15 +77,24 @@ describe("shop demo helpers", () => {
     );
   });
 
-  it("highlights 1,906 CU, 0.004ms cache, PRF, and clawback", () => {
+  it("RPC tiles show only measured timings, never hardcoded ones", () => {
+    expect(formatRpcMs(null)).toBe("—");
+    expect(formatRpcMs(3.21)).toBe("3.2ms");
+    expect(formatRpcMs(41.6)).toBe("42ms");
+    for (const f of ["components/sections/HomeSection.tsx", "components/PaymentsLedger.tsx"]) {
+      const src = readFileSync(resolve(__dirname, "../src/web/" + f), "utf8");
+      expect(src).not.toMatch(/SHOP_PROOF_(CACHE|WAN)_MS|0\.004|37\.7/);
+      expect(src).toContain("loadRpcPing");
+    }
+  });
+
+  it("highlights 1,906 CU, PRF, and clawback", () => {
     expect(SHOP_PROOF_SETTLE_CU).toBe(1906);
-    expect(SHOP_PROOF_CACHE_MS).toBe(0.004);
-    expect(SHOP_PROOF_WAN_MS).toBe(37.7);
     expect(SHOP_PROOF_CLAWBACK_IX).toBe(28);
     expect(SHOP_PROOF_SETTLE_IX).toBe(26);
     const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
     expect(home).toContain("home-metrics-strip");
-    expect(home).toContain("SHOP_PROOF_CACHE_MS");
+    expect(home).toContain("rpc-first-ms");
     expect(home).toContain("1 · RPC");
     expect(home).toContain("2 · API call");
     expect(home).toContain("home-saved-apis");
