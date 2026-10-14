@@ -481,16 +481,23 @@ async function autoDetectAndFill() {
   if (!looksLikeSessionToken(stored.ks_token)) {
     await harvestTokenFromDashboardTabs();
   }
+  try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  let harvest = { saved: 0, injected: 0, failed: 0, filled: 0 };
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "INJECT_DETECT" });
+    if (resp && typeof resp === "object") harvest = { ...harvest, ...resp };
+  } catch { /* sw cold — FILL_PAGE_NOW still runs */ }
+  try { await refreshSavedApis(); } catch { /* vault list paints on next open */ }
   const again = await chrome.storage.local.get(["ks_token", "ks_user", "ks_pending_vault"]);
   const signed = looksLikeSessionToken(again.ks_token);
   const pending = Array.isArray(again.ks_pending_vault) && again.ks_pending_vault.length;
-  if (signed) {
-    try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
-  }
-  if (signed || pending) {
+  if (signed || pending || harvest.saved > 0) {
     await refreshFillStatus();
     [400, 1200, 2500].forEach((ms) => {
-      setTimeout(() => { Promise.resolve(refreshFillStatus()).catch(() => {}); }, ms);
+      setTimeout(() => {
+        Promise.resolve(refreshFillStatus()).catch(() => {});
+        Promise.resolve(refreshSavedApis()).catch(() => {});
+      }, ms);
     });
     return;
   }

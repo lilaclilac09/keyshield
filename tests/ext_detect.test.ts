@@ -256,6 +256,13 @@ describe("formatDetectReadyLine", () => {
     expect(popup).toContain("ok ${ver} <all_urls>");
     expect(popup).toContain("function bootPopup");
     expect(popup).toContain("function autoDetectAndFill");
+    const autoDetect = popup.slice(
+      popup.indexOf("async function autoDetectAndFill"),
+      popup.indexOf("async function saveSettings"),
+    );
+    expect(autoDetect).toContain('type: "INJECT_DETECT"');
+    expect(autoDetect).toContain("refreshSavedApis");
+    expect(autoDetect).toContain("refreshFillStatus");
     expect(popup).toContain("Sign in with passkey");
     expect(popup).toContain("function applySignedInChrome");
     expect(html).toContain("ok 1.2.5");
@@ -297,7 +304,9 @@ describe("formatDetectReadyLine", () => {
     expect(popup).toContain("function harvestTokenFromDashboardTabs");
     expect(popup).toContain("function formatSavedCount");
     expect(popup).toContain("function paintSavedCount");
-    expect(readFileSync(resolve(root, "src/extension/session-bridge.js"), "utf8")).toContain("function capturePageToken");
+    const bridge = readFileSync(resolve(root, "src/extension/session-bridge.js"), "utf8");
+    expect(bridge).toContain("function capturePageToken");
+    expect(bridge).toContain("INJECT_DETECT");
     const content = readFileSync(resolve(root, "src/extension/content.js"), "utf8");
     expect(content).toContain("crypto-regime-api.onrender.com");
     expect(content).toContain("function ksIsX402Challenge");

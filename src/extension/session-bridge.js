@@ -33,6 +33,8 @@
         ks_token: page.token,
         ks_user: page.user || null,
         ks_auto_store: true,
+      }, () => {
+        try { chrome.runtime.sendMessage({ type: 'INJECT_DETECT' }); } catch { /* sw cold */ }
       });
     });
   }

@@ -439,7 +439,11 @@ async function getStoredToken() {
 }
 
 async function setStoredToken(token, user) {
-  await chrome.storage.local.set({ ks_token: token, ks_user: user || null });
+  await chrome.storage.local.set({
+    ks_token: token,
+    ks_user: user || null,
+    ks_auto_store: true,
+  });
 }
 
 async function clearStoredToken() {
@@ -533,6 +537,30 @@ async function notifyDashboardVaultSaved() {
     if (!/ks\.aileena\.xyz|127\.0\.0\.1:5173|localhost:5173/.test(tab.url)) continue;
     try { await chrome.tabs.sendMessage(tab.id, { type: 'KS_VAULT_SAVED' }); } catch { /* no bridge */ }
   }
+}
+
+async function flushPendingVaultToStore() {
+  const { token } = await getStoredToken();
+  if (!token) return { saved: 0 };
+  let rows = [];
+  try {
+    const stored = await chrome.storage.local.get(['ks_pending_vault']);
+    rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+  } catch {
+    return { saved: 0 };
+  }
+  let saved = 0;
+  for (const row of rows) {
+    const result = await directStore({
+      upstream: String((row && row.upstream) || ''),
+      value: String((row && row.value) || ''),
+      name: '',
+      domain: '',
+      pageTitle: '',
+    });
+    if (result && result.ok) saved += 1;
+  }
+  return { saved };
 }
 
 async function queuePendingVault(hit) {
@@ -1039,6 +1067,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function armLiveScanFromLogin() {
   try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+  try { await flushPendingVaultToStore(); } catch { /* queued keys stay */ }
   try { await injectDetectOnAllTabs(); } catch { /* noop */ }
 }
 
@@ -1561,6 +1590,7 @@ async function injectDetectOnAllTabs(opts) {
   const again = await getStoredToken();
   if (again.token) {
     try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
+    try { await flushPendingVaultToStore(); } catch { /* queued keys stay */ }
   }
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch { return { injected: 0, saved: 0, failed: 0 }; }
