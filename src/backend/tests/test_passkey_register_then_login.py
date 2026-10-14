@@ -38,22 +38,31 @@ class SoftAuthenticator:
 
     def _cose(self) -> bytes:
         n = self.key.public_key().public_numbers()
-        return cbor2.dumps({1: 2, 3: -7, -1: 1,
-                            -2: n.x.to_bytes(32, "big"), -3: n.y.to_bytes(32, "big")})
+        return cbor2.dumps(
+            {1: 2, 3: -7, -1: 1, -2: n.x.to_bytes(32, "big"), -3: n.y.to_bytes(32, "big")}
+        )
 
     def _cdj(self, typ: str, challenge: str) -> bytes:
-        return json.dumps({"type": typ, "challenge": challenge, "origin": ORIGIN,
-                           "crossOrigin": False}).encode()
+        return json.dumps(
+            {"type": typ, "challenge": challenge, "origin": ORIGIN, "crossOrigin": False}
+        ).encode()
 
     def create(self, opts: dict) -> dict:
         rp_hash = hashlib.sha256(opts["rp"]["id"].encode()).digest()
-        cred_data = (b"\x00" * 16 + len(self.cred_id).to_bytes(2, "big")
-                     + self.cred_id + self._cose())
+        cred_data = (
+            b"\x00" * 16 + len(self.cred_id).to_bytes(2, "big") + self.cred_id + self._cose()
+        )
         auth_data = rp_hash + bytes([0x45]) + self.count.to_bytes(4, "big") + cred_data
         att = cbor2.dumps({"fmt": "none", "attStmt": {}, "authData": auth_data})
-        return {"id": _b64u(self.cred_id), "rawId": _b64u(self.cred_id), "type": "public-key",
-                "response": {"attestationObject": _b64u(att),
-                             "clientDataJSON": _b64u(self._cdj("webauthn.create", opts["challenge"]))}}
+        return {
+            "id": _b64u(self.cred_id),
+            "rawId": _b64u(self.cred_id),
+            "type": "public-key",
+            "response": {
+                "attestationObject": _b64u(att),
+                "clientDataJSON": _b64u(self._cdj("webauthn.create", opts["challenge"])),
+            },
+        }
 
     def get(self, opts: dict) -> dict:
         allowed = [c["id"] for c in opts.get("allowCredentials", [])]
@@ -63,9 +72,17 @@ class SoftAuthenticator:
         auth_data = rp_hash + bytes([0x05]) + self.count.to_bytes(4, "big")
         cdj = self._cdj("webauthn.get", opts["challenge"])
         sig = self.key.sign(auth_data + hashlib.sha256(cdj).digest(), ec.ECDSA(hashes.SHA256()))
-        return {"id": _b64u(self.cred_id), "rawId": _b64u(self.cred_id), "type": "public-key",
-                "response": {"authenticatorData": _b64u(auth_data), "clientDataJSON": _b64u(cdj),
-                             "signature": _b64u(sig), "userHandle": None}}
+        return {
+            "id": _b64u(self.cred_id),
+            "rawId": _b64u(self.cred_id),
+            "type": "public-key",
+            "response": {
+                "authenticatorData": _b64u(auth_data),
+                "clientDataJSON": _b64u(cdj),
+                "signature": _b64u(sig),
+                "userHandle": None,
+            },
+        }
 
 
 def test_register_then_login_with_same_passkey(tmp_path, monkeypatch):
@@ -82,15 +99,22 @@ def test_register_then_login_with_same_passkey(tmp_path, monkeypatch):
 
     r = client.get("/auth/passkey/register-options", headers=hdr)
     assert r.status_code == 200, r.text
-    r = client.post("/auth/passkey/register-verify", headers=hdr,
-                    json={"credential": auth.create(r.json()), "name": "Mac"})
+    r = client.post(
+        "/auth/passkey/register-verify",
+        headers=hdr,
+        json={"credential": auth.create(r.json()), "name": "Mac"},
+    )
     assert r.status_code == 200, r.text
 
-    r = client.get("/auth/passkey/auth-options", params={"user_id": user},
-                   headers={"Origin": ORIGIN})
+    r = client.get(
+        "/auth/passkey/auth-options", params={"user_id": user}, headers={"Origin": ORIGIN}
+    )
     assert r.status_code == 200, r.text
-    r = client.post("/auth/passkey/auth-verify", params={"user_id": user},
-                    headers={"Origin": ORIGIN},
-                    json={"credential": auth.get(r.json()), "passphrase": ""})
+    r = client.post(
+        "/auth/passkey/auth-verify",
+        params={"user_id": user},
+        headers={"Origin": ORIGIN},
+        json={"credential": auth.get(r.json()), "passphrase": ""},
+    )
     assert r.status_code == 200, r.text
     assert r.json()["userId"] == user and r.json()["token"]
