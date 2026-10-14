@@ -13,9 +13,34 @@ export const SHOP_MPP_USD = 2;
 
 /** Last honest MppSettle on the GHpm Devnet demo wallet (README). */
 export const SHOP_PROOF_SETTLE_CU = 1906;
-/** In-process cache hit vs WAN RTT on the same path. */
-export const SHOP_PROOF_CACHE_MS = 0.004;
-export const SHOP_PROOF_WAN_MS = 37.7;
+/**
+ * RPC timings are only ever the user's own measurement from "RPC speed
+ * check" (1st call = cold / WAN, 2nd = repeat, cache hit when the backend
+ * reports one). No hardcoded numbers: before a check, the UI shows "—".
+ */
+export type RpcPingSample = { firstMs: number; secondMs: number; cache: string; rpc: string; at: number };
+const RPC_PING_KEY = 'ks_rpc_ping';
+
+export function saveRpcPing(sample: RpcPingSample): void {
+  try { sessionStorage.setItem(RPC_PING_KEY, JSON.stringify(sample)); } catch { /* private mode */ }
+}
+
+export function loadRpcPing(): RpcPingSample | null {
+  try {
+    const raw = sessionStorage.getItem(RPC_PING_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as RpcPingSample;
+    if (!Number.isFinite(o.firstMs) || !Number.isFinite(o.secondMs)) return null;
+    return o;
+  } catch {
+    return null;
+  }
+}
+
+export function formatRpcMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+  return ms < 10 ? `${ms.toFixed(1)}ms` : `${Math.round(ms)}ms`;
+}
 export const SHOP_PROOF_CLAWBACK_IX = 28;
 export const SHOP_PROOF_SETTLE_IX = 26;
 

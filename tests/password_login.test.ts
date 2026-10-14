@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readApiErrorMessage } from "../src/web/lib/passkey-id";
 
-describe("registered password opens the app", () => {
-  it("AuthScreen wires userId + password to passwordLogin", () => {
+describe("password sign-in UI removed; helper kept", () => {
+  it("AuthScreen no longer shows the user ID + password sign-in", () => {
     const src = readFileSync("src/web/components/AuthScreen.tsx", "utf8");
-    expect(src).toContain("passwordLogin");
-    expect(src).toContain('data-testid="password-login"');
-    expect(src).toContain('data-testid="password-userid"');
-    expect(src).toContain('data-testid="password-secret"');
-    expect(src).toContain('data-testid="password-open"');
-    expect(src).toContain("Open app");
+    expect(src).not.toContain("passwordLogin");
+    expect(src).not.toContain('data-testid="password-login"');
+    expect(src).not.toContain("registered password");
+    expect(src).toContain('data-testid="passkey-signin"');
+    expect(src).toContain("Use a different wallet instead");
+    expect(src).toContain("forgetDevice");
   });
 
   it("client login helper posts /auth/login", () => {

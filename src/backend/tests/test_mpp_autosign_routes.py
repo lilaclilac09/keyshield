@@ -169,3 +169,53 @@ def test_settle_on_chain_autosigns_from_keystore(tmp_path, monkeypatch):
     assert out.debited_micro_usdc == 1000
     assert submitted[0] is not None
     assert submitted[0].data[80:112] == bytes(sk.verify_key)
+
+
+def _owner_loaded(tmp_path, monkeypatch):
+    import json
+
+    from nacl.signing import SigningKey
+
+    from src.backend.mpp import mpp_onchain, mpp_streams, owner_keystore
+
+    wrap, enc = tmp_path / "owner.wrap", tmp_path / "user.enc"
+    monkeypatch.setenv("KS_MPP_OWNER_WRAP_FILE", str(wrap))
+    monkeypatch.setenv("KS_MPP_OWNER_KEY_FILE", str(enc))
+    monkeypatch.delenv("KS_MPP_OWNER_WRAP_KEY", raising=False)
+    owner_keystore.ensure_wrap_key(wrap)
+    sk = SigningKey(bytes([7]) * 32)
+    src = tmp_path / "kp.json"
+    src.write_text(json.dumps(list(bytes(sk) + bytes(sk.verify_key))))
+    owner_keystore.import_solana_keypair_file(src, dest=enc)
+    monkeypatch.setattr(mpp_streams, "DB_PATH", tmp_path / "mpp.db")
+    monkeypatch.setattr(mpp_onchain, "load_mpp_config", lambda: None)
+
+
+_OPEN = {"agentPubkey": "11111111111111111111111111111111", "maxTotalMicroUsdc": 1000}
+
+
+def test_autosign_open_local_ledger_in_demo_without_settler(tmp_path, monkeypatch):
+    from src.backend.mpp import mpp_streams
+
+    _owner_loaded(tmp_path, monkeypatch)
+    monkeypatch.setenv("KS_DEMO_MODE", "1")
+    client, token = _client_and_token(tmp_path, monkeypatch)
+    res = client.post(
+        "/mpp/autosign/open", headers={"Authorization": f"Bearer {token}"}, json=_OPEN
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["mode"] == "local-ledger" and body["onChain"] is False
+    rows = mpp_streams.list_streams("alice")["streams"]
+    assert [r["id"] for r in rows] == [body["streamId"]]
+
+
+def test_autosign_open_without_settler_outside_demo_is_actionable_409(tmp_path, monkeypatch):
+    _owner_loaded(tmp_path, monkeypatch)
+    monkeypatch.delenv("KS_DEMO_MODE", raising=False)
+    client, token = _client_and_token(tmp_path, monkeypatch)
+    res = client.post(
+        "/mpp/autosign/open", headers={"Authorization": f"Bearer {token}"}, json=_OPEN
+    )
+    assert res.status_code == 409
+    assert "KS_MPP_SETTLER_KEY" in res.json()["detail"]

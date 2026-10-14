@@ -255,7 +255,11 @@ async def vault_store(request: Request):
     raw_exp = str(body.get("expires_at") or body.get("expiry") or "").strip()
     if raw_exp:
         try:
-            expires_at = datetime.fromisoformat(raw_exp.replace("Z", "+00:00")).timestamp()
+            parsed = datetime.fromisoformat(raw_exp.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                # Date-only page labels ("2027-04-01") are UTC, not server-local.
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            expires_at = parsed.timestamp()
         except ValueError:
             try:
                 expires_at = (

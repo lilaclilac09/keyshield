@@ -15,11 +15,11 @@ import {
   SHOP_CREDIT_USD,
   SHOP_ITEM_NAME,
   SHOP_MPP_USD,
-  SHOP_PROOF_CACHE_MS,
+  formatRpcMs,
+  loadRpcPing,
   SHOP_PROOF_CLAWBACK_IX,
   SHOP_PROOF_SETTLE_CU,
   SHOP_PROOF_SETTLE_IX,
-  SHOP_PROOF_WAN_MS,
 } from '../lib/shop-demo';
 
 interface Props {
@@ -33,6 +33,7 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
   const [ok, setOk] = useState(false);
   const [tick, setTick] = useState(0);
   const [account, setAccount] = useState<PurchaseRow[]>([]);
+  const rpcSample = useMemo(() => loadRpcPing(), [tick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +141,8 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
             <p className="text-[13px] text-[#8a96c2] mt-2">MppSettle compute</p>
           </div>
           <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{SHOP_PROOF_CACHE_MS}ms</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">cache vs {SHOP_PROOF_WAN_MS}ms WAN</p>
+            <p data-testid="payments-rpc-repeat-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.secondMs)}</p>
+            <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? `repeat vs ${formatRpcMs(rpcSample.firstMs)} first call (your RPC speed check)` : 'No RPC data yet · run RPC speed check on Home'}</p>
           </div>
           <div>
             <p className="text-[20px] font-semibold text-white leading-tight">WebAuthn PRF</p>

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from ..auth import session as sess_mod
 from ..auth import passkey as pk_mod
+from ..auth import ratelimit as rl_mod
 
 
 router = APIRouter()
@@ -385,6 +386,67 @@ async def passkey_register_verify(request: Request):
     except plans_mod.PlanLimitError as exc:
         return JSONResponse(exc.payload, status_code=402)
     return JSONResponse({"ok": True, "device_level": level, **out})
+
+
+# Passkey-first signup: no session needed. The server mints a fresh random
+# user_id and stashes a "signup" challenge for it, so a caller can never
+# register a credential onto an existing account through this path.
+_SIGNUP_PREFIX = "pk_"
+_NAME_MAX = 64
+
+
+def _signup_limited(request: Request):
+    if rl_mod.signup_limiter.allow(rl_mod.client_ip(request)):
+        return None
+    return JSONResponse({"error": "too many signup attempts"}, status_code=429)
+
+
+@router.get("/auth/passkey/signup-options")
+async def passkey_signup_options(request: Request):
+    if (limited := _signup_limited(request)) is not None:
+        return limited
+    user_id = _SIGNUP_PREFIX + secrets.token_urlsafe(18)
+    rp_id, origins = _origin_rp_id(request)
+    opts = pk_mod.registration_options(
+        user_id, display_name="KeyShield", rp_id=rp_id, expected_origin=origins, kind="signup"
+    )
+    return JSONResponse({**opts, "ksUserId": user_id})
+
+
+@router.post("/auth/passkey/signup-verify")
+async def passkey_signup_verify(request: Request):
+    if (limited := _signup_limited(request)) is not None:
+        return limited
+    body = await request.json()
+    name = str(body.get("name") or "Passkey")[:_NAME_MAX]
+    user_id = str(body.get("userId") or "")
+    if not user_id.startswith(_SIGNUP_PREFIX) or pk_mod.list_credentials(user_id):
+        return JSONResponse({"error": "invalid signup"}, status_code=400)
+    rp_id, origins = _origin_rp_id(request)
+    try:
+        out = pk_mod.registration_verify(
+            user_id,
+            body.get("credential") or {},
+            name,
+            rp_id=rp_id,
+            expected_origin=origins,
+            kind="signup",
+        )
+    except Exception as e:
+        return _passkey_json_error(e)
+    from ..billing import plans as plans_mod
+
+    cred_id = str(out.get("credentialId") or "")
+    try:
+        plans_mod.claim_device(user_id, "personal", name, kind="passkey", ref_id=cred_id)
+    except Exception as exc:
+        # Roll back so a failed seat claim never leaves an orphan account.
+        pk_mod.delete_credential(user_id, cred_id)
+        if isinstance(exc, plans_mod.PlanLimitError):
+            return JSONResponse(exc.payload, status_code=402)
+        return JSONResponse({"error": "signup failed"}, status_code=503)
+    token = sess_mod.create_token(user_id, "")
+    return JSONResponse({"ok": True, "token": token, "userId": user_id, **out})
 
 
 @router.get("/auth/passkey/auth-options")

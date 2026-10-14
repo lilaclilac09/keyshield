@@ -297,3 +297,47 @@ def test_hosted_empty_session_does_not_claim_default(tmp_path, monkeypatch):
     assert listed == []
     default_list = client.get("/manage/vault", headers=_DEV_HEADERS).json()
     assert any(item.get("upstream") == "groq" for item in default_list)
+
+
+def test_manage_store_extension_helius_bulk_save_payload(tmp_path, monkeypatch):
+    """Exact body background.js directStore sends for a Helius dashboard UUID."""
+    _iso(tmp_path, monkeypatch)
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+    for key in (
+        "f1c08a72-3ec1-4abc-8def-fe9ae2b47ae8",
+        "10470584-67a9-4abc-8def-1dee5f777761",
+    ):
+        r = client.post(
+            "/manage/store",
+            headers=headers,
+            json={
+                "upstream": "helius",
+                "apiKey": key,
+                "value": key,
+                "name": "Helius RPC (dashboard.helius.dev)",
+                "domain": "dashboard.helius.dev",
+                "origin": "dashboard.helius.dev",
+                "pageTitle": "Helius Dashboard",
+                "expires_at": "",
+            },
+        )
+        assert r.status_code == 200, r.text
+    listed = client.get("/manage/vault", headers=headers).json()
+    assert len([row for row in listed if row["upstream"] == "helius"]) == 2
+
+
+def test_manage_store_legacy_cipher_only_extension_body_is_400(tmp_path, monkeypatch):
+    """Pre-6e57fad extensions sent {upstream,name,cipher,iv,cipher_v} only.
+    That is the 'http-400' the dashboard toast shows; the fix is reloading
+    the extension, which now sends plaintext."""
+    _iso(tmp_path, monkeypatch)
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    r = client.post(
+        "/manage/store",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"upstream": "helius", "name": "helius key", "cipher": "c", "iv": "i", "cipher_v": 1},
+    )
+    assert r.status_code == 400

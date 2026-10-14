@@ -256,10 +256,14 @@ docker compose run --rm python sqlite3 /app/data/keyshield.db "ALTER TABLE passk
 
 ## 8. Security checklist
 
+- [ ] Service is reachable **only via the Railway edge**. Client IP for the passkey signup rate limiter is taken from the rightmost `X-Forwarded-For` hop, which is trustworthy only because the edge appends/overwrites it. Do not expose the origin port or `*.railway.internal` publicly, or callers can forge that hop and bypass the limit.
+- [ ] The signup rate limiter is **in-process**: limits are per replica and reset on restart/redeploy. With multiple replicas the effective limit multiplies; move to a shared store (e.g. Redis) before scaling out.
+- [ ] `KS_DEMO_MODE` is unset. Boot refuses demo mode when `KS_ENV=prod` or any `RAILWAY_ENVIRONMENT_NAME` not in the non-prod allow-list (development, dev, staging, preview, test, local, pr-*).
+
 Before going public:
 
 - [ ] `KS_INTERNAL_SECRET` is a fresh 32-byte random hex (not the example value)
-- [ ] `KS_DEMO_MODE` is `0` (or unset)
+- [ ] `KS_DEMO_MODE` is `0` (or unset). Enforced: with `RAILWAY_ENVIRONMENT_NAME=production` (or `KS_ENV=production`) the app refuses to start and `/health` returns 503 if it is set.
 - [ ] Python service is NOT exposed to the internet (only the internal Docker network)
 - [ ] TLS is terminated in front of the Rust proxy (nginx, Cloudflare, etc.)
 - [ ] `HELIUS_API_KEY` has appropriate RPC rate limits set in the Helius dashboard

@@ -65,6 +65,8 @@ ORIGIN: list[str] = [o.strip() for o in _origin_env.split(",") if o.strip()]
 # In-memory pending challenge stores (keyed by user_id) — cache in front of SQLite.
 _PENDING_REGS: dict[str, dict] = {}
 _PENDING_AUTHS: dict[str, dict] = {}
+_PENDING_SIGNUPS: dict[str, dict] = {}
+MAX_PENDING = 5_000  # per in-memory store
 
 CHALLENGE_TTL = 120  # seconds
 
@@ -184,6 +186,24 @@ def _credentials_for_user(user_id: str) -> list[PublicKeyCredentialDescriptor]:
     return creds
 
 
+def _store_for(kind: str) -> dict[str, dict]:
+    if kind == "reg":
+        return _PENDING_REGS
+    if kind == "signup":
+        return _PENDING_SIGNUPS
+    return _PENDING_AUTHS
+
+
+def _purge_expired(now: float) -> None:
+    for store in (_PENDING_REGS, _PENDING_AUTHS, _PENDING_SIGNUPS):
+        for k in [k for k, v in store.items() if v.get("expires", 0) < now]:
+            store.pop(k, None)
+        while len(store) >= MAX_PENDING:
+            store.pop(next(iter(store)))
+    with _db() as conn:
+        conn.execute("DELETE FROM passkey_challenges WHERE expires < ?", (now,))
+
+
 def _stash_challenge(
     user_id: str,
     kind: str,
@@ -191,14 +211,15 @@ def _stash_challenge(
     rp_id: str | None,
     origins: list[str] | None,
 ) -> None:
+    _purge_expired(time.time())
     rec = {
+        "kind": kind,
         "challenge": challenge,
         "rp_id": rp_id or "",
         "origins": list(origins or []),
         "expires": time.time() + CHALLENGE_TTL,
     }
-    store = _PENDING_REGS if kind == "reg" else _PENDING_AUTHS
-    store[user_id] = rec
+    _store_for(kind)[user_id] = rec
     with _db() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO passkey_challenges
@@ -216,8 +237,9 @@ def _stash_challenge(
 
 
 def _pop_challenge(user_id: str, kind: str) -> dict | None:
-    store = _PENDING_REGS if kind == "reg" else _PENDING_AUTHS
-    store.pop(user_id, None)
+    cached = _store_for(kind).pop(user_id, None)
+    if cached is not None and cached.get("kind") != kind:
+        return None
     with _db() as conn:
         row = conn.execute(
             "SELECT challenge, rp_id, origins, expires FROM passkey_challenges "
@@ -273,6 +295,7 @@ def registration_options(
     display_name: str,
     rp_id: str | None = None,
     expected_origin: list[str] | None = None,
+    kind: str = "reg",
 ) -> dict:
     """Generate WebAuthn registration options and stash the challenge.
 
@@ -295,7 +318,7 @@ def registration_options(
         timeout=60_000,
     )
     challenge_b64 = _b64url(opts.challenge)
-    _stash_challenge(user_id, "reg", challenge_b64, effective_rp, expected_origin)
+    _stash_challenge(user_id, kind, challenge_b64, effective_rp, expected_origin)
     return json.loads(webauthn.options_to_json(opts))
 
 
@@ -305,9 +328,10 @@ def registration_verify(
     name: str = "Passkey",
     rp_id: str | None = None,
     expected_origin: list[str] | None = None,
+    kind: str = "reg",
 ) -> dict:
     """Verify the credential from the browser and store it."""
-    pending = _pop_challenge(user_id, "reg")
+    pending = _pop_challenge(user_id, kind)
     if not pending:
         raise PasskeyError(_CHALLENGE_GONE, "registration challenge expired or not found")
 
@@ -321,6 +345,12 @@ def registration_verify(
 
     cred_id = _b64url(verification.credential_id)
     with _db() as conn:
+        owner = conn.execute(
+            "SELECT user_id FROM passkey_credentials WHERE id = ?", (cred_id,)
+        ).fetchone()
+        if owner and owner["user_id"] != user_id:
+            # Never let a registration move another account's credential row.
+            raise PasskeyError("credential_taken", "this passkey belongs to another account")
         conn.execute(
             """INSERT OR REPLACE INTO passkey_credentials
                (id, user_id, public_key, sign_count, created_at, name)
