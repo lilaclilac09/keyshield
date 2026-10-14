@@ -3,7 +3,7 @@ import { Key, Plus, ShieldCheck, ArrowRight } from 'lucide-react';
 import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
-import { callKeychain, detectUpstream, extractDetectedKeys, storeDetectedKeys } from '../../lib/keychain';
+import { callKeychain, detectUpstream, quickPasteError, storeDetectedKeys } from '../../lib/keychain';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 
 interface Props {
@@ -20,8 +20,8 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   const detected = detectUpstream(paste);
 
   const saveAndCall = async (alsoCall: boolean) => {
-    const hits = extractDetectedKeys(paste);
-    if (!hits.length) { setMsg('Paste a key first'); return; }
+    const gate = quickPasteError(paste);
+    if (gate) { setMsg(gate); return; }
     setBusy(true); setMsg(null);
     try {
       const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);

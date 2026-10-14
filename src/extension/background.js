@@ -1373,8 +1373,8 @@ function paintLiveDetectPanel(state) {
     + (ms == null || !isFinite(Number(ms)) || Number(ms) < 0 ? '—' : Math.round(Number(ms)) + 'ms');
   const saved = Math.max(0, Math.floor(Number(state && state.saved) || 0));
   const failed = Math.max(0, Math.floor(Number(state && state.failed) || 0));
-  const queued = Math.max(0, Math.floor(Number(state && state.queued) || 0));
-  const inVault = saved + queued;
+  // state.saved already counts saved-or-queued rows; queued is a subset of it.
+  const inVault = saved;
   const save = inVault > 0
     ? ('Saved ' + inVault + ' key' + (inVault === 1 ? '' : 's') + ' to KeyShield vault.')
     : ('Saved ' + saved + ', ' + failed + ' failed.');

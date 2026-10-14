@@ -281,7 +281,10 @@ export const ActivitySection: React.FC = () => {
           ratePerCallMicroUsdc: 0,
         });
         setOpenOk(true);
-        setOpenMsg(`Opened stream ${String((d.stream as { id?: number } | undefined)?.id ?? '')} — ${(d.txSignature as string | undefined)?.slice(0, 8) ?? ''}…`);
+        const sid = String((d.stream as { id?: number } | undefined)?.id ?? '');
+        setOpenMsg(d.mode === 'local-ledger'
+          ? `Opened stream ${sid} on the local ledger (not on-chain)`
+          : `Opened stream ${sid} — ${(d.txSignature as string | undefined)?.slice(0, 8) ?? ''}…`);
       } else {
         if (!publicKey || !programId) throw new Error('Connect the wallet and wait for /health/mpp program id');
         const d = await openStreamWithWallet({

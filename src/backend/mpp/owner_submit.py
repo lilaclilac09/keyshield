@@ -37,11 +37,29 @@ def _require_owner() -> owner_keystore.OwnerKey:
     return owner
 
 
+_SETTLER_ENV_HINT = (
+    "MPP settler config is not loaded: set KS_MPP_SETTLER_KEY, "
+    "KS_PLATFORM_USDC_ATA and KS_KEYSHIELD_PROGRAM_ID (see .env.example), "
+    "or run locally with KS_DEMO_MODE=1 to open streams on the local ledger"
+)
+
+
 def _require_config() -> mpp_onchain.MppConfig:
     config = mpp_onchain.load_mpp_config()
     if config is None:
-        raise OwnerSubmitError("MPP settler config is not loaded")
+        raise OwnerSubmitError(_SETTLER_ENV_HINT)
     return config
+
+
+def _local_ledger_only() -> bool:
+    """Demo/local dev without a chain settler: the DB is the ledger.
+
+    Gated on KS_DEMO_MODE so a production deploy with missing settler env
+    still fails loudly instead of silently opening off-chain streams.
+    """
+    from .. import demo as demo_mod
+
+    return demo_mod.demo_enabled() and mpp_onchain.load_mpp_config() is None
 
 
 def _config_with_vault(config: mpp_onchain.MppConfig, vault_pda: str) -> mpp_onchain.MppConfig:
@@ -217,7 +235,9 @@ async def submit_full_open(user_id: str, body: dict) -> dict:
     if max_total <= 0:
         raise OwnerSubmitError("maxTotalMicroUsdc must be positive")
 
-    await submit_grant(agent_pubkey, max_spend_micro_usdc=max_total)
+    local_only = _local_ledger_only()
+    if not local_only:
+        await submit_grant(agent_pubkey, max_spend_micro_usdc=max_total)
     stream = mpp_streams.open_stream(
         user_id=user_id,
         agent_pubkey=agent_pubkey,
@@ -230,6 +250,14 @@ async def submit_full_open(user_id: str, body: dict) -> dict:
         ),
         max_total_micro_usdc=max_total,
     )
+    if local_only:
+        return {
+            "stream": stream,
+            "streamId": int(stream["id"]),
+            "mode": "local-ledger",
+            "onChain": False,
+            "ownerPubkey": owner.pubkey_b58,
+        }
     opened = await submit_open_for_stream(
         user_id,
         int(stream["id"]),

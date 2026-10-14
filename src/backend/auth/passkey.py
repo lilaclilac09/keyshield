@@ -273,6 +273,7 @@ def registration_options(
     display_name: str,
     rp_id: str | None = None,
     expected_origin: list[str] | None = None,
+    kind: str = "reg",
 ) -> dict:
     """Generate WebAuthn registration options and stash the challenge.
 
@@ -295,7 +296,7 @@ def registration_options(
         timeout=60_000,
     )
     challenge_b64 = _b64url(opts.challenge)
-    _stash_challenge(user_id, "reg", challenge_b64, effective_rp, expected_origin)
+    _stash_challenge(user_id, kind, challenge_b64, effective_rp, expected_origin)
     return json.loads(webauthn.options_to_json(opts))
 
 
@@ -305,9 +306,10 @@ def registration_verify(
     name: str = "Passkey",
     rp_id: str | None = None,
     expected_origin: list[str] | None = None,
+    kind: str = "reg",
 ) -> dict:
     """Verify the credential from the browser and store it."""
-    pending = _pop_challenge(user_id, "reg")
+    pending = _pop_challenge(user_id, kind)
     if not pending:
         raise PasskeyError(_CHALLENGE_GONE, "registration challenge expired or not found")
 
@@ -321,6 +323,12 @@ def registration_verify(
 
     cred_id = _b64url(verification.credential_id)
     with _db() as conn:
+        owner = conn.execute(
+            "SELECT user_id FROM passkey_credentials WHERE id = ?", (cred_id,)
+        ).fetchone()
+        if owner and owner["user_id"] != user_id:
+            # Never let a registration move another account's credential row.
+            raise PasskeyError("credential_taken", "this passkey belongs to another account")
         conn.execute(
             """INSERT OR REPLACE INTO passkey_credentials
                (id, user_id, public_key, sign_count, created_at, name)

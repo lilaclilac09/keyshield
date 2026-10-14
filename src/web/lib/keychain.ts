@@ -149,6 +149,13 @@ export function extractDetectedKeys(raw: string): { upstream: string; key: strin
   return out;
 }
 
+/** Vault quick-paste gate. Empty input and unrecognized shapes get different messages. */
+export function quickPasteError(raw: string): string | null {
+  if (!String(raw || '').trim()) return 'Paste a key first';
+  if (extractDetectedKeys(raw).length) return null;
+  return 'Unrecognized key format. Paste the full key (e.g. sk-ant-api03-…, sk-or-v1-…, a Helius UUID).';
+}
+
 export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
   const up = upstream || 'openrouter';
   const path = up === 'helius' ? '' : up === 'openai' ? 'v1/models' : up === 'openrouter' ? 'api/v1/chat/completions' : 'v1/models';

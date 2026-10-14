@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
-import { passkeyLogin, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
+import { passkeyLogin, passkeySignup, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel, shouldShowPasskeyPanel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
@@ -89,6 +89,21 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       setPkLoading(false);
     }
   };
+  const handleSignup = async () => {
+    setPkLoading(true);
+    setPkError('');
+    try {
+      const { token, userId: created } = await passkeySignup();
+      setToken(token);
+      setWalletAddress(created);
+      notifyAuthChanged();
+      onAuthenticated();
+    } catch (e) {
+      setPkError(e instanceof Error ? e.message : 'Passkey signup failed');
+    } finally {
+      setPkLoading(false);
+    }
+  };
   const forgetDevice = () => { clearPasskeyTrust(); setUserId(null); setPreferWallet(true); };
 
   return (
@@ -116,6 +131,11 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           ) : (
             <>
               <WalletConnector onConnect={onAuthenticated} />
+              <button type="button" data-testid="passkey-signup" onClick={handleSignup} disabled={pkLoading} className="w-full mt-4 flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
+                {pkLoading ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
+                <span className="text-[13px] font-semibold uppercase tracking-wider">{pkLoading ? 'Creating account…' : 'New here? Create account with passkey'}</span>
+              </button>
+              {pkError && <p className="mt-2 text-[12px] text-red-400 text-left break-words">{pkError}</p>}
               {demoOn && (
                 <div className="mt-4 space-y-2">
                   <button type="button" onClick={handleDemo} disabled={demoLoading} className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">

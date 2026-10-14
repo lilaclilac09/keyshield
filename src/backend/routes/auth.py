@@ -387,6 +387,53 @@ async def passkey_register_verify(request: Request):
     return JSONResponse({"ok": True, "device_level": level, **out})
 
 
+# Passkey-first signup: no session needed. The server mints a fresh random
+# user_id and stashes a "signup" challenge for it, so a caller can never
+# register a credential onto an existing account through this path.
+_SIGNUP_PREFIX = "pk_"
+
+
+@router.get("/auth/passkey/signup-options")
+async def passkey_signup_options(request: Request):
+    user_id = _SIGNUP_PREFIX + secrets.token_urlsafe(18)
+    rp_id, origins = _origin_rp_id(request)
+    opts = pk_mod.registration_options(
+        user_id, display_name="KeyShield", rp_id=rp_id, expected_origin=origins, kind="signup"
+    )
+    return JSONResponse({**opts, "ksUserId": user_id})
+
+
+@router.post("/auth/passkey/signup-verify")
+async def passkey_signup_verify(request: Request):
+    body = await request.json()
+    user_id = str(body.get("userId") or "")
+    if not user_id.startswith(_SIGNUP_PREFIX) or pk_mod.list_credentials(user_id):
+        return JSONResponse({"error": "invalid signup"}, status_code=400)
+    rp_id, origins = _origin_rp_id(request)
+    try:
+        out = pk_mod.registration_verify(
+            user_id,
+            body.get("credential") or {},
+            str(body.get("name") or "Passkey"),
+            rp_id=rp_id,
+            expected_origin=origins,
+            kind="signup",
+        )
+    except Exception as e:
+        return _passkey_json_error(e)
+    from ..billing import plans as plans_mod
+
+    plans_mod.claim_device(
+        user_id,
+        "personal",
+        str(body.get("name") or "Passkey"),
+        kind="passkey",
+        ref_id=str(out.get("credentialId") or ""),
+    )
+    token = sess_mod.create_token(user_id, "")
+    return JSONResponse({"ok": True, "token": token, "userId": user_id, **out})
+
+
 @router.get("/auth/passkey/auth-options")
 async def passkey_auth_options(user_id: str, request: Request):
     """Unauthenticated — used by login flow."""

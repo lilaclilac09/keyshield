@@ -497,6 +497,62 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
   return verRes.json();
 }
 
+/**
+ * Passkey-first signup for brand-new users (no wallet, no session).
+ * The server mints a fresh random user id; this device remembers it so the
+ * normal "Sign In as …" passkey button works next time.
+ */
+export async function passkeySignup(name = 'Passkey'): Promise<{ token: string; userId: string }> {
+  let optsRes: Response;
+  try {
+    optsRes = await fetch(`${API_BASE}/auth/passkey/signup-options`);
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/passkey/signup-options');
+  }
+  if (!optsRes.ok) {
+    const err = await optsRes.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Failed to start passkey signup'));
+  }
+  const opts = await optsRes.json();
+  const userId: string = opts.ksUserId;
+  delete opts.ksUserId;
+  opts.challenge = _b64urlToBuffer(opts.challenge);
+  opts.user.id = _b64urlToBuffer(opts.user.id);
+  opts.excludeCredentials = [];
+  const credential = await navigator.credentials.create({ publicKey: opts }) as PublicKeyCredential | null;
+  if (!credential) throw new Error('Passkey creation cancelled');
+  const response = credential.response as AuthenticatorAttestationResponse;
+  let verRes: Response;
+  try {
+    verRes = await fetch(`${API_BASE}/auth/passkey/signup-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        name,
+        credential: {
+          id: credential.id,
+          rawId: _bufferToB64url(credential.rawId),
+          type: credential.type,
+          response: {
+            attestationObject: _bufferToB64url(response.attestationObject),
+            clientDataJSON: _bufferToB64url(response.clientDataJSON),
+          },
+        },
+      }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/passkey/signup-verify');
+  }
+  if (!verRes.ok) {
+    const err = await verRes.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Passkey signup failed'));
+  }
+  const out = await verRes.json();
+  localStorage.setItem(PASSKEY_USER, out.userId);
+  return { token: out.token, userId: out.userId };
+}
+
 export async function registerPasskey(
   name: string,
   deviceLevel: 'personal' | 'companion' | 'runtime' = 'personal',
