@@ -88,8 +88,8 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
       <Card title="Identity" description="Wallet that owns the vault. Recovery = wallet seed phrase.">
         <div className="space-y-2">
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Wallet</span><code className="text-[12px] font-mono text-[#e8ecff]">{addr || '\u2014'}</code></div>
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">Solana ed25519 \xb7 zero-knowledge passphrase</span></div>
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Encryption</span><span className="text-[12px] text-[#e8ecff]">AES-256-GCM \xb7 PBKDF2-HMAC-SHA256 (100k rounds)</span></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">Solana ed25519 · zero-knowledge passphrase</span></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Encryption</span><span className="text-[12px] text-[#e8ecff]">AES-256-GCM · PBKDF2-HMAC-SHA256 (100k rounds)</span></div>
         </div>
       </Card>
 
@@ -104,7 +104,7 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
         {passkeys.map(pk => (
           <div key={pk.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#0e1631] border border-[#243365] mb-1.5">
             <Fingerprint size={14} className="text-[#a8b3d8] shrink-0" />
-            <div className="flex-1 min-w-0"><p className="text-[13px] text-zinc-200 truncate">{pk.name}</p><p className="text-[11px] text-[#5e6a91] font-mono truncate">{pk.id.slice(0, 24)}\u2026</p></div>
+            <div className="flex-1 min-w-0"><p className="text-[13px] text-zinc-200 truncate">{pk.name}</p><p className="text-[11px] text-[#5e6a91] font-mono truncate">{pk.id.slice(0, 24)}…</p></div>
             <span className="text-[10px] text-[#5e6a91]">{new Date(pk.createdAt * 1000).toLocaleDateString()}</span>
             <Button variant="destructive" size="sm" onClick={() => handleDelete(pk.id)} disabled={deletingId === pk.id} loading={deletingId === pk.id}>Delete</Button>
           </div>
@@ -159,7 +159,7 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
       <Card title="Vault Preferences" description="Control how secrets reveal, expire, and notify. Saved to this browser only.">
         <div className="space-y-3">
           <Toggle label="Notify before expiry" description="Browser notification 7 days before any key expires." checked={prefs.notifyOnExpiry} onChange={v => updatePref('notifyOnExpiry', v)} />
-          <Toggle label="Anomaly alerts" description="Notify if a key\'s call rate suddenly spikes 5x." checked={prefs.notifyOnAnomaly} onChange={v => updatePref('notifyOnAnomaly', v)} />
+          <Toggle label="Anomaly alerts" description="Notify if a key's call rate suddenly spikes 5x." checked={prefs.notifyOnAnomaly} onChange={v => updatePref('notifyOnAnomaly', v)} />
           <div><span className="text-[12px] text-white">Auto-hide reveal after</span><select value={prefs.revealDurationSec} onChange={e => updatePref('revealDurationSec', Number(e.target.value))} className="mt-1 w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white">{[10, 30, 60, 120, 300].map(s => <option key={s} value={s}>{s}s</option>)}</select></div>
         </div>
       </Card>

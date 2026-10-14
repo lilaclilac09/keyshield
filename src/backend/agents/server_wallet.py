@@ -122,6 +122,18 @@ def _db() -> sqlite3.Connection:
 # ─── Public API ───────────────────────────────────────────────────────────
 
 
+def has_server_wallet(owner_id: str, agent_id: str) -> bool:
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM server_wallets WHERE owner_wallet = ? AND agent_id = ?",
+            (owner_id, agent_id),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def create_server_wallet(owner_id: str, agent_id: str) -> tuple[str, str]:
     """Generate (or return existing) server-held ed25519 keypair.
 

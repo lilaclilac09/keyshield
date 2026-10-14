@@ -96,6 +96,7 @@ export const AgentsSection: React.FC = () => {
       if (withWallet && d.id != null) {
         const w = await apiFetch(`/agents/${encodeURIComponent(String(d.id))}/wallet/create`, { method: 'POST' });
         const wd = await w.json().catch(() => ({}));
+        if (w.ok) window.dispatchEvent(new Event('keyshield:wallets-changed'));
         msg += w.ok ? ` · server wallet ${wd.pubkey}` : ` · wallet not created: ${wd.detail ?? w.status}`;
       }
       setOk(msg);
@@ -109,6 +110,7 @@ export const AgentsSection: React.FC = () => {
     try {
       const w = await apiFetch(`/agents/${encodeURIComponent(String(a.id))}/wallet/create`, { method: 'POST' });
       const wd = await w.json().catch(() => ({}));
+      if (w.ok) window.dispatchEvent(new Event('keyshield:wallets-changed'));
       if (w.ok) setOk(`Server wallet for agent ${a.id} ("${a.name}"): ${wd.pubkey}`);
       else setErr(`Wallet not created for agent ${a.id}: ${wd.detail ?? w.status}`);
     } catch { setErr('Network error'); }
@@ -187,7 +189,7 @@ export const AgentsSection: React.FC = () => {
           <div>
             <div className="text-[10px] text-[#8a96c2] uppercase tracking-wider mb-2">Quick — Generate &amp; Register in one click</div>
             <div className="flex gap-2">
-              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="trading-bot-v1" className="flex-1" />
+              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="my-agent" className="flex-1" />
               <Button variant="primary" size="md" onClick={handleGenerateAndRegister} disabled={registering || !newName.trim()} loading={registering}>
                 Generate &amp; Register
               </Button>
@@ -204,7 +206,7 @@ export const AgentsSection: React.FC = () => {
           {/* Manual: paste own pubkey */}
           <div className="space-y-2">
             <div className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Manual — bring your own keypair</div>
-            <Input label="Agent Name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="trading-bot-v1" />
+            <Input label="Agent Name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="my-agent" />
             <Input label="Public Key (base58)" value={newPubkey} onChange={e => setNewPubkey(e.target.value)} placeholder="9WzDX…" monospace />
             {pubkeyErr && <p className="text-[11px] text-red-300">{pubkeyErr}</p>}
             <label className="flex items-center gap-2 text-[12px] text-[#8a96c2]">

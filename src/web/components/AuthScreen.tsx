@@ -194,7 +194,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           )}
         </div>
         <ExtensionInstallHint variant="auth" />
-        <p className="mt-8 text-[11px] leading-relaxed text-[#3e4a72] max-w-sm">AES-256-GCM \xb7 ed25519 wallet signatures \xb7 server never sees your key material</p>
+        <p className="mt-8 text-[11px] leading-relaxed text-[#3e4a72] max-w-sm">AES-256-GCM · ed25519 wallet signatures · server never sees your key material</p>
       </div>
     </div>
   );

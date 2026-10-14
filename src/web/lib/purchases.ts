@@ -233,7 +233,7 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     txType: sig ? 'On-chain MPP stream' : 'Local MPP stream (not on-chain)',
     rail: 'solana-mpp',
     railLabel: sig ? railLabel('solana-mpp') : 'Local ledger · MPP (not on-chain)',
-    portal: portalLabel('solana-mpp'),
+    portal: sig ? portalLabel('solana-mpp') : 'Local ledger · MPP portal (not on-chain)',
     callKind: sig ? 'on-chain tx' : 'API',
     walletRole: 'agent',
     walletAddress: agent,

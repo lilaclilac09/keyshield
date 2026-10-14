@@ -22,7 +22,7 @@ export const MultiSigTracker: React.FC<MultiSigTrackerProps> = ({ required, sign
               {signer.approved && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4L3.5 6L6.5 2" stroke="currentColor" strokeWidth="1" /></svg>}
             </div>
             <div className="flex-1 min-w-0"><span className="text-[11px] text-[#e8ecff]">{signer.name}</span></div>
-            <span className="text-[9px] font-mono text-[#5e6a91]">{signer.address.slice(0, 6)}\u2026{signer.address.slice(-4)}</span>
+            <span className="text-[9px] font-mono text-[#5e6a91]">{signer.address.slice(0, 6)}…{signer.address.slice(-4)}</span>
           </div>
         ))}
       </div>

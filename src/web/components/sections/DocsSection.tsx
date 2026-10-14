@@ -114,9 +114,9 @@ export const DocsSection: React.FC = () => {
         <div className="flex items-center gap-2 mb-2"><Zap size={14} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Call path — pool, cache, MPP skip</span></div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed">Home → Call prints the milliseconds <strong className="text-white">that request actually timed</strong>. Do not quote a marketing band. Three reasons the proxy can be cheaper than a cold direct hop:</p>
         <ul className="space-y-1.5 mt-3">
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Warm HTTP/2 connection pool</strong> \u2014 KeyShield keeps persistent sessions to every upstream, so a later call can skip a fresh DNS + TLS handshake.</span></li>
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Concurrent batch fan-out</strong> \u2014 <code className="text-white">batch(requests)</code> dispatches up to 20 calls in parallel via <code className="text-white">asyncio.gather</code>.</span></li>
-          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">MPP skips x402 round-trips</strong> \u2014 once a stream is open, calls go straight upstream with no per-call 402 negotiation.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Warm HTTP/2 connection pool</strong> — KeyShield keeps persistent sessions to every upstream, so a later call can skip a fresh DNS + TLS handshake.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">Concurrent batch fan-out</strong> — <code className="text-white">batch(requests)</code> dispatches up to 20 calls in parallel via <code className="text-white">asyncio.gather</code>.</span></li>
+          <li className="text-[12px] text-[#a8b3d8] flex items-start gap-2"><span className="text-emerald-400 mt-1">&#x2713;</span><span><strong className="text-white">MPP skips x402 round-trips</strong> — once a stream is open, calls go straight upstream with no per-call 402 negotiation.</span></li>
         </ul>
       </Card>
 
@@ -130,7 +130,7 @@ export const DocsSection: React.FC = () => {
 
       <div className="space-y-3">
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">1</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Generate a keypair</div><p className="text-[12px] text-[#8a96c2] mt-0.5">In the Agents tab, click Generate, or run:</p><CodeBlock code={`from keyshield_sdk import AgentKeyShield\ncreds = AgentKeyShield.generate_keypair()\nprint(creds)\n# {"private_key_hex": "abcd...", "pubkey_b58": "9WzDX..."}`} /></div></div>
-        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">2</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Register the pubkey</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Agents tab \u2192 paste pubkey + name \u2192 Register.</p></div></div>
+        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">2</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Register the pubkey</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Agents tab → paste pubkey + name → Register.</p></div></div>
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">3</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Agent self-authenticates</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Drop into your bot. Picks up env vars automatically:</p><CodeBlock code={`agent = AgentKeyShield()    # reads KS_OWNER_WALLET, KS_AGENT_KEY, KS_VAULT_PASS\nclient = agent.openai_client()  # auto-authenticates\nresp = client.chat.completions.create(\n    model="gpt-4o-mini",\n    messages=[{"role": "user", "content": "analyze SOL price"}],\n)`} /></div></div>
       </div>
 
@@ -141,12 +141,12 @@ export const DocsSection: React.FC = () => {
         <p className="text-[14px] text-[#a8b3d8] mt-1">How payment works for non-self-custodian calls.</p>
       </div>
 
-      <p className="text-[13px] text-[#e8ecff]">When you call <code className="text-white">/proxy/openai/...</code> and you haven\'t stored an OpenAI key in your vault, KeyShield uses its own platform key and charges you. Four ways to pay:</p>
+      <p className="text-[13px] text-[#e8ecff]">When you call <code className="text-white">/proxy/openai/...</code> and you haven't stored an OpenAI key in your vault, KeyShield uses its own platform key and charges you. Four ways to pay:</p>
       <ol className="space-y-2 list-decimal list-inside text-[13px] text-[#e8ecff] mt-2">
-        <li><strong className="text-white">Free credit</strong> \u2014 every new wallet gets $0.10 to test. About 100 GPT-4o-mini calls.</li>
-        <li><strong className="text-white">Prepaid balance</strong> \u2014 top up with USDC. Calls deduct in real time.</li>
-        <li><strong className="text-white">x402 micropayments</strong> \u2014 when balance hits $0, the proxy returns HTTP 402 with a Coinbase-format payment instruction.</li>
-        <li><strong className="text-white">MPP streaming</strong> \u2014 open a metered channel once; the agent records usage on every call and the on-chain PaymentStream auto-settles in micro-USDC.</li>
+        <li><strong className="text-white">Free credit</strong> — every new wallet gets $0.10 to test. About 100 GPT-4o-mini calls.</li>
+        <li><strong className="text-white">Prepaid balance</strong> — top up with USDC. Calls deduct in real time.</li>
+        <li><strong className="text-white">x402 micropayments</strong> — when balance hits $0, the proxy returns HTTP 402 with a Coinbase-format payment instruction.</li>
+        <li><strong className="text-white">MPP streaming</strong> — open a metered channel once; the agent records usage on every call and the on-chain PaymentStream auto-settles in micro-USDC.</li>
       </ol>
 
       {/* Security */}
@@ -170,7 +170,7 @@ export const DocsSection: React.FC = () => {
       </div>
 
       <div className="pt-4 border-t border-[#243365]/50">
-        <p className="text-[11px] text-[#5e6a91]">KeyShield {VERSION} \xb7 built {BUILD_DATE} \xb7 <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#8a96c2] hover:text-white">GitHub</a></p>
+        <p className="text-[11px] text-[#5e6a91]">KeyShield {VERSION} · built {BUILD_DATE} · <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-[#8a96c2] hover:text-white">GitHub</a></p>
       </div>
 
       <TroubleshootingSection />

@@ -176,11 +176,34 @@ async def agent_wallet_create(agent_id: str, request: Request):
 
     sess = _auth(request)
     owner = sess["user_id"] if sess else "default"
+    agent = _resolve_owned_agent(owner, agent_id)
+    if agent is None:
+        return JSONResponse({"detail": "agent not found"}, status_code=404)
+    # Canonical wallet key is the agent pubkey (what the UI/older wallets used).
+    # Tolerate a legacy row keyed by the numeric id instead of making a second wallet.
+    canonical = agent["pubkey_b58"]
+    legacy = str(agent["id"])
+    key = canonical
+    if not server_wallet.has_server_wallet(owner, canonical) and server_wallet.has_server_wallet(
+        owner, legacy
+    ):
+        key = legacy
     try:
-        aid, pubkey = server_wallet.create_server_wallet(owner, agent_id)
+        aid, pubkey = server_wallet.create_server_wallet(owner, key)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     return JSONResponse({"agent_id": aid, "pubkey": pubkey})
+
+
+def _resolve_owned_agent(owner: str, agent_ref: str) -> dict | None:
+    """Map a numeric agent id or pubkey to an agent registered by ``owner``."""
+    from ..agents import agents as agents_mod
+
+    ref = (agent_ref or "").strip()
+    for a in agents_mod.list_agents(owner):
+        if str(a["id"]) == ref or a["pubkey_b58"] == ref:
+            return a
+    return None
 
 
 # ─── On-chain ephemeral signer (CreateEphemeralSigner ix #23) ───────────
