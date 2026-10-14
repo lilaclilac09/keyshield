@@ -30,13 +30,22 @@ def demo_enabled() -> bool:
     return os.getenv("KS_DEMO_MODE", "").strip() in {"1", "true", "TRUE", "yes"}
 
 
+_NON_PROD_ENVS = {"development", "dev", "staging", "preview", "test", "local"}
+
+
+def _is_non_prod_name(name: str) -> bool:
+    return name in _NON_PROD_ENVS or name.startswith("pr-")
+
+
 def is_production() -> bool:
-    """Railway sets RAILWAY_ENVIRONMENT_NAME (legacy RAILWAY_ENVIRONMENT);
-    KS_ENV lets other hosts opt in."""
-    for var in ("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT", "KS_ENV"):
-        if os.getenv(var, "").strip().lower() in {"production", "prod"}:
+    """Fail closed on Railway: any RAILWAY_ENVIRONMENT_NAME (legacy
+    RAILWAY_ENVIRONMENT) outside the non-prod allow-list counts as prod.
+    KS_ENV lets other hosts opt in. No vars set (local dev/tests) -> not prod."""
+    for var in ("RAILWAY_ENVIRONMENT_NAME", "RAILWAY_ENVIRONMENT"):
+        name = os.getenv(var, "").strip().lower()
+        if name and not _is_non_prod_name(name):
             return True
-    return False
+    return os.getenv("KS_ENV", "").strip().lower() in {"production", "prod"}
 
 
 def assert_safe_for_env() -> None:
