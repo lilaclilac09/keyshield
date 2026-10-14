@@ -92,7 +92,8 @@ async def billing_plan(request: Request):
 
     sess = _auth(request)
     user_id = sess["user_id"] if sess else "default"
-    return JSONResponse(plans_mod.snapshot(user_id))
+    # user_id lets the Agents page show which account a registration binds to.
+    return JSONResponse({**plans_mod.snapshot(user_id), "user_id": user_id})
 
 
 @router.post("/billing/plan")

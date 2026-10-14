@@ -228,11 +228,13 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     amountLabel: `${formatMicroUsdc(settled)} USDC`,
     amountUsd: settled / 1_000_000,
     sizeLabel: `${formatMicroUsdc(settled)} USDC`,
-    txType: 'On-chain MPP stream',
+    // Only a stream with an on-chain settle signature is on-chain; otherwise it
+    // was settled in the local ledger only.
+    txType: sig ? 'On-chain MPP stream' : 'Local MPP stream (not on-chain)',
     rail: 'solana-mpp',
     railLabel: railLabel('solana-mpp'),
     portal: portalLabel('solana-mpp'),
-    callKind: 'on-chain tx',
+    callKind: sig ? 'on-chain tx' : 'API',
     walletRole: 'agent',
     walletAddress: agent,
     walletLabel: stream.agent_name

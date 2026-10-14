@@ -103,3 +103,26 @@ def test_unregistered_agent_login_is_401(tmp_path, monkeypatch):
     )
     assert login.status_code == 401
     assert login.json()["error"] == "agent not registered"
+
+
+def test_register_returns_id_and_plan_shows_account(tmp_path, monkeypatch):
+    from src.backend.billing import plans as plans_mod
+    from src.backend.billing import usage as usage_mod
+
+    _iso_dbs(tmp_path, monkeypatch)
+    monkeypatch.setattr(usage_mod, "DB_PATH", tmp_path / "usage.db")
+    monkeypatch.setattr(plans_mod, "DB_PATH", tmp_path / "usage.db")
+    token = sess_mod.create_token("alice", "pw")
+    client = TestClient(app)
+    hdr = {"Authorization": f"Bearer {token}"}
+    _, pub = _keypair()
+
+    plan = client.get("/billing/plan", headers=hdr)
+    assert plan.status_code == 200
+    assert plan.json()["user_id"] == "alice"
+
+    reg = client.post("/agents/register", headers=hdr, json={"pubkeyB58": pub, "name": "bot"})
+    assert reg.status_code == 200, reg.text
+    body = reg.json()
+    assert body["ok"] is True and body["name"] == "bot" and body["owner"] == "alice"
+    assert isinstance(body["id"], int)

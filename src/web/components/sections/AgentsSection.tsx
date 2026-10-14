@@ -7,6 +7,7 @@ import { Input } from '../ui/Input';
 import { apiFetch } from '../../lib/auth';
 import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
 import type { PlanSnapshot } from '../PlanCatalog';
+import { agentPubkeyError } from '../../lib/agent-pubkey';
 
 interface AgentEntry { id: number; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null; }
 
@@ -33,7 +34,10 @@ export const AgentsSection: React.FC = () => {
   const [registering, setRegistering] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
-  const [planSnap, setPlanSnap] = useState<PlanSnapshot | null>(null);
+  const [planSnap, setPlanSnap] = useState<(PlanSnapshot & { user_id?: string }) | null>(null);
+  const [withWallet, setWithWallet] = useState(false);
+  const pubkeyErr = newPubkey.trim() ? agentPubkeyError(newPubkey) : '';
+  const account = planSnap?.user_id;
 
   const load = useCallback(async () => {
     try {
@@ -72,7 +76,7 @@ export const AgentsSection: React.FC = () => {
           /* show the one-time copy box instead */
         }
       }
-      setOk(`Agent "${d.name}" registered. ${vaultNote}`);
+      setOk(`Agent "${d.name ?? newName.trim()}" registered. ${vaultNote}`);
       setNewName('');
       load();
     } catch { setErr('Network error'); } finally { setRegistering(false); }
@@ -81,12 +85,20 @@ export const AgentsSection: React.FC = () => {
   // Manual register with existing pubkey
   const handleRegister = async () => {
     if (!newPubkey.trim() || !newName.trim()) return;
+    const bad = agentPubkeyError(newPubkey);
+    if (bad) { setErr(bad); return; }
     setRegistering(true); setErr(''); setOk('');
     try {
       const r = await apiFetch('/agents/register', { method: 'POST', body: JSON.stringify({ pubkeyB58: newPubkey.trim(), name: newName.trim(), scopes: '*' }) });
       const d = await r.json();
       if (!r.ok) { setErr(d.detail ?? d.error ?? 'Failed'); return; }
-      setOk(`Agent "${d.name}" registered`);
+      let msg = `Agent "${d.name ?? newName.trim()}" registered`;
+      if (withWallet && d.id != null) {
+        const w = await apiFetch(`/agents/${encodeURIComponent(String(d.id))}/wallet/create`, { method: 'POST' });
+        const wd = await w.json().catch(() => ({}));
+        msg += w.ok ? ` · server wallet ${wd.pubkey}` : ` · wallet not created: ${wd.detail ?? w.status}`;
+      }
+      setOk(msg);
       setNewName(''); setNewPubkey('');
       load();
     } catch { setErr('Network error'); } finally { setRegistering(false); }
@@ -97,11 +109,13 @@ export const AgentsSection: React.FC = () => {
   return (
     <div className="space-y-5">
       <Card title="Agent Authentication" description="Agents authenticate with their own ed25519 keypair. Register the agent's public key here once.">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           {[
-            { s: '1', t: 'Generate Keypair', d: 'Agent generates an ed25519 key.' },
-            { s: '2', t: 'Register Pubkey',  d: 'Owner registers the public key here.' },
-            { s: '3', t: 'Self-Authenticate', d: 'Agent signs a server challenge on each run.' },
+            { s: '1', t: 'Sign in as owner', d: 'Agents bind to the account signed in here.' },
+            { s: '2', t: 'Register pubkey', d: 'Paste the agent ed25519 pubkey (base58) below.' },
+            { s: '3', t: 'Wallet (optional)', d: 'Tick “Create server wallet” for a server-held agent key.' },
+            { s: '4', t: 'Agent signs in', d: 'Agent signs a challenge at /auth/agent-login with that key.' },
+            { s: '5', t: 'Payments', d: 'Agent rows appear in Payments only after an MPP stream settles.' },
           ].map(({ s, t, d }) => (
             <div key={s} className="rounded-lg border border-[#243365] bg-[#0e1631] p-3">
               <div className="text-[10px] text-white font-mono mb-1">Step {s}</div>
@@ -110,6 +124,7 @@ export const AgentsSection: React.FC = () => {
             </div>
           ))}
         </div>
+        <p className="text-[11px] text-[#8a96c2] mt-3">CLI: <code className="text-[#a0aacc]">keyshield login</code> then <code className="text-[#a0aacc]">keyshield agent register &lt;pubkey&gt; --name &lt;n&gt;</code></p>
       </Card>
 
       <Card title="Registered Agents" headerRight={<button onClick={load} className="text-[#8a96c2] hover:text-white transition-colors"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>}>
@@ -179,7 +194,17 @@ export const AgentsSection: React.FC = () => {
             <div className="text-[10px] text-[#8a96c2] uppercase tracking-wider">Manual — bring your own keypair</div>
             <Input label="Agent Name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="trading-bot-v1" />
             <Input label="Public Key (base58)" value={newPubkey} onChange={e => setNewPubkey(e.target.value)} placeholder="9WzDX…" monospace />
-            <Button variant="secondary" size="md" onClick={handleRegister} disabled={registering || !newName.trim() || !newPubkey.trim()} loading={registering}>
+            {pubkeyErr && <p className="text-[11px] text-red-300">{pubkeyErr}</p>}
+            <label className="flex items-center gap-2 text-[12px] text-[#8a96c2]">
+              <input type="checkbox" checked={withWallet} onChange={e => setWithWallet(e.target.checked)} />
+              Create server wallet (optional, POST /agents/&#123;id&#125;/wallet/create)
+            </label>
+            <p className="text-[11px] text-[#8a96c2]">
+              Registers under account: <span className="font-mono text-white">{account ?? '…'}</span>
+              {account === 'default' && <span className="text-amber-300"> (not signed in — sign in as the owning account first)</span>}
+              {planSnap && <> · Runtime seats on {planSnap.plan.name}: {planSnap.used.runtime}/{planSnap.plan.devices.runtime}</>}
+            </p>
+            <Button variant="secondary" size="md" onClick={handleRegister} disabled={registering || !newName.trim() || !newPubkey.trim() || !!pubkeyErr} loading={registering}>
               Register
             </Button>
           </div>

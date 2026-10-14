@@ -137,14 +137,15 @@ async def agent_register(request: Request):
     pubkey = body.get("pubkeyB58")
     if not pubkey:
         return JSONResponse({"error": "pubkeyB58 required"}, status_code=400)
+    name = body.get("name", "agent")
     try:
-        agents_mod.register(owner, pubkey, name=body.get("name", "agent"))
+        agent_id = agents_mod.register(owner, pubkey, name=name)
     except ValueError as e:
         # Pubkey already registered for this owner — return 409 with the
         # existing record so re-running the demo is idempotent instead of
         # 500-ing inside the SQLite UNIQUE constraint.
         return JSONResponse({"error": str(e), "ok": True, "duplicate": True}, status_code=409)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "id": agent_id, "name": name[:64], "owner": owner})
 
 
 @router.get("/agents/list")
