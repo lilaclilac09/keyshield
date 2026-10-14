@@ -232,7 +232,7 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     // was settled in the local ledger only.
     txType: sig ? 'On-chain MPP stream' : 'Local MPP stream (not on-chain)',
     rail: 'solana-mpp',
-    railLabel: railLabel('solana-mpp'),
+    railLabel: sig ? railLabel('solana-mpp') : 'Local ledger · MPP (not on-chain)',
     portal: portalLabel('solana-mpp'),
     callKind: sig ? 'on-chain tx' : 'API',
     walletRole: 'agent',

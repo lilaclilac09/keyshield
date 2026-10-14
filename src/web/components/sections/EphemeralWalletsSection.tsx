@@ -27,7 +27,7 @@ export const EphemeralWalletsSection: React.FC = () => {
         {wallets.map(w => (
           <div key={w.agent_id} className="flex items-center gap-4 px-4 py-3 border-b border-[#243365]/30 last:border-0">
             <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center shrink-0"><span className="text-[11px] font-mono text-white">W</span></div>
-            <div className="flex-1 min-w-0"><div className="text-[13px] text-white font-medium truncate">{w.agent_id}</div><div className="text-[11px] text-[#5e6a91] font-mono mt-0.5">{w.pubkey.slice(0, 10)}\u2026{w.pubkey.slice(-8)}</div></div>
+            <div className="flex-1 min-w-0"><div className="text-[13px] text-white font-medium truncate">{w.agent_id}</div><div className="text-[11px] text-[#5e6a91] font-mono mt-0.5">{w.pubkey.slice(0, 10)}…{w.pubkey.slice(-8)}</div></div>
             <Button variant="destructive" size="sm" onClick={() => handleRevoke(w.agent_id)}>Revoke</Button>
           </div>
         ))}
@@ -35,7 +35,7 @@ export const EphemeralWalletsSection: React.FC = () => {
       <Card title="Create Wallet for Agent">
         {err && <p className="text-[12px] text-red-400 mb-3">{err}</p>}
         {created && <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-3 mb-3"><p className="text-[11px] text-emerald-400">Wallet created for <span className="font-mono font-medium">{created.agent_id}</span></p><code className="text-[11px] font-mono text-emerald-300 break-all">{created.pubkey}</code></div>}
-        <div className="flex items-center gap-2"><div className="flex-1"><Input label="Agent ID" value={agentIdInput} onChange={e => { setAgentIdInput(e.target.value); setErr(''); setCreated(null); }} placeholder="trading-bot-v1" /></div><Button variant="primary" size="md" onClick={handleCreate} disabled={creating || !agentIdInput.trim()} loading={creating}>Create</Button></div>
+        <div className="flex items-center gap-2"><div className="flex-1"><Input label="Agent ID or pubkey" value={agentIdInput} onChange={e => { setAgentIdInput(e.target.value); setErr(''); setCreated(null); }} placeholder="trading-bot-v1" /></div><Button variant="primary" size="md" onClick={handleCreate} disabled={creating || !agentIdInput.trim()} loading={creating}>Create</Button></div>
       </Card>
     </div>
   );

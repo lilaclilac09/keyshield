@@ -76,7 +76,7 @@ export const AgentsSection: React.FC = () => {
           /* show the one-time copy box instead */
         }
       }
-      setOk(`Agent "${d.name ?? newName.trim()}" registered. ${vaultNote}`);
+      setOk(`Agent "${d.name ?? newName.trim()}" registered${d.id != null ? ` (id ${d.id})` : ''}. ${vaultNote}`);
       setNewName('');
       load();
     } catch { setErr('Network error'); } finally { setRegistering(false); }
@@ -92,7 +92,7 @@ export const AgentsSection: React.FC = () => {
       const r = await apiFetch('/agents/register', { method: 'POST', body: JSON.stringify({ pubkeyB58: newPubkey.trim(), name: newName.trim(), scopes: '*' }) });
       const d = await r.json();
       if (!r.ok) { setErr(d.detail ?? d.error ?? 'Failed'); return; }
-      let msg = `Agent "${d.name ?? newName.trim()}" registered`;
+      let msg = `Agent "${d.name ?? newName.trim()}" registered${d.id != null ? ` (id ${d.id})` : ''}`;
       if (withWallet && d.id != null) {
         const w = await apiFetch(`/agents/${encodeURIComponent(String(d.id))}/wallet/create`, { method: 'POST' });
         const wd = await w.json().catch(() => ({}));
@@ -102,6 +102,16 @@ export const AgentsSection: React.FC = () => {
       setNewName(''); setNewPubkey('');
       load();
     } catch { setErr('Network error'); } finally { setRegistering(false); }
+  };
+
+  const handleCreateWallet = async (a: AgentEntry) => {
+    setErr(''); setOk('');
+    try {
+      const w = await apiFetch(`/agents/${encodeURIComponent(String(a.id))}/wallet/create`, { method: 'POST' });
+      const wd = await w.json().catch(() => ({}));
+      if (w.ok) setOk(`Server wallet for agent ${a.id} ("${a.name}"): ${wd.pubkey}`);
+      else setErr(`Wallet not created for agent ${a.id}: ${wd.detail ?? w.status}`);
+    } catch { setErr('Network error'); }
   };
 
   const handleRevoke = async (id: number) => { try { await apiFetch(`/agents/${id}`, { method: 'DELETE' }); setAgentList(prev => prev.filter(a => a.id !== id)); } catch {} };
@@ -141,11 +151,13 @@ export const AgentsSection: React.FC = () => {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] text-white font-medium">{a.name}</span>
+                <span className="text-[11px] text-[#8a96c2] font-mono">id {a.id}</span>
                 <Badge variant="neutral">{a.scopes}</Badge>
                 {a.last_used_at && <Badge variant="success" dot>Active</Badge>}
               </div>
               <div className="text-[11px] text-[#5e6a91] font-mono mt-0.5">{a.pubkey_b58.slice(0, 16)}…{a.pubkey_b58.slice(-8)}</div>
             </div>
+            <Button variant="secondary" size="sm" onClick={() => handleCreateWallet(a)}>Create wallet</Button>
             <Button variant="destructive" size="sm" onClick={() => handleRevoke(a.id)}>Revoke</Button>
           </div>
         ))}
