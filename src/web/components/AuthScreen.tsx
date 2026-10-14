@@ -3,13 +3,13 @@ import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
 import { passkeyLogin, passkeySignup, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
-import { readPasskeyUserIdFromStorage, shortPasskeyLabel, shouldShowPasskeyPanel } from '../lib/passkey-id';
+import { readPasskeyUserIdFromStorage, shortPasskeyLabel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
 
 export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [userId, setUserId] = useState<string | null>(() => readPasskeyUserIdFromStorage());
-  const [preferWallet, setPreferWallet] = useState(false);
+  const [, setPreferWallet] = useState(false);
   const [pkLoading, setPkLoading] = useState(false);
   const [pkError, setPkError] = useState('');
   const [demoOn, setDemoOn] = useState(false);
@@ -67,7 +67,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     }
   };
 
-  const showPasskeyPanel = shouldShowPasskeyPanel({ userId, preferWallet });
+  const showPasskeyPanel = Boolean(userId);
   const shortAddr = userId ? shortPasskeyLabel(userId) : '';
 
   const handleFaceID = async () => {
@@ -116,27 +116,24 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
         <p className="mt-2 text-[16px] leading-snug text-white/90 max-w-sm">your API iCloud Keychain</p>
         <p className="mt-3 text-[14px] leading-relaxed text-[#a8b3d8] max-w-sm">{showPasskeyPanel ? `Welcome back. Sign in with Face ID, Touch ID, or your hardware key.` : `Keep API credentials in your vault and give agents controlled access.`}</p>
         <div className="w-full mt-10">
-          {showPasskeyPanel ? (
-            <div className="w-full space-y-3">
-              <div className="rounded-xl border border-[#243365]/50 p-2 bg-[#131c39]">
-                <button type="button" data-testid="passkey-signin" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
-                  <span className="flex items-center justify-center w-5 h-5">{pkLoading ? <Loader2 size={18} className="animate-spin" /> : <Fingerprint size={18} />}</span>
-                  <span className="text-[15px] font-semibold uppercase tracking-wider">{pkLoading ? 'Verifying\u2026' : `Sign In as ${shortAddr}`}</span>
-                </button>
-              </div>
-              {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
-              <button type="button" onClick={() => setPreferWallet(true)} className="w-full text-center py-2 text-[12px] text-[#8a96c2] hover:text-white transition-colors">Use a different wallet instead</button>
-              <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>
-            </div>
-          ) : (
-            <>
-              <WalletConnector onConnect={onAuthenticated} />
-              <button type="button" data-testid="passkey-signup" onClick={handleSignup} disabled={pkLoading} className="w-full mt-4 flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
+          {/* One box: wallet + passkey together. No username/password login. */}
+          <div data-testid="auth-card" className="w-full rounded-xl border border-[#243365]/50 p-4 bg-[#131c39] space-y-3">
+            <WalletConnector onConnect={onAuthenticated} />
+            {userId ? (
+              <button type="button" data-testid="passkey-signin" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
+                <span className="flex items-center justify-center w-5 h-5">{pkLoading ? <Loader2 size={18} className="animate-spin" /> : <Fingerprint size={18} />}</span>
+                <span className="text-[15px] font-semibold uppercase tracking-wider">{pkLoading ? 'Verifying\u2026' : `Sign In as ${shortAddr}`}</span>
+              </button>
+            ) : (
+              <button type="button" data-testid="passkey-signup" onClick={handleSignup} disabled={pkLoading} className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
                 {pkLoading ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
                 <span className="text-[13px] font-semibold uppercase tracking-wider">{pkLoading ? 'Creating account…' : 'New here? Create account with passkey'}</span>
               </button>
-              {pkError && <p className="mt-2 text-[12px] text-red-400 text-left break-words">{pkError}</p>}
-              {demoOn && (
+            )}
+            {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
+            {userId && <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>}
+          </div>
+          {demoOn && (
                 <div className="mt-4 space-y-2">
                   <button type="button" onClick={handleDemo} disabled={demoLoading} className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 transition-colors">
                     {demoLoading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
@@ -146,9 +143,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                   {demoError && <p className="text-[12px] text-red-400 text-left">{demoError}</p>}
                 </div>
               )}
-              {userId && <button type="button" onClick={() => setPreferWallet(false)} className="w-full mt-3 text-center py-2 text-[12px] text-[#a8b3d8] hover:text-white transition-colors flex items-center justify-center gap-1.5"><Fingerprint size={12} /> Use Face ID instead</button>}
-            </>
-          )}
         </div>
         <ExtensionInstallHint variant="auth" />
         <p className="mt-8 text-[11px] leading-relaxed text-[#3e4a72] max-w-sm">AES-256-GCM · ed25519 wallet signatures · server never sees your key material</p>
