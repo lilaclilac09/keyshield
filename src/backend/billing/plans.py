@@ -394,7 +394,12 @@ def claim_device(
             conn.close()
         return snapshot(user_id)
 
-    assert_slot(user_id, level, extra=1)
+    # A just-stored passkey is already counted as an untagged personal seat
+    # by device_usage(); tagging it must not count it a second time.
+    already_counted = kind == "passkey" and level == "personal" and any(
+        str(c.get("id")) == ref_id for c in _passkeys(user_id)
+    )
+    assert_slot(user_id, level, extra=0 if already_counted else 1)
     conn = _db()
     try:
         conn.execute(

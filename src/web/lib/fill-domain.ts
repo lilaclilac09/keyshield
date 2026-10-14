@@ -87,7 +87,6 @@ const INPUT_UPSTREAM_HINTS: Array<{ re: RegExp; upstream: string }> = [
   { re: /\bhelius\b/, upstream: 'helius' },
   { re: /\bvercel\b/, upstream: 'vercel' },
   { re: /\bgithub\b|\bghp_|\bgithub_pat_/, upstream: 'github' },
-  { re: /\bkilo\b|\bbyok\b/, upstream: 'openrouter' },
 ];
 
 export function normalizeHostname(input: string): string {
@@ -324,7 +323,8 @@ export function preferredCursorFillKey(keys: FillKey[]): FillKey | null {
 }
 
 export function preferredKiloFillKey(keys: FillKey[]): FillKey | null {
-  const order = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor'];
+  // Kilo BYOK accepts Anthropic/OpenAI/NVIDIA keys, not OpenRouter (kilo.ai/docs/gateway/authentication).
+  const order = ['anthropic', 'openai', 'nvidia', 'groq', 'openrouter', 'cursor'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;

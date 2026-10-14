@@ -169,7 +169,22 @@ describe("pickKeyForInput", () => {
     expect(assigned[3]).toBeNull();
   });
 
-  it("pastes the saved OpenRouter key into Kilo BYOK API Key blanks", () => {
+  it("Kilo BYOK fills the provider picked in the dialog, never OpenRouter by default", () => {
+    const vault = [
+      { upstream: "openrouter", value: "sk-or-v1-LOCALONLY" },
+      { upstream: "anthropic", value: "sk-ant-LOCALONLY" },
+      { upstream: "openai", value: "sk-proj-LOCALONLY" },
+    ];
+    const kilo = { hostname: "app.kilo.ai", pathname: "/byok", inputType: "password" };
+    // content.js appends the selected provider (Radix combobox / <select>) to the haystack.
+    expect(pickKeyForInput("api key anthropic", vault, kilo)?.upstream).toBe("anthropic");
+    expect(pickKeyForInput("api key openai", vault, kilo)?.upstream).toBe("openai");
+    // Page/heading words are not a provider: "BYOK" used to force the OpenRouter key.
+    expect(pickKeyForInput("bring your own key (byok) api key", vault, kilo)?.upstream).toBe("anthropic");
+    expect(preferredKiloFillKey(vault)?.upstream).toBe("anthropic");
+  });
+
+  it("pastes a Kilo-supported key into Kilo BYOK API Key blanks", () => {
     expect(isKiloFillHost("app.kilo.ai")).toBe(true);
     expect(isKiloKeyFetchContext({ hostname: "app.kilo.ai", pathname: "/byok" })).toBe(true);
     expect(isKiloKeyFetchContext({ hostname: "evil.example", pathname: "/byok" })).toBe(false);
@@ -177,12 +192,12 @@ describe("pickKeyForInput", () => {
       hostname: "127.0.0.1",
       pathname: "/kilo-byok-fill-demo.html",
     })).toBe(true);
-    expect(preferredKiloFillKey(keys)?.upstream).toBe("openrouter");
+    expect(preferredKiloFillKey(keys)?.upstream).toBe("anthropic");
     expect(pickKeyForInput("API Key", keys, {
       hostname: "app.kilo.ai",
       pathname: "/byok",
       inputType: "password",
-    })?.value).toBe("sk-or-v1-LOCALONLY");
+    })?.value).toBe("sk-ant-api03-LOCALONLY");
     expect(pickKeyForInput("OpenRouter API Key", keys)?.upstream).toBe("openrouter");
     expect(looksLikeKiloApiBlank({
       haystack: "API Key",

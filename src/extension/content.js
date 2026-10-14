@@ -878,6 +878,28 @@ function ksAncestorHaystack(el) {
   return chunks.join(' ');
 }
 
+/** Kilo BYOK: the provider is picked in a <select> / Radix combobox next to the
+ *  key box, not in the key input's label. Read it so the matching vault key fills. */
+function ksKiloSelectedProvider(el) {
+  try {
+    const scope = (el.closest && el.closest('[role="dialog"], form')) || document;
+    const pickers = scope.querySelectorAll('select, [role="combobox"], button[aria-haspopup="listbox"]');
+    const out = [];
+    pickers.forEach((p) => {
+      if (p === el) return;
+      if (p.tagName === 'SELECT') {
+        const opt = p.options && p.options[p.selectedIndex];
+        if (opt) out.push(String(opt.textContent || ''));
+      } else {
+        out.push(String(p.textContent || p.getAttribute('aria-label') || ''));
+      }
+    });
+    return out.join(' ').slice(0, 160);
+  } catch {
+    return '';
+  }
+}
+
 function ksInputHaystack(el) {
   const name = (el.getAttribute('name') || '').toLowerCase();
   const ph   = (el.getAttribute('placeholder') || '').toLowerCase();
@@ -897,6 +919,7 @@ function ksInputHaystack(el) {
     label += ` ${prev.textContent || ''}`;
   }
   label += ` ${ksAncestorHaystack(el)}`;
+  if (ksIsKiloFillContext()) label += ` ${ksKiloSelectedProvider(el)}`;
   return `${name} ${ph} ${id} ${aria} ${label}`.toLowerCase();
 }
 
@@ -910,7 +933,7 @@ function ksMatchUpstreamForHaystack(hay) {
   if (/\bhelius\b/.test(hay)) return 'helius';
   if (/\bvercel\b/.test(hay)) return 'vercel';
   if (/\bgithub\b|\bghp_|\bgithub_pat_/.test(hay)) return 'github';
-  if (/\bkilo\b|\bbyok\b/.test(hay)) return 'openrouter';
+  // Kilo BYOK has no OpenRouter provider; the page name is not a provider hint.
   return null;
 }
 
@@ -935,7 +958,8 @@ function ksPreferredCursorFillKey(keys) {
 }
 
 function ksPreferredKiloFillKey(keys) {
-  const order = ['openrouter', 'nvidia', 'openai', 'anthropic', 'groq', 'cursor'];
+  // Kilo BYOK accepts Anthropic/OpenAI/NVIDIA keys, not OpenRouter (kilo.ai/docs/gateway/authentication).
+  const order = ['anthropic', 'openai', 'nvidia', 'groq', 'openrouter', 'cursor'];
   for (const upstream of order) {
     const hit = keys.find((k) => k.upstream === upstream && k.value);
     if (hit) return hit;
