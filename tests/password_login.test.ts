@@ -9,7 +9,10 @@ describe("password sign-in UI removed; helper kept", () => {
     expect(src).not.toContain('data-testid="password-login"');
     expect(src).not.toContain("registered password");
     expect(src).toContain('data-testid="passkey-signin"');
-    expect(src).toContain("Use a different wallet instead");
+    expect(src).toContain('data-testid="auth-card"');
+    expect(src).toContain('data-testid="passkey-signup"');
+    expect(src).toContain('<WalletConnector');
+    expect(src).not.toMatch(/type="password"/);
     expect(src).toContain("forgetDevice");
   });
 
