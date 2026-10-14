@@ -118,6 +118,7 @@ export type MppStreamPurchase = {
   stream_pda?: string | null;
   stream_usdc_ata?: string | null;
   total_calls?: number;
+  pending_micro_usdc?: number;
 };
 
 export type SolanaTopup = {
@@ -211,7 +212,13 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
   const settled = Number(stream.settled_micro_usdc || 0);
   const sig = String(stream.on_chain_signature || '').trim();
   const pda = String(stream.stream_pda || '').trim();
-  if (settled <= 0 && !sig) return null;
+  // A local agent's metered calls sit in pending until capture. Show them
+  // (labelled not settled) instead of hiding the agent's activity.
+  const pending = Number(stream.pending_micro_usdc || 0);
+  const calls = Number(stream.total_calls || 0);
+  if (settled <= 0 && !sig && pending <= 0 && calls <= 0) return null;
+  const pendingOnly = settled <= 0 && !sig;
+  const amount = pendingOnly ? pending : settled;
   const explorer: ExplorerLink[] = [];
   if (sig) explorer.push({ label: `Settle ${shortSig(sig)}`, href: explorerTx(sig) });
   if (pda) explorer.push({ label: `Stream ${shortSig(pda)}`, href: explorerAddress(pda) });
@@ -225,12 +232,16 @@ export function purchaseFromMppStream(stream: MppStreamPurchase): PurchaseRow | 
     kind: 'on-chain-mpp',
     category: ON_CHAIN_CATEGORY,
     title: name,
-    amountLabel: `${formatMicroUsdc(settled)} USDC`,
-    amountUsd: settled / 1_000_000,
-    sizeLabel: `${formatMicroUsdc(settled)} USDC`,
+    amountLabel: `${formatMicroUsdc(amount)} USDC${pendingOnly ? ' pending' : ''}`,
+    amountUsd: amount / 1_000_000,
+    sizeLabel: `${formatMicroUsdc(amount)} USDC${pendingOnly ? ' pending' : ''}`,
     // Only a stream with an on-chain settle signature is on-chain; otherwise it
     // was settled in the local ledger only.
-    txType: sig ? 'On-chain MPP stream' : 'Local MPP stream (not on-chain)',
+    txType: sig
+      ? 'On-chain MPP stream'
+      : pendingOnly
+        ? 'Local MPP stream · pending (not settled, not on-chain)'
+        : 'Local MPP stream (not on-chain)',
     rail: 'solana-mpp',
     railLabel: sig ? railLabel('solana-mpp') : 'Local ledger · MPP (not on-chain)',
     portal: sig ? portalLabel('solana-mpp') : 'Local ledger · MPP portal (not on-chain)',
@@ -494,9 +505,11 @@ export function groupPurchasesByWallet(
     list.push(row);
     map.set(key, list);
   }
-  return [...map.entries()].map(([walletAddress, rows]) => ({
-    walletAddress,
-    walletLabel: rows[0]?.walletLabel || shortWallet(walletAddress),
+  // walletAddress is the real address only. Keying by label used to echo
+  // it as "Ledger · no chain wallet · Ledger · no chain wallet".
+  return [...map.entries()].map(([key, rows]) => ({
+    walletAddress: rows[0]?.walletAddress || '',
+    walletLabel: rows[0]?.walletLabel || shortWallet(key),
     items: rows,
   }));
 }
