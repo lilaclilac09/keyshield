@@ -36,21 +36,9 @@
 
 ---
 
-KeyShield is **your API iCloud Keychain**: store provider credentials in a vault you control, then give agents a session token instead of the raw `sk-` / `gsk_` key. That is a product analogy. It is not Apple Keychain, not iCloud sync, and not an Apple affiliation.
+Dashboard for humans. SDK and CLI for agents. Same vault. Latency numbers stay unpublished until a named environment is measured.
 
-Dashboard for humans. SDK & CLI for agents. Same vault underneath. Extremely low latency is the engineering target; do not publish “instant”, “under 50ms”, or “50–80ms” until the named environment is measured.
-
-### Business scope
-
-Three layers. Two meters. Seats are not calls.
-
-| Layer | What it is | What you get |
-|---|---|---|
-| **Free** | Passkey auto-collection + save in the vault | Face ID / Touch ID enrolls the device. Secrets encrypt on-device (WebAuthn-PRF → AES-GCM). Server stores ciphertext only. Agent calls are **pay-as-you-go**. |
-| **Plugin** (paid 1) | Auto plugins + biometric ZK verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device; the server never sees the raw key. $20/mo included, then PAYG. |
-| **Accelerate** (paid 2) | Acceleration + extreme-low-latency *target* | RPC cache, batch, parallel quote+analyze, Groq-class urgent path. $100/mo included, then PAYG. Fleet seats. Latency numbers are not published until measured. |
-
-**Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
+Plans (Free / Plugin / Accelerate, subscription + PAYG): [§4](#4-plans--business-scope). In the app: **Payments → Plans**.
 
 **Start here:** [How to use this](#how-to-use-this) · [Chrome extension Sign in](#chrome-extension-sign-in) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
 
@@ -181,15 +169,6 @@ Not three copies of the same laptop — three different jobs:
 | Runtime / agent host | CI box, bot, headless agent | Session token only — never `sk-` / `gsk_` |
 
 Seats are plan-gated (`402 plan_limit` when a level is full). Extra proxy calls still use `POST /billing/topup` and MPP — they do not consume a device seat. Downgrade is blocked (`409`) while you hold more seats than the cheaper plan allows.
-
-```
-Free          collect passkeys + save vault
-              └── PAYG for every agent call
-Plugin        + auto-plugin + biometric ZK
-              └── $20 included, then PAYG
-Accelerate    + cache / batch / low latency
-              └── $100 included, then PAYG
-```
 
 ---
 
@@ -479,43 +458,7 @@ hardware-anchored session sandbox.
   measured `/mpp/status` path — the hop the agent does *not* pay after the
   first handshake.
 
-### Same vault. Two interfaces.
-
-**For you** — Dashboard + Chrome extension. Add keys, rotate, see usage, share with teammates (scoped, revocable).
-
-**For your agent** — Python SDK / CLI / REST API. Agent gets a session token, never the raw key. Spending cap enforced on-chain. Kill switch from your dashboard.
-
-```python
-from keyshield import KeyShield
-
-ks = KeyShield(token=os.environ["KS_TOKEN"])
-client = ks.openai_client()   # zero raw keys
-```
-
----
-
-## Quickstart
-
-```bash
-# 1. start the stack
-node dev.cjs
-
-# 2. open the vault UI
-open http://localhost:5173
-
-# 3. connect wallet → store a provider key → copy Developer token
-
-# 4. call an upstream via the proxy
-export KS_TOKEN="<paste from Developer>"
-export KS_BASE="http://localhost:8001"
-
-curl -s -X POST "$KS_BASE/proxy/openai/v1/chat/completions" \
-  -H "Authorization: Bearer $KS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
-```
-
-→ Full setup: [DEVELOPMENT.md](DEVELOPMENT.md)
+Humans use the dashboard and Chrome extension. Agents use the SDK / CLI snippet in [How to use this](#how-to-use-this). Full setup: [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Repository index
 
