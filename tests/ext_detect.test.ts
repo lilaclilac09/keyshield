@@ -314,6 +314,12 @@ describe("formatDetectReadyLine", () => {
     expect(installLocal).toContain("/Users/aileen/Downloads/privacy_hack/keyshield");
     expect(installLocal).toContain("print(m['name'])");
     expect(installLocal).toContain("print(m['version'])");
+    expect(installLocal).toContain("python3 - <<'PY'");
+    expect(installLocal).toContain("READY 1.2.5");
+    expect(installLocal).toContain("LOAD UNPACKED ONLY");
+    expect(installLocal).toContain("toolbar then:");
+    expect(installLocal).not.toContain("eval $(");
+    expect(installLocal).not.toContain("python3 -c");
     expect(installLocal).toContain("Remove every KeyShield card");
     expect(installLocal).toContain("ok 1.2.5 <all_urls>");
   });

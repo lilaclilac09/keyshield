@@ -84,6 +84,9 @@ function extensionReport() {
     sessionAuto: popup.includes("ks_auto_store"),
     installHasMacPath: install.includes("/Users/aileen/Downloads/privacy_hack/keyshield"),
     installHasThreeLinePrint: install.includes("print(m['name'])") && install.includes("print(m['version'])"),
+    installHasHeredoc: install.includes("python3 - <<'PY'") && !install.includes("eval $("),
+    macReady: read("scripts/mac_ready.py").includes('WANT_VER = "1.2.5"')
+      && read("scripts/mac_ready.py").includes("READY {WANT_VER}"),
     macClone: "/Users/aileen/Downloads/privacy_hack/keyshield",
     loadUnpacked:
       leftover
@@ -253,6 +256,8 @@ try {
     && ext.sessionAuto
     && ext.installHasMacPath
     && ext.installHasThreeLinePrint
+    && ext.installHasHeredoc
+    && ext.macReady
     && ext.htmlReady,
   );
   const rpcOk = health1.ok && health2.ok && slot1.ok && bal1.ok && cache.ok;

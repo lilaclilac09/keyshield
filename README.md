@@ -113,23 +113,18 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 ### Chrome extension Sign in
 
-| You are using | Popup Settings → Dashboard URL | Why |
-|---|---|---|
-| Hosted login | `https://app.ks.aileena.xyz` (**Sign-in**) | Live vault. Not `ks.app.aileena.xyz` |
-| `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
-| `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
+Seeing **KeyShield — Sovereign Vault / 1.2.5** on the Chrome card is not
+enough. The old cwd-relative one-liner fails from `$HOME`. Paste the
+`python3 - <<'PY'` block in `src/extension/INSTALL-LOCAL.md` from any
+directory (works from `~`). No `cd`. No `git pull`. No `eval`. No `$(...)`.
 
-Print from that clone (do not paste HTML into zsh; do not `eval`):
+Must print `KeyShield — Sovereign Vault` then `1.2.5` then that
+`src/extension` path then `READY 1.2.5`. Line 2 is the Chrome card version.
+`toolbar then: ok 1.2.5` is after Load unpacked — ignore it if line 2 is `1.2.4`.
+The leftover patch writes `1.2.4` onto `src/extension`. The paste block writes
+`1.2.5` back. Load unpacked **only** that folder.
 
-```
-cd /Users/aileen/Downloads/privacy_hack/keyshield
-git pull origin main
-python3 -c "import json, os; m=json.load(open('src/extension/manifest.json')); print(m['name']); print(m['version']); print(os.path.abspath('src/extension'))"
-```
-
-Must print `KeyShield — Sovereign Vault` then `1.2.5` then that `src/extension` path. If it still prints `1.2.4`, you loaded leftover files.
-
-Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
+Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Chrome card must say **1.2.5**. If it still says **1.2.4**, you loaded leftover. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
 
 ### 3. Pay for a stream (optional)
 
