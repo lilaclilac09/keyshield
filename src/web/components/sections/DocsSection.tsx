@@ -160,7 +160,8 @@ export const DocsSection: React.FC = () => {
           ['AES-256-GCM', 'Authenticated encryption \u2014 tampering with ciphertext fails decryption loudly'],
           ['PBKDF2-HMAC-SHA256', '100k iterations to derive the encryption key from your passphrase'],
           ['ed25519 challenges', 'Wallet + agent auth signed with curve25519, replay-protected by 5-min nonces'],
-          ['Zero-knowledge', 'Server never sees your key material or passphrase in plaintext'],
+          ['Zero-knowledge (Device Vault, ZK mode)', 'Server stores only ciphertext. The default hosted vault behind /vproxy keeps a server-readable copy (not ZK)'],
+          ['Proxy-only agent tokens', 'Agent and developer tokens get 403 on vault, decrypt and management routes'],
         ].map(([t, d]) => (
           <div key={t} className="flex items-start gap-3 px-4 py-3 rounded-lg bg-[#131c39] border border-[#243365]/50">
             <Badge variant="success" className="shrink-0 mt-0.5">{t}</Badge>

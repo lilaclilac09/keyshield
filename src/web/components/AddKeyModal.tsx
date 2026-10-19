@@ -139,7 +139,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           {saveError && <div className="px-3 py-2 rounded-lg bg-red-950/30 border border-red-900/50"><p className="text-[12px] text-red-400">{saveError}</p></div>}
 
           <div className="pt-3 flex items-center justify-between border-t border-[#243365]/50">
-            <span className="text-[11px] text-[#5e6a91]">AES-256-GCM · zero-knowledge</span>
+            <span className="text-[11px] text-[#5e6a91]" title="Without ZK mode the hosted vault keeps a server-readable copy so the hosted proxy can use it">Hosted vault · zero-knowledge only with ZK mode</span>
             <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] text-[#a8b3d8] hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
               <button type="submit" disabled={busy} className="px-5 py-2 rounded-lg bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-[#5e6a91] text-black text-[13px] font-semibold uppercase tracking-wider transition-colors">{busy ? 'Encrypting\u2026' : 'Save Secret'}</button>
             </div>

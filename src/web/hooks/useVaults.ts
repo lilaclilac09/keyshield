@@ -22,6 +22,7 @@ import {
   VAULT_CHANGED_EVENT,
   type PendingVaultHit,
 } from '../lib/vault-list';
+import { revealZkItem, storeZkItem } from '../lib/zk';
 import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
@@ -224,8 +225,14 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         }),
       });
       if (!stored.ok) {
-        const err = await stored.json().catch(() => ({ detail: 'store failed' }));
-        throw new Error((err as { detail?: string }).detail ?? 'store failed');
+        const err = (await stored.json().catch(() => ({ detail: 'store failed' }))) as { detail?: string; error?: string };
+        if (stored.status === 409 && err.error === 'zk_mode') {
+          // ZK mode on: plaintext is refused, so encrypt here and save ciphertext.
+          await storeZkItem(upstream, rawKey, vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }));
+          refresh();
+          return;
+        }
+        throw new Error(err.detail ?? 'store failed');
       }
       refresh();
     },
@@ -252,6 +259,10 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
     const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
+    if (r.status === 409) {
+      const body = (await r.clone().json().catch(() => ({}))) as { error?: string };
+      if (body.error === 'zk_item') return revealZkItem(id);
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: 'decrypt failed' }));
       throw new Error((err as { detail?: string; code?: string }).detail ?? 'Save the API key again');

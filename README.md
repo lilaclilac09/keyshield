@@ -46,8 +46,8 @@ Three layers. Two meters. Seats are not calls.
 
 | Layer | What it is | What you get |
 |---|---|---|
-| **Free** | Passkey auto-collection + save in the vault | Face ID / Touch ID enrolls the device. Secrets encrypt on-device (WebAuthn-PRF → AES-GCM). Server stores ciphertext only. Agent calls are **pay-as-you-go**. |
-| **Plugin** (paid 1) | Auto plugins + biometric ZK verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device; the server never sees the raw key. $20/mo included, then PAYG. |
+| **Free** | Passkey auto-collection + save in the vault | Face ID / Touch ID enrolls the device. Device Vault secrets encrypt on-device (WebAuthn-PRF → AES-GCM) and the server stores ciphertext only. Extension saves are server-readable unless [ZK mode](#what-is-and-isnt-zero-knowledge) is on. Agent calls are **pay-as-you-go**. |
+| **Plugin** (paid 1) | Auto plugins + biometric passkey verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device. The key passes through the hosted proxy for that request, so this path is not zero-knowledge; use ZK mode + `keyshield-proxy` for that. $20/mo included, then PAYG. |
 | **Accelerate** (paid 2) | Acceleration + extreme-low-latency *target* | RPC cache, batch, parallel quote+analyze, Groq-class urgent path. $100/mo included, then PAYG. Fleet seats. Latency numbers are not published until measured. |
 
 **Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
@@ -59,7 +59,7 @@ Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repo
 ## How to use this
 
 Two interfaces, one vault. Humans use the dashboard. Agents hold a
-session token and never see `sk-` / `gsk_` material.
+proxy-only session token and never see `sk-` / `gsk_` material.
 
 ### 1. Start the stack
 
@@ -164,8 +164,8 @@ That is why we go with **subscription and pay-as-you-go together**. Subscription
 
 | Layer | Plan id | What you get | Devices |
 |---|---|---|---|
-| **Free** | `starter` · $0 | Passkey **auto-collection** and **save in the vault**. Path A: WebAuthn-PRF → HKDF → AES-GCM. Server stores ciphertext only. | 1 personal · 0 companion · 1 runtime |
-| **Plugin** (paid 1) | `pro` · $12/mo | **Auto plugins** (SDK/CLI inject `X-Upstream-API-Key`) and **biometric ZK verify** (passkey PRF proves the device; server never sees the raw key). $20 included proxy budget, then PAYG. | 1 personal · 1 companion · 1 runtime |
+| **Free** | `starter` · $0 | Passkey **auto-collection** and **save in the vault**. Path A (Device Vault): WebAuthn-PRF → HKDF → AES-GCM, server stores ciphertext only. Hosted-vault saves are server-readable unless ZK mode is on. | 1 personal · 0 companion · 1 runtime |
+| **Plugin** (paid 1) | `pro` · $12/mo | **Auto plugins** (SDK/CLI inject `X-Upstream-API-Key`) and **biometric passkey verify** (passkey PRF proves the device; the key passes through the hosted proxy per request, not ZK). $20 included proxy budget, then PAYG. | 1 personal · 1 companion · 1 runtime |
 | **Accelerate** (paid 2) | `accelerate` · $49/mo | **Acceleration** and **extreme low latency**: Helius RPC cache, batch RPC, parallel quote + analyze, Groq urgent path. $100 included, then PAYG. Fleet seats. | 3 personal · 3 companion · 10 runtime |
 
 Open **Payments → Plans** (or **Settings**). Switching is `POST /billing/plan` `{ "plan_id": "pro" }`. Catalog is public: `GET /billing/plans`.
@@ -185,13 +185,32 @@ Seats are plan-gated (`402 plan_limit` when a level is full). Extra proxy calls 
 ```
 Free          collect passkeys + save vault
               └── PAYG for every agent call
-Plugin        + auto-plugin + biometric ZK
+Plugin        + auto-plugin + biometric verify
               └── $20 included, then PAYG
 Accelerate    + cache / batch / low latency
               └── $100 included, then PAYG
 ```
 
 ---
+
+## What is and isn't zero-knowledge
+
+| Path | Can the KeyShield server read your key? |
+|---|---|
+| **Device Vault** (passkey PRF, sync worker) | No. Ciphertext only. |
+| **ZK mode** (opt-in, Device Vault → ZK mode) | No. The extension encrypts before saving; the server keeps ciphertext plus a per-key share it can refuse to release. Keys are injected on your machine by the extension or `keyshield-proxy`. |
+| **Hosted vault + hosted `/vproxy`** (default for extension saves) | **Yes, not ZK.** The server stores the key so the hosted proxy can inject it. |
+| **`/proxy` with `X-Upstream-API-Key`** | The key passes through the hosted proxy for that request. Not ZK. |
+
+**Agent tokens are proxy-only.** Agent sign-in (`/auth/agent-login`) and developer tokens (Developer → *Agent token*, `POST /sessions/proxy-token`) carry `scope: proxy`. They can call the proxy and fetch ZK shares, and get `403 insufficient_scope` on vault, decrypt, sessions and other management routes. Only a passkey or wallet sign-in gets an `owner` token. See [docs/API.md](docs/API.md#token-scopes).
+
+**Using ZK mode**
+
+1. Dashboard → Device Vault → unlock with your passkey → **ZK mode → Turn on**. This hands the passkey-derived key to the extension; it never goes to the server.
+2. **Re-save older keys in ZK mode** (one button), then **rotate those keys at each provider**: the old copies were readable on the server, and backups made before the purge may still hold them.
+3. For agents: `pip install "keyshield[zk] @ git+https://github.com/lilaclilac09/keyshield.git#subdirectory=packages/sdk-py"` (details in [packages/sdk-py](packages/sdk-py/README.md#zk-mode-keyshield-proxy-local-zero-knowledge)), then `keyshield-proxy enroll` (paste the `ksz1.` unlock code from the ZK mode card) and `keyshield-proxy run`. Point the agent at the local base URL it prints. Revoking the proxy's `KS_TOKEN` stops new unlocks within 60 s.
+
+Limits: ZK keys can't use the hosted proxy or its guardrails, the server still sees metadata (provider, item ids, timing), and code served by the dashboard could in principle read the derived key while the vault is unlocked. Spec: [docs/zk/ZK-MODE.md](docs/zk/ZK-MODE.md).
 
 ## How agents register
 
@@ -376,17 +395,18 @@ Vault to the same key.
 | | What you get |
 |---|---|
 | **Smoother** | Browser extension auto-detects API keys on any page (OpenAI, Anthropic, Helius, …) and captures them in one tap. Dashboard for rotation — every project picks up the new ciphertext. No more `.env` copy-paste loops. |
-| **Self-custody** | AES-256-GCM encryption happens in your browser via WebAuthn PRF / wallet signature → HKDF. Our server only stores ciphertext — we **physically cannot** read your keys. Same *kind* of zero-knowledge storage as a password manager, built for API secrets (analogy, not Apple). |
+| **Self-custody** | In the Device Vault and in opt-in ZK mode, AES-256-GCM encryption happens on your device via WebAuthn PRF / wallet signature → HKDF, and our server only stores ciphertext, so it can't read those keys. Same *kind* of zero-knowledge storage as a password manager, built for API secrets (analogy, not Apple). The default hosted vault behind `/vproxy` is **not** ZK. See [What is and isn't zero-knowledge](#what-is-and-isnt-zero-knowledge). |
 | **Faster when cached** | Rust proxy has a two-tier cache (memory + disk) and single-flight dedup: 50 identical `getBalance` calls hit the network once. That is the design. **Latency numbers are an engineering target.** A 2026-10-05 loopback mock audit of Python `/proxy` (0 ms fake upstream, concurrency 1) measured ~13 ms p50 end-to-end including usage logging — not production WAN, not a real model, not the Rust Helius cache. Do not quote 50–80 ms as a product claim until that path is measured in a named environment. |
 
 ### Architecture
 
 KeyShield is a **non-custodial session-key sandbox for agent commerce**.
-The human (or the agent's operator) encrypts provider keys on-device
-(WebAuthn-PRF → HKDF → AES-256-GCM). The Cloudflare sync-worker stores
-ciphertext only. At request time the client decrypts locally, the
-Python proxy injects `X-Upstream-API-Key` once, and the key is never
-persisted. The agent process holds a session token (HMAC `payload.sig`;
+In the Device Vault, the human (or the agent's operator) encrypts provider
+keys on-device (WebAuthn-PRF → HKDF → AES-256-GCM) and the Cloudflare
+sync-worker stores ciphertext only. At request time the client decrypts
+locally and the Python proxy injects `X-Upstream-API-Key` once, without
+persisting it. Keys in the default hosted vault are stored server-side so
+`/vproxy` can inject them (not ZK); ZK-mode keys are injected locally. The agent process holds a session token (HMAC `payload.sig`;
 demo/harness tokens may look like `ksv2_…`), not `sk-` / `gsk_` material.
 
 The on-chain program is **pinocchio**, not Anchor. Instruction handlers

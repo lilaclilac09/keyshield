@@ -670,7 +670,7 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
             <div class="ag-app">
               <div class="ag-tabs"><span class="on">Developer</span><span>Sessions</span><span>Agents</span></div>
               <div class="ag-block">
-                <small>Session token</small>
+                <small>Agent token (proxy-only)</small>
                 <div class="ag-tok"><span class="mono">ks_demo_••••••••c81d</span><span class="ag-copy" data-t="copy">Copy</span></div>
               </div>
               <div class="ag-block">
@@ -862,11 +862,11 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
     </div>
     <div class="feats">
       <article class="feat rv"><span class="label">01 · Capture</span><h3>Keys saved the moment you create them</h3><p>The Chrome extension spots key shapes for OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Groq, Helius and more, and saves them with one click. Then it fills them into Cursor, Kilo or NVIDIA settings.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/tree/main/src/extension">src/extension →</a></article>
-      <article class="feat rv"><span class="label">02 · Tokens</span><h3>Scoped session tokens</h3><p>Agents get a bearer token scoped to a provider, with an expiry. The raw <code>sk-</code> key never enters the agent's process.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#4-session-token">SPEC.md §4 →</a></article>
-      <article class="feat rv"><span class="label">03 · Revocation</span><h3>Revoked on the next request</h3><p>Tokens are checked on every proxy call, with no cache window. Revoke from the dashboard, the API or Claude, and the next call fails.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#7-revocation">SPEC.md §7 →</a></article>
+      <article class="feat rv"><span class="label">02 · Tokens</span><h3>Proxy-only agent tokens</h3><p>Agents get a bearer token with an expiry that can only call the proxy. Vault, decrypt and management routes answer <code>403</code> to it. The raw <code>sk-</code> key never enters the agent's process.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#4-session-token">SPEC.md §4 →</a></article>
+      <article class="feat rv"><span class="label">03 · Revocation</span><h3>Revoked on the next request</h3><p>The hosted proxy checks tokens on every call, with no cache window. In ZK mode, local unlocks stop within 60 s. Revoke from the dashboard, the API or Claude, and the next call fails.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#7-revocation">SPEC.md §7 →</a></article>
       <article class="feat rv"><span class="label">04 · Agents</span><h3>Agents sign in by themselves</h3><p>Register an agent's ed25519 public key. It signs a server challenge to get its own token, and the server never stores its private key.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/README.md#how-agents-register">How agents register →</a></article>
       <article class="feat rv"><span class="label">05 · Proxy</span><h3>Drop-in for existing clients</h3><p>Proxy paths for OpenAI, Anthropic, OpenRouter, Groq, Mistral, Cohere and Helius. Change the base URL and the code stays the same.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/docs/API.md">docs/API.md →</a></article>
-      <article class="feat rv"><span class="label">06 · Encryption</span><h3>A Device Vault on your device</h3><p>Passkey PRF output goes through HKDF-SHA256 to an AES-256-GCM key that can't be exported. The sync server stores only ciphertext. MCP server, Python SDK and CLI are in the repo too.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#3-vault-encryption-model">SPEC.md §3 →</a></article>
+      <article class="feat rv"><span class="label">06 · Encryption</span><h3>A Device Vault on your device</h3><p>Passkey PRF output goes through HKDF-SHA256 to an AES-256-GCM key that can't be exported. The sync server stores only ciphertext. Opt-in ZK mode does the same for extension-saved keys. MCP server, Python SDK and CLI are in the repo too.</p><a class="src" href="https://github.com/lilaclilac09/keyshield/blob/main/SPEC.md#3-vault-encryption-model">SPEC.md §3 →</a></article>
     </div>
     <p class="more rv"><a class="link" href="https://github.com/lilaclilac09/keyshield#readme">Also in the repo: a read-only RPC cache, scoped sharing, and pay-per-call on Solana devnet <span class="ar">→</span></a></p>
   </div>
@@ -878,15 +878,16 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
       <div class="head rv">
         <div class="label">Security model</div>
         <h2>What each part <em>can see.</em></h2>
-        <p class="lede">Agents never see your keys. This is exactly where each copy lives, including the one on the server.</p>
+        <p class="lede">Agents never see your keys. This is exactly where each copy lives, including the one on the server. Only the Device Vault and ZK mode are zero-knowledge.</p>
       </div>
       <div>
         <dl class="ledger rv">
           <div><dt>Your device</dt><dd><b>The plaintext key</b>The Device Vault encrypts it locally with WebAuthn PRF → HKDF-SHA256 → AES-256-GCM.</dd></div>
           <div><dt>Device Vault sync</dt><dd><b>Ciphertext only</b>The sync worker stores <code>{ ciphertext, nonce, tag }</code>. Without your device credential it can't decrypt them.</dd></div>
-          <div><dt>Hosted vault</dt><dd><b>A server-side copy</b>Keys saved by the extension or on the Vault page go to the control API (<code>/manage/store</code>), so <code>/vproxy</code> can add them to calls. Whoever runs that server can read them. Self-host to keep it on yours, or call <code>/proxy</code> and send the key from your device in <code>X-Upstream-API-Key</code>.</dd></div>
-          <div><dt>Agent process</dt><dd><b>A session token</b>No <code>sk-</code>, <code>sk-ant-</code> or <code>gsk_</code> material. Each token can be revoked on its own.</dd></div>
-          <div><dt>Proxy</dt><dd><b>The key, for one request</b>Checks the token and revocation, adds the key, forwards the call, and never hands the key back to the agent.</dd></div>
+          <div><dt>Hosted vault</dt><dd><b>A server-side copy (not ZK)</b>By default, keys saved by the extension or on the Vault page go to the control API (<code>/manage/store</code>), so the hosted <code>/vproxy</code> can add them to calls. Whoever runs that server can read them. Turn on ZK mode, self-host, or call <code>/proxy</code> and send the key from your device in <code>X-Upstream-API-Key</code>.</dd></div>
+          <div><dt>ZK mode (opt-in)</dt><dd><b>Ciphertext and a share</b>The extension encrypts each key on your device with a passkey-derived key before saving. The server keeps the ciphertext and a per-key share. Keys are unlocked and injected on your machine by the extension or <code>keyshield-proxy</code>, never by the hosted proxy. Revoke a token and the server stops releasing shares, within a cache of at most 60 s.</dd></div>
+          <div><dt>Agent process</dt><dd><b>A proxy-only token</b>No <code>sk-</code>, <code>sk-ant-</code> or <code>gsk_</code> material, and no access to vault or decrypt routes. Each token can be revoked on its own.</dd></div>
+          <div><dt>Hosted proxy (not ZK)</dt><dd><b>The key, for one request</b>Checks the token and revocation, adds the key, forwards the call, and never hands the key back to the agent.</dd></div>
           <div><dt>Provider</dt><dd><b>A normal API call</b>Made with your key. Nothing about the provider's API changes.</dd></div>
           <div><dt>Guardrails</dt><dd><b>Limits on runaway agents</b>Per-session spend caps per second and per minute. Repeated empty or 5xx upstream responses freeze the session. Sign-in routes are rate-limited, and every proxy path needs a valid session.</dd></div>
         </dl>
@@ -897,7 +898,8 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
         <div class="limits rv">
           <div class="label">Known limits</div>
           <ul>
-            <li>Keys saved through the extension or <code>/manage/store</code> are stored server-side, not end-to-end encrypted. Self-host if you don't want them on a hosted server.</li>
+            <li>Without ZK mode, keys saved through the extension or <code>/manage/store</code> are stored server-side, not end-to-end encrypted. Turn on ZK mode or self-host if you don't want them on a hosted server. Keys saved before ZK mode was on should be re-saved and then rotated at the provider.</li>
+            <li>ZK mode keys can't use the hosted proxy or its guardrails. They're injected locally, and the server still sees metadata such as provider names and call times. Code served by the dashboard could in principle read the passkey-derived key while the vault is unlocked.</li>
             <li>KeyShield only protects calls that go through the proxy. It can't add a key to a binary that never calls it.</li>
             <li>The decrypted key is in the proxy's memory while it handles a request. <code>secrecy</code>/<code>zeroize</code> hardening is planned, not yet a dependency.</li>
             <li>On-chain metering runs on Solana devnet only. The spec is v0.1 and the SDK is alpha.</li>
@@ -917,7 +919,7 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
       <ol>
         <li><div><b>Open the app</b>Sign in at <a href="https://app.ks.aileena.xyz">app.ks.aileena.xyz</a> with a passkey, or <a href="https://github.com/lilaclilac09/keyshield/blob/main/DEVELOPMENT.md">run it yourself</a>.</div></li>
         <li><div><b>Save a provider key</b>Add an OpenRouter key under Vault. Its <code>:free</code> models cost nothing.</div></li>
-        <li><div><b>Copy your token</b>Open Developer, copy the session token and set it as <code>KS_TOKEN</code>.</div></li>
+        <li><div><b>Create an agent token</b>Open Developer, create a proxy-only agent token and set it as <code>KS_TOKEN</code>. With ZK mode, run <code>keyshield-proxy</code> and point <code>KS_BASE</code> at it instead.</div></li>
         <li><div><b>Make the call</b>Use any snippet here. Your code only ever holds <code>KS_TOKEN</code>.</div></li>
       </ol>
     </div>
@@ -990,7 +992,7 @@ node dev.cjs
       <h2 style="margin-top:22px">Questions people <em>ask first.</em></h2>
     </div>
     <div class="rv">
-      <details><summary>Can KeyShield read my API keys?<i></i></summary><div class="a"><p>That depends on which vault holds them. Keys in the Device Vault are encrypted on your device, and the sync server stores only ciphertext. Keys saved through the extension or the Vault page go to the control API so the proxy can add them to calls, so whoever runs that server can read them. On the hosted instance, that's KeyShield.</p><p>If you don't want that, self-host the stack, or call <code>/proxy</code> and send the key from your device with each request in <code>X-Upstream-API-Key</code>. Either way, the proxy never passes the key to the agent.</p></div></details>
+      <details><summary>Can KeyShield read my API keys?<i></i></summary><div class="a"><p>That depends on which vault holds them. Keys in the Device Vault are encrypted on your device, and the sync server stores only ciphertext. By default, keys saved through the extension or the Vault page go to the control API so the hosted proxy can add them to calls, so whoever runs that server can read them. On the hosted instance, that's KeyShield. That path is not zero-knowledge.</p><p>If you don't want that, turn on ZK mode in Device Vault: the extension encrypts keys before saving, and the extension or <code>keyshield-proxy</code> on your machine injects them. You can also self-host the stack, or call <code>/proxy</code> and send the key from your device with each request in <code>X-Upstream-API-Key</code>. Either way, the proxy never passes the key to the agent.</p></div></details>
       <details><summary>Is it free?<i></i></summary><div class="a"><p>Yes. KeyShield is open source under the MIT license, and you can run the whole stack on your own machine or servers. You still pay your model providers as usual. Their free tiers, like OpenRouter's <code>:free</code> models, work through KeyShield.</p></div></details>
       <details><summary>What happens if an agent leaks its token?<i></i></summary><div class="a"><p>Revoke it under Sessions or Agents, through <code>POST /sessions/{prefix}/revoke</code> or <code>DELETE /agents/{id}</code>, or ask Claude through the MCP server. The token stops working on its next request. Your provider key and your other agents keep working, because the leaked token never contained the key.</p></div></details>
       <details><summary>Which providers and clients work?<i></i></summary><div class="a"><p>There are proxy paths for OpenAI, Anthropic, OpenRouter, Groq, Mistral, Cohere and Helius (Solana RPC). Any client that takes a base URL and a bearer token works, including the OpenAI SDK, LangChain, CrewAI, AutoGen and the Vercel AI SDK. Streaming responses pass through as SSE.</p></div></details>
@@ -1134,7 +1136,7 @@ node dev.cjs
 
   // 04 connect an agent with a token
   chapter();
-  step(1100,function(){ext.classList.remove('press');nav('app.ks.aileena.xyz','/developer','agent');ptr.classList.remove('on');q('term').innerHTML='';say('For your own agent, open Developer in the dashboard and copy a session token. That token is all the agent holds.')});
+  step(1100,function(){ext.classList.remove('press');nav('app.ks.aileena.xyz','/developer','agent');ptr.classList.remove('on');q('term').innerHTML='';say('For your own agent, open Developer in the dashboard and copy an agent token. It is proxy-only: it can make calls, but it can\u2019t read the vault.')});
   step(600,function(){at(q('copy'))});
   step(900,function(){click(q('copy'));q('copy').classList.add('done');q('copy').textContent='Copied'});
   step(800,function(){term('<span class="p">$</span> export KS_TOKEN=<span class="s">ks_demo_••••••••c81d</span>')});

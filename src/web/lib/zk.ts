@@ -195,3 +195,31 @@ export async function migratePlaintextToZk(
   if (failed === 0) await apiFetch('/zk/purge-plaintext', { method: 'POST', body: '{}' });
   return { moved, failed };
 }
+
+/** Decrypt one ZK row in this browser (vault unlocked). */
+export async function revealZkItem(id: string): Promise<string> {
+  const root = getZkRoot();
+  if (!root) throw new Error('Unlock Device Vault with your passkey to reveal ZK keys');
+  const [itemsRes, shareRes] = await Promise.all([
+    apiFetch('/zk/items'),
+    apiFetch(`/zk/share/${encodeURIComponent(id)}`),
+  ]);
+  if (!itemsRes.ok || !shareRes.ok) throw new Error('ZK key unavailable (revoked or deleted)');
+  const { items } = (await itemsRes.json()) as { items: Array<{ id: string; upstream: string; iv: string; cipher: string }> };
+  const item = items.find((it) => it.id === id);
+  if (!item) throw new Error('ZK key not found');
+  const { share } = (await shareRes.json()) as { share: string };
+  return openZk(root, unb64u(share), item);
+}
+
+/** Save a key as a ZK row (ZK mode on, vault unlocked). */
+export async function storeZkItem(upstream: string, value: string, name?: string): Promise<void> {
+  const root = getZkRoot();
+  if (!root) throw new Error('ZK mode is on: unlock Device Vault with your passkey to save keys');
+  const body = await sealZk(root, upstream, value, name);
+  const r = await apiFetch('/manage/store', { method: 'POST', body: JSON.stringify(body) });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? `store failed (${r.status})`);
+  }
+}
