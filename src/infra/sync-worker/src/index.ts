@@ -37,6 +37,7 @@ import {
   writeRegistrationOnce,
 } from './registry';
 import { verifyAuthentication, verifyRegistration, bytesToBase64 } from './webauthn';
+import { AUTH_PERIOD_SECS, allowAuthRequest, clientIp, type RateLimitBinding } from './ratelimit';
 
 function base64UrlToBytes(b64url: string): Uint8Array {
   const padded =
@@ -56,7 +57,12 @@ export interface Env {
   MAX_VAULT_BYTES: string;
   RP_ID?: string;
   RP_ORIGIN?: string;
+  /** Workers Rate Limiting binding for the public /auth/* POSTs (wrangler.toml). */
+  AUTH_RATE_LIMITER?: RateLimitBinding;
 }
+
+/** HS256 needs a long secret. Refuse to sign or verify with a missing/short one. */
+const MIN_JWT_SECRET_LEN = 32;
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -85,6 +91,33 @@ app.use(
     maxAge: 600,
   }),
 );
+
+// --------------------------------------------------------------------
+// Fail closed when JWT_SECRET was never set with `wrangler secret put`.
+// (It used to sit in wrangler.toml [vars] as a placeholder.)
+// --------------------------------------------------------------------
+
+app.use('*', async (c, next) => {
+  if (c.req.path === '/health' || c.req.method === 'OPTIONS') return next();
+  const secret = c.env.JWT_SECRET;
+  if (typeof secret !== 'string' || secret.length < MIN_JWT_SECRET_LEN) {
+    return c.json({ error: 'server not configured: set JWT_SECRET with `wrangler secret put JWT_SECRET`' }, 503);
+  }
+  await next();
+});
+
+// --------------------------------------------------------------------
+// Rate limit the public /auth/* POSTs per client IP (each touches R2).
+// --------------------------------------------------------------------
+
+app.use('/auth/*', async (c, next) => {
+  if (c.req.method !== 'POST') return next();
+  const ok = await allowAuthRequest(c.env.AUTH_RATE_LIMITER, c.req.path, clientIp(c.req.raw));
+  if (!ok) {
+    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(AUTH_PERIOD_SECS) });
+  }
+  await next();
+});
 
 // --------------------------------------------------------------------
 // /vault/* — gated on Bearer JWT whose sub claim matches :id
