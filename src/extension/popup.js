@@ -477,13 +477,13 @@ async function loadSettings() {
 }
 
 async function autoDetectAndFill() {
-  const stored = await chrome.storage.local.get(["ks_token", "ks_user", "ks_auto_store", "ks_pending_vault"]);
+  const stored = await chrome.storage.local.get(["ks_token", "ks_user", "ks_auto_store", "ks_pending_meta"]);
   if (!looksLikeSessionToken(stored.ks_token)) {
     await harvestTokenFromDashboardTabs();
   }
-  const again = await chrome.storage.local.get(["ks_token", "ks_user", "ks_pending_vault"]);
+  const again = await chrome.storage.local.get(["ks_token", "ks_user", "ks_pending_meta"]);
   const signed = looksLikeSessionToken(again.ks_token);
-  const pending = Array.isArray(again.ks_pending_vault) && again.ks_pending_vault.length;
+  const pending = Array.isArray(again.ks_pending_meta) && again.ks_pending_meta.length;
   if (signed) {
     try { await chrome.storage.local.set({ ks_auto_store: true }); } catch { /* noop */ }
   }

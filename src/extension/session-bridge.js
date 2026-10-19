@@ -68,13 +68,18 @@
     try { window.postMessage({ __ks_vault_changed: true }, location.origin); } catch { /* noop */ }
   }
 
+  // Unsent keys live in the background's session memory (never on disk).
+  // Ask for them only here, on the dashboard, so it can flush them.
   function pushPendingVault() {
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
-    chrome.storage.local.get(['ks_pending_vault'], (stored) => {
-      const pending = stored && stored.ks_pending_vault;
-      if (!Array.isArray(pending) || !pending.length) return;
-      try { window.postMessage({ __ks_pending_vault: pending }, location.origin); } catch { /* noop */ }
-    });
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'KS_PENDING_FOR_DASHBOARD' }, (res) => {
+        if (chrome.runtime.lastError) return;
+        const pending = res && res.pending;
+        if (!Array.isArray(pending) || !pending.length) return;
+        try { window.postMessage({ __ks_pending_vault: pending }, location.origin); } catch { /* noop */ }
+      });
+    } catch { /* noop */ }
   }
 
   announce();
@@ -93,8 +98,8 @@
     if (e.data.__ks_ext_request_session) shareSession();
     if (e.data.__ks_ext_request_pending_vault) pushPendingVault();
     if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
-    if (e.data.__ks_pending_vault_cleared && chrome.storage && chrome.storage.local) {
-      try { chrome.storage.local.set({ ks_pending_vault: [] }); } catch { /* noop */ }
+    if (e.data.__ks_pending_vault_cleared && chrome.runtime && chrome.runtime.sendMessage) {
+      try { chrome.runtime.sendMessage({ type: 'KS_PENDING_CLEAR' }, () => void chrome.runtime.lastError); } catch { /* noop */ }
     }
   });
   try {

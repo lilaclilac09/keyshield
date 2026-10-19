@@ -33,6 +33,7 @@ import {
 } from '../../lib/vault-session';
 import type { VaultEntry } from '../../lib/vault';
 import { CodeBlock } from '../ui/CodeBlock';
+import { ZkModeCard } from './ZkModeCard';
 
 // ── Getting-started tutorial (collapsible, dismissible) ──────────────
 
@@ -816,6 +817,8 @@ export const DeviceVaultSection: React.FC = () => {
           </div>
         </div>
       )}
+
+      {unlocked && <ZkModeCard />}
 
       <AddDeviceKeyModal
         isOpen={showAdd}

@@ -77,6 +77,15 @@ export function syncExtensionVaultKey(): void {
   }
 }
 
+/** ZK mode: hand root R to the extension, which stores it non-extractable. */
+export function pushZkRootToExtension(rootB64u: string, rootId: string): void {
+  _pushToExtension({ type: 'KS_ZK_ENROLL', root: rootB64u, rootId });
+}
+
+export function forgetZkRootInExtension(): void {
+  _pushToExtension({ type: 'KS_ZK_FORGET' });
+}
+
 export function clearExtensionVaultKey(): void {
   try { sessionStorage.removeItem(EXTENSION_VAULT_KEY_STORAGE); } catch { /* ignore */ }
   _pushToExtension({ type: 'KS_VAULT_KEY_CLEAR' });
