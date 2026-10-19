@@ -55,20 +55,30 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # No token in the repo means no auto-deploy (deploy by hand from a
+      # logged-in machine instead). Skip cleanly rather than fail red.
+      - name: Skip when no Cloudflare token
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping deploy. Deploy manually with wrangler."
+
       - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
 
       - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install (workspace root)
+        if: env.CLOUDFLARE_API_TOKEN != ''
         run: npm ci
 
       - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy
         working-directory: src/infra/sync-worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -58,6 +58,25 @@ echo -n "https://keyshield.dev" | wrangler secret put RP_ORIGIN
 The non-secret env vars (`JWT_ISSUER`, `MAX_VAULT_BYTES`) live in
 `wrangler.toml` — change them there if you need different defaults.
 
+`JWT_SECRET` is no longer in `wrangler.toml`. Until it is set (32+
+characters), every route except `GET /health` answers 503, so a
+forgotten secret fails closed instead of signing tokens with a
+placeholder. For local `wrangler dev`, put a long random value in
+`src/infra/sync-worker/.dev.vars` (gitignored):
+
+```bash
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .dev.vars
+```
+
+### Rate limiting
+
+The public `POST /auth/*` routes are limited to 20 requests per 60 s
+per route per client IP through the Workers Rate Limiting binding
+`AUTH_RATE_LIMITER` (`[[unsafe.bindings]]` in `wrangler.toml`; no
+dashboard setup needed). Over the limit the worker answers 429 with
+`Retry-After: 60`. Change `simple = { limit, period }` there and
+`AUTH_LIMIT` in `src/ratelimit.ts` together.
+
 ## 3. Deploy
 
 ```bash

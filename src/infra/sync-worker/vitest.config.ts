@@ -7,6 +7,15 @@ import {
 // Run worker tests inside a real workerd runtime via Miniflare so we
 // hit the actual R2 binding behaviour, not a mock.
 export default defineWorkersConfig({
+  // Resolve packages like `jose` to their Workers build. Without this the
+  // pool picks jose's Node entry (node:https) and every test file fails to load.
+  // cross-fetch (via @simplewebauthn/server) has no exports map, so point it at
+  // its browser ponyfill the way wrangler's bundler does in production.
+  resolve: {
+    conditions: ['workerd', 'worker', 'browser'],
+    alias: { 'cross-fetch': 'cross-fetch/dist/browser-ponyfill.js' },
+  },
+  ssr: { resolve: { conditions: ['workerd', 'worker', 'browser'] } },
   test: {
     include: ['test/**/*.test.ts'],
     poolOptions: {
