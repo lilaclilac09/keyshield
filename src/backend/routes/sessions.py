@@ -30,6 +30,22 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
+def _token_scope(token: str) -> str:
+    """Scope claim of a stored token, without a DB round trip."""
+    import base64
+    import json
+
+    from ..auth import session as sess_mod
+
+    try:
+        payload = token.rsplit(".", 1)[0]
+        payload += "=" * (-len(payload) % 4)
+        scp = json.loads(base64.urlsafe_b64decode(payload)).get("scp")
+    except Exception:
+        scp = None
+    return scp if scp in (sess_mod.SCOPE_OWNER, sess_mod.SCOPE_PROXY) else sess_mod.SCOPE_OWNER
+
+
 def _get_ip(request: Request) -> str:
     """Get client IP, handling proxies."""
     forwarded = request.headers.get("X-Forwarded-For")
@@ -98,6 +114,7 @@ async def list_sessions(request: Request):
                     "last_active_at": now,
                     "expires_at": row["expires_at"],
                     "is_current": is_current,
+                    "scope": _token_scope(token),
                 }
             )
         if current_token and not saw_current:
@@ -116,6 +133,7 @@ async def list_sessions(request: Request):
                     "last_active_at": now,
                     "expires_at": sess.get("expires_at") or now + 86400,
                     "is_current": True,
+                    "scope": sess.get("scope", "owner"),
                 },
             )
     finally:
@@ -157,3 +175,43 @@ async def revoke_session(token_prefix: str, request: Request):
         conn.close()
 
     return JSONResponse({"ok": True})
+
+
+_PROXY_TTL_DEFAULT = 24 * 3600
+_PROXY_TTL_MAX = 30 * 24 * 3600
+
+
+@router.post("/sessions/proxy-token")
+async def create_proxy_token(request: Request):
+    """Mint a proxy-only token for an agent or script.
+
+    Owner session required (ScopeGuard already rejects proxy tokens here).
+    The new token can call /proxy and /vproxy for this user but gets 403 on
+    vault, session and agent management routes. Revoke it like any session:
+    POST /sessions/{last 8 chars}/revoke.
+    """
+    from ..auth import session as sess_mod
+
+    sess = _auth(request)
+    if not sess:
+        return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    if not sess_mod.is_owner(sess):
+        return JSONResponse({"error": "insufficient_scope"}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        ttl = int((body or {}).get("ttl_seconds") or _PROXY_TTL_DEFAULT)
+    except (TypeError, ValueError):
+        ttl = _PROXY_TTL_DEFAULT
+    ttl = max(60, min(ttl, _PROXY_TTL_MAX))
+    token = sess_mod.create_token(sess["user_id"], "", ttl=ttl, scope=sess_mod.SCOPE_PROXY)
+    return JSONResponse(
+        {
+            "token": token,
+            "scope": sess_mod.SCOPE_PROXY,
+            "id": token[-8:],
+            "expires_at": int(time.time()) + ttl,
+        }
+    )
