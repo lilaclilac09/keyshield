@@ -18,6 +18,7 @@ import { BetaBanner } from './components/BetaBanner';
 import { HealthBadge } from './components/HealthBadge';
 import { HomeSection } from './components/sections/HomeSection';
 import { VaultSection } from './components/sections/VaultSection';
+import { ZkModeCard } from './components/sections/ZkModeCard';
 import { ActivitySection } from './components/sections/ActivitySection';
 import { fetchKeychainHome, type KeychainHome } from './lib/keychain';
 import { flushPendingVaultHits, shouldRefreshVaultOnVisit, type PendingVaultHit } from './lib/vault-list';
@@ -250,7 +251,7 @@ const MainContent: React.FC = () => {
                   onGo={goSection}
                 />
               )}
-              {section === 'vault' && <VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} />}
+              {section === 'vault' && (<><VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} /><div className="mt-6"><ZkModeCard onUnlock={unlock} unlocking={vaultLoading} /></div></>)}
               {section === 'activity' && <ActivitySection />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}

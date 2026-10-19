@@ -16,7 +16,7 @@ import {
 } from '../../lib/zk';
 import { pushZkRootToExtension } from '../../lib/vault-key';
 
-export const ZkModeCard: React.FC = () => {
+export const ZkModeCard: React.FC<{ onUnlock?: () => void; unlocking?: boolean }> = ({ onUnlock, unlocking }) => {
   const [status, setStatus] = useState<ZkStatus | null>(null);
   const [hasRoot, setHasRoot] = useState(() => getZkRoot() !== null);
   const [rootMatches, setRootMatches] = useState<boolean | null>(null);
@@ -99,7 +99,18 @@ export const ZkModeCard: React.FC = () => {
       </p>
 
       {!hasRoot && (
-        <p className="text-[12px] text-amber-300">Unlock Device Vault with your passkey to manage ZK mode.</p>
+        <div className="flex items-center gap-3">
+          <p className="text-[12px] text-amber-300">Unlock with your passkey to manage ZK mode.</p>
+          {onUnlock && (
+            <button
+              onClick={onUnlock}
+              disabled={unlocking}
+              className="px-3 py-1.5 rounded-lg border border-[#243365] text-[12px] text-[#e8ecff] hover:bg-white/[0.04] disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              {unlocking && <Loader2 size={12} className="animate-spin" />} Unlock with passkey
+            </button>
+          )}
+        </div>
       )}
 
       {hasRoot && !status.enabled && (

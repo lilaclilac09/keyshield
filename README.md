@@ -198,7 +198,7 @@ Accelerate    + cache / batch / low latency
 | Path | Can the KeyShield server read your key? |
 |---|---|
 | **Device Vault** (passkey PRF, sync worker) | No. Ciphertext only. |
-| **ZK mode** (opt-in, Device Vault → ZK mode) | No. The extension encrypts before saving; the server keeps ciphertext plus a per-key share it can refuse to release. Keys are injected on your machine by the extension or `keyshield-proxy`. |
+| **ZK mode** (opt-in, dashboard Vault → ZK mode) | No. The extension encrypts before saving; the server keeps ciphertext plus a per-key share it can refuse to release. Keys are injected on your machine by the extension or `keyshield-proxy`. |
 | **Hosted vault + hosted `/vproxy`** (default for extension saves) | **Yes, not ZK.** The server stores the key so the hosted proxy can inject it. |
 | **`/proxy` with `X-Upstream-API-Key`** | The key passes through the hosted proxy for that request. Not ZK. |
 
@@ -206,7 +206,7 @@ Accelerate    + cache / batch / low latency
 
 **Using ZK mode**
 
-1. Dashboard → Device Vault → unlock with your passkey → **ZK mode → Turn on**. This hands the passkey-derived key to the extension; it never goes to the server.
+1. Dashboard → **Vault** → *ZK mode* card → **Unlock with passkey** → **Turn on ZK mode**. This hands the passkey-derived key to the extension; it never goes to the server.
 2. **Re-save older keys in ZK mode** (one button), then **rotate those keys at each provider**: the old copies were readable on the server, and backups made before the purge may still hold them.
 3. For agents: `pip install "keyshield[zk] @ git+https://github.com/lilaclilac09/keyshield.git#subdirectory=packages/sdk-py"` (details in [packages/sdk-py](packages/sdk-py/README.md#zk-mode-keyshield-proxy-local-zero-knowledge)), then `keyshield-proxy enroll` (paste the `ksz1.` unlock code from the ZK mode card) and `keyshield-proxy run`. Point the agent at the local base URL it prints. Revoking the proxy's `KS_TOKEN` stops new unlocks within 60 s.
 
