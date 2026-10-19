@@ -1,6 +1,9 @@
 """Run the extension's own zk-v1 helpers (src/extension/background.js)
 against docs/zk/vectors.json under Node, so the browser side stays in step
-with the spec and the Python SDK. Skipped when node is not installed."""
+with the spec and the Python SDK. Skipped when node is not installed.
+
+The pending-queue check below guards the "no raw keys on disk" rule.
+"""
 
 import json
 import shutil
