@@ -28,6 +28,7 @@ def register_routes(app: FastAPI) -> None:
     from . import sessions  # session management
     from . import x402  # x402 payment trust + retry
     from . import keychain  # detect / one-click call / RPC cache / home
+    from . import zk  # zero-knowledge mode (ciphertext rows + server shares)
 
     app.include_router(health.router)
     app.include_router(auth.router)
@@ -40,3 +41,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(sessions.router)
     app.include_router(x402.router)
     app.include_router(keychain.router)
+    app.include_router(zk.router)

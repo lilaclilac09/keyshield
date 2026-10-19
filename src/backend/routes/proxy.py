@@ -328,6 +328,24 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     finally:
         conn.close()
     if not row or not row[0]:
+        conn = sqlite3.connect(str(_VAULT_DB))
+        try:
+            zk_row = conn.execute(
+                "SELECT 1 FROM vault_items WHERE user_id = ? AND upstream = ? AND cipher_v = 2 "
+                "LIMIT 1",
+                (user_id, upstream),
+            ).fetchone()
+        finally:
+            conn.close()
+        if zk_row:
+            return JSONResponse(
+                {
+                    "error": "zk_item",
+                    "detail": f"Your {upstream} key is zero-knowledge, so this hosted proxy "
+                    "can't read it. Call it through your local `keyshield-proxy` instead.",
+                },
+                status_code=409,
+            )
         return JSONResponse(
             {"error": f"no {upstream} key in vault — POST /manage/store first"},
             status_code=422,
