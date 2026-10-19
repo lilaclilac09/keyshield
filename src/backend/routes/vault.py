@@ -16,6 +16,10 @@ Endpoints:
   GET    /manage/decrypt/{id}  → plaintext; 404 if the row is empty
   DELETE /manage/vault/{id}    → delete one item
   PUT    /manage/vault/{id}    → partial update (will not wipe value)
+
+ZK mode (routes/zk.py, docs/zk/ZK-MODE.md): rows with cipher_v=2 carry
+only ciphertext; the server can't decrypt them. When a user has ZK mode
+on, plaintext stores and value updates are refused with 409 zk_mode.
 """
 
 from __future__ import annotations
@@ -88,6 +92,9 @@ def _db():
         "CREATE INDEX IF NOT EXISTS idx_vault_items_user_upstream "
         "ON vault_items (user_id, upstream)"
     )
+    from . import zk as zk_mod
+
+    zk_mod.ensure_tables(conn)
     try:
         yield conn
         conn.commit()
@@ -170,7 +177,24 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     except Exception:
         tags = []
     raw = row["value"] or ""
-    if not str(raw).strip() and int(row["cipher_v"] or 0) == 1:
+    from . import zk as zk_mod
+
+    is_zk = int(row["cipher_v"] or 0) == zk_mod.ZK_CIPHER_V
+    if is_zk:
+        hint = ""
+        try:
+            hint = next(
+                (
+                    str(t)[5:]
+                    for t in _json.loads(row["tags"] or "[]")
+                    if str(t).startswith("hint:")
+                ),
+                "",
+            )
+        except Exception:
+            hint = ""
+        masked = f"{hint}•••• (zero-knowledge)" if hint else "•••• (zero-knowledge)"
+    elif not str(raw).strip() and int(row["cipher_v"] or 0) == 1:
         masked = "encrypted"
     else:
         masked = _mask(raw)
@@ -210,6 +234,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "domain": host or meta["domain"],
         "notes": " · ".join(b for b in note_bits if b),
         "has_plaintext": bool(str(raw).strip()),
+        "zk": is_zk,
         "cipher": row["cipher"] or "",
         "iv": row["iv"] or "",
         "cipher_v": row["cipher_v"] or 0,
@@ -229,12 +254,14 @@ async def vault_list(request: Request):
         if _may_claim_default(request):
             _claim_default_rows(conn, uid)
         # Cipher-only leftovers listed as 4 cards with a blank RAW field.
+        # zk rows (cipher_v=2) have no plaintext on purpose; keep them.
         conn.execute(
-            "DELETE FROM vault_items WHERE user_id = ? AND TRIM(value) = ''",
+            "DELETE FROM vault_items WHERE user_id = ? AND TRIM(value) = '' AND cipher_v != 2",
             (uid,),
         )
         rows = conn.execute(
-            "SELECT * FROM vault_items WHERE user_id = ? AND TRIM(value) != '' "
+            "SELECT * FROM vault_items WHERE user_id = ? "
+            "AND (TRIM(value) != '' OR cipher_v = 2) "
             "ORDER BY created_at DESC",
             (uid,),
         ).fetchall()
@@ -247,6 +274,20 @@ async def vault_store(request: Request):
     if err:
         return err
     body = await request.json()
+    from . import zk as zk_mod
+
+    if int(body.get("cipher_v") or 0) == zk_mod.ZK_CIPHER_V:
+        return _zk_store(uid, body)
+    with _db() as conn:
+        zk_on = zk_mod.user_zk(conn, uid) if not zk_mod.zk_disabled() else None
+    if zk_on:
+        return JSONResponse(
+            {
+                "error": "zk_mode",
+                "detail": "ZK mode is on: encrypt on your device and send cipher_v=2.",
+            },
+            status_code=409,
+        )
 
     item_id = body.get("id") or f"ks_{uuid.uuid4().hex[:12]}"
     now = time.time()
@@ -365,6 +406,70 @@ async def vault_store(request: Request):
     return JSONResponse({"id": item_id})
 
 
+def _zk_store(uid: str, body: dict) -> JSONResponse:
+    """Store a zk-v1 row: ciphertext + iv here, share in zk_shares."""
+    from . import zk as zk_mod
+    from ..proxy import keychain as kc
+
+    if zk_mod.zk_disabled():
+        return JSONResponse({"detail": "ZK mode is disabled on this server"}, status_code=400)
+    fields, problem = zk_mod.validate_zk_body(body)
+    if problem:
+        return JSONResponse({"detail": problem}, status_code=400)
+    upstream = str(body.get("upstream") or "").strip()
+    if not upstream:
+        return JSONResponse({"detail": "upstream is required"}, status_code=400)
+    now = time.time()
+    host = str(body.get("origin") or body.get("domain") or body.get("host") or "").strip()
+    extra = [f"hint:{fields['hint']}"] if fields["hint"] else []
+    if host:
+        extra.append(f"host:{host}")
+    tags_json = _json.dumps(kc.catalog_tags(upstream, extra))
+    name = str(body.get("name") or "").strip()[:80] or f"{upstream} key"
+    with _db() as conn:
+        if not zk_mod.user_zk(conn, uid):
+            return JSONResponse(
+                {"error": "zk_not_enabled", "detail": "POST /zk/enable first"},
+                status_code=409,
+            )
+        clash = conn.execute(
+            "SELECT cipher_v FROM vault_items WHERE id = ? AND user_id = ?",
+            (fields["id"], uid),
+        ).fetchone()
+        if clash and int(clash[0] or 0) != zk_mod.ZK_CIPHER_V:
+            return JSONResponse({"detail": "id belongs to a non-zk row"}, status_code=409)
+        conn.execute(
+            """
+            INSERT INTO vault_items
+              (id, user_id, name, type, upstream, value, tags,
+               created_at, updated_at, expires_at, cipher, iv, cipher_v)
+            VALUES (?, ?, ?, 'api_key', ?, '', ?, ?, ?, NULL, ?, ?, ?)
+            ON CONFLICT(id, user_id) DO UPDATE SET
+                name = excluded.name, upstream = excluded.upstream, value = '',
+                tags = excluded.tags, updated_at = excluded.updated_at,
+                cipher = excluded.cipher, iv = excluded.iv, cipher_v = excluded.cipher_v
+            """,
+            (
+                fields["id"],
+                uid,
+                name,
+                upstream,
+                tags_json,
+                now,
+                now,
+                fields["cipher"],
+                fields["iv"],
+                zk_mod.ZK_CIPHER_V,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO zk_shares (item_id, user_id, share, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(item_id, user_id) DO UPDATE SET share = excluded.share",
+            (fields["id"], uid, fields["share"], now),
+        )
+    return JSONResponse({"id": fields["id"], "zk": True})
+
+
 @router.get("/manage/decrypt/{item_id}")
 async def vault_decrypt(item_id: str, request: Request):
     """Return the stored plaintext. Empty cipher leftovers 404."""
@@ -373,11 +478,20 @@ async def vault_decrypt(item_id: str, request: Request):
         return err
     with _db() as conn:
         row = conn.execute(
-            "SELECT value FROM vault_items WHERE id = ? AND user_id = ?",
+            "SELECT value, cipher_v FROM vault_items WHERE id = ? AND user_id = ?",
             (item_id, uid),
         ).fetchone()
     if not row:
         return JSONResponse({"detail": "item not found"}, status_code=404)
+    if int(row["cipher_v"] or 0) == 2:
+        return JSONResponse(
+            {
+                "error": "zk_item",
+                "detail": "Zero-knowledge item: the server can't decrypt it. "
+                "Decrypt on your device (GET /zk/items + /zk/share/{id}).",
+            },
+            status_code=409,
+        )
     plaintext = str(row["value"] or "").strip()
     if not plaintext:
         return JSONResponse(
@@ -398,6 +512,10 @@ async def vault_delete(item_id: str, request: Request):
     with _db() as conn:
         cur = conn.execute(
             "DELETE FROM vault_items WHERE id = ? AND user_id = ?",
+            (item_id, uid),
+        )
+        conn.execute(
+            "DELETE FROM zk_shares WHERE item_id = ? AND user_id = ?",
             (item_id, uid),
         )
     if cur.rowcount == 0:
@@ -427,6 +545,16 @@ async def vault_update(item_id: str, request: Request):
         updates["tags"] = _json.dumps(updates["tags"])
     if "value" in updates and not str(updates["value"] or "").strip():
         updates.pop("value")
+    if "value" in updates:
+        from . import zk as zk_mod
+
+        with _db() as conn:
+            zk_on = zk_mod.user_zk(conn, uid) if not zk_mod.zk_disabled() else None
+        if zk_on:
+            return JSONResponse(
+                {"error": "zk_mode", "detail": "ZK mode is on: plaintext values are refused."},
+                status_code=409,
+            )
     if not updates:
         return JSONResponse({"ok": True})
     updates["updated_at"] = time.time()

@@ -1,0 +1,15 @@
+{
+  "spec": "zk-v1",
+  "note": "Fixed inputs; never use these values for real keys.",
+  "prf_output": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "root": "iYlqQVfpAwrtSkBxMPtnAhzNfUdplVXr1JRlKSKnFdI",
+  "root_id": "XzERHr82LEy2ralYKCkI4jsE",
+  "item_id": "ks_0123456789ab",
+  "upstream": "openai",
+  "share": "ZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1-f4CBgoM",
+  "iv": "yMnKy8zNzs_Q0dLT",
+  "item_key": "j4dMIN59rljjcU2jr7z_WsOv4Ob8PlVFInvmjq2K7vc",
+  "plaintext": "sk-demo-zk-vector-not-a-real-key-0001",
+  "cipher": "qIi0L9850cT8fQs6TSn20YrRNvg9iFFmcn41R_P3stNCWsYTpauiQ7JWsQE0Sak5JQaeRMQ",
+  "aad": "ks_0123456789ab|openai"
+}
