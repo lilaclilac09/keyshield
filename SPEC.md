@@ -22,9 +22,9 @@ KeyShield defines a protocol for **agent credential delegation**: agents receive
 
 | Primitive | Description |
 |---|---|
-| **Vault** | Client-side encrypted store. Keys are encrypted with AES-256-GCM before leaving the browser. Server stores ciphertext only. |
+| **Vault** | Two kinds. The **Device Vault** and **ZK mode** rows are encrypted with AES-256-GCM before leaving the device; the server stores ciphertext only (zero-knowledge). The default **hosted vault** (`/manage/store`) keeps a server-readable copy so the hosted proxy can inject it; it is **not** zero-knowledge. See §3. |
 | **Session token** | Short-lived bearer token (`ksv2_…`). Scoped to a provider, an optional spending cap, and a TTL. Issued to humans and agents alike. |
-| **Proxy** | Rust reverse proxy. Accepts a session token, fetches and decrypts the raw key in memory, injects it into the upstream request, then discards it. The key is never written to disk or logs. |
+| **Proxy** | Hosted proxy (not ZK): accepts a proxy-scope session token, loads the raw key in memory, injects it into the upstream request, then discards it. The key is never written to logs or returned to the agent. ZK-mode keys are refused here (`409 zk_item`) and are injected by a local proxy instead (`keyshield-proxy`, the extension). |
 
 ---
 
@@ -40,7 +40,28 @@ passphrase / WebAuthn PRF output / wallet signature
             └── AES-256-GCM encrypt(api_key, nonce) → ciphertext + tag
 ```
 
-The server receives and stores only `{ ciphertext, nonce, tag }`. Decryption requires the user's device credential — the server cannot decrypt at rest.
+This applies to the **Device Vault** (Cloudflare sync worker) and to **ZK mode**. The server receives and stores only `{ ciphertext, nonce, tag }`. Decryption requires the user's device credential, so the server cannot decrypt at rest.
+
+### 3.1 Which paths are zero-knowledge
+
+| Path | Server can read the key? |
+|---|---|
+| Device Vault (sync worker) | No: ciphertext only |
+| ZK mode, `cipher_v=2` rows (opt-in) | No: ciphertext plus a per-key server share. The client unlocks with the passkey-derived root and the share, then injects locally |
+| Hosted vault, `/manage/store` default | **Yes** (not ZK): stored so the hosted `/vproxy` can inject |
+| `/proxy` with `X-Upstream-API-Key` | The key passes through the hosted proxy for that request (not ZK at rest or in transit) |
+
+### 3.2 ZK mode (zk-v1)
+
+Full spec and test vectors are in [`docs/zk/ZK-MODE.md`](docs/zk/ZK-MODE.md) and `docs/zk/vectors.json`.
+
+```
+R        = HKDF-SHA256(passkey PRF output, info "keyshield/zk/v1/root")
+item key = HKDF-SHA256(ikm R, salt S, info "keyshield/zk/v1/item:<id>:<upstream>")
+row      = AES-256-GCM(item key, iv, key, aad "<id>|<upstream>")
+```
+
+`S` is 32 random bytes per key, kept only by the server and released by `GET /zk/share/{id}` to a valid owner or proxy token. Revoking the token stops new unlocks; clients cache shares for at most 60 s. Once ZK mode is on, `/manage/store` accepts ciphertext only (`409 zk_mode` for plaintext). Migrating means re-saving each key in ZK mode, purging the old rows (`POST /zk/purge-plaintext`) and **rotating the provider keys**, because the old copies were server-readable. The operator can turn ZK mode off globally with `KS_ZK_DISABLED=1`.
 
 ---
 
@@ -62,7 +83,14 @@ Token payload (server-side, opaque to caller):
 }
 ```
 
-Tokens are verified on every proxy request. A revoked token is rejected within one request cycle (no stale cache window).
+Every token carries a signed scope:
+
+| Scope | Issued to | Allowed |
+|---|---|---|
+| `owner` | Dashboard passkey / wallet sign-in | Everything, including the vault, decrypt, sessions and agents |
+| `proxy` | Agents (`/auth/agent-login`) and developer tokens (`POST /sessions/proxy-token`) | Proxy routes and `/zk/share` only. Vault, decrypt and management routes return `403 insufficient_scope` |
+
+Tokens are verified on every hosted proxy request. A revoked token is rejected within one request cycle (no stale cache window). Local ZK unlocks stop within the 60 s share cache.
 
 ---
 
@@ -111,7 +139,7 @@ Raw key exists in memory for the duration of one upstream HTTP round-trip.
 ## 7. Revocation
 
 - Tokens are stored server-side with a `revoked` flag
-- Setting the flag takes effect on the next request — no TTL lag
+- Setting the flag takes effect on the next hosted proxy request, with no TTL lag. In ZK mode the server also stops releasing key shares; local proxies stop within their 60 s share cache
 - Delegated tokens are independently revocable without affecting the parent
 - Users can revoke all tokens for a provider in one action (key rotation equivalent)
 
