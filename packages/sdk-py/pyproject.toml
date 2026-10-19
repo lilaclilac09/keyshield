@@ -31,7 +31,12 @@ dependencies = [
 # sign a server challenge locally. Most users hitting only /auth/login
 # + /proxy can skip it.
 agent = ["pynacl>=1.5"]
+# ZK mode: decrypt keys locally and run `keyshield-proxy`.
+zk = ["cryptography>=42"]
 test = ["pytest>=7", "fastapi>=0.115", "pydantic>=2.10", "cryptography>=42", "webauthn>=2", "httpx[http2]>=0.27"]
+
+[project.scripts]
+keyshield-proxy = "keyshield.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/lilaclilac09/keyshield"

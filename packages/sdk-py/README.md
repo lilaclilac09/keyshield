@@ -79,3 +79,29 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## ZK mode: `keyshield-proxy` (local, zero-knowledge)
+
+In ZK mode the KeyShield server holds only ciphertext and a per-key share. It can't read your provider keys, so the hosted `/vproxy` can't inject them either. Instead, run this proxy on your machine or your agent's machine. It decrypts each key locally, using your passkey-derived root plus the server share, and calls the provider directly. Spec: [`docs/zk/ZK-MODE.md`](../../docs/zk/ZK-MODE.md).
+
+```bash
+pip install "keyshield[zk] @ git+https://github.com/lilaclilac09/keyshield.git#subdirectory=packages/sdk-py"
+
+keyshield-proxy enroll            # paste the ksz1.… unlock code from the dashboard (stored 0600)
+export KS_TOKEN=<proxy-only agent token>   # Developer → Create agent token
+keyshield-proxy status
+keyshield-proxy run               # prints the base URL and a local token
+```
+
+Point your agent at it, using the printed local token as the API key:
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8787/vproxy/openai/v1", api_key="<local token>")
+```
+
+- **Revoke:** revoke the agent token under Sessions. The proxy caches shares for at most 60 s, so new calls fail within that window. A machine that already decrypted a key could have kept a copy, so rotate the provider key if you think the host was compromised.
+- **Limits:**
+  - The proxy only listens on loopback and refuses other `Host` headers.
+  - The hosted guardrails (spend caps, 5xx freeze, MPP metering, Helius RPC cache) don't run locally.
+  - Supported upstreams: openai, anthropic, openrouter, groq, mistral, cohere, nvidia, helius.
