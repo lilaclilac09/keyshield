@@ -37,6 +37,19 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 DB_PATH = Path(__file__).parent.parent / "sessions.db"
 SESSION_TTL = 24 * 3600  # 24 hours
 
+# Token scopes. "owner" is a signed-in user (passkey, wallet or password
+# login) and may manage the vault. "proxy" is for agents and developer
+# tokens: it can call /proxy and /vproxy but never read, store or decrypt
+# vault items, manage sessions or register agents. The scope is a signed
+# claim (`scp`) in the token payload, so it can't be edited client-side.
+SCOPE_OWNER = "owner"
+SCOPE_PROXY = "proxy"
+_SCOPES = (SCOPE_OWNER, SCOPE_PROXY)
+# Agent tokens issued before scopes existed carry no `scp` claim. They were
+# always created with this stored password (routes/auth.py agent-login),
+# which is how get() recognises them and downgrades them to "proxy".
+_LEGACY_AGENT_PASSWORD = "default"
+
 
 def _db() -> sqlite3.Connection:
     """Open the sessions database. Shared with legacy session.create()."""
@@ -104,7 +117,7 @@ def _decrypt(data: bytes) -> str:
 # ─── Token format ──────────────────────────────────────────────────────────
 
 
-def _make_token_payload(user_id: str, expires_at: int) -> str:
+def _make_token_payload(user_id: str, expires_at: int, scope: str = SCOPE_OWNER) -> str:
     """Create base64-encoded JSON payload."""
     payload = json.dumps(
         {
@@ -112,6 +125,7 @@ def _make_token_payload(user_id: str, expires_at: int) -> str:
             "exp": expires_at,
             "iat": int(time.time()),
             "nbf": int(time.time()),  # not-before (now),
+            "scp": scope,
         }
     )
     return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
@@ -123,7 +137,9 @@ def _sign_token(payload: str) -> str:
     return urlsafe_b64encode(sig).decode().rstrip("=")
 
 
-def create_token(user_id: str, password: str, ttl: int = SESSION_TTL) -> str:
+def create_token(
+    user_id: str, password: str, ttl: int = SESSION_TTL, scope: str = SCOPE_OWNER
+) -> str:
     """
     Create a self-contained session token.
 
@@ -133,8 +149,10 @@ def create_token(user_id: str, password: str, ttl: int = SESSION_TTL) -> str:
 
     The password is encrypted and stored in the DB for auth operations that need it.
     """
+    if scope not in _SCOPES:
+        raise ValueError(f"unknown token scope: {scope!r}")
     expires_at = int(time.time()) + ttl
-    payload = _make_token_payload(user_id, expires_at)
+    payload = _make_token_payload(user_id, expires_at, scope)
     sig = _sign_token(payload)
     token = f"{payload}.{sig}"
 
@@ -164,7 +182,7 @@ def get(token: str) -> dict | None:
       3. Expiry (not past `exp`)
       4. User not soft-deleted
 
-    Returns: {"user_id": str, "password": str} on success.
+    Returns: {"user_id": str, "password": str, "scope": str} on success.
     """
     if not token or "." not in token:
         return None
@@ -210,7 +228,23 @@ def get(token: str) -> dict | None:
     if not row:
         return None
 
-    return {"user_id": user_id, "password": _decrypt(row[0])}
+    password = _decrypt(row[0])
+    scope = data.get("scp")
+    if scope not in _SCOPES:
+        # Pre-scope token: agent-login tokens become proxy-only, everything
+        # else stays an owner session so signed-in users aren't logged out.
+        scope = SCOPE_PROXY if password == _LEGACY_AGENT_PASSWORD else SCOPE_OWNER
+    return {
+        "user_id": user_id,
+        "password": password,
+        "scope": scope,
+        "expires_at": int(data.get("exp", 0)),
+    }
+
+
+def is_owner(sess: dict | None) -> bool:
+    """True when the session may manage the vault (see SCOPE_OWNER)."""
+    return bool(sess) and sess.get("scope", SCOPE_OWNER) == SCOPE_OWNER
 
 
 def verify_token(token: str) -> tuple[bool, Optional[str]]:

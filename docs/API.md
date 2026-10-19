@@ -76,11 +76,12 @@ You must have already enrolled a passkey on this device (see *Passkey enrollment
 
 ```
 POST /auth/agent-challenge          → { challenge, nonce }
-POST /auth/agent-login              → { token }
+POST /auth/agent-login              → { token, scope: "proxy" }
      body: { pubkeyB58, signature, challenge, nonce }
 ```
 
-The agent must be registered first via `POST /agents/register`.
+The agent must be registered first via `POST /agents/register`. Agent tokens
+are **proxy-only** (see *Token scopes* below).
 
 ### 4. Username/password login (test only)
 
@@ -105,9 +106,26 @@ DELETE /auth/passkey/{cred_id}                        → { ok }
 POST /auth/logout                   → { ok }                    revoke current token
 GET  /sessions                      → [...]                     list this user's sessions
 DELETE /sessions/{token_prefix}     → { ok }                    revoke another session
+POST /sessions/proxy-token          → { token, scope, id, expires_at }   mint a proxy-only token
+     body: { ttl_seconds? }   default 24h, max 30 days; owner session required
 POST /auth/delete-account-challenge → { challenge, nonce }
 POST /auth/delete-account           → { ok }                    permanent account wipe
 ```
+
+### Token scopes
+
+Every token carries a signed `scp` claim.
+
+| Scope | Issued by | Can call | Gets 403 on |
+|---|---|---|---|
+| `owner` | passkey, wallet and password login | everything | — |
+| `proxy` | `/auth/agent-login`, `POST /sessions/proxy-token` | `/proxy/*`, `/vproxy/*`, `/keychain/call`, `/usage/*`, MPP stream metering, `/health` | `/manage/*`, `/sessions*`, `/agents*`, `/share*`, passkey management, delete-account, `/x402/trust`, `/billing/topup*`, `/keychain/store`, `/keychain/home`, `/mpp/vault/*`, `/mpp/autosign/*` |
+
+A proxy token answers `403 {"error":"insufficient_scope"}` on owner routes,
+so an agent can use your keys through the proxy but can't list or decrypt
+them. Tokens issued before scopes existed: agent-login tokens are treated as
+`proxy`, every other session stays `owner`. The guard lives in
+`src/backend/middleware/scope.py`.
 
 ---
 

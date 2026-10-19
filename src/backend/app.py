@@ -46,6 +46,14 @@ from .routes import register_routes
 register_routes(app)
 
 
+# ─── Token-scope guard ───────────────────────────────────────────────
+# Added before CORS so CORS wraps it and a 403 still carries CORS headers.
+
+from .middleware.scope import ScopeGuard
+
+app.add_middleware(ScopeGuard)
+
+
 # ─── CORS middleware ─────────────────────────────────────────────────
 
 _origins = os.getenv(

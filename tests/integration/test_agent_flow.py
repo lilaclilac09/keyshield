@@ -185,8 +185,10 @@ def test_agent_identity(agent_token: str, owner_pub: str) -> None:
     uid = payload.get("uid", "")
     info(f"token uid:    {uid[:20]}…")
     info(f"owner pubkey: {owner_pub[:20]}…")
+    if payload.get("scp") != "proxy":
+        fail(f"agent token scope is {payload.get('scp')!r}, expected 'proxy'")
     if uid == owner_pub:
-        ok("uid matches owner_pubkey — agent acts as owner ✓")
+        ok("uid matches owner_pubkey, scope=proxy (no vault access) ✓")
     else:
         fail(f"uid mismatch: '{uid[:16]}' != '{owner_pub[:16]}'")
 

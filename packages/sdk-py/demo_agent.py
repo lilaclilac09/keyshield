@@ -160,11 +160,14 @@ def main() -> int:
     agent_token = out["token"]
     print(f"  agent bearer: {agent_token[:24]}…")
 
-    # 5. Sanity: the agent bearer is real and inherits owner scope ────
-    step(5, "Agent: list agents under owner (proves bearer is live)")
-    listed = _get("/agents/list", token=agent_token)
-    names = [a.get("name") for a in listed.get("agents", [])]
-    print(f"  agents visible to this token: {names}")
+    # 5. Sanity: the agent bearer is proxy-only ───────────────────────
+    step(5, "Agent: token is proxy-only (vault routes answer 403)")
+    r = httpx.get(
+        f"{KS_API}/manage/vault",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        timeout=30,
+    )
+    print(f"  GET /manage/vault with agent token -> {r.status_code} (expected 403)")
 
     # 6. Agent calls upstream via /vproxy/ ─────────────────────────────
     step(6, "Agent: call upstream through KeyShield proxy")
