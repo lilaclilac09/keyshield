@@ -1494,7 +1494,7 @@ function isKeyShieldDashboardHost() {
   }
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
-      if (area === 'local' && (changes.ks_token || changes.ks_pending_vault)) refresh();
+      if (area === 'local' && (changes.ks_token || changes.ks_pending_meta || changes.ks_zk)) refresh();
       if (area === 'session' && changes.ks_vault_key && changes.ks_vault_key.newValue) refresh();
     });
   } catch { /* noop */ }

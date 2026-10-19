@@ -11,6 +11,7 @@
  *   call upstream    → getDecryptedKey(upstream) → returns raw key string
  */
 
+import { setZkRootFromPrf, clearZkRoot } from './zk';
 import {
   decryptVault,
   deriveMasterKey,
@@ -93,6 +94,7 @@ export function isVaultUnlocked(): boolean {
 }
 
 export function lockVault(): void {
+  clearZkRoot();
   _state?.bearer.clear();
   _state = null;
   // Intentionally NOT clearing the cached vaultId: it's non-secret and
@@ -133,6 +135,7 @@ export async function unlockVault(
 ): Promise<{ vaultId: string; entryCount: number }> {
   const vaultId = await deriveVaultId(prfOutput);
   const masterKey = await deriveMasterKey(prfOutput);
+  await setZkRootFromPrf(prfOutput); // ZK mode root, memory only (lib/zk.ts)
 
   let exchangeRes: Response;
   try {

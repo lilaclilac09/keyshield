@@ -305,11 +305,69 @@ function _manageHeaders(apiBase, token, extra) {
   return headers;
 }
 
+// ── Pending (unsent) keys ───────────────────────────────────────────────────
+// A detected key that could not be saved yet (signed out, network, 5xx) waits
+// here so the dashboard can flush it. It lives in chrome.storage.session:
+// memory only, never written to disk, unreadable by content scripts, and
+// dropped after PENDING_TTL_MS. Saved keys are removed right away, and in ZK
+// mode nothing raw is queued at all. Only a masked mirror (ks_pending_meta)
+// goes to storage.local for the popup/panel counts.
+const PENDING_TTL_MS = 15 * 60 * 1000;
+const PENDING_MAX = 40;
+
+function _pendingStore() {
+  return (chrome.storage && chrome.storage.session) || null;
+}
+
+async function _readPendingRows() {
+  const store = _pendingStore();
+  if (!store) return [];
+  const stored = await store.get(['ks_pending_vault']);
+  const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+  const fresh = rows.filter((r) => r && r.value && Date.now() - Number(r.at || 0) < PENDING_TTL_MS);
+  if (fresh.length !== rows.length) await _writePendingRows(fresh);
+  return fresh;
+}
+
+async function _writePendingRows(rows) {
+  const store = _pendingStore();
+  const trimmed = (rows || []).slice(-PENDING_MAX);
+  if (store) await store.set({ ks_pending_vault: trimmed });
+  const meta = trimmed.map((r) => ({ upstream: r.upstream, masked: maskHarvestedKey(r.value), at: r.at }));
+  await chrome.storage.local.set({ ks_pending_meta: meta });
+}
+
+async function clearPendingFor(upstream, value) {
+  try {
+    const rows = await _readPendingRows();
+    const left = rows.filter((r) => !(r.upstream === upstream && r.value === value));
+    if (left.length !== rows.length) await _writePendingRows(left);
+  } catch { /* noop */ }
+}
+
+async function clearAllPending() {
+  try { await _writePendingRows([]); } catch { /* noop */ }
+}
+
+// One-time: older builds kept raw keys in storage.local (on disk). Move
+// still-fresh ones into session memory and delete the on-disk copy.
+async function migrateLegacyPending() {
+  try {
+    const old = await chrome.storage.local.get(['ks_pending_vault']);
+    if (!('ks_pending_vault' in old)) return;
+    const rows = Array.isArray(old.ks_pending_vault) ? old.ks_pending_vault : [];
+    await chrome.storage.local.remove('ks_pending_vault');
+    const zk = await zkState();
+    if (zk.enabled) return;
+    const fresh = rows.filter((r) => r && r.value && Date.now() - Number(r.at || 0) < PENDING_TTL_MS);
+    if (fresh.length) await _writePendingRows([...(await _readPendingRows()), ...fresh]);
+  } catch { /* noop */ }
+}
+
 async function pendingKeysForUpstreams(upstreams) {
   const wanted = new Set((upstreams || []).map((u) => String(u || '').toLowerCase()));
   try {
-    const stored = await chrome.storage.local.get(['ks_pending_vault']);
-    const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+    const rows = await _readPendingRows();
     const out = [];
     const seen = new Set();
     for (const row of rows) {
@@ -376,7 +434,9 @@ async function getKeysForDomain(domain, extra) {
   const out = [];
   for (const it of matched) {
     let value = '';
-    try {
+    if (it.zk || Number(it.cipher_v) === 2) {
+      value = await zkOpen(apiBase, headers, it);
+    } else try {
       const dec = await fetch(`${apiBase}/manage/decrypt/${encodeURIComponent(it.id)}`, { headers });
       if (dec.ok) {
         const body = await dec.json();
@@ -536,16 +596,20 @@ async function notifyDashboardVaultSaved() {
 }
 
 async function queuePendingVault(hit) {
+  if ((await zkState()).enabled) return; // ZK mode: never keep a raw key
+  return _queuePendingRaw(hit);
+}
+
+async function _queuePendingRaw(hit) {
   const upstream = String((hit && hit.upstream) || '').toLowerCase().trim();
   const value = String((hit && hit.value) || '');
   if (!upstream || !value) return;
   try {
-    const stored = await chrome.storage.local.get(['ks_pending_vault']);
-    const rows = Array.isArray(stored.ks_pending_vault) ? stored.ks_pending_vault : [];
+    const rows = await _readPendingRows();
     const id = `${upstream}:${value}`;
     if (rows.some((row) => `${row.upstream}:${row.value}` === id)) return;
     rows.push({ upstream, value, at: Date.now() });
-    await chrome.storage.local.set({ ks_pending_vault: rows.slice(-40) });
+    await _writePendingRows(rows);
   } catch { /* noop */ }
 }
 
@@ -560,11 +624,28 @@ async function directStore({ upstream, value, name, domain, pageTitle, expires_a
 
     const headers = _manageHeaders(apiBase, token, { 'Content-Type': 'application/json' });
 
-    // Vault page reveal reads SQLite `value`. Cipher-only rows showed
-    // "hides in Ns" with an empty RAW field. Always send plaintext.
     const storedName = distinguishStoreName({
       upstream, value, name, domain, pageTitle,
     });
+    // ZK mode: encrypt here; the server gets ciphertext + a share only.
+    const zk = await zkState();
+    if (zk.enabled) {
+      const sealed = await zkSeal(String(upstream || ''), String(value ?? ''));
+      if (!sealed) return { ok: false, reason: 'zk-locked' };
+      const r = await fetch(`${apiBase}/manage/store`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...sealed, name: storedName, domain: domain || '', origin: domain || '' }),
+      });
+      if (r.status === 401) { await clearStoredToken(); return { ok: false, reason: 'token-expired' }; }
+      if (!r.ok) return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
+      try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
+      try { await fillCursorTabsFromPending(); } catch { /* noop */ }
+      return { ok: true, zk: true };
+    }
+
+    // Non-ZK (hosted proxy) mode: the server keeps a plaintext copy so
+    // /vproxy can inject it. That path is not zero-knowledge.
     const body = JSON.stringify({
       upstream,
       apiKey: String(value ?? ''),
@@ -587,7 +668,7 @@ async function directStore({ upstream, value, name, domain, pageTitle, expires_a
         try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
         return { ok: false, reason: `http-${r.status}`, detail: await r.text() };
       }
-      try { await queuePendingVault({ upstream, value: String(value ?? '') }); } catch { /* noop */ }
+      await clearPendingFor(upstream, String(value ?? ''));
       try { await notifyDashboardVaultSaved(); } catch { /* noop */ }
       try { await fillCursorTabsFromPending(); } catch { /* empty boxes on other tabs */ }
       return { ok: true };
@@ -683,7 +764,10 @@ async function importVault(jsonStr) {
     if (!it || typeof it.id !== 'string') { skipped++; continue; }
     const plaintext = String(it.value || it.apiKey || it.api_key || '').trim();
     if (!plaintext) { skipped++; continue; }
-    const body = JSON.stringify({
+    const zkOn = (await zkState()).enabled;
+    const sealed = zkOn ? await zkSeal(String(it.upstream || ''), plaintext) : null;
+    if (zkOn && !sealed) { skipped++; if (errors.length < 3) errors.push('zk-locked'); continue; }
+    const body = JSON.stringify(sealed ? { ...sealed, name: it.name } : {
       id:       it.id,
       upstream: it.upstream,
       name:     it.name,
@@ -720,6 +804,16 @@ async function x402ToggleDomain(h, enabled) { const l = await x402LoadList(); if
 // ── Internal messages (content / popup): single listener ─────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && (message.type === 'KS_PENDING_FOR_DASHBOARD' || message.type === 'KS_PENDING_CLEAR')) {
+    const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || '');
+    if (!_isDashboardUrl(url)) { sendResponse({ ok: false, reason: 'not-dashboard' }); return false; }
+    if (message.type === 'KS_PENDING_CLEAR') {
+      clearAllPending().then(() => sendResponse({ ok: true }));
+    } else {
+      _readPendingRows().then((rows) => sendResponse({ ok: true, pending: rows })).catch(() => sendResponse({ ok: false, pending: [] }));
+    }
+    return true;
+  }
   // x402 — keep in same listener so SAVE_KEY/async paths aren't racing a split handler.
   if (message.type === 'X402_CHECK_TRUST') {
     (async () => {
@@ -1070,6 +1164,18 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       console.log('[KeyShield] vault key registered (session-scoped)');
       sendResponse({ ok: true });
     });
+    return true;
+  }
+  if (message.type === 'KS_ZK_ENROLL' && typeof message.root === 'string') {
+    zkEnroll(message.root, String(message.rootId || '')).then((res) => sendResponse(res));
+    return true;
+  }
+  if (message.type === 'KS_ZK_FORGET') {
+    zkForget().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message.type === 'KS_ZK_STATUS') {
+    zkState().then((st) => sendResponse({ ok: true, enabled: st.enabled, rootId: st.rootId || null }));
     return true;
   }
   if (message.type === 'KS_VAULT_KEY_CLEAR') {
@@ -1649,8 +1755,8 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
     const url = (tab && tab.url) || info.url || '';
     if (!url || !_isFillableTabUrl(url)) return;
     const kilo = _isKiloFillTabUrl(url);
-    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_vault', 'ks_user'], (out) => {
-      const pending = (out && out.ks_pending_vault) || [];
+    chrome.storage.local.get(['ks_token', 'ks_auto_store', 'ks_pending_meta', 'ks_user'], (out) => {
+      const pending = (out && out.ks_pending_meta) || [];
       const hasAuth = !!(out && (out.ks_token || out.ks_auto_store || pending.length || out.ks_user));
       if (!hasAuth && !kilo) return;
       fillTabNow(tabId, url).catch(() => {});
@@ -1710,3 +1816,164 @@ async function _purgeAuditLogInline() {
   await chrome.storage.local.set({ [AUDIT_LOG_KEY]: afterCap });
   return { deletedByAge, deletedByCap };
 }
+
+
+// ── ZK mode (zk-v1, docs/zk/ZK-MODE.md) ─────────────────────────────────────
+// The dashboard derives root R from your passkey and hands it over once
+// (KS_ZK_ENROLL). It is imported as a non-extractable HKDF key and kept in
+// IndexedDB, so this extension can encrypt new keys and decrypt them for
+// auto-fill, but nothing (including this code) can read R back out. The
+// server only ever sees ciphertext and a per-key share.
+
+const ZK_DB = 'keyshield-zk';
+const ZK_STORE = 'keys';
+
+function _zkIdb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(ZK_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(ZK_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _zkIdbOp(mode, fn) {
+  const db = await _zkIdb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(ZK_STORE, mode);
+      const req = fn(tx.objectStore(ZK_STORE));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function _zkB64u(bytes) {
+  let bin = '';
+  const arr = new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function _zkUnb64u(str) {
+  const s = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - (s.length % 4)) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function zkRootId(rootBytes) {
+  const tag = new TextEncoder().encode('keyshield/zk/v1/root-id');
+  const buf = new Uint8Array(tag.length + rootBytes.length);
+  buf.set(tag, 0);
+  buf.set(rootBytes, tag.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
+  return _zkB64u(digest.slice(0, 18));
+}
+
+async function zkState() {
+  try {
+    const { ks_zk } = await chrome.storage.local.get(['ks_zk']);
+    return ks_zk && ks_zk.enabled ? ks_zk : { enabled: false };
+  } catch {
+    return { enabled: false };
+  }
+}
+
+async function zkEnroll(rootB64u, rootId) {
+  try {
+    const raw = _zkUnb64u(rootB64u);
+    if (raw.length !== 32) return { ok: false, reason: 'bad-root' };
+    const id = await zkRootId(raw);
+    if (rootId && rootId !== id) return { ok: false, reason: 'root-id-mismatch' };
+    const key = await crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+    raw.fill(0);
+    await _zkIdbOp('readwrite', (st) => st.put(key, 'root'));
+    await chrome.storage.local.set({ ks_zk: { enabled: true, rootId: id, at: Date.now() } });
+    await clearAllPending(); // ZK mode keeps no raw keys, even in memory
+    return { ok: true, rootId: id };
+  } catch (e) {
+    return { ok: false, reason: 'exception', detail: String(e) };
+  }
+}
+
+async function zkForget() {
+  try { await _zkIdbOp('readwrite', (st) => st.delete('root')); } catch { /* noop */ }
+  await chrome.storage.local.remove('ks_zk');
+}
+
+async function _zkRootKey() {
+  try { return (await _zkIdbOp('readonly', (st) => st.get('root'))) || null; } catch { return null; }
+}
+
+async function _zkItemKey(rootKey, share, itemId, upstream) {
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt: share, info: new TextEncoder().encode(`keyshield/zk/v1/item:${itemId}:${upstream}`) },
+    rootKey,
+    256,
+  );
+  return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+function _zkHint(value) {
+  const m = /^(sk-proj-|sk-ant-api\d\d-|sk-ant-|sk-or-v1-|sk-|nvapi-|gsk_|ghp_|github_pat_)/.exec(String(value || ''));
+  return m ? m[1].slice(0, 16) : '';
+}
+
+/** Encrypt one provider key. Returns a cipher_v=2 /manage/store body or null if not enrolled. */
+async function zkSeal(upstream, value) {
+  const rootKey = await _zkRootKey();
+  if (!rootKey || !upstream || !value) return null;
+  const idBytes = crypto.getRandomValues(new Uint8Array(6));
+  const itemId = 'ks_' + Array.from(idBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const share = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await _zkItemKey(rootKey, share, itemId, upstream);
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(`${itemId}|${upstream}`) },
+    k,
+    new TextEncoder().encode(value),
+  );
+  const body = {
+    id: itemId,
+    upstream,
+    cipher: _zkB64u(ct),
+    iv: _zkB64u(iv),
+    share: _zkB64u(share),
+    cipher_v: 2,
+    hint: _zkHint(value),
+  };
+  share.fill(0);
+  return body;
+}
+
+/** Decrypt a ZK row for auto-fill: fetch its share, derive, open. '' on failure. */
+async function zkOpen(apiBase, headers, item) {
+  try {
+    const rootKey = await _zkRootKey();
+    if (!rootKey || !item || !item.cipher || !item.iv) return '';
+    const r = await fetch(`${apiBase}/zk/share/${encodeURIComponent(item.id)}`, { headers, cache: 'no-store' });
+    if (!r.ok) return '';
+    const { share } = await r.json();
+    const k = await _zkItemKey(rootKey, _zkUnb64u(share), item.id, item.upstream);
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: _zkUnb64u(item.iv), additionalData: new TextEncoder().encode(`${item.id}|${item.upstream}`) },
+      k,
+      _zkUnb64u(item.cipher),
+    );
+    return new TextDecoder().decode(pt);
+  } catch {
+    return '';
+  }
+}
+
+function _isDashboardUrl(url) {
+  return /^https:\/\/app\.ks\.aileena\.xyz\//.test(url)
+    || /^http:\/\/(127\.0\.0\.1|localhost):5173\//.test(url);
+}
+
+migrateLegacyPending().catch(() => {});
