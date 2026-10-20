@@ -89,8 +89,29 @@ def _db() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_topup_user
             ON topup_tx (user_id, credited_at DESC);
     """)
+    _migrate_attribution(conn)
     conn.commit()
     return conn
+
+
+# Columns added for per-agent attribution. Older rows keep the defaults and
+# show up as "unattributed" in /usage/agents.
+_ATTRIBUTION_COLUMNS = {
+    "actor": "TEXT NOT NULL DEFAULT ''",  # owner | agent | token | anonymous ('' = before tracking)
+    "agent_id": "INTEGER",
+    "token_ref": "TEXT NOT NULL DEFAULT ''",  # last 8 chars, same id the Sessions page shows
+    "model": "TEXT NOT NULL DEFAULT ''",
+}
+
+
+def _migrate_attribution(conn: sqlite3.Connection) -> None:
+    have = {r[1] for r in conn.execute("PRAGMA table_info(usage_log)").fetchall()}
+    for name, decl in _ATTRIBUTION_COLUMNS.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE usage_log ADD COLUMN {name} {decl}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_user_actor_ts ON usage_log (user_id, actor, agent_id, ts DESC)"
+    )
 
 
 # ── Token extraction ──────────────────────────────────────────────────────────
@@ -143,16 +164,24 @@ def log_call(
     cost_usd: float = 0.0,
     latency_ms: float = 0.0,
     status_code: int = 0,
+    actor: str = "",
+    agent_id: int | None = None,
+    token_ref: str = "",
+    model: str = "",
 ) -> None:
-    """Record one proxy call. Also deducts from balance when platform key is used."""
+    """Record one proxy call. Also deducts from balance when platform key is used.
+
+    actor / agent_id / token_ref say who made the call (see attribution()).
+    """
     conn = _db()
     try:
         conn.execute(
             """
             INSERT INTO usage_log
               (user_id, upstream, key_type, method, path,
-               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+               tokens_in, tokens_out, cost_usd, latency_ms, status_code, ts,
+               actor, agent_id, token_ref, model)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
             (
                 user_id,
@@ -166,6 +195,10 @@ def log_call(
                 latency_ms,
                 status_code,
                 int(time.time()),
+                actor or "",
+                agent_id,
+                (token_ref or "")[-8:],
+                (model or "")[:120],
             ),
         )
         conn.commit()
@@ -428,3 +461,258 @@ def list_topups(user_id: str, limit: int = 20) -> list[dict]:
         ]
     finally:
         conn.close()
+
+
+# ── Attribution + per-agent views ─────────────────────────────────────────────
+
+
+def attribution(sess: dict | None, token: str | None) -> dict:
+    """Who made a proxy call, from the validated session. Never the token itself."""
+    if not sess:
+        return {"actor": "anonymous", "agent_id": None, "token_ref": ""}
+    ref = (token or "")[-8:]
+    agent_id = sess.get("agent_id")
+    if agent_id is not None:
+        return {"actor": "agent", "agent_id": int(agent_id), "token_ref": ref}
+    if sess.get("scope") == "proxy":
+        return {"actor": "token", "agent_id": None, "token_ref": ref}
+    return {"actor": "owner", "agent_id": None, "token_ref": ref}
+
+
+def extract_model(request_body: bytes, content: bytes | None = None) -> str:
+    """Model name from the request JSON (or the response JSON as a fallback)."""
+    for raw in (request_body, content):
+        if not raw or len(raw) > 2_000_000:
+            continue
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("model"), str):
+            return data["model"][:120]
+    return ""
+
+
+_DAY = 86400
+
+
+def _bucket_where(bucket: str) -> tuple[str, list]:
+    """SQL filter for one bucket: agent:<id> | token:<ref> | tokens | owner | unattributed | all."""
+    if bucket.startswith("agent:"):
+        try:
+            return "actor = 'agent' AND agent_id = ?", [int(bucket[6:])]
+        except ValueError:
+            return "0", []
+    if bucket.startswith("token:"):
+        return "actor = 'token' AND token_ref = ?", [bucket[6:][-8:]]
+    if bucket == "tokens":
+        return "actor = 'token'", []
+    if bucket == "owner":
+        return "actor IN ('owner', 'anonymous')", []
+    if bucket == "unattributed":
+        return "actor = ''", []
+    return "1", []
+
+
+def agent_usage(user_id: str, agents: list[dict], days: int = 30, now: int | None = None) -> dict:
+    """Per-agent (and per other caller) calls, errors, cost, last call, daily series."""
+    now = int(now or time.time())
+    days = max(1, min(int(days), 90))
+    since = (now // _DAY - days + 1) * _DAY
+    conn = _db()
+    try:
+        rows = conn.execute(
+            """
+            SELECT actor, agent_id, token_ref,
+                   COUNT(*), SUM(CASE WHEN status_code >= 400 OR status_code = 0 THEN 1 ELSE 0 END),
+                   SUM(cost_usd), MAX(ts), ROUND(AVG(latency_ms), 1)
+            FROM usage_log WHERE user_id = ?
+            GROUP BY actor, agent_id, token_ref
+        """,
+            (user_id,),
+        ).fetchall()
+        daily = conn.execute(
+            """
+            SELECT actor, agent_id, token_ref, ts / ? AS d, COUNT(*), SUM(cost_usd)
+            FROM usage_log WHERE user_id = ? AND ts >= ?
+            GROUP BY actor, agent_id, token_ref, d
+        """,
+            (_DAY, user_id, since),
+        ).fetchall()
+        first_attr = conn.execute(
+            "SELECT MIN(ts) FROM usage_log WHERE user_id = ? AND actor != ''", (user_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    def key_of(actor, agent_id, token_ref):
+        if actor == "agent":
+            return f"agent:{agent_id}"
+        if actor == "token":
+            return f"token:{token_ref}"
+        if actor in ("owner", "anonymous"):
+            return "owner"
+        return "unattributed"
+
+    buckets: dict[str, dict] = {}
+
+    def bucket(key: str, **meta) -> dict:
+        b = buckets.get(key)
+        if b is None:
+            b = buckets[key] = {
+                "key": key,
+                "calls": 0,
+                "errors": 0,
+                "cost_usd": 0.0,
+                "last_ts": None,
+                "avg_latency_ms": None,
+                "daily": {},
+                **meta,
+            }
+        return b
+
+    for a in agents:
+        bucket(
+            f"agent:{a['id']}",
+            kind="agent",
+            agent_id=a["id"],
+            name=a.get("name") or "agent",
+            pubkey_b58=a.get("pubkey_b58"),
+            created_at=a.get("created_at"),
+            registered=True,
+        )
+    for actor, agent_id, token_ref, calls, errors, cost, last_ts, avg_lat in rows:
+        key = key_of(actor, agent_id, token_ref)
+        if key.startswith("agent:"):
+            b = bucket(
+                key, kind="agent", agent_id=agent_id, name=f"agent {agent_id}", registered=False
+            )
+        elif key.startswith("token:"):
+            b = bucket(key, kind="token", name=f"token …{token_ref}", token_ref=token_ref)
+        elif key == "owner":
+            b = bucket(key, kind="owner", name="You (owner sessions)")
+        else:
+            b = bucket(key, kind="unattributed", name="Before per-agent tracking")
+        prev_calls = b["calls"]
+        b["calls"] += int(calls or 0)
+        b["errors"] += int(errors or 0)
+        b["cost_usd"] += float(cost or 0)
+        b["last_ts"] = max(b["last_ts"] or 0, int(last_ts or 0)) or None
+        if avg_lat is not None and calls:
+            if b["avg_latency_ms"] is None or not prev_calls:
+                b["avg_latency_ms"] = float(avg_lat)
+            else:
+                b["avg_latency_ms"] = round(
+                    (b["avg_latency_ms"] * prev_calls + float(avg_lat) * calls)
+                    / (prev_calls + calls),
+                    1,
+                )
+    for actor, agent_id, token_ref, d, calls, cost in daily:
+        b = buckets.get(key_of(actor, agent_id, token_ref))
+        if b is None:
+            continue
+        slot = b["daily"].setdefault(int(d), [0, 0.0])
+        slot[0] += int(calls or 0)
+        slot[1] += float(cost or 0)
+
+    first_day = since // _DAY
+    out = []
+    for b in buckets.values():
+        series = b.pop("daily")
+        b["cost_usd"] = round(b["cost_usd"], 6)
+        b["daily"] = [
+            {
+                "day": time.strftime("%Y-%m-%d", time.gmtime((first_day + i) * _DAY)),
+                "calls": series.get(first_day + i, [0, 0.0])[0],
+                "cost_usd": round(series.get(first_day + i, [0, 0.0])[1], 6),
+            }
+            for i in range(days)
+        ]
+        out.append(b)
+    order = {"agent": 0, "token": 1, "owner": 2, "unattributed": 3}
+    out.sort(key=lambda b: (order.get(b["kind"], 9), -(b["last_ts"] or 0), str(b.get("name"))))
+    return {"days": days, "since_ts": since, "tracking_since_ts": first_attr, "callers": out}
+
+
+def list_calls(
+    user_id: str,
+    bucket: str = "all",
+    upstream: str = "",
+    status: str = "",
+    since_ts: int | None = None,
+    until_ts: int | None = None,
+    before_id: int | None = None,
+    limit: int = 50,
+) -> dict:
+    """One page of calls, newest first, keyset-paginated by id."""
+    limit = max(1, min(int(limit), 200))
+    where, args = _bucket_where(bucket)
+    clauses = ["user_id = ?", f"({where})"]
+    params: list = [user_id, *args]
+    if upstream:
+        clauses.append("upstream = ?")
+        params.append(upstream)
+    if status == "ok":
+        clauses.append("status_code BETWEEN 200 AND 399")
+    elif status == "error":
+        clauses.append("(status_code >= 400 OR status_code = 0)")
+    if since_ts:
+        clauses.append("ts >= ?")
+        params.append(int(since_ts))
+    if until_ts:
+        clauses.append("ts < ?")
+        params.append(int(until_ts))
+    sql_where = " AND ".join(clauses)
+    conn = _db()
+    try:
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM usage_log WHERE {sql_where}", params
+        ).fetchone()[0]
+        page_where = sql_where + (" AND id < ?" if before_id else "")
+        page_params = params + ([int(before_id)] if before_id else [])
+        rows = conn.execute(
+            f"""
+            SELECT id, ts, upstream, model, method, path, status_code, latency_ms,
+                   cost_usd, tokens_in, tokens_out, key_type, actor, agent_id, token_ref
+            FROM usage_log WHERE {page_where}
+            ORDER BY id DESC LIMIT ?
+        """,
+            page_params + [limit + 1],
+        ).fetchall()
+        upstreams = [
+            r[0]
+            for r in conn.execute(
+                f"SELECT DISTINCT upstream FROM usage_log WHERE user_id = ? AND ({where}) ORDER BY upstream",
+                [user_id, *args],
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    calls = [
+        {
+            "id": r[0],
+            "ts": r[1],
+            "upstream": r[2],
+            "model": r[3] or None,
+            "method": r[4],
+            "path": r[5],
+            "status_code": r[6],
+            "latency_ms": round(r[7] or 0, 1),
+            "cost_usd": round(r[8] or 0, 6),
+            "tokens_in": r[9],
+            "tokens_out": r[10],
+            "key_type": r[11],
+            "actor": r[12] or None,
+            "agent_id": r[13],
+            "token_ref": r[14] or None,
+        }
+        for r in rows
+    ]
+    return {
+        "calls": calls,
+        "total": total,
+        "next_before_id": calls[-1]["id"] if more and calls else None,
+        "upstreams": upstreams,
+    }

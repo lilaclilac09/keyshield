@@ -117,17 +117,20 @@ def _decrypt(data: bytes) -> str:
 # ─── Token format ──────────────────────────────────────────────────────────
 
 
-def _make_token_payload(user_id: str, expires_at: int, scope: str = SCOPE_OWNER) -> str:
+def _make_token_payload(
+    user_id: str, expires_at: int, scope: str = SCOPE_OWNER, agent_id: int | None = None
+) -> str:
     """Create base64-encoded JSON payload."""
-    payload = json.dumps(
-        {
-            "uid": user_id,
-            "exp": expires_at,
-            "iat": int(time.time()),
-            "nbf": int(time.time()),  # not-before (now),
-            "scp": scope,
-        }
-    )
+    claims = {
+        "uid": user_id,
+        "exp": expires_at,
+        "iat": int(time.time()),
+        "nbf": int(time.time()),  # not-before (now),
+        "scp": scope,
+    }
+    if agent_id is not None:
+        claims["agt"] = int(agent_id)  # which registered agent signed in (usage attribution)
+    payload = json.dumps(claims)
     return urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
@@ -138,7 +141,11 @@ def _sign_token(payload: str) -> str:
 
 
 def create_token(
-    user_id: str, password: str, ttl: int = SESSION_TTL, scope: str = SCOPE_OWNER
+    user_id: str,
+    password: str,
+    ttl: int = SESSION_TTL,
+    scope: str = SCOPE_OWNER,
+    agent_id: int | None = None,
 ) -> str:
     """
     Create a self-contained session token.
@@ -152,7 +159,7 @@ def create_token(
     if scope not in _SCOPES:
         raise ValueError(f"unknown token scope: {scope!r}")
     expires_at = int(time.time()) + ttl
-    payload = _make_token_payload(user_id, expires_at, scope)
+    payload = _make_token_payload(user_id, expires_at, scope, agent_id)
     sig = _sign_token(payload)
     token = f"{payload}.{sig}"
 
@@ -239,6 +246,7 @@ def get(token: str) -> dict | None:
         "password": password,
         "scope": scope,
         "expires_at": int(data.get("exp", 0)),
+        "agent_id": data.get("agt") if isinstance(data.get("agt"), int) else None,
     }
 
 

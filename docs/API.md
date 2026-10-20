@@ -213,9 +213,16 @@ DELETE /billing/devices/{ref_id}
 POST /billing/topup                  body: { amount_usd } — ledger PAYG credit
 GET  /usage/stats                    aggregated stats
 GET  /usage/history?limit=30         per-call history
+GET  /usage/agents?days=30           owner only: per caller (each agent, developer token, owner,
+                                     calls before tracking) calls, errors, est. cost, last call, daily series
+GET  /usage/calls                    owner only: call log, newest first. ?caller=all|agent:<id>|token:<ref>|
+                                     tokens|owner|unattributed &upstream= &status=ok|error &since= &until=
+                                     &before_id= (cursor from next_before_id) &limit=50 (max 200)
 ```
 
-Plans: **Free** (`starter`) passkey collect + vault save; **Plugin** (`pro`) auto-plugin + biometric ZK; **Accelerate** (`accelerate`) cache + extreme low latency. Subscription is seats + included budget. PAYG (top-up / MPP / x402) meters agent calls. `402 plan_limit` when a device level is full. `409 plan_downgrade_blocked` if in-use seats exceed a cheaper plan.
+Calls are attributed from the validated session: agent sign-in tokens carry the agent id (`agt` claim), developer tokens are identified by their last 8 characters (the id on the Sessions page), and the token itself is never stored in the log. Calls logged before attribution existed are reported as `unattributed`. `cost_usd` is KeyShield's estimate from token counts, not the provider's invoice.
+
+Plans: **Free** (`starter`) passkey collect + vault save; **Plugin** (`pro`) auto-plugin + biometric passkey verify; **Accelerate** (`accelerate`) cache + extreme low latency. Subscription is seats + included budget. PAYG (top-up / MPP / x402) meters agent calls. `402 plan_limit` when a device level is full. `409 plan_downgrade_blocked` if in-use seats exceed a cheaper plan.
 
 ---
 

@@ -236,6 +236,8 @@ async def proxy_route(upstream: str, path: str, request: Request):
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
         tokens_total = int(tokens_in or 0) + int(tokens_out or 0)
         usage_mod.log_call(
+            **usage_mod.attribution(sess or None, _bearer(request)),
+            model=usage_mod.extract_model(body, content),
             user_id=user_id,
             upstream=upstream,
             key_type="user",
@@ -390,6 +392,8 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
         tokens_in, tokens_out, cost_usd = usage_mod.extract_token_usage(upstream, content)
         tokens_total = int(tokens_in or 0) + int(tokens_out or 0)
         usage_mod.log_call(
+            **usage_mod.attribution(sess, token),
+            model=usage_mod.extract_model(body, content),
             user_id=user_id,
             upstream=upstream,
             key_type="vault",
