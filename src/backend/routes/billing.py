@@ -189,6 +189,72 @@ async def usage_history(request: Request):
     return JSONResponse({"history": history})
 
 
+def _owner_or_error(request: Request):
+    from ..auth import session as sess_mod
+
+    sess = _auth(request)
+    if not sess:
+        return None, JSONResponse({"detail": "unauthorized"}, status_code=401)
+    if not sess_mod.is_owner(sess):
+        return None, JSONResponse(
+            {"error": "insufficient_scope", "detail": "owner token required"}, status_code=403
+        )
+    return sess, None
+
+
+def _int_param(request: Request, name: str, default: int | None = None) -> int | None:
+    raw = request.query_params.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+@router.get("/usage/agents")
+async def usage_agents(request: Request):
+    """Per-caller usage: each registered agent, developer tokens, owner, and
+    calls logged before attribution existed. Owner token only."""
+    from ..agents import agents as agents_mod
+    from ..billing import usage as usage_mod
+
+    sess, err = _owner_or_error(request)
+    if err:
+        return err
+    days = _int_param(request, "days", 30) or 30
+    agents = agents_mod.list_agents(sess["user_id"])
+    return JSONResponse(usage_mod.agent_usage(sess["user_id"], agents, days=days))
+
+
+@router.get("/usage/calls")
+async def usage_calls(request: Request):
+    """Filtered, keyset-paginated call log. Owner token only.
+
+    ?caller=all|agent:<id>|token:<ref>|tokens|owner|unattributed
+    &upstream=&status=ok|error&since=<epoch>&until=<epoch>&before_id=&limit=50
+    """
+    from ..billing import usage as usage_mod
+
+    sess, err = _owner_or_error(request)
+    if err:
+        return err
+    q = request.query_params
+    status = q.get("status", "")
+    return JSONResponse(
+        usage_mod.list_calls(
+            sess["user_id"],
+            bucket=q.get("caller", "all") or "all",
+            upstream=(q.get("upstream") or "").strip().lower()[:40],
+            status=status if status in ("ok", "error") else "",
+            since_ts=_int_param(request, "since"),
+            until_ts=_int_param(request, "until"),
+            before_id=_int_param(request, "before_id"),
+            limit=_int_param(request, "limit", 50) or 50,
+        )
+    )
+
+
 @router.get("/billing/balance")
 async def billing_balance(request: Request):
     from ..billing import usage as usage_mod

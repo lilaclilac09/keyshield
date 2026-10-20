@@ -1161,6 +1161,7 @@ async def mpp_demo_meter(stream_id: int, request: Request):
     latency_ms = (time.perf_counter() - t0) * 1000.0
     try:
         usage_mod.log_call(
+            **usage_mod.attribution(sess, None),
             user_id=sess["user_id"],
             upstream=str(upstream),
             key_type="demo",

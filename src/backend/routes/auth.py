@@ -320,7 +320,16 @@ async def agent_login(request: Request):
         return JSONResponse({"error": "signature required"}, status_code=401)
 
     sess_mod._consume_nonce(nonce)
-    token = sess_mod.create_token(agent_info["owner_wallet"], "default", scope=sess_mod.SCOPE_PROXY)
+    token = sess_mod.create_token(
+        agent_info["owner_wallet"],
+        "default",
+        scope=sess_mod.SCOPE_PROXY,
+        agent_id=agent_info.get("agent_id"),
+    )
+    try:
+        agents_mod.touch(pubkey_b58)
+    except Exception:
+        pass
     return JSONResponse({"token": token, "scope": sess_mod.SCOPE_PROXY})
 
 
