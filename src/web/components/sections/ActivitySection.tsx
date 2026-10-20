@@ -59,10 +59,10 @@ const upstreamColor = (u: string) => {
 const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
 const fmtCost = (c: number) => `$${c.toFixed(4)}`;
 
-export const ActivitySection: React.FC = () => {
+export const ActivitySection: React.FC<{ hideLedger?: boolean }> = ({ hideLedger = false }) => {
   const { publicKey, sendTransaction, connected, signMessage } = useWallet();
   const [tab, setTab] = useState<Tab>(() => (
-    typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
+    hideLedger || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp')
       ? 'mpp'
       : 'usage'
   ));
@@ -572,7 +572,7 @@ export const ActivitySection: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <PaymentsLedger ledgerUsd={billing?.balance_usd} onRefresh={refresh} />
+      {!hideLedger && <PaymentsLedger ledgerUsd={billing?.balance_usd} onRefresh={refresh} />}
       {/* Tab bar */}
       <div className="flex gap-1 rounded-lg border border-[#243365] bg-[#0e1631] p-1 text-[11px]">
         {TABS.map(t => (

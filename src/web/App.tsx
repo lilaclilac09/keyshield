@@ -12,6 +12,7 @@ import { readPasskeyUserIdFromStorage } from './lib/passkey-id';
 import { wantsShopDemo } from './lib/shop-demo';
 import { syncExtensionVaultKey } from './lib/vault-key';
 import { Sidebar } from './components/ui/Sidebar';
+import { MobileNav } from './components/ui/MobileNav';
 import { Header } from './components/ui/Header';
 import { SearchOverlay } from './components/ui/SearchOverlay';
 import { BetaBanner } from './components/BetaBanner';
@@ -20,6 +21,7 @@ import { HomeSection } from './components/sections/HomeSection';
 import { VaultSection } from './components/sections/VaultSection';
 import { ZkModeCard } from './components/sections/ZkModeCard';
 import { ActivitySection } from './components/sections/ActivitySection';
+import { BillingSection } from './components/billing/BillingSection';
 import { fetchKeychainHome, type KeychainHome } from './lib/keychain';
 import { flushPendingVaultHits, shouldRefreshVaultOnVisit, type PendingVaultHit } from './lib/vault-list';
 import { AgentsSection } from './components/sections/AgentsSection';
@@ -33,12 +35,12 @@ import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StoryJourney } from './components/StoryJourney';
 
-type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'troubleshooting' | 'reports' | 'trust';
+type Section = 'home' | 'vault' | 'activity' | 'mpp' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'troubleshooting' | 'reports' | 'trust';
 
 const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' | 'more' }[] = [
   { id: 'home', label: 'Home', icon: <Home size={16} />, group: 'focus' },
   { id: 'vault', label: 'Vault', icon: <Key size={16} />, group: 'focus' },
-  { id: 'activity', label: 'Payments', icon: <Activity size={16} />, group: 'focus' },
+  { id: 'activity', label: 'Billing & usage', icon: <Activity size={16} />, group: 'focus' },
   { id: 'developer', label: 'Developer', icon: <Terminal size={16} />, group: 'focus' },
   { id: 'docs', label: 'Docs & Troubleshooting', icon: <BookOpen size={16} />, group: 'focus' },
   { id: 'agents', label: 'Agents', icon: <Bot size={14} />, group: 'more' },
@@ -47,12 +49,14 @@ const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' |
   { id: 'settings', label: 'Settings', icon: <Settings size={14} />, group: 'more' },
   { id: 'reports', label: 'Reports', icon: <FileText size={14} />, group: 'more' },
   { id: 'trust', label: 'X402 Trust', icon: <ShieldCheck size={14} />, group: 'more' },
+  { id: 'mpp', label: 'MPP streams', icon: <Activity size={14} />, group: 'more' },
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
   home: { title: 'Home', subtitle: 'RPC, API timings, subscription, one-click buy or call' },
   vault: { title: 'Vault Management', subtitle: 'Saved keys — hidden until you reveal' },
-  activity: { title: 'Payments', subtitle: 'Portal, rail, explorer, receipt — grouped by wallet and human or agent' },
+  activity: { title: 'Billing & usage', subtitle: 'Per-agent calls, balance, wallet and payments' },
+  mpp: { title: 'MPP streams', subtitle: 'Metered payment streams and devnet tools' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
   sharing: { title: 'Key Sharing', subtitle: 'Re-encrypted access for authorized recipients' },
   sessions: { title: 'Sessions', subtitle: 'Active auth sessions across devices' },
@@ -234,6 +238,10 @@ const MainContent: React.FC = () => {
       <div className="flex flex-1 min-h-0">
         <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
+          <MobileNav items={NAV} active={section} onNavigate={goSection} />
+          {section === 'activity' ? (
+            <div className="flex-1 overflow-auto"><BillingSection /></div>
+          ) : (<>
           <Header title={config.title} subtitle={config.subtitle} onSearch={section === 'home' ? undefined : () => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
             <div className="max-w-5xl mx-auto">
@@ -252,7 +260,7 @@ const MainContent: React.FC = () => {
                 />
               )}
               {section === 'vault' && (<><VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} /><div className="mt-6"><ZkModeCard onUnlock={unlock} unlocking={vaultLoading} /></div></>)}
-              {section === 'activity' && <ActivitySection />}
+              {section === 'mpp' && <ActivitySection hideLedger />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
               {section === 'sessions' && <SessionsSection onLogout={handleLogout} />}
@@ -264,6 +272,7 @@ const MainContent: React.FC = () => {
               {section === 'trust' && <X402TrustManager />}
             </div>
           </div>
+          </>)}
         </main>
       </div>
     </div>
