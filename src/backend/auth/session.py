@@ -34,7 +34,10 @@ from pathlib import Path
 from typing import Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-DB_PATH = Path(__file__).parent.parent / "sessions.db"
+from ..db_paths import backend_db_path
+
+# KS_SESSION_DB wins, then KS_DATA_DIR (via backend_db_path); default unchanged.
+DB_PATH = Path(os.getenv("KS_SESSION_DB") or backend_db_path("sessions.db"))
 SESSION_TTL = 24 * 3600  # 24 hours
 
 # Token scopes. "owner" is a signed-in user (passkey, wallet or password
@@ -53,6 +56,7 @@ _LEGACY_AGENT_PASSWORD = "default"
 
 def _db() -> sqlite3.Connection:
     """Open the sessions database. Shared with legacy session.create()."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
