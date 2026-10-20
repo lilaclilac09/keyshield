@@ -1,4 +1,5 @@
 """sessions.db location: env overrides, default unchanged."""
+
 import importlib
 from pathlib import Path
 
@@ -20,7 +21,9 @@ def test_session_db_path(monkeypatch, tmp_path):
         assert _reload(monkeypatch) == _BACKEND / "sessions.db"
         assert _reload(monkeypatch, KS_DATA_DIR=str(tmp_path)) == tmp_path / "sessions.db"
         explicit = tmp_path / "x" / "s.db"
-        assert _reload(monkeypatch, KS_DATA_DIR=str(tmp_path), KS_SESSION_DB=str(explicit)) == explicit
+        assert (
+            _reload(monkeypatch, KS_DATA_DIR=str(tmp_path), KS_SESSION_DB=str(explicit)) == explicit
+        )
         assert sess_mod.register_password("alice", "hunter2")
         assert explicit.exists()
         assert sess_mod.verify_password("alice", "hunter2")
