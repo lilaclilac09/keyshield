@@ -20,6 +20,7 @@ import {
 } from '../../lib/openrouter-interface';
 import { PlanCatalog, type DeviceLevelCopy, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
 import { PaymentsLedger } from '../PaymentsLedger';
+import { AgentSpendTab } from './AgentSpendTab';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -49,7 +50,7 @@ interface AgentOpt { name: string; pubkey_b58: string }
 interface MppSummary { streams_total: number; streams_open: number; tokens_total: number; calls_total: number; settled_usd: number; pending_usd: number; }
 interface MppEvent { id: number; stream_id: number; kind: string; calls: number; tokens: number; micro_usdc: number; cost_usd: number; ts: number; upstream: string; agent_name: string; agent_pubkey: string; }
 
-type Tab = 'usage' | 'stats' | 'billing' | 'topup' | 'mpp' | 'plans';
+type Tab = 'usage' | 'agents' | 'stats' | 'billing' | 'topup' | 'mpp' | 'plans';
 
 const upstreamColor = (u: string) => {
   const m: Record<string, string> = { openai: 'text-emerald-400', anthropic: 'text-orange-400', groq: 'text-yellow-400', mistral: 'text-blue-400', cohere: 'text-purple-400', helius: 'text-white', '0x': 'text-pink-400', alchemy: 'text-cyan-400', pyth: 'text-violet-400', titan: 'text-rose-400' };
@@ -542,6 +543,7 @@ export const ActivitySection: React.FC = () => {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'usage', label: 'Usage Log' },
+    { id: 'agents', label: 'Per Agent' },
     { id: 'stats', label: 'Statistics' },
     { id: 'plans', label: 'Plans' },
     { id: 'billing', label: 'Billing' },
@@ -586,6 +588,9 @@ export const ActivitySection: React.FC = () => {
           <DataTable columns={historyCols} data={history} emptyMessage="No usage recorded yet." />
         </Card>
       )}
+
+      {/* Per Agent */}
+      {tab === 'agents' && <AgentSpendTab />}
 
       {/* Statistics */}
       {tab === 'stats' && (
