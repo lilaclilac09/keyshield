@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   return (
-    <aside className="w-60 shrink-0 border-r border-[#243365]/50 bg-[#0e1631] hidden md:flex flex-col">
+    <aside className="w-60 shrink-0 border-r border-[#243365]/50 bg-[#0e1631] flex flex-col">
       <div className="h-14 px-5 flex items-center border-b border-[#243365]/50"><Logo size="sm" /></div>
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {focus.map((item) => render(item, true))}
