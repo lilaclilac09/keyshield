@@ -290,7 +290,7 @@ Stage 4 steps inside the script:
 
 1. **The spec is the contract between languages.** Token format, encryption envelope, and the five invariants live in one document. If a feature cannot keep them, the feature changes.
 2. **Put the language where a bug is expensive.** Rust on the inject-once path. Python on the SDK and the cold control plane. TypeScript where humans click.
-3. **Do not publish unmeasured latency.** Cache and single-flight are real. “50–80ms” as a product claim is not, until a named environment is measured.
+3. **Do not publish unmeasured latency.** Cache and single-flight are real. “50–80ms” / “<50ms p99” / “sub-200ms” are unpublished targets, not measured / not an SLA.
 4. **Discriminators over Explorer copy.** A confirmed tx can still be OpenStream (24) when someone labeled it MppSettle (26).
 5. **No fulfillment, no settle.** 502 / empty / truncated SSE must not `mpp_settle`. Hold, then hash, then debit.
 6. **Solana USDC MPP is the settlement core.** Universal Vault + Session Grant + OpenStream / MppSettle. Tempo vouchers are an archive, not a chain to put on the front of the product.

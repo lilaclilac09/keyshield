@@ -311,6 +311,23 @@ def get_balance(user_id: str) -> float:
         conn.close()
 
 
+def prepaid_allows_upstream(user_id: str, key_type: str) -> bool:
+    """Whether a proxy call may proceed to hold, cache, or upstream.
+
+    Platform keys debit the prepaid ledger, so a non-positive balance
+    must not reach upstream (a cache HIT is not a skip). Vault-owned
+    and user-supplied keys do not debit that ledger and still forward
+    at $0.
+    """
+    kind = (key_type or "").strip().lower()
+    if kind != "platform":
+        return True
+    uid = (user_id or "").strip()
+    if not uid or uid == "anonymous":
+        return False
+    return get_balance(uid) > 0
+
+
 def topup(user_id: str, amount_usd: float) -> float:
     """Add prepaid credit. Returns new balance."""
     conn = _db()

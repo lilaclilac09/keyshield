@@ -93,7 +93,9 @@ def test_complete_sse_bills_usage_from_data_lines():
     assert artifact.calls == 1
 
 
-def test_empty_disconnect_is_not_billable():
+def test_empty_disconnect_is_not_billable(db, monkeypatch):
+    monkeypatch.delenv("KS_MPP_HOLD_TTL_SECS", raising=False)
+    assert mpp_streams._hold_ttl_secs() == 120
     with pytest.raises(FulfillmentRejected, match="empty payload"):
         verify_fulfillment(
             stream_id=1,
@@ -103,6 +105,51 @@ def test_empty_disconnect_is_not_billable():
             observed=True,
             truncated=True,
         )
+
+    stream = _open()
+    pending0 = stream["pending_micro_usdc"]
+    settled0 = stream["settled_micro_usdc"]
+    assert pending0 == 0
+    assert settled0 == 0
+
+    cases = (
+        (200, b"", True),
+        (502, b"", True),
+        (502, b"bad gateway", False),
+        (500, CHAT, False),
+        (503, b"{}", False),
+        (200, b"????", False),
+        (200, b"garbage", False),
+    )
+    for status, body, truncated in cases:
+        held = mpp_streams.hold_estimate("alice", stream["id"], "openai", 800)
+        hold_id = held["hold_id"]
+        assert held["held_micro_usdc"] == 800
+        conn = mpp_streams._db()
+        try:
+            row = conn.execute(
+                "SELECT expires_at, created_at FROM mpp_holds WHERE id = ?",
+                (hold_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert int(row[0]) - int(row[1]) == 120
+
+        with pytest.raises(FulfillmentRejected):
+            mpp_streams.meter_proxy_response(
+                "alice",
+                stream["id"],
+                "openai",
+                status,
+                body,
+                truncated=truncated,
+                hold_id=hold_id,
+            )
+        fresh = mpp_streams.list_streams("alice")["streams"][0]
+        assert fresh["held_micro_usdc"] == 0
+        assert fresh["pending_micro_usdc"] == pending0
+        assert fresh["settled_micro_usdc"] == 0
 
 
 def test_idempotency_key_does_not_double_debit_and_bills_only_the_delta(db):
