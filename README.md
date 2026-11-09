@@ -155,7 +155,7 @@ KeyShield sells **two different things**, so it uses **two meters**.
 
 | You are buying | Meter | Why |
 |---|---|---|
-| Trusted devices + control plane (vault, plugins, latency) | **Subscription** (monthly) | Humans have calendars. A laptop, a phone, and a runtime host are seats you keep all month. Latency SLAs are monthly too. |
+| Trusted devices + control plane (vault, plugins, latency) | **Subscription** (monthly) | Humans have calendars. A laptop, a phone, and a runtime host are seats you keep all month. Latency is a monthly engineering target, not a published SLA. |
 | Agent API calls (inference, RPC, streams) | **Pay-as-you-go** (ledger / MPP / x402) | Agents are bursty. A runaway bot must not become an unlimited monthly liability. Each call debits the ledger or settles on-chain after fulfillment. |
 
 That is why we go with **subscription and pay-as-you-go together**. Subscription without PAYG would let one agent print an unbounded bill inside a flat month. PAYG without subscription would charge you per Face ID and per laptop — seats are not calls.

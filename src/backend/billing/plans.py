@@ -21,7 +21,7 @@ FEATURE_COPY = {
     "auto_plugin": "Auto plugins — SDK / CLI inject the decrypted key at request time (`X-Upstream-API-Key`).",
     "biometric_zk": "Biometric ZK verify — passkey PRF proves this device. The server never sees the raw key.",
     "accelerate": "Acceleration — RPC cache, batch RPC, and parallel quote + analyze on the hot path.",
-    "low_latency": "Extreme low latency — Groq urgent path, cached Helius TTLs, sub-200ms trading budget.",
+    "low_latency": "Extreme low latency is an unpublished target, not measured / not an SLA — Groq urgent path, cached Helius TTLs.",
 }
 
 WHY = {
@@ -34,7 +34,7 @@ WHY = {
         "A subscription pays for the control plane: Path A vault seats, "
         "passkey/PRF devices, session minting, auto-plugins, biometric ZK, "
         "and a predictable included proxy budget. Humans have calendars; "
-        "seats and latency SLAs are monthly."
+        "seats are monthly. Latency is a target, not a published SLA."
     ),
     "payg": (
         "Pay-as-you-go (ledger top-up, MPP streams, x402) pays for agent "

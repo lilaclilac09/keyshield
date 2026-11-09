@@ -2,13 +2,15 @@
 
 Path A: keys arrive per-request from the client (decrypted client-side
 from R2-stored ciphertext). The server NEVER persists, caches, or logs the
-upstream API key. Each /proxy/<upstream>/<path> call MUST include the
-header:
+upstream API key. Each /proxy/<upstream>/<path> call SHOULD include:
 
     X-Upstream-API-Key: <raw key>
 
-If the header is missing the proxy returns 401. The header value is used
-exactly once, for the single upstream call, and then dropped.
+That header is used exactly once, then dropped. If it is missing, a
+platform env key (`OPENAI_API_KEY`, `{UPSTREAM}_API_KEY`) may fill in.
+No key at all is 401. A platform key with prepaid balance <= 0 is HTTP
+402 *before* hold, cache, or upstream (open MPP stream is the skip).
+Vault `/vproxy` keys do not debit the ledger and still forward at $0.
 
 See docs/technical/SYNC_VAULT_ARCHITECTURE.md.
 """
@@ -68,6 +70,78 @@ def _mpp_stream_id(request: Request) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _platform_env_key(upstream: str) -> str:
+    slug = str(upstream or "").strip().upper().replace("-", "_")
+    if not slug:
+        return ""
+    for name in (f"{slug}_API_KEY", f"KS_{slug}_API_KEY"):
+        val = os.getenv(name, "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _mpp_stream_is_open(user_id: str, stream_id: int | None) -> bool:
+    if stream_id is None or not user_id or user_id == "anonymous":
+        return False
+    try:
+        from ..mpp import mpp_streams
+
+        conn = mpp_streams._db()
+        try:
+            row = conn.execute(
+                "SELECT status FROM mpp_streams WHERE id = ? AND user_id = ?",
+                (int(stream_id), user_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        return bool(row) and str(row[0]) == "open"
+    except Exception:
+        return False
+
+
+def payment_required_response(upstream: str, request: Request) -> JSONResponse:
+    """x402 envelope. LLMs must not calculate, authorize, or settle money."""
+    payment_address = os.getenv("PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000")
+    body = {
+        "x402Version": 1,
+        "error": "X-PAYMENT-REQUIRED",
+        "accepts": [
+            {
+                "scheme": "exact",
+                "network": "base-sepolia",
+                "maxAmountRequired": "10000",
+                "resource": str(request.url.path),
+                "description": f"KeyShield API proxy — {upstream}",
+                "mimeType": "application/json",
+                "payTo": payment_address,
+                "maxTimeoutSeconds": 300,
+                "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+                "extra": {"name": "USDC", "version": "2"},
+            }
+        ],
+    }
+    resp = JSONResponse(body, status_code=402)
+    resp.headers["X-Payment-Required"] = "x402"
+    return resp
+
+
+def refuse_unpaid_platform_call(
+    request: Request, user_id: str, upstream: str, key_type: str
+) -> JSONResponse | None:
+    """402 before hold / cache / upstream when a platform key has no credit.
+
+    Vault and user-supplied keys skip this. An open MPP stream is the
+    prepaid channel (header X-Mpp-Stream-Id). Tempo vouchers are not live.
+    """
+    if str(key_type or "").strip().lower() != "platform":
+        return None
+    stream_open = _mpp_stream_is_open(user_id, _mpp_stream_id(request))
+    if usage_mod.prepaid_allows_upstream(user_id, key_type=key_type, mpp_stream_open=stream_open):
+        return None
+    return payment_required_response(upstream, request)
 
 
 def _mpp_acquire_hold(request: Request, user_id: str, upstream: str):
@@ -181,15 +255,24 @@ async def proxy_route(upstream: str, path: str, request: Request):
     from ..proxy import api_router
     from ..proxy.x402_interceptor import PaymentRequired
 
-    api_key = request.headers.get("X-Upstream-API-Key")
-    if not api_key:
-        return JSONResponse(
-            {"error": "missing X-Upstream-API-Key"},
-            status_code=401,
-        )
+    header_key = (request.headers.get("X-Upstream-API-Key") or "").strip()
+    if header_key:
+        api_key, key_type = header_key, "user"
+    else:
+        platform_key = _platform_env_key(upstream)
+        if not platform_key:
+            return JSONResponse(
+                {"error": "missing X-Upstream-API-Key"},
+                status_code=401,
+            )
+        api_key, key_type = platform_key, "platform"
 
     sess = sess_mod.get(_bearer(request) or "") or {}
     user_id = sess.get("user_id") or sess.get("userId") or "anonymous"
+
+    unpaid = refuse_unpaid_platform_call(request, user_id, upstream, key_type)
+    if unpaid is not None:
+        return unpaid
 
     velocity_key, velocity_err = _velocity_admit(request, user_id)
     if velocity_err is not None:
@@ -240,7 +323,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
             model=usage_mod.extract_model(body, content),
             user_id=user_id,
             upstream=upstream,
-            key_type="user",
+            key_type=key_type,
             method=str(request.method),
             path=f"/{path}",
             tokens_in=tokens_in,

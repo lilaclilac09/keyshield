@@ -10,13 +10,13 @@
 2. **Multi-upstream support** — OpenAI, Anthropic, Groq, 0x, Titan, Helius, etc.
 3. **Solana integration** — Wallet auth, on-chain vault state, payment streams
 4. **Agent framework** — AI agents with isolated key access
-5. **Scalability** — Handle 10K+ req/s with < 50ms p99 latency on hot path
+5. **Scalability** — Handle 10K+ req/s. Hot-path latency is an unpublished target, not measured / not an SLA (do not publish <50ms p99 as product).
 
 ### Non-Functional Requirements
 
 | Attribute | Target | Measurement |
 |-----------|--------|-------------|
-| Latency (hot path) | < 50ms p99 | ks-proxy to upstream |
+| Latency (hot path) | unpublished target, not measured / not an SLA | named environment; loopback mocks are not product |
 | Throughput | 10K req/s | Sustained load |
 | Availability | 99.9% | Monthly uptime |
 | Security | Zero-trust | Third-party audit |
