@@ -52,7 +52,7 @@ Three layers. Two meters. Seats are not calls.
 
 **Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
 
-**Start here:** [How to use this](#how-to-use-this) · [Chrome extension Sign in](#chrome-extension-sign-in) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [Repository index](#repository-index)
+**Start here:** [How to use this](#how-to-use-this) · [Chrome extension Sign in](#chrome-extension-sign-in) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [MPP vs Nevermined](#keyshield-mpp-moat-vs-nevermined-evidence-checked-2026-11-09) · [Repository index](#repository-index)
 
 Scattered files stay on disk. They are **indexed** (not moved) under [`docs/repository-index/`](docs/repository-index/README.md).
 
@@ -509,6 +509,56 @@ hardware-anchored session sandbox.
   cache. In-process cache hit **0.004 ms** vs **37.7 ms** WAN RTT on the
   measured `/mpp/status` path — the hop the agent does *not* pay after the
   first handshake.
+
+## KeyShield MPP moat vs Nevermined (evidence-checked 2026-11-09)
+
+Nevermined is the closest public full-stack rival: Catalog + Router pay
+x402 on Base and MPP on Tempo from one Delegation (a self-created hard
+cap). KeyShield’s Solana USDC MPP is **hold → verify → capture**. The
+buyer-side pre-capture gate is the moat.
+
+**KeyShield (this repo).** Hold TTL 120s. Over cap → HTTP 409
+`BudgetExceeded` before any upstream call. Verify rebuilds the preimage
+into a 32-byte fulfillment artifact and accepts only 2xx + non-empty +
+not error-JSON/garbage + tokens ≤ usage + provider match. Capture
+requires HMAC-SHA256 over that artifact. On-chain:
+`UnverifiedFulfillment` (6108), `BudgetExceeded` (6100). Empty / 5xx /
+garbage disconnects are not billable.
+
+**Nevermined buyer / Router (public docs).** Once the payment credential
+is minted, the merchant leg stands even if the upstream call then
+errors. The Router documents no void, refund, or reversal of that leg
+([How the Router works](https://nevermined.ai/docs/products/catalog/router/how-it-works)).
+Mode B may release the *routing fee* on a non-2xx hop; that is not a
+fulfillment check. Empty or garbage 2xx still pays the merchant
+reservation. Matching this moat would mean rebuilding hold → verify →
+capture on the buyer path — watch public docs for any sign of that. No
+public Router-side body-content, token-count, provider-match, artifact,
+or HMAC check was found. A Router-side verification *roadmap* is
+**unverified**.
+
+**Nevermined seller SDK.** [`nevermined-io/payments` commit `ebc0ebf`](https://github.com/nevermined-io/payments/commit/ebc0ebfaa3d83353066cb4288653207b304636f4)
+(committed 2026-08-17 13:43:52 UTC; present on the default branch as of
+this check) copies `armDeliveryProbe()` into the Express middleware.
+The probe gates settlement on socket bytes reaching the wire (transport
+delivery), not fulfillment: a 2xx with an empty body still settles if
+bytes flushed. There is no body-content, token-count, provider-match,
+artifact, or HMAC check, and nothing on-chain. A content check there
+(empty body, error JSON) would be a small step away. Whether that
+middleware is live on Nevermined production hosts is **unverified**.
+
+**AEP.** The [A-Comm Evidence Protocol](https://github.com/A-Comm-Tech/a-comm-evidence-protocol)
+is a **public draft** tamper-evident dispute record. It does not move
+money and is not a pre-capture gate. The industry may settle for
+post-purchase evidence plus dispute instead of a pre-capture gate.
+
+**Not claimed.** Nevermined’s Tempo *sessions* (escrow + signed
+vouchers, batched close) are their product, documented in their
+production Router; KeyShield does not ship Tempo vouchers as live. No
+LLM sits on KeyShield’s payment loop. Documented KeyShield MPP on-chain
+usage here is **Solana Devnet** (including shop receipt
+`KS-MPP-509959477`). Solana **mainnet** MPP usage beyond that receipt
+is **unverified**.
 
 ### Same vault. Two interfaces.
 
