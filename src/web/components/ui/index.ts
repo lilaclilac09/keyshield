@@ -9,6 +9,7 @@ export { Toggle } from './Toggle';
 export type { ToggleProps } from './Toggle';
 export { ConfirmButton } from './ConfirmButton';
 export { CopyButton, useCopyable } from './CopyButton';
+export { AppFeedbackToast } from './AppFeedbackToast';
 export { Header } from './Header';
 export { Sidebar } from './Sidebar';
 export { SearchOverlay } from './SearchOverlay';

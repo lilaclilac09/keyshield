@@ -8,6 +8,7 @@ import { API_BASE, getToken } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
 import { TroubleshootingSection } from './TroubleshootingSection';
+import { copyWithFeedback } from '../../lib/app-feedback';
 
 const CHAPTERS = [
   { id: 'docs-ch-1', label: '1 · Quickstart' },
@@ -47,7 +48,7 @@ export const DocsSection: React.FC = () => {
 
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Run this in your terminal</span></div>
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#0e1631] border border-[#243365]"><code className="flex-1 text-[13px] font-mono text-zinc-200 break-all">{installCmd}</code><Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(installCmd)}>Copy</Button></div>
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#0e1631] border border-[#243365]"><code className="flex-1 text-[13px] font-mono text-zinc-200 break-all">{installCmd}</code><Button variant="ghost" size="sm" onClick={() => { void copyWithFeedback(installCmd); }}>Copy</Button></div>
         <p className="text-[11px] text-[#8a96c2] mt-3">The installer creates a Python venv, downloads the SDK, generates an ed25519 keypair for the agent, and writes a ready-to-use <code className="text-white">.env</code> file.</p>
       </Card>
 

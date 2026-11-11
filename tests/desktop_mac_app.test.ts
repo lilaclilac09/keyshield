@@ -73,4 +73,25 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).not.toContain("ks-proxy");
     expect(main).not.toContain("mpp_streams");
   });
+
+  it("shows unlock save copy proxy MPP error and success feedback", () => {
+    const app = read("src/web/App.tsx");
+    expect(app).toContain("AppFeedbackToast");
+    expect(app).toContain("copyWithFeedback");
+    const feedback = read("src/web/lib/app-feedback.ts");
+    expect(feedback).toContain("emitAppFeedback");
+    expect(feedback).toContain("copyWithFeedback");
+    expect(read("src/web/components/ui/AppFeedbackToast.tsx")).toContain('data-testid="app-feedback-toast"');
+    expect(read("src/web/components/AuthScreen.tsx")).toContain("Unlocking with passkey");
+    expect(read("src/web/hooks/useVaults.ts")).toContain("Vault unlocked");
+    expect(read("src/web/components/sections/VaultSection.tsx")).toContain("Saved to vault");
+    expect(read("src/web/components/ui/CopyButton.tsx")).toContain("copyWithFeedback");
+    expect(read("src/web/components/sections/HomeSection.tsx")).toContain("source: 'proxy'");
+    expect(read("src/web/components/PaymentsLedger.tsx")).toContain("source: 'mpp'");
+    expect(read("src/web/components/HealthBadge.tsx")).toContain("API offline");
+    const main = read("src/desktop/main.cjs");
+    expect(main).toContain("ks-feedback");
+    expect(main).toContain("did-fail-load");
+    expect(read("src/desktop/preload.cjs")).toContain("notify:");
+  });
 });

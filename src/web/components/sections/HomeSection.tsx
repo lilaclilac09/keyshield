@@ -18,6 +18,7 @@ import {
   type PurchaseRow,
 } from '../../lib/purchases';
 import type { PlanSnapshot } from '../PlanCatalog';
+import { emitAppFeedback } from '../../lib/app-feedback';
 
 interface Props {
   home: KeychainHome | null;
@@ -95,14 +96,24 @@ export const HomeSection: React.FC<Props> = ({
 
   const runCall = async (upstream: string) => {
     setBusy(upstream); setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: `Calling ${upstream}…`, source: 'proxy' });
     try {
       const result = await callKeychain(upstream);
       setLastCall(result);
       setOk(result.live);
-      setMsg(`${upstream} ${result.live ? 'live' : 'failed'} · ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
+      const line = `${upstream} ${result.live ? 'live' : 'failed'} · ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`;
+      setMsg(line);
+      emitAppFeedback({
+        kind: result.live ? 'success' : 'error',
+        title: result.live ? `${upstream} live` : `${upstream} failed`,
+        detail: line,
+        source: 'proxy',
+      });
     } catch (err) {
       setOk(false);
-      setMsg(err instanceof Error ? err.message : 'Call failed');
+      const detail = err instanceof Error ? err.message : 'Call failed';
+      setMsg(detail);
+      emitAppFeedback({ kind: 'error', title: 'Proxy call failed', detail, source: 'proxy' });
     } finally {
       setBusy(null);
     }
@@ -111,13 +122,21 @@ export const HomeSection: React.FC<Props> = ({
   const buyOnChain = () => {
     setBusy('buy');
     setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: 'Buying MPP…', source: 'mpp' });
     void buyMppShopSku()
       .then((next) => {
         setOk(true);
-        setMsg(`On-chain buy ${next.sku} · ${next.settleTx ? 'settled' : 'opened'} · detail in Payments`);
+        const line = `On-chain buy ${next.sku} · ${next.settleTx ? 'settled' : 'opened'} · detail in Payments`;
+        setMsg(line);
+        emitAppFeedback({ kind: 'success', title: 'MPP purchase', detail: line, source: 'mpp' });
         onRefresh();
       })
-      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Buy failed'); })
+      .catch((err) => {
+        setOk(false);
+        const detail = err instanceof Error ? err.message : 'Buy failed';
+        setMsg(detail);
+        emitAppFeedback({ kind: 'error', title: 'MPP buy failed', detail, source: 'mpp' });
+      })
       .finally(() => setBusy(null));
   };
 
@@ -160,6 +179,7 @@ export const HomeSection: React.FC<Props> = ({
           onClick={() => {
             setBusy('rpc');
             setMsg(null);
+            emitAppFeedback({ kind: 'busy', title: 'Pinging RPC…', source: 'proxy' });
             const addr = home?.wallet.address ?? '';
             const t0 = performance.now();
             void fetchKeychainHome(addr)
@@ -175,9 +195,15 @@ export const HomeSection: React.FC<Props> = ({
                 setOk(true);
                 setRpcPing(line);
                 setMsg(line);
+                emitAppFeedback({ kind: 'success', title: 'RPC ping', detail: line, source: 'proxy' });
                 onRefresh();
               })
-              .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'RPC ping failed'); })
+              .catch((err) => {
+                setOk(false);
+                const detail = err instanceof Error ? err.message : 'RPC ping failed';
+                setMsg(detail);
+                emitAppFeedback({ kind: 'error', title: 'RPC ping failed', detail, source: 'proxy' });
+              })
               .finally(() => setBusy(null));
           }}
           className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"

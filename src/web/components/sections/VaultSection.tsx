@@ -5,6 +5,7 @@ import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
 import { callKeychain, detectUpstream, quickPasteError, storeDetectedKeys } from '../../lib/keychain';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
+import { emitAppFeedback } from '../../lib/app-feedback';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -21,21 +22,41 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
 
   const saveAndCall = async (alsoCall: boolean) => {
     const gate = quickPasteError(paste);
-    if (gate) { setMsg(gate); return; }
+    if (gate) {
+      setMsg(gate);
+      emitAppFeedback({ kind: 'error', title: 'Cannot save', detail: gate, source: 'save' });
+      return;
+    }
     setBusy(true); setMsg(null);
+    emitAppFeedback({
+      kind: 'busy',
+      title: alsoCall ? 'Saving and calling…' : 'Saving…',
+      source: alsoCall ? 'proxy' : 'save',
+    });
     try {
       const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       onStored?.();
       const first = stored[0];
       if (alsoCall && first?.upstream) {
         const result = await callKeychain(first.upstream);
-        setMsg(`Saved ${stored.length} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`);
+        const line = `Saved ${stored.length} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`;
+        setMsg(line);
+        emitAppFeedback({
+          kind: result.live ? 'success' : 'error',
+          title: result.live ? 'Saved and called' : 'Saved, call failed',
+          detail: line,
+          source: 'proxy',
+        });
       } else {
-        setMsg(`Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`);
+        const line = `Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`;
+        setMsg(line);
+        emitAppFeedback({ kind: 'success', title: 'Saved to vault', detail: line, source: 'save' });
       }
       setPaste('');
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : 'Save failed');
+      const detail = err instanceof Error ? err.message : 'Save failed';
+      setMsg(detail);
+      emitAppFeedback({ kind: 'error', title: 'Save failed', detail, source: 'save' });
     } finally {
       setBusy(false);
     }

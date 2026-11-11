@@ -15,6 +15,7 @@ import {
   unlockCode, zkRootId, type ZkStatus,
 } from '../../lib/zk';
 import { pushZkRootToExtension } from '../../lib/vault-key';
+import { copyWithFeedback, emitAppFeedback } from '../../lib/app-feedback';
 
 export const ZkModeCard: React.FC<{ onUnlock?: () => void; unlocking?: boolean }> = ({ onUnlock, unlocking }) => {
   const [status, setStatus] = useState<ZkStatus | null>(null);
@@ -47,13 +48,18 @@ export const ZkModeCard: React.FC<{ onUnlock?: () => void; unlocking?: boolean }
     const root = getZkRoot();
     if (!root) return;
     setBusy('enable'); setErr(null); setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: 'Enabling ZK mode…', source: 'save' });
     try {
       await enableZk(root);
       await sendToExtension();
-      setMsg('ZK mode is on. New keys saved by the extension are encrypted on this device first.');
+      const line = 'ZK mode is on. New keys saved by the extension are encrypted on this device first.';
+      setMsg(line);
+      emitAppFeedback({ kind: 'success', title: 'ZK mode on', detail: line, source: 'save' });
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const detail = e instanceof Error ? e.message : String(e);
+      setErr(detail);
+      emitAppFeedback({ kind: 'error', title: 'ZK enable failed', detail, source: 'save' });
     } finally { setBusy(null); }
   };
 
@@ -61,13 +67,23 @@ export const ZkModeCard: React.FC<{ onUnlock?: () => void; unlocking?: boolean }
     const root = getZkRoot();
     if (!root) return;
     setBusy('migrate'); setErr(null); setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: 'Re-saving keys in ZK mode…', source: 'save' });
     try {
       const { moved, failed } = await migratePlaintextToZk(root, (d, t) => setMsg(`Re-saving ${d}/${t}…`));
       if (failed) setErr(`${failed} key(s) could not be moved. They are still stored the old way; try again.`);
-      setMsg(`${moved} key(s) re-saved in ZK mode. Now rotate them at each provider: the old copies were readable by the server.`);
+      const line = `${moved} key(s) re-saved in ZK mode. Now rotate them at each provider: the old copies were readable by the server.`;
+      setMsg(line);
+      emitAppFeedback({
+        kind: failed ? 'error' : 'success',
+        title: failed ? 'ZK migrate partial' : 'ZK migrate done',
+        detail: line,
+        source: 'save',
+      });
       await refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const detail = e instanceof Error ? e.message : String(e);
+      setErr(detail);
+      emitAppFeedback({ kind: 'error', title: 'ZK migrate failed', detail, source: 'save' });
     } finally { setBusy(null); }
   };
 
@@ -78,7 +94,8 @@ export const ZkModeCard: React.FC<{ onUnlock?: () => void; unlocking?: boolean }
 
   const copy = async () => {
     if (!code) return;
-    await navigator.clipboard.writeText(code).catch(() => undefined);
+    const ok = await copyWithFeedback(code);
+    if (!ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
