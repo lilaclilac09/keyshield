@@ -8,6 +8,7 @@ import { apiFetch } from '../../lib/auth';
 import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
 import type { PlanSnapshot } from '../PlanCatalog';
 import { agentPubkeyError } from '../../lib/agent-pubkey';
+import { copyWithFeedback } from '../../lib/app-feedback';
 
 interface AgentEntry { id: number; pubkey_b58: string; name: string; scopes: string; created_at: number; last_used_at: number | null; }
 
@@ -17,7 +18,13 @@ const _toB64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes)
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
+  const copy = () => {
+    void copyWithFeedback(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
   return (
     <button onClick={copy} className="ml-2 text-[#8a96c2] hover:text-white transition-colors shrink-0">
       {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}

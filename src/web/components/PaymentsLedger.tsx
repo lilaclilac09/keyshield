@@ -9,6 +9,7 @@ import {
   type PurchaseRow,
 } from '../lib/purchases';
 import { buyMppShopSku, downloadMppReceipt } from '../lib/mpp-shop';
+import { emitAppFeedback } from '../lib/app-feedback';
 import {
   describeBalanceChange,
   formatUsd,
@@ -53,15 +54,23 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
   const buyMpp = () => {
     setBusy('mpp');
     setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: 'Buying MPP…', source: 'mpp' });
     void buyMppShopSku()
       .then((next) => {
         setTick((n) => n + 1);
         setOk(true);
-        setMsg(`Bought ${next.sku} · receipt ready`);
+        const line = `Bought ${next.sku} · receipt ready`;
+        setMsg(line);
+        emitAppFeedback({ kind: 'success', title: 'MPP purchase', detail: line, source: 'mpp' });
         downloadMppReceipt(next, 'html');
         onRefresh?.();
       })
-      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'MPP shop failed'); })
+      .catch((err) => {
+        setOk(false);
+        const detail = err instanceof Error ? err.message : 'MPP shop failed';
+        setMsg(detail);
+        emitAppFeedback({ kind: 'error', title: 'MPP shop failed', detail, source: 'mpp' });
+      })
       .finally(() => setBusy(null));
   };
 
@@ -69,6 +78,7 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
     const before = ledgerUsd;
     setBusy('shop');
     setMsg(null);
+    emitAppFeedback({ kind: 'busy', title: 'Buying shop credit…', source: 'mpp' });
     void apiFetch('/billing/topup', { method: 'POST', body: JSON.stringify({ amount_usd: SHOP_CREDIT_USD }) })
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
@@ -79,10 +89,17 @@ export const PaymentsLedger: React.FC<Props> = ({ ledgerUsd = 0, onRefresh }) =>
         recordLedgerPurchase(SHOP_CREDIT_USD, SHOP_ITEM_NAME);
         setTick((n) => n + 1);
         setOk(true);
-        setMsg(`Bought ${SHOP_ITEM_NAME} · ${describeBalanceChange(before, after).label}`);
+        const line = `Bought ${SHOP_ITEM_NAME} · ${describeBalanceChange(before, after).label}`;
+        setMsg(line);
+        emitAppFeedback({ kind: 'success', title: 'Shop credit', detail: line, source: 'mpp' });
         onRefresh?.();
       })
-      .catch((err) => { setOk(false); setMsg(err instanceof Error ? err.message : 'Shop failed'); })
+      .catch((err) => {
+        setOk(false);
+        const detail = err instanceof Error ? err.message : 'Shop failed';
+        setMsg(detail);
+        emitAppFeedback({ kind: 'error', title: 'Shop failed', detail, source: 'mpp' });
+      })
       .finally(() => setBusy(null));
   };
 

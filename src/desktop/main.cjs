@@ -17,6 +17,7 @@ const {
   systemPreferences,
   ipcMain,
   shell,
+  Notification,
 } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -101,13 +102,54 @@ function startUrl() {
   return `${DASHBOARD_ORIGIN}/`;
 }
 
+let titleResetTimer = null;
+
+function showShellFeedback(payload) {
+  const title = String(payload?.title || 'KeyShield');
+  const detail = String(payload?.detail || payload?.body || '');
+  const kind = String(payload?.kind || 'info');
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win && !win.isDestroyed()) {
+    const suffix = kind === 'error' ? `Error — ${title}` : title;
+    win.setTitle(`KeyShield — ${suffix}`);
+    if (titleResetTimer) clearTimeout(titleResetTimer);
+    titleResetTimer = setTimeout(() => {
+      if (!win.isDestroyed()) win.setTitle('KeyShield');
+    }, 4000);
+  }
+  const focused = Boolean(win && !win.isDestroyed() && win.isFocused());
+  if (kind !== 'busy' && (!focused || kind === 'error')) {
+    try {
+      new Notification({ title, body: detail, silent: kind !== 'error' }).show();
+    } catch {
+      /* notifications optional */
+    }
+  }
+  if (kind === 'error' && process.platform === 'darwin' && app.dock) {
+    app.dock.bounce('informational');
+  }
+}
+
+ipcMain.on('ks-feedback', (_event, payload) => {
+  showShellFeedback(payload || {});
+});
+
 async function maybeTouchId() {
-  if (process.platform !== 'darwin') return;
-  if (typeof systemPreferences.promptTouchID !== 'function') return;
+  if (process.platform !== 'darwin') return { skipped: true };
+  if (typeof systemPreferences.promptTouchID !== 'function') return { skipped: true };
   try {
     await systemPreferences.promptTouchID('Unlock KeyShield');
-  } catch {
+    showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
+    return { ok: true };
+  } catch (err) {
     // No biometrics, user cancelled, or unsigned app — do not lock her out.
+    showShellFeedback({
+      kind: 'info',
+      title: 'Continuing without Touch ID',
+      detail: err instanceof Error ? err.message : String(err),
+      source: 'unlock',
+    });
+    return { skipped: true };
   }
 }
 
@@ -117,9 +159,12 @@ ipcMain.handle('ks-touch-id', async (_event, reason) => {
   }
   try {
     await systemPreferences.promptTouchID(String(reason || 'Unlock KeyShield'));
+    showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error ? err.message : String(err);
+    showShellFeedback({ kind: 'error', title: 'Touch ID cancelled', detail: error, source: 'unlock' });
+    return { ok: false, error };
   }
 });
 
@@ -135,7 +180,10 @@ function buildMenu(win) {
             {
               label: 'Lock',
               accelerator: 'Cmd+L',
-              click: () => { if (win && !win.isDestroyed()) win.reload(); },
+              click: () => {
+                showShellFeedback({ kind: 'info', title: 'Locked', detail: 'Reloading KeyShield', source: 'unlock' });
+                if (win && !win.isDestroyed()) win.reload();
+              },
             },
             { type: 'separator' },
             { role: 'hide' },
@@ -233,6 +281,16 @@ async function createWindow() {
         pointer-events: none;
       }
     `);
+  });
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
+    showShellFeedback({
+      kind: 'error',
+      title: 'Dashboard failed to load',
+      detail: errorDescription || String(errorCode),
+      source: 'proxy',
+    });
   });
 
   buildMenu(win);

@@ -23,6 +23,7 @@ import {
   type PendingVaultHit,
 } from '../lib/vault-list';
 import { revealZkItem, storeZkItem } from '../lib/zk';
+import { emitAppFeedback } from '../lib/app-feedback';
 import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
@@ -144,15 +145,20 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const unlock = useCallback(async () => {
     if (!isAuthenticated()) {
       setError('log in first');
+      emitAppFeedback({ kind: 'error', title: 'Unlock failed', detail: 'log in first', source: 'unlock' });
       return;
     }
     setLoading(true);
     setError(null);
+    emitAppFeedback({ kind: 'busy', title: 'Unlocking vault…', source: 'unlock' });
     try {
       await requestVaultUnlock();
+      emitAppFeedback({ kind: 'success', title: 'Vault unlocked', source: 'unlock' });
       refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Vault unlock failed');
+      const detail = err instanceof Error ? err.message : 'Vault unlock failed';
+      setError(detail);
+      emitAppFeedback({ kind: 'error', title: 'Vault unlock failed', detail, source: 'unlock' });
     } finally {
       setLoading(false);
     }

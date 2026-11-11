@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { copyWithFeedback } from '../../lib/app-feedback';
 
 export function useCopyable(text: string, ms = 1500) {
   const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), ms); }); };
+  const copy = () => {
+    void copyWithFeedback(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), ms);
+    });
+  };
   return { copied, copy };
 }
 

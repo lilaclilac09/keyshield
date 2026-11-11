@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { copyWithFeedback } from '../../lib/app-feedback';
 
 interface Props { value: string; label?: string; autoHideSec?: number; copyable?: boolean; className?: string; }
 
@@ -12,7 +13,13 @@ export const RevealField: React.FC<Props> = ({ value, label, autoHideSec = 30, c
 
   const reveal = () => { setRevealed(true); setTimeLeft(autoHideSec); if (tickRef.current) window.clearInterval(tickRef.current); tickRef.current = window.setInterval(() => { setTimeLeft(t => { if (t <= 1) { window.clearInterval(tickRef.current!); setRevealed(false); return 0; } return t - 1; }); }, 1000); };
   const hide = () => { if (tickRef.current) window.clearInterval(tickRef.current); setRevealed(false); setTimeLeft(0); };
-  const copy = async () => { if (!value) return; await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const copy = async () => {
+    if (!value) return;
+    const ok = await copyWithFeedback(value);
+    if (!ok) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const display = !value ? '\u2014 not set \u2014' : revealed ? value : '\u2022'.repeat(Math.min(value.length, 32));
 

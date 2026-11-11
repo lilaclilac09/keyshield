@@ -4,6 +4,7 @@ import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
 import { passkeyLogin, passkeySignup, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 import { isDesktopShell } from '../lib/desktop-shell';
+import { emitAppFeedback } from '../lib/app-feedback';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
@@ -55,6 +56,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
 
   const handleDemo = async () => {
     setDemoLoading(true); setDemoError('');
+    emitAppFeedback({ kind: 'busy', title: 'Starting demo…', source: 'auth' });
     try {
       const out = await startDemoSession();
       if (!out.token) throw new Error('demo session missing token');
@@ -63,9 +65,12 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       sessionStorage.setItem('ks_landing', 'home');
       if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
       notifyAuthChanged();
+      emitAppFeedback({ kind: 'success', title: 'Demo session started', source: 'auth' });
       onAuthenticated();
     } catch (e) {
-      setDemoError(e instanceof Error ? e.message : 'Demo login failed');
+      const detail = e instanceof Error ? e.message : 'Demo login failed';
+      setDemoError(detail);
+      emitAppFeedback({ kind: 'error', title: 'Demo login failed', detail, source: 'auth' });
     } finally {
       setDemoLoading(false);
     }
@@ -77,18 +82,22 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const handleFaceID = async () => {
     setPkLoading(true);
     setPkError('');
+    emitAppFeedback({ kind: 'busy', title: 'Unlocking with passkey…', source: 'unlock' });
     try {
       const { token, userId: signed } = await passkeyLogin();
       setToken(token);
       setWalletAddress(signed);
       notifyAuthChanged();
+      emitAppFeedback({ kind: 'success', title: 'Signed in', source: 'unlock' });
       onAuthenticated();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Face ID failed';
       const jumped = /abort|cancel|not allowed|visibility|document/i.test(msg);
-      setPkError(jumped
+      const detail = jumped
         ? 'Passkey was interrupted — tap Sign In again. Your id is still on this device.'
-        : msg);
+        : msg;
+      setPkError(detail);
+      emitAppFeedback({ kind: 'error', title: 'Sign-in failed', detail, source: 'unlock' });
     } finally {
       setPkLoading(false);
     }
@@ -96,14 +105,18 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const handleSignup = async () => {
     setPkLoading(true);
     setPkError('');
+    emitAppFeedback({ kind: 'busy', title: 'Creating passkey…', source: 'unlock' });
     try {
       const { token, userId: created } = await passkeySignup();
       setToken(token);
       setWalletAddress(created);
       notifyAuthChanged();
+      emitAppFeedback({ kind: 'success', title: 'Account created', source: 'unlock' });
       onAuthenticated();
     } catch (e) {
-      setPkError(e instanceof Error ? e.message : 'Passkey signup failed');
+      const detail = e instanceof Error ? e.message : 'Passkey signup failed';
+      setPkError(detail);
+      emitAppFeedback({ kind: 'error', title: 'Signup failed', detail, source: 'unlock' });
     } finally {
       setPkLoading(false);
     }
@@ -113,12 +126,15 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const handleDesktopToken = () => {
     const token = desktopToken.trim();
     if (!token) {
-      setDesktopTokenError('Paste a session token from Developer on the live dashboard.');
+      const detail = 'Paste a session token from Developer on the live dashboard.';
+      setDesktopTokenError(detail);
+      emitAppFeedback({ kind: 'error', title: 'Session token missing', detail, source: 'auth' });
       return;
     }
     setDesktopTokenError('');
     setToken(token);
     notifyAuthChanged();
+    emitAppFeedback({ kind: 'success', title: 'Session token saved', source: 'auth' });
     onAuthenticated();
   };
 
@@ -134,7 +150,10 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
         <div className="w-full mt-10">
           {/* One box: wallet + passkey together. No username/password login. */}
           <div data-testid="auth-card" className="w-full rounded-xl border border-[#243365]/50 p-4 bg-[#131c39] space-y-3">
-            <WalletConnector onConnect={onAuthenticated} />
+            <WalletConnector onConnect={() => {
+              emitAppFeedback({ kind: 'success', title: 'Wallet connected', source: 'auth' });
+              onAuthenticated();
+            }} />
             {userId ? (
               <button type="button" data-testid="passkey-signin" onClick={handleFaceID} disabled={pkLoading} className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border border-[#2e4585] bg-[#0e1631] hover:bg-white/5 text-white disabled:opacity-70 disabled:cursor-wait transition-colors">
                 <span className="flex items-center justify-center w-5 h-5">{pkLoading ? <Loader2 size={18} className="animate-spin" /> : <Fingerprint size={18} />}</span>

@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '../lib/auth';
+import { emitAppFeedback } from '../lib/app-feedback';
 
 type State = 'unknown' | 'ok' | 'slow' | 'down';
 
 export const HealthBadge: React.FC = () => {
   const [state, setState] = useState<State>('unknown');
   const [latency, setLatency] = useState(0);
+  const prev = useRef<State>('unknown');
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +25,23 @@ export const HealthBadge: React.FC = () => {
     const id = window.setInterval(probe, 30000);
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
+
+  useEffect(() => {
+    const previous = prev.current;
+    if (state === 'down' && previous !== 'down') {
+      emitAppFeedback({ kind: 'error', title: 'API offline', detail: `${latency}ms`, source: 'health' });
+    } else if (state === 'ok' && (previous === 'down' || previous === 'unknown')) {
+      emitAppFeedback({
+        kind: previous === 'down' ? 'success' : 'info',
+        title: 'API online',
+        detail: `${latency}ms`,
+        source: 'health',
+      });
+    } else if (state === 'slow' && previous !== 'slow' && previous !== 'unknown') {
+      emitAppFeedback({ kind: 'info', title: 'API slow', detail: `${latency}ms`, source: 'health' });
+    }
+    prev.current = state;
+  }, [state, latency]);
 
   const color = state === 'ok' ? 'bg-emerald-400' : state === 'slow' ? 'bg-amber-400' : state === 'down' ? 'bg-red-500' : 'bg-zinc-600';
 

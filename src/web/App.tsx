@@ -32,6 +32,8 @@ import { DocsSection } from './components/sections/DocsSection';
 import { ReportPage } from './components/ReportPage';
 import { X402TrustManager } from './components/X402TrustManager';
 import { StoryJourney } from './components/StoryJourney';
+import { AppFeedbackToast } from './components/ui/AppFeedbackToast';
+import { copyWithFeedback, emitAppFeedback } from './lib/app-feedback';
 
 type Section = 'home' | 'vault' | 'activity' | 'agents' | 'sharing' | 'sessions' | 'settings' | 'developer' | 'docs' | 'troubleshooting' | 'reports' | 'trust';
 
@@ -201,7 +203,14 @@ const MainContent: React.FC = () => {
     return () => window.removeEventListener('message', onMsg);
   }, [isAuthenticated, refresh, refreshHome]);
 
-  const handleLogout = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} try { await disconnect(); } catch {} clearAuth(); notifyAuthChanged(); setIsAuthenticated(false); };
+  const handleLogout = async () => {
+    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
+    try { await disconnect(); } catch {}
+    clearAuth();
+    notifyAuthChanged();
+    setIsAuthenticated(false);
+    emitAppFeedback({ kind: 'info', title: 'Signed out', source: 'auth' });
+  };
 
   if (restoringExt && !isAuthenticated) {
     return (
@@ -230,9 +239,23 @@ const MainContent: React.FC = () => {
     <div className="h-screen bg-[#0b1226] text-white flex flex-col" style={{ fontFamily: "'Montserrat', 'Inter', sans-serif" }}>
       <BetaBanner />
       {isSearchOpen && <SearchOverlay query={searchQuery} onChange={setSearchQuery} onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }} />}
-      <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={async (data) => { await addItem(data); refreshHome(); }} initialData={prefilledData} />
+      <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={async (data) => {
+        try {
+          await addItem(data);
+          emitAppFeedback({ kind: 'success', title: 'Saved to vault', detail: data.name || data.upstream, source: 'save' });
+          refreshHome();
+        } catch (err) {
+          emitAppFeedback({
+            kind: 'error',
+            title: 'Save failed',
+            detail: err instanceof Error ? err.message : 'Save failed',
+            source: 'save',
+          });
+          throw err;
+        }
+      }} initialData={prefilledData} />
       <div className="flex flex-1 min-h-0">
-        <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => navigator.clipboard.writeText(fullAddr)} onLogout={handleLogout} />
+        <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => { void copyWithFeedback(fullAddr); }} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
           <Header title={config.title} subtitle={config.subtitle} onSearch={section === 'home' ? undefined : () => setIsSearchOpen(true)} onAdd={section === 'vault' ? () => setIsAddModalOpen(true) : undefined} searchActive={!!searchQuery} actions={<HealthBadge />} />
           <div className="flex-1 overflow-auto px-6 py-6">
@@ -277,6 +300,6 @@ function isStoryPath(): boolean {
 
 const App: React.FC = () => {
   if (isStoryPath()) return <StoryJourney />;
-  return (<SolanaProvider><MainContent /></SolanaProvider>);
+  return (<SolanaProvider><AppFeedbackToast /><MainContent /></SolanaProvider>);
 };
 export default App;

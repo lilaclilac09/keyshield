@@ -5,6 +5,7 @@ import { getPrefs } from '../lib/preferences';
 import { formatCreated, formatExpiry } from '../lib/provider-catalog';
 import { ConfirmButton } from './ui/ConfirmButton';
 import { CopyButton } from './ui/CopyButton';
+import { copyWithFeedback, emitAppFeedback } from '../lib/app-feedback';
 
 interface Props { item: VaultItem; onDelete: (id: string) => void; onDecrypt: (id: string) => Promise<string>; }
 
@@ -46,10 +47,20 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
       if (!v) { setDecryptErr('Save the API key again'); return; }
       setRawValue(v); setIsRevealed(true); startTimer();
     }
-    catch (e) { setDecryptErr(e instanceof Error ? e.message : 'Decrypt failed'); }
+    catch (e) {
+      const detail = e instanceof Error ? e.message : 'Decrypt failed';
+      setDecryptErr(detail);
+      emitAppFeedback({ kind: 'error', title: 'Reveal failed', detail, source: 'unlock' });
+    }
     finally { setIsDecrypting(false); }
   };
-  const copyToClipboard = (text: string, setCopied: (b: boolean) => void) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const copyToClipboard = (text: string, setCopied: (b: boolean) => void) => {
+    void copyWithFeedback(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   // Typed as `any` because JSON.parse output cannot be statically guaranteed
