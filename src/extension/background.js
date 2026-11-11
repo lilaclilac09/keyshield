@@ -43,6 +43,19 @@ const DEAD_DASHBOARD_URLS = [
   'https://app.keyshield.dev',
   'https://ks.app.aileena.xyz',
 ];
+const DASHBOARD_BRIDGE_LOCAL_PORTS = new Set(['3000', '5173']);
+const DASHBOARD_BRIDGE_EXACT_HOSTS = new Set([
+  'app.ks.aileena.xyz',
+  'keyshield.dev',
+  'www.keyshield.dev',
+  'app.keyshield.dev',
+]);
+const DASHBOARD_BRIDGE_HOST_SUFFIXES = [
+  '.aileena.xyz',
+  '.keyshield.dev',
+  '.up.railway.app',
+  '.vercel.app',
+];
 const PIN_PREF_KEY = 'ks_url_pref_pinned';
 
 function isDeadDashboardUrl(url) {
@@ -822,15 +835,51 @@ function _isDashboardBridgeType(type) {
     || type === 'KS_ZK_STATUS';
 }
 
+function _bridgeSenderUrl(sender) {
+  return String((sender && (sender.url || (sender.tab && sender.tab.url) || sender.origin)) || '');
+}
+
+function _validateDashboardSender(sender) {
+  const url = _bridgeSenderUrl(sender);
+  if (!url) {
+    return {
+      ok: false,
+      reason: 'not-dashboard',
+      detail: 'Bridge message had no sender URL. Reload the KeyShield dashboard tab and retry sign-in.',
+      source: '',
+    };
+  }
+  if (!_isDashboardUrl(url)) {
+    return {
+      ok: false,
+      reason: 'not-dashboard',
+      detail: `Bridge message came from unsupported URL: ${url}. Open https://app.ks.aileena.xyz (or localhost:5173 in local dev), then refresh the tab.`,
+      source: url,
+    };
+  }
+  return { ok: true, source: url };
+}
+
 /** Path A + session messages from the dashboard. Chrome also delivers these
  *  via onMessageExternal (externally_connectable). Firefox / Muse hosts have
  *  no external connectable, so session-bridge forwards __ks_ext_message here. */
 function handleDashboardBridge(message, sendResponse) {
   if (message.type === 'KS_TOKEN_REGISTER') {
-    setStoredToken(message.token, message.user).then(async () => {
+    const token = String(message.token || '').trim();
+    if (token.length < 12) {
+      sendResponse({
+        ok: false,
+        reason: 'invalid-token',
+        detail: 'No session token found on the dashboard tab. Sign in again, then refresh this page.',
+      });
+      return false;
+    }
+    setStoredToken(token, message.user).then(async () => {
       console.log('[KeyShield] token registered from dashboard — live scan + auto-save on');
       await armLiveScanFromLogin();
       sendResponse({ ok: true });
+    }).catch((e) => {
+      sendResponse({ ok: false, reason: 'storage-failed', detail: String(e) });
     });
     return true;
   }
@@ -878,13 +927,13 @@ function handleDashboardBridge(message, sendResponse) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && _isDashboardBridgeType(message.type)) {
-    const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || '');
-    if (!_isDashboardUrl(url)) { sendResponse({ ok: false, reason: 'not-dashboard' }); return false; }
+    const senderState = _validateDashboardSender(sender);
+    if (!senderState.ok) { sendResponse(senderState); return false; }
     return handleDashboardBridge(message, sendResponse);
   }
   if (message && (message.type === 'KS_PENDING_FOR_DASHBOARD' || message.type === 'KS_PENDING_CLEAR')) {
-    const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || '');
-    if (!_isDashboardUrl(url)) { sendResponse({ ok: false, reason: 'not-dashboard' }); return false; }
+    const senderState = _validateDashboardSender(sender);
+    if (!senderState.ok) { sendResponse(senderState); return false; }
     if (message.type === 'KS_PENDING_CLEAR') {
       clearAllPending().then(() => sendResponse({ ok: true }));
     } else {
@@ -2003,8 +2052,21 @@ async function zkOpen(apiBase, headers, item) {
 }
 
 function _isDashboardUrl(url) {
-  return /^https:\/\/app\.ks\.aileena\.xyz\//.test(url)
-    || /^http:\/\/(127\.0\.0\.1|localhost):5173\//.test(url);
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    return false;
+  }
+  const host = _normalizeHostname(parsed.hostname);
+  if (!host) return false;
+  const protocol = String(parsed.protocol || '').toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') return false;
+  if (host === '127.0.0.1' || host === 'localhost') {
+    return DASHBOARD_BRIDGE_LOCAL_PORTS.has(parsed.port || (protocol === 'https:' ? '443' : '80'));
+  }
+  if (DASHBOARD_BRIDGE_EXACT_HOSTS.has(host)) return true;
+  return DASHBOARD_BRIDGE_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
 migrateLegacyPending().catch(() => {});

@@ -38,6 +38,7 @@ const DEAD_DASHBOARD_URLS = [
   "https://app.keyshield.dev",
   "https://ks.app.aileena.xyz",
 ];
+const BRIDGE_ERROR_KEY = "ks_bridge_last_error";
 
 function isDeadDashboardUrl(url) {
   const u = String(url || "").replace(/\/+$/, "");
@@ -124,6 +125,45 @@ function paintSignedStatus(signed) {
   if (!el) return;
   // Signed-in hero is the vault count ("5 saved"), not the word "signed".
   if (!signed) el.textContent = formatSignedStatus(false);
+}
+
+function formatBridgeError(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  const reason = String(entry.reason || "").trim();
+  const detail = String(entry.detail || "").trim();
+  const type = String(entry.type || "").trim();
+  if (reason === "not-dashboard") {
+    return "Bridge blocked on this host. Open app.ks.aileena.xyz (or localhost:5173), then refresh.";
+  }
+  if (reason === "invalid-token") {
+    return "Dashboard token is missing. Sign in again and reload the dashboard tab.";
+  }
+  if (reason === "extension-unavailable" || reason === "runtime-error" || reason === "runtime-throw") {
+    return "Bridge unavailable. Reload extension + dashboard, then retry Sign in.";
+  }
+  if (reason === "storage-failed") {
+    return "Extension could not store session token. Retry Sign in, then reopen popup.";
+  }
+  if (detail) return `Bridge ${type || "message"} failed: ${detail}`;
+  if (reason) return `Bridge ${type || "message"} failed (${reason}).`;
+  return "Bridge failed. Reload extension + dashboard, then retry.";
+}
+
+async function maybeShowBridgeError(signed) {
+  let entry = null;
+  try {
+    const stored = await chrome.storage.local.get(BRIDGE_ERROR_KEY);
+    entry = stored[BRIDGE_ERROR_KEY] || null;
+  } catch { /* noop */ }
+  if (signed) {
+    try { await chrome.storage.local.remove(BRIDGE_ERROR_KEY); } catch { /* noop */ }
+    return;
+  }
+  if (!entry || typeof entry !== "object") return;
+  const at = Number(entry.at || 0);
+  if (!at || Date.now() - at > 10 * 60 * 1000) return;
+  const text = formatBridgeError(entry);
+  if (text) setStatus(text, "err", 0);
 }
 
 function formatDetectReadyLine(version, hasAllUrls) {
@@ -474,6 +514,7 @@ async function loadSettings() {
     }
     if (signinBtn) signinBtn.textContent = ks_user ? "Sign in with passkey" : "Sign in";
   }
+  await maybeShowBridgeError(signed);
 }
 
 async function autoDetectAndFill() {
@@ -659,7 +700,7 @@ async function registerManualToken() {
 }
 
 async function clearSession() {
-  await chrome.storage.local.remove(["ks_token", "ks_user"]);
+  await chrome.storage.local.remove(["ks_token", "ks_user", BRIDGE_ERROR_KEY]);
   try { await chrome.storage.session.remove("ks_vault_key"); } catch { /* noop */ }
   setStatus("Signed out — token and vault key cleared.", "ok", 2500);
   loadSettings();
@@ -844,7 +885,7 @@ async function importVaultFromFile() {
 // vault key registration, etc.) — gives the popup live status without polling.
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base)) {
+    if (area === "local"   && (changes.ks_token || changes.ks_user || changes.ks_dashboard_url || changes.ks_api_base || changes[BRIDGE_ERROR_KEY])) {
       loadSettings();
       refreshSavedApis();
     }
