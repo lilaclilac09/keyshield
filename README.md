@@ -131,6 +131,8 @@ Must print `KeyShield — Sovereign Vault` then `1.2.5` then that `src/extension
 
 Then `chrome://extensions` → **Remove** every KeyShield card → **Load unpacked** the printed folder. Reload is not enough. Toolbar first line: `ok 1.2.5 <all_urls>`. Next line: `1.2.5 · latest`. Sign in with the hosted session or passkey. Full steps: `src/extension/INSTALL-LOCAL.md`.
 
+Firefox / browser-agnostic (same name **KeyShield**): `about:debugging` → Load Temporary Add-on → `src/extension/manifest.muse.json`. Cursor Muse and Cursor @Browser cannot load WebExtensions. Matrix: `src/extension/MUSE.md`.
+
 ### 3. Pay for a stream (optional)
 
 On **Payments** (Activity): connect / paste an OpenRouter key once, then

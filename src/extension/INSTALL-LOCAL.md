@@ -40,3 +40,15 @@ http://127.0.0.1:5173/kilo-byok-fill-demo.html
 ```
 
 Popup click must open `popup.html`. A leftover 1.2.4 stamp that still has `<all_urls>` is detect-ready, but it is not latest — Remove + Load unpacked 1.2.5.
+
+## Muse / Firefox (same name, same folder)
+
+Cursor Muse is a coding model. It does not host extensions. Cursor @Browser
+cannot Load unpacked either. For a browser-agnostic KeyShield:
+
+1. Open `about:debugging` → This Firefox → Load Temporary Add-on
+2. Pick `src/extension/manifest.muse.json`
+3. Card still reads **KeyShield — Sovereign Vault · 1.2.5**
+4. Sign in at `https://app.ks.aileena.xyz/?ext=1&demo=shop`
+
+See `MUSE.md`.

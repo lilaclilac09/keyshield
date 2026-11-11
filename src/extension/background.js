@@ -1,3 +1,7 @@
+try {
+  if (typeof importScripts === 'function') importScripts('browser-api.js');
+} catch { /* Firefox background.scripts already loaded browser-api.js */ }
+
 /**
  * KeyShield Background Script
  * ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +222,7 @@ function _isKiloKeyFetchContext(domain, pathname, url) {
   try {
     if (url) {
       const parsed = new URL(url);
-      if (parsed.protocol === 'chrome-extension:' && _isKiloByokPath(parsed.pathname || pathname, url)) return true;
+      if (_isExtensionPageProtocol(parsed.protocol) && _isKiloByokPath(parsed.pathname || pathname, url)) return true;
     }
   } catch { /* noop */ }
   const host = _normalizeHostname(domain);
@@ -226,12 +230,16 @@ function _isKiloKeyFetchContext(domain, pathname, url) {
   return local && _isKiloByokPath(pathname, url);
 }
 
+function _isExtensionPageProtocol(protocol) {
+  return protocol === 'chrome-extension:' || protocol === 'moz-extension:';
+}
+
 function _isOwnExtensionFillDemo(url) {
   const raw = String(url || '');
   if (!raw) return false;
   try {
     const parsed = new URL(raw);
-    if (parsed.protocol !== 'chrome-extension:') return false;
+    if (!_isExtensionPageProtocol(parsed.protocol)) return false;
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id
       && parsed.host !== chrome.runtime.id) return false;
     return _isLocalFillDemoPath(parsed.pathname) || _isKiloByokPath(parsed.pathname, raw);
@@ -803,7 +811,77 @@ async function x402ToggleDomain(h, enabled) { const l = await x402LoadList(); if
 
 // ── Internal messages (content / popup): single listener ─────────────────────
 
+function _isDashboardBridgeType(type) {
+  return type === 'KS_TOKEN_REGISTER'
+    || type === 'KS_TOKEN_CLEAR'
+    || type === 'KS_PING'
+    || type === 'KS_VAULT_KEY_REGISTER'
+    || type === 'KS_VAULT_KEY_CLEAR'
+    || type === 'KS_ZK_ENROLL'
+    || type === 'KS_ZK_FORGET'
+    || type === 'KS_ZK_STATUS';
+}
+
+/** Path A + session messages from the dashboard. Chrome also delivers these
+ *  via onMessageExternal (externally_connectable). Firefox / Muse hosts have
+ *  no external connectable, so session-bridge forwards __ks_ext_message here. */
+function handleDashboardBridge(message, sendResponse) {
+  if (message.type === 'KS_TOKEN_REGISTER') {
+    setStoredToken(message.token, message.user).then(async () => {
+      console.log('[KeyShield] token registered from dashboard — live scan + auto-save on');
+      await armLiveScanFromLogin();
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (message.type === 'KS_TOKEN_CLEAR') {
+    clearStoredToken().then(() => {
+      console.log('[KeyShield] token cleared');
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (message.type === 'KS_PING') {
+    getStoredToken().then(({ token, user }) => {
+      sendResponse({ ok: true, hasToken: !!token, user });
+    });
+    return true;
+  }
+  if (message.type === 'KS_VAULT_KEY_REGISTER' && typeof message.keyB64 === 'string') {
+    chrome.storage.session.set({ ks_vault_key: message.keyB64 }).then(() => {
+      console.log('[KeyShield] vault key registered (session-scoped)');
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  if (message.type === 'KS_ZK_ENROLL' && typeof message.root === 'string') {
+    zkEnroll(message.root, String(message.rootId || '')).then((res) => sendResponse(res));
+    return true;
+  }
+  if (message.type === 'KS_ZK_FORGET') {
+    zkForget().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (message.type === 'KS_ZK_STATUS') {
+    zkState().then((st) => sendResponse({ ok: true, enabled: st.enabled, rootId: st.rootId || null }));
+    return true;
+  }
+  if (message.type === 'KS_VAULT_KEY_CLEAR') {
+    chrome.storage.session.remove('ks_vault_key').then(() => {
+      console.log('[KeyShield] vault key cleared');
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+  return false;
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && _isDashboardBridgeType(message.type)) {
+    const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || '');
+    if (!_isDashboardUrl(url)) { sendResponse({ ok: false, reason: 'not-dashboard' }); return false; }
+    return handleDashboardBridge(message, sendResponse);
+  }
   if (message && (message.type === 'KS_PENDING_FOR_DASHBOARD' || message.type === 'KS_PENDING_CLEAR')) {
     const url = String((sender && (sender.url || (sender.tab && sender.tab.url))) || '');
     if (!_isDashboardUrl(url)) { sendResponse({ ok: false, reason: 'not-dashboard' }); return false; }
@@ -1137,55 +1215,8 @@ async function armLiveScanFromLogin() {
 }
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (message.type === 'KS_TOKEN_REGISTER') {
-    setStoredToken(message.token, message.user).then(async () => {
-      console.log('[KeyShield] token registered from dashboard — live scan + auto-save on');
-      await armLiveScanFromLogin();
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-  if (message.type === 'KS_TOKEN_CLEAR') {
-    clearStoredToken().then(() => {
-      console.log('[KeyShield] token cleared');
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-  if (message.type === 'KS_PING') {
-    getStoredToken().then(({ token, user }) => {
-      sendResponse({ ok: true, hasToken: !!token, user });
-    });
-    return true;
-  }
-  // Path A lite: dashboard pushes the AES master key (HKDF of wallet sig)
-  if (message.type === 'KS_VAULT_KEY_REGISTER' && typeof message.keyB64 === 'string') {
-    chrome.storage.session.set({ ks_vault_key: message.keyB64 }).then(() => {
-      console.log('[KeyShield] vault key registered (session-scoped)');
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-  if (message.type === 'KS_ZK_ENROLL' && typeof message.root === 'string') {
-    zkEnroll(message.root, String(message.rootId || '')).then((res) => sendResponse(res));
-    return true;
-  }
-  if (message.type === 'KS_ZK_FORGET') {
-    zkForget().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  if (message.type === 'KS_ZK_STATUS') {
-    zkState().then((st) => sendResponse({ ok: true, enabled: st.enabled, rootId: st.rootId || null }));
-    return true;
-  }
-  if (message.type === 'KS_VAULT_KEY_CLEAR') {
-    chrome.storage.session.remove('ks_vault_key').then(() => {
-      console.log('[KeyShield] vault key cleared');
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-  return false;
+  if (!message || !_isDashboardBridgeType(message.type)) return false;
+  return handleDashboardBridge(message, sendResponse);
 });
 
 function isHeliusDashboardHost(hostname) {

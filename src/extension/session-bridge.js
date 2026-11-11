@@ -4,8 +4,29 @@
  * If the extension already has ks_token, write it into page localStorage
  * before React reads hasStoredToken(), then post {__ks_ext_session}.
  * Opening Sign-in then shows Home instead of AuthScreen.
+ *
+ * Muse / Firefox have no externally_connectable. The page posts
+ * {__ks_ext_message: {type, ...}} and we forward allowlisted Path A
+ * types to the background worker.
  */
 (function keyShieldSessionBridge() {
+  (function (g) {
+    if (!g) return;
+    if (!g.browser && g.chrome) g.browser = g.chrome;
+    if (!g.chrome && g.browser) g.chrome = g.browser;
+  })(typeof globalThis !== 'undefined' ? globalThis : window);
+
+  const DASHBOARD_BRIDGE_TYPES = {
+    KS_TOKEN_REGISTER: 1,
+    KS_TOKEN_CLEAR: 1,
+    KS_PING: 1,
+    KS_VAULT_KEY_REGISTER: 1,
+    KS_VAULT_KEY_CLEAR: 1,
+    KS_ZK_ENROLL: 1,
+    KS_ZK_FORGET: 1,
+    KS_ZK_STATUS: 1,
+  };
+
   function announce() {
     if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) return;
     try { window.postMessage({ __ks_ext_announce: chrome.runtime.id }, location.origin); }
@@ -100,6 +121,11 @@
     if (e.data.__ks_page_session || e.data.__ks_auth_changed) capturePageToken();
     if (e.data.__ks_pending_vault_cleared && chrome.runtime && chrome.runtime.sendMessage) {
       try { chrome.runtime.sendMessage({ type: 'KS_PENDING_CLEAR' }, () => void chrome.runtime.lastError); } catch { /* noop */ }
+    }
+    const bridge = e.data.__ks_ext_message;
+    if (bridge && typeof bridge === 'object' && DASHBOARD_BRIDGE_TYPES[bridge.type]
+      && chrome.runtime && chrome.runtime.sendMessage) {
+      try { chrome.runtime.sendMessage(bridge, () => void chrome.runtime.lastError); } catch { /* noop */ }
     }
   });
   try {

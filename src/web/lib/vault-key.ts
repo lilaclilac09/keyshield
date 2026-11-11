@@ -10,8 +10,14 @@ function _b64uEnc(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function _hasChromeRuntime(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).chrome?.runtime?.sendMessage;
+function _extensionRuntime(): { sendMessage?: (...args: unknown[]) => void } | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as any;
+  return w.browser?.runtime || w.chrome?.runtime || null;
+}
+
+function _postExtMessage(payload: Record<string, unknown>): void {
+  try { window.postMessage({ __ks_ext_message: payload }, window.location.origin); } catch { /* noop */ }
 }
 
 function _setExtensionId(id: string): void {
@@ -21,16 +27,19 @@ function _setExtensionId(id: string): void {
 }
 
 function _flushPendingExtensionPushes(): void {
-  if (!_extensionId || !_hasChromeRuntime()) return;
-  const runtime = (window as any).chrome.runtime;
-  while (_pendingExtensionPushes.length > 0) {
-    const payload = _pendingExtensionPushes.shift()!;
-    try {
-      runtime.sendMessage(_extensionId, payload, () => {});
-    } catch {
-      // no-op; if the extension is unavailable, we just drop the message.
+  const runtime = _extensionRuntime();
+  const queued = _pendingExtensionPushes.slice();
+  for (const payload of queued) {
+    _postExtMessage(payload);
+    if (_extensionId && runtime?.sendMessage) {
+      try {
+        runtime.sendMessage(_extensionId, payload, () => {});
+      } catch {
+        // Chrome externally_connectable path. Muse/Firefox uses postMessage.
+      }
     }
   }
+  if (_extensionId) _pendingExtensionPushes.length = 0;
 }
 
 function _pushToExtension(payload: Record<string, unknown>): void {
