@@ -311,6 +311,31 @@ def get_balance(user_id: str) -> float:
         conn.close()
 
 
+def prepaid_allows_upstream(
+    user_id: str,
+    *,
+    key_type: str,
+    mpp_stream_open: bool = False,
+) -> bool:
+    """Whether this call may reach hold / cache / upstream.
+
+    Vault and user-supplied keys do not debit the prepaid ledger, so a
+    $0 balance still forwards. Platform keys require prepaid credit
+    unless an open MPP stream is already the payment channel. Cache HIT
+    is not a skip — callers must run this before looking up a cache or
+    calling upstream. Tempo vouchers are not a live skip.
+    """
+    kind = str(key_type or "").strip().lower()
+    if kind != "platform":
+        return True
+    if mpp_stream_open:
+        return True
+    try:
+        return float(get_balance(user_id) or 0) > 0
+    except Exception:
+        return False
+
+
 def topup(user_id: str, amount_usd: float) -> float:
     """Add prepaid credit. Returns new balance."""
     conn = _db()

@@ -1412,6 +1412,10 @@ def record_usage(
             )
             _commit(conn)
             return stream
+        except FulfillmentRejected:
+            # `_persist_release_and_raise` already committed the hold
+            # release. Do not ROLLBACK that commit.
+            raise
         except Exception:
             _rollback(conn)
             raise

@@ -222,7 +222,7 @@ GET  /usage/calls                    owner only: call log, newest first. ?caller
 
 Calls are attributed from the validated session: agent sign-in tokens carry the agent id (`agt` claim), developer tokens are identified by their last 8 characters (the id on the Sessions page), and the token itself is never stored in the log. Calls logged before attribution existed are reported as `unattributed`. `cost_usd` is KeyShield's estimate from token counts, not the provider's invoice.
 
-Plans: **Free** (`starter`) passkey collect + vault save; **Plugin** (`pro`) auto-plugin + biometric passkey verify; **Accelerate** (`accelerate`) cache + extreme low latency. Subscription is seats + included budget. PAYG (top-up / MPP / x402) meters agent calls. `402 plan_limit` when a device level is full. `409 plan_downgrade_blocked` if in-use seats exceed a cheaper plan.
+Plans: **Free** (`starter`) passkey collect + vault save; **Plugin** (`pro`) auto-plugin + biometric passkey verify; **Accelerate** (`accelerate`) cache + extreme low latency (unpublished target, not an SLA). Subscription is seats + included budget. PAYG (top-up / MPP / x402) meters agent calls. `402 plan_limit` when a device level is full. `409 plan_downgrade_blocked` if in-use seats exceed a cheaper plan.
 
 ---
 

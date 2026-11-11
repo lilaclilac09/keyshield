@@ -93,7 +93,7 @@ def test_complete_sse_bills_usage_from_data_lines():
     assert artifact.calls == 1
 
 
-def test_empty_disconnect_is_not_billable():
+def test_empty_disconnect_is_not_billable(db):
     with pytest.raises(FulfillmentRejected, match="empty payload"):
         verify_fulfillment(
             stream_id=1,
@@ -103,6 +103,66 @@ def test_empty_disconnect_is_not_billable():
             observed=True,
             truncated=True,
         )
+
+    stream = _open()
+    pending0 = int(stream["pending_micro_usdc"])
+    assert pending0 == 0
+    assert int(stream["settled_micro_usdc"]) == 0
+    assert mpp_streams._hold_ttl_secs() == 120
+
+    cases = (
+        (200, b"", True, "empty payload"),
+        (502, b"", False, "upstream error status"),
+        (500, CHAT, False, "upstream error status"),
+        (200, b"{{{{not json", False, "garbage payload"),
+    )
+    for status, body, truncated, match in cases:
+        held = mpp_streams.hold_estimate("alice", stream["id"], "openai", 800)
+        hold_id = int(held["hold_id"])
+        assert int(held["held_micro_usdc"]) == 800
+        assert int(held["pending_micro_usdc"]) == pending0
+        conn = mpp_streams._db()
+        try:
+            row = conn.execute(
+                "SELECT status, expires_at, created_at FROM mpp_holds WHERE id = ?",
+                (hold_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert row[0] == "held"
+        assert int(row[1]) - int(row[2]) == 120
+
+        with pytest.raises(FulfillmentRejected, match=match):
+            mpp_streams.meter_proxy_response(
+                "alice",
+                stream["id"],
+                "openai",
+                status,
+                body,
+                truncated=truncated,
+                hold_id=hold_id,
+            )
+
+        conn = mpp_streams._db()
+        try:
+            row = conn.execute(
+                "SELECT status FROM mpp_holds WHERE id = ?",
+                (hold_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert row[0] == "released"
+
+        fresh = next(
+            s
+            for s in mpp_streams.list_streams("alice")["streams"]
+            if int(s["id"]) == int(stream["id"])
+        )
+        assert int(fresh["held_micro_usdc"]) == 0
+        assert int(fresh["pending_micro_usdc"]) == pending0
+        assert int(fresh["settled_micro_usdc"]) == 0
 
 
 def test_idempotency_key_does_not_double_debit_and_bills_only_the_delta(db):
