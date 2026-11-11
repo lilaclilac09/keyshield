@@ -206,8 +206,12 @@ const detectedKeys   = new Map();   // key -> { provider, onDomain, saved }
 let   panelEl        = null;        // the multi-key floating panel (null when hidden)
 let   domainDismissed = false;      // set asynchronously below
 const AUTO_STORE_KEY = 'ks_auto_store';
+const API_PROMPT_MODE_KEY = 'ks_api_prompt_mode';
+const API_ALLOW_HOSTS_KEY = 'ks_api_prompt_allow_hosts';
 let   autoStoreAllowed = false;
 let   loggedIn = false;
+let   apiPromptMode = true;
+let   hostAutoStoreAllowed = false;
 let   autoStoreInFlight = false;
 let   extensionContextDead = false;
 const HOST = window.location.hostname;
@@ -386,10 +390,6 @@ function handleMatch(key, provider, onDomain) {
   maybeAutoStore();
 }
 
-function detectIsArmed() {
-  return !extensionContextDead && !!(autoStoreAllowed || loggedIn);
-}
-
 function isExtensionContextDead(detail) {
   return /Extension context invalidated|chrome\.runtime is not available|Cannot access a chrome\./i.test(
     String(detail || ''),
@@ -456,12 +456,36 @@ function formatBulkSaveFailure(opts) {
   return { text: `${text} Click Retry or open DevTools.`, reload: false };
 }
 
+function hostPromptApproved(raw) {
+  if (!raw) return false;
+  if (Array.isArray(raw)) return raw.includes(HOST);
+  if (typeof raw !== 'object') return false;
+  return !!raw[HOST];
+}
+
+function detectCanSave() {
+  return !extensionContextDead && loggedIn;
+}
+
+function detectCanAutoStore() {
+  if (!detectCanSave()) return false;
+  if (hostAutoStoreAllowed) return true;
+  if (apiPromptMode) return false;
+  return !!autoStoreAllowed;
+}
+
+function detectNeedsSystemPrompt(unsavedCount) {
+  return unsavedCount > 0 && detectCanSave() && apiPromptMode && !hostAutoStoreAllowed;
+}
+
 function loadAutoStorePref() {
   try {
-    chrome.storage?.local?.get?.([AUTO_STORE_KEY, 'ks_token'], (out) => {
+    chrome.storage?.local?.get?.([AUTO_STORE_KEY, 'ks_token', API_PROMPT_MODE_KEY, API_ALLOW_HOSTS_KEY], (out) => {
       autoStoreAllowed = !!(out && out[AUTO_STORE_KEY]);
       loggedIn = !!(out && out.ks_token);
-      if (detectIsArmed()) maybeAutoStore();
+      apiPromptMode = !out || out[API_PROMPT_MODE_KEY] !== false;
+      hostAutoStoreAllowed = hostPromptApproved(out && out[API_ALLOW_HOSTS_KEY]);
+      if (detectCanAutoStore()) maybeAutoStore();
     });
   } catch { /* fail closed — wait for Allow / Sign-in */ }
 }
@@ -472,7 +496,9 @@ function watchAutoStorePref() {
       if (area !== 'local') return;
       if (changes[AUTO_STORE_KEY]) autoStoreAllowed = !!changes[AUTO_STORE_KEY].newValue;
       if (changes.ks_token) loggedIn = !!changes.ks_token.newValue;
-      if (detectIsArmed()) {
+      if (changes[API_PROMPT_MODE_KEY]) apiPromptMode = changes[API_PROMPT_MODE_KEY].newValue !== false;
+      if (changes[API_ALLOW_HOSTS_KEY]) hostAutoStoreAllowed = hostPromptApproved(changes[API_ALLOW_HOSTS_KEY].newValue);
+      if (detectCanSave()) {
         scheduleScan();
         maybeAutoStore();
       }
@@ -480,15 +506,42 @@ function watchAutoStorePref() {
   } catch { /* noop */ }
 }
 
-function grantAutoStore() {
-  autoStoreAllowed = true;
-  try { chrome.storage.local.set({ [AUTO_STORE_KEY]: true }); } catch { /* noop */ }
+function rememberHostAutoStoreApproval() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([API_ALLOW_HOSTS_KEY], (out) => {
+        const raw = out && out[API_ALLOW_HOSTS_KEY];
+        const map = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+        const next = { ...map, [HOST]: Date.now() };
+        hostAutoStoreAllowed = true;
+        chrome.storage.local.set({ [API_ALLOW_HOSTS_KEY]: next }, () => resolve(true));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function openDashboardForSigninFromPanel() {
+  const result = await sendToBackground({ type: 'OPEN_DASHBOARD_FOR_SIGNIN' });
+  if (result && result.ok) {
+    setPanelStatus('Sign in tab opened. Approve when ready.', 'info');
+    return;
+  }
+  setPanelStatus('Sign in is required before saving.', 'err');
+}
+
+async function grantAutoStore() {
+  const remembered = await rememberHostAutoStoreApproval();
+  if (!remembered) {
+    setPanelStatus('Could not remember this site. Approving once for now.', 'info');
+  }
   return bulkSave();
 }
 
 function maybeAutoStore() {
   if (extensionContextDead || runtimeGone()) return;
-  if (!detectIsArmed() || autoStoreInFlight) return;
+  if (!detectCanAutoStore() || autoStoreInFlight) return;
   const unsaved = Array.from(detectedKeys.values()).filter((v) => v.saved !== true).length;
   if (unsaved === 0) return;
   autoStoreInFlight = true;
@@ -612,11 +665,33 @@ function renderPanel(opts) {
   const collectedLabel = all.length === 1 ? '1 collected' : `${all.length} collected`;
   const signedLabel = loggedIn ? 'signed' : 'Sign in';
   const lastFill = (panelEl && panelEl.dataset.ksFill) || '0 filled · —';
+  const needsPrompt = detectNeedsSystemPrompt(unsavedCount);
+  const needsSignin = unsavedCount > 0 && !loggedIn;
   const btnText = unsavedCount === 0
     ? (all.length === 0 ? 'Detect on' : 'All saved')
-    : detectIsArmed()
+    : needsSignin
+      ? 'Sign in to approve'
+      : (detectCanSave() && !needsPrompt)
       ? (unsavedCount === 1 ? 'Save to vault' : `Save all ${unsavedCount}`)
-      : 'Allow auto-save';
+      : 'Review request';
+  const promptHtml = needsPrompt
+    ? `
+    <div id="ks-api-prompt" style="display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;border:1px solid #29304a;background:#060914">
+      <div style="font-size:11px;color:#93b4ff;letter-spacing:.04em;text-transform:uppercase">API access request</div>
+      <div style="font-size:12px;line-height:1.4;color:#e4e4e7">KeyShield wants to use ${unsavedCount === 1 ? '1 detected API key' : `${unsavedCount} detected API keys`} on <strong>${HOST}</strong>.</div>
+      <div style="font-size:11px;color:#a1a1aa">Approve once (system-prompt style) or remember this site for future saves.</div>
+      <div style="display:flex;gap:8px">
+        <button id="ks-approve-once" class="ks-btn ks-btn-primary" style="flex:1">Use once</button>
+        <button id="ks-approve-host" class="ks-btn ks-btn-ghost" style="flex:1">Always allow</button>
+      </div>
+      <button id="ks-approve-later" class="ks-btn ks-btn-ghost">Not now</button>
+    </div>
+  `
+    : `
+    <div style="display:flex;gap:8px">
+      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
+    </div>
+  `;
 
   panelEl.innerHTML = `
     <div style="font-size:14px;font-weight:600">KeyShield — Sovereign Vault</div>
@@ -626,13 +701,27 @@ function renderPanel(opts) {
     <div id="ks-status" style="display:none;font-size:11px;padding:6px 8px;border-radius:6px;line-height:1.4"></div>
     <div id="ks-filled" style="font-size:12px;color:#a1a1aa">${lastFill}</div>
     <div style="font-size:12px;color:#34d399">detect on · ok 1.2.5</div>
-    <div style="display:flex;gap:8px">
-      <button id="ks-save-all" class="ks-btn ks-btn-primary" style="flex:1" ${unsavedCount === 0 ? 'disabled' : ''}>${btnText}</button>
-    </div>
+    ${promptHtml}
   `;
 
-  const saveBtn = panelEl.querySelector('#ks-save-all');
-  if (saveBtn) saveBtn.onclick = detectIsArmed() ? bulkSave : grantAutoStore;
+  if (needsPrompt) {
+    const onceBtn = panelEl.querySelector('#ks-approve-once');
+    const alwaysBtn = panelEl.querySelector('#ks-approve-host');
+    const laterBtn = panelEl.querySelector('#ks-approve-later');
+    if (onceBtn) onceBtn.onclick = () => bulkSave();
+    if (alwaysBtn) alwaysBtn.onclick = () => { void grantAutoStore(); };
+    if (laterBtn) {
+      laterBtn.onclick = () => {
+        setPanelStatus('API request dismissed. Review again when ready.', 'info');
+      };
+    }
+  } else {
+    const saveBtn = panelEl.querySelector('#ks-save-all');
+    if (saveBtn) {
+      if (needsSignin) saveBtn.onclick = () => { void openDashboardForSigninFromPanel(); };
+      else saveBtn.onclick = bulkSave;
+    }
+  }
   if (savedCount > 0 && unsavedCount === 0) {
     setPanelStatus(`Saved ${savedCount} key${savedCount === 1 ? '' : 's'} to KeyShield vault.`, 'ok');
   }

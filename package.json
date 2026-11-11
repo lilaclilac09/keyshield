@@ -18,6 +18,7 @@
     "dev:worker": "npm run dev --workspace=@keyshield/sync-worker",
     "dev:api": "python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001 --log-level info",
     "build:web": "cd src/web && npm run build",
+    "extension:build-safari": "bash src/scripts/build-safari.sh",
     "demo": "bash src/scripts/demo.sh",
     "gitnexus": "node src/scripts/gitnexus.cjs",
     "demo:record": "bash scripts/record_demo.sh",

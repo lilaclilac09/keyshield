@@ -20,7 +20,7 @@ that Firefox, Safari, and Chrome 148+ share.
 |---|---|---|
 | Chrome / Edge / Brave / Arc | Yes | `chrome://extensions` → Developer mode → **Load unpacked** → `src/extension/` (`manifest.json`, MV3 service worker) |
 | Firefox 115+ | Yes | `about:debugging` → This Firefox → **Load Temporary Add-on** → pick **`manifest.muse.json`** (same folder). Temporary add-ons clear when Firefox quits. |
-| Safari | Not packaged | Needs an Xcode wrapper; not this slice |
+| Safari | Yes (wrapper build) | Generate Xcode wrapper with `npm run extension:build-safari`, then enable in Safari. Full steps: `SAFARI.md` |
 | Cursor Muse (model) | No | Model only. It can *author* the extension; it cannot run it |
 | Cursor @Browser | No | Isolated webview, no `chrome.*` / `browser.*` extension APIs |
 
@@ -73,3 +73,6 @@ Chromium-family browsers keep using **Load unpacked** on the folder
 
 `manifest.firefox.json` is the same MV3 package as `manifest.muse.json`
 (older docs still name the firefox file).
+
+Safari packaging details (Xcode wrapper, enable flow, limitations) live in
+`SAFARI.md`.
