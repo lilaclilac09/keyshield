@@ -198,9 +198,7 @@ def _payment_resource(request: Request) -> str:
 
 def payment_required_response(upstream: str, resource: str) -> JSONResponse:
     """HTTP 402 envelope matching ks-proxy `x402_body` (no upstream call)."""
-    payment_address = os.getenv(
-        "PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000"
-    )
+    payment_address = os.getenv("PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000")
     body = {
         "x402Version": 1,
         "error": "X-PAYMENT-REQUIRED",
