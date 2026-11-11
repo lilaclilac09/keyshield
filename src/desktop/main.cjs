@@ -200,10 +200,11 @@ async function maybeTouchId() {
     return { ok: true };
   } catch (err) {
     // No biometrics, user cancelled, or unsigned app — do not lock her out.
+    const reason = err instanceof Error ? err.message : String(err);
     showShellFeedback({
       kind: 'info',
       title: 'Continuing without Touch ID',
-      detail: err instanceof Error ? err.message : String(err),
+      detail: `Touch ID was not completed (${reason}). Next step: continue in KeyShield and tap Sign In again, or paste a session token.`,
       source: 'unlock',
     });
     return { skipped: true };
@@ -221,7 +222,12 @@ ipcMain.handle('ks-touch-id', async (_event, reason) => {
     return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    showShellFeedback({ kind: 'error', title: 'Touch ID cancelled', detail: error, source: 'unlock' });
+    showShellFeedback({
+      kind: 'error',
+      title: 'Touch ID cancelled',
+      detail: `Touch ID was cancelled (${error}). Next step: tap Sign In again or use the session token fallback in the auth card.`,
+      source: 'unlock',
+    });
     return { ok: false, error };
   }
 });
@@ -367,7 +373,21 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     const win = BrowserWindow.getAllWindows()[0];
-    bringWindowToForeground(win);
+    if (win) {
+      bringWindowToForeground(win);
+      return;
+    }
+    void createWindow().then((created) => {
+      bringWindowToForeground(created);
+      showShellFeedback({ kind: 'info', title: 'KeyShield window restored', source: 'unlock' });
+    }).catch((err) => {
+      showShellFeedback({
+        kind: 'error',
+        title: 'Unable to restore window',
+        detail: err instanceof Error ? err.message : String(err),
+        source: 'unlock',
+      });
+    });
   });
 
   app.whenReady().then(async () => {

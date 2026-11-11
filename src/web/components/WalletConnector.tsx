@@ -3,6 +3,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Wallet, Check, Loader2, AlertCircle } from 'lucide-react';
 import { clearAuth, fetchChallenge, isAuthenticated, notifyAuthChanged, setToken, setWalletAddress, walletLogin } from '../lib/auth';
+import { emitAppFeedback } from '../lib/app-feedback';
+import { humanActionError } from '../lib/human-usable';
 import { VAULT_KEY_MESSAGE, deriveVaultPassphrase, registerExtensionVaultKey } from '../lib/vault-key';
 
 interface Props { onConnect: () => void; }
@@ -27,12 +29,21 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
   const advancedRef = useRef(false);
 
   useEffect(() => { if (isAuthenticated() && connected && !advancedRef.current) { advancedRef.current = true; setPhase('done'); onConnect(); } }, []);
-  useEffect(() => { if (wallet && !connected && !connecting && phase === 'idle') { connect().catch((err: unknown) => { const msg = err instanceof Error ? err.message : String(err); setErrorMsg(msg || 'Failed to connect wallet'); setPhase('error'); }); } }, [wallet, connected, connecting, connect, phase]);
+  useEffect(() => {
+    if (!wallet || connected || connecting || phase !== 'idle') return;
+    connect().catch((err: unknown) => {
+      const msg = humanActionError('wallet-connect', err);
+      setErrorMsg(msg || 'Failed to connect wallet');
+      setPhase('error');
+      emitAppFeedback({ kind: 'error', title: 'Wallet connection failed', detail: msg, source: 'auth' });
+    });
+  }, [wallet, connected, connecting, connect, phase]);
 
   useEffect(() => {
     if (!connected || !publicKey || phase !== 'idle') return;
     if (isAuthenticated()) { if (!advancedRef.current) { advancedRef.current = true; setPhase('done'); onConnect(); } return; }
     setPhase('signing');
+    emitAppFeedback({ kind: 'busy', title: 'Waiting for wallet signature…', source: 'auth' });
     (async () => {
       try {
         const adapterSign = (wallet?.adapter as { signMessage?: (m: Uint8Array) => Promise<Uint8Array> } | undefined)?.signMessage?.bind(wallet?.adapter);
@@ -43,15 +54,29 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
         const keySig = await signFn(new TextEncoder().encode(VAULT_KEY_MESSAGE));
         const passphrase = await deriveVaultPassphrase(keySig);
         setPhase('authenticating');
+        emitAppFeedback({ kind: 'busy', title: 'Authenticating wallet…', source: 'auth' });
         const { token, userId } = await walletLogin(publicKey.toBase58(), sig, ch, passphrase);
         await registerExtensionVaultKey(keySig);
         setToken(token); setWalletAddress(userId); notifyAuthChanged();
+        emitAppFeedback({ kind: 'success', title: 'Wallet connected', source: 'auth' });
         advancedRef.current = true; setPhase('done'); onConnect();
-      } catch (err: unknown) { const msg = err instanceof Error ? err.message : 'Login failed'; setErrorMsg(msg); setPhase('error'); }
+      } catch (err: unknown) {
+        const msg = humanActionError('wallet-connect', err);
+        setErrorMsg(msg);
+        emitAppFeedback({ kind: 'error', title: 'Wallet sign-in failed', detail: msg, source: 'auth' });
+        setPhase('error');
+      }
     })();
-  }, [connected, publicKey]);
+  }, [connected, publicKey, onConnect, signMessage, wallet?.adapter]);
 
-  const retry = () => { clearAuth(); disconnect().catch(() => {}); advancedRef.current = false; setErrorMsg(''); setPhase('idle'); };
+  const retry = () => {
+    clearAuth();
+    disconnect().catch(() => {});
+    advancedRef.current = false;
+    setErrorMsg('');
+    setPhase('idle');
+    emitAppFeedback({ kind: 'info', title: 'Retrying wallet connect…', source: 'auth' });
+  };
   const shortAddr = publicKey ? `${publicKey.toBase58().slice(0, 4)}\u2026${publicKey.toBase58().slice(-4)}` : '';
 
   if (phase === 'error') return (
@@ -67,11 +92,18 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
   );
   if (phase === 'signing' || phase === 'authenticating') {
     const label = phase === 'signing' ? 'Approve signature in your wallet\u2026' : 'Unlocking vault\u2026';
+    const nextStep = phase === 'signing'
+      ? 'Next step: approve the signature request in your wallet popup.'
+      : 'Next step: keep this window open while KeyShield exchanges your signed challenge.';
     return (
       <div className="rounded-xl border border-[#243365]/50 p-2 bg-[#131c39]">
         <div className="flex items-center gap-3 px-5 py-4 rounded-xl border border-[#243365] bg-[#0e1631] text-white">
           <Loader2 size={18} className="animate-spin shrink-0" />
-          <div className="text-left"><p className="text-[14px] font-semibold uppercase tracking-wider">{label}</p><p className="text-[12px] text-[#8a96c2] mt-0.5">{shortAddr || 'Waiting for wallet'}</p></div>
+          <div className="text-left">
+            <p className="text-[14px] font-semibold uppercase tracking-wider">{label}</p>
+            <p className="text-[12px] text-[#8a96c2] mt-0.5">{shortAddr || 'Waiting for wallet'}</p>
+            <p className="text-[12px] text-[#8a96c2] mt-1">{nextStep}</p>
+          </div>
         </div>
       </div>
     );

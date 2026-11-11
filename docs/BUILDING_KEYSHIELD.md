@@ -84,7 +84,7 @@ The methodology, in order:
 2. **Derive the architecture from the spec**, not the other way around. The six components exist because the spec needed a place to enforce each guarantee (encryption → browser, verification + caps → proxy, issuance → backend, ergonomics → SDK/extension/MCP).
 3. **Implement each component against the spec.** Every surface — TS vault, Rust proxy, Python SDK, MCP server, on-chain program — traces a line back to a clause in `SPEC.md`.
 4. **Verify on-chain.** The payment-streaming mechanism runs as a Solana devnet program with documented instructions and *verified transactions*, so the economic layer is auditable, not asserted.
-5. **Keep the docs as living artifacts.** `SPEC.md`, `AGENTS.md`, `DEVELOPMENT.md`, `DEPLOY.md`, `docs/architecture/`, `docs/API.md`, and `CHANGELOG.md` evolve with the code rather than rotting behind it.
+5. **Keep the docs as living artifacts.** `SPEC.md`, `AGENTS.md`, `DEVELOPMENT.md`, `DEPLOY.md`, `docs/architecture/`, `docs/API.md`, `docs/technical/human-usable-ui-standards.md`, and `CHANGELOG.md` evolve with the code rather than rotting behind it.
 
 ---
 

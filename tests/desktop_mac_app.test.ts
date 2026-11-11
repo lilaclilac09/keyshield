@@ -72,6 +72,15 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).toContain("pendingShellFeedback");
   });
 
+  it("restores or recreates the desktop window on second-instance activate", () => {
+    const main = read("src/desktop/main.cjs");
+    expect(main).toContain("app.on('second-instance'");
+    expect(main).toContain("if (win) {");
+    expect(main).toContain("void createWindow().then((created) => {");
+    expect(main).toContain("KeyShield window restored");
+    expect(main).toContain("Unable to restore window");
+  });
+
   it("packed renderer talks to the hosted control plane by default", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
     expect(build).toContain("https://keyshield-production.up.railway.app");
@@ -108,9 +117,23 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(read("src/web/components/sections/HomeSection.tsx")).toContain("source: 'proxy'");
     expect(read("src/web/components/PaymentsLedger.tsx")).toContain("source: 'mpp'");
     expect(read("src/web/components/HealthBadge.tsx")).toContain("API offline");
+    expect(read("src/web/lib/human-usable.ts")).toContain("humanActionError");
+    expect(read("src/web/components/AuthScreen.tsx")).toContain("passkey-next-step");
+    expect(read("src/web/components/WalletConnector.tsx")).toContain("Next step:");
+    expect(read("src/web/components/sections/VaultSection.tsx")).toContain("humanActionError");
     const main = read("src/desktop/main.cjs");
     expect(main).toContain("ks-feedback");
     expect(main).toContain("did-fail-load");
     expect(read("src/desktop/preload.cjs")).toContain("notify:");
+  });
+
+  it("documents measurable human-usable acceptance criteria", () => {
+    const standard = read("docs/technical/human-usable-ui-standards.md");
+    expect(standard).toContain("Waiting states are explicit");
+    expect(standard).toContain("Completion feedback is deterministic and readable");
+    expect(standard).toContain("No silent no-op after user intent");
+    expect(standard).toContain("Next step:");
+    const docsSection = read("src/web/components/sections/DocsSection.tsx");
+    expect(docsSection).toContain("human-usable-ui-standards.md");
   });
 });

@@ -5,6 +5,7 @@ import { ExtensionInstallHint } from './ExtensionInstallHint';
 import { passkeyLogin, passkeySignup, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
 import { isDesktopShell } from '../lib/desktop-shell';
 import { emitAppFeedback } from '../lib/app-feedback';
+import { humanActionError } from '../lib/human-usable';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
@@ -13,6 +14,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [userId, setUserId] = useState<string | null>(() => readPasskeyUserIdFromStorage());
   const [, setPreferWallet] = useState(false);
   const [pkLoading, setPkLoading] = useState(false);
+  const [pkAction, setPkAction] = useState<'signin' | 'signup' | null>(null);
   const [pkError, setPkError] = useState('');
   const [demoOn, setDemoOn] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
@@ -68,7 +70,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       emitAppFeedback({ kind: 'success', title: 'Demo session started', source: 'auth' });
       onAuthenticated();
     } catch (e) {
-      const detail = e instanceof Error ? e.message : 'Demo login failed';
+      const detail = humanActionError('demo-login', e);
       setDemoError(detail);
       emitAppFeedback({ kind: 'error', title: 'Demo login failed', detail, source: 'auth' });
     } finally {
@@ -81,6 +83,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
 
   const handleFaceID = async () => {
     setPkLoading(true);
+    setPkAction('signin');
     setPkError('');
     emitAppFeedback({ kind: 'busy', title: 'Unlocking with passkey…', source: 'unlock' });
     try {
@@ -91,19 +94,17 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       emitAppFeedback({ kind: 'success', title: 'Signed in', source: 'unlock' });
       onAuthenticated();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Face ID failed';
-      const jumped = /abort|cancel|not allowed|visibility|document/i.test(msg);
-      const detail = jumped
-        ? 'Passkey was interrupted — tap Sign In again. Your id is still on this device.'
-        : msg;
+      const detail = humanActionError('passkey-signin', e);
       setPkError(detail);
       emitAppFeedback({ kind: 'error', title: 'Sign-in failed', detail, source: 'unlock' });
     } finally {
       setPkLoading(false);
+      setPkAction(null);
     }
   };
   const handleSignup = async () => {
     setPkLoading(true);
+    setPkAction('signup');
     setPkError('');
     emitAppFeedback({ kind: 'busy', title: 'Creating passkey…', source: 'unlock' });
     try {
@@ -114,11 +115,12 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       emitAppFeedback({ kind: 'success', title: 'Account created', source: 'unlock' });
       onAuthenticated();
     } catch (e) {
-      const detail = e instanceof Error ? e.message : 'Passkey signup failed';
+      const detail = humanActionError('passkey-signup', e);
       setPkError(detail);
       emitAppFeedback({ kind: 'error', title: 'Signup failed', detail, source: 'unlock' });
     } finally {
       setPkLoading(false);
+      setPkAction(null);
     }
   };
   const forgetDevice = () => { clearPasskeyTrust(); setUserId(null); setPreferWallet(true); };
@@ -166,6 +168,13 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
               </button>
             )}
             {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
+            {pkLoading && (
+              <p data-testid="passkey-next-step" className="text-[12px] text-[#8a96c2] text-left px-1">
+                {pkAction === 'signup'
+                  ? 'Next step: approve the passkey creation prompt in Face ID, Touch ID, or your security key.'
+                  : 'Next step: approve the passkey sign-in prompt in Face ID, Touch ID, or your security key.'}
+              </p>
+            )}
             {userId && <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>}
             {desktop && (
               <div className="pt-2 space-y-2 border-t border-[#243365]/40" data-testid="desktop-session-token">
