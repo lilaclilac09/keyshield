@@ -13,6 +13,7 @@ src/extension/
 ├── manifest.firefox.json  same package as manifest.muse.json
 ├── browser-api.js         chrome ↔ browser alias
 ├── MUSE.md                what Muse actually supports vs Chrome, how to load
+├── SAFARI.md              Safari wrapper build + install + test
 ├── background.js          service worker (key save, x402, audit retention)
 ├── content.js             content script (key detection, x402 interceptor)
 ├── session-bridge.js      document_start token restore on dashboard hosts
@@ -62,10 +63,28 @@ Use a real WebExtensions host. Full matrix: `MUSE.md`.
 
 Temporary add-ons are removed when the browser closes — that's expected for development.
 
+## Install — Safari (macOS + Xcode)
+
+Safari needs an Xcode wrapper project (Safari Web Extension App). Build it on
+macOS from this repo:
+
+1. `npm run extension:build-safari`
+2. Open the generated project:
+   `open src/extension/safari-wrapper/KeyShield/KeyShield.xcodeproj`
+3. In Xcode, set a Signing Team for both targets (app + extension), then
+   Build/Run the app target once.
+4. Safari → **Settings** → **Extensions** → enable **KeyShield**.
+
+Detailed troubleshooting + validation checks are in `SAFARI.md`.
+
 ## How it works
 
 - **Auto-detect:** `content.js` scans visible text and form inputs every 3 seconds (and on copy/input events) for known API key shapes. When a match is found on a known provider domain, a "Save to vault" toast appears.
-- **One-click save:** Clicking the toast sends the key to `background.js`, which `POST`s `/manage/store` on the backend. Requires you to be signed in to the KeyShield dashboard (token registered via `externally_connectable`).
+- **System-style approve/use:** When a key is detected, the panel asks for
+  explicit approval (`Use once` / `Always allow`) before vault writes on that
+  host. This mirrors OS password-prompt intent and keeps the flow explicit.
+- **Vault save:** Approved saves call `background.js`, which `POST`s
+  `/manage/store` on the backend. Requires KeyShield sign-in.
 - **x402 payments:** Any fetch that returns `402` with `X-Payment-Required: x402` triggers a payment prompt; trusted domains under your threshold can auto-pay.
 - **Audit log:** Stored under `chrome.storage.local.ks_audit_log` and purged by age + cap on extension install/update.
 
