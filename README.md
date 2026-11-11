@@ -69,6 +69,15 @@ node dev.cjs
 # Control API  http://localhost:8001
 ```
 
+Mac app (personal unsigned DMG, same dashboard as the live site):
+
+```bash
+cd src/desktop && npm install && npm run pack
+open release/KeyShield.dmg
+```
+
+Does not require local Python `:8001` or Rust `:8000` — packed builds talk to the hosted API. Phantom’s browser extension is not inside Electron; use passkey, Start demo, or paste a Developer session token.
+
 Production: [https://app.ks.aileena.xyz](https://app.ks.aileena.xyz)
 (marketing: [https://ks.aileena.xyz](https://ks.aileena.xyz)).
 

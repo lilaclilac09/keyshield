@@ -85,6 +85,28 @@ cd src/web && npm run dev -- --port 5173
 CI runs all of these on every PR (`.github/workflows/{python,test,uat,
 sync-worker-deploy,devnet-deploy}.yml`).
 
+## Mac app (personal DMG)
+
+Unsigned Electron shell around the same `src/web` dashboard as
+https://app.ks.aileena.xyz. Does not rebuild Python, Rust, MPP, or billing.
+Python `:8001` / Rust `:8000` are **not** required when the packed app uses
+the hosted Railway API.
+
+```bash
+cd src/desktop
+npm install
+npm start          # window; live site if renderer/ is missing
+npm run pack       # unsigned KeyShield.app + zip, DMG on macOS
+open release/KeyShield.dmg
+```
+
+First Gatekeeper launch: right-click → Open, or `xattr -cr /Applications/KeyShield.app`.
+Apple Developer ID is not needed for a personal unsigned DMG. Details:
+desktop pack scripts in `src/desktop/`.
+
+`KS_DESKTOP_LIVE=1` loads the Vercel site byte-for-byte.
+`KS_DESKTOP_API_URL=http://127.0.0.1:8001` points at a local control plane.
+
 ## Production deploy
 
 No docker-compose. Each tier is on its native PaaS:
