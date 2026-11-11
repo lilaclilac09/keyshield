@@ -103,19 +103,76 @@ function startUrl() {
 }
 
 let titleResetTimer = null;
+let pendingShellFeedback = null;
+
+function feedbackVisibilityMs(kind) {
+  if (kind === 'error') return 9000;
+  if (kind === 'success') return 6500;
+  if (kind === 'busy') return 12000;
+  return 5000;
+}
+
+function applyFeedbackToWindow(win, kind, title, visibleMs) {
+  const suffix = kind === 'error' ? `Error — ${title}` : title;
+  win.setTitle(`KeyShield — ${suffix}`);
+  if (titleResetTimer) clearTimeout(titleResetTimer);
+  if (visibleMs <= 0) return;
+  titleResetTimer = setTimeout(() => {
+    if (!win.isDestroyed()) win.setTitle('KeyShield');
+  }, visibleMs);
+}
+
+function flushPendingShellFeedback(win) {
+  if (!pendingShellFeedback || !win || win.isDestroyed()) return;
+  const kind = pendingShellFeedback.kind;
+  const title = pendingShellFeedback.title;
+  const baseMs = feedbackVisibilityMs(kind);
+  const ageMs = Date.now() - pendingShellFeedback.at;
+  const remainingMs = baseMs > 0 ? Math.max(1000, baseMs - ageMs) : 0;
+  applyFeedbackToWindow(win, kind, title, remainingMs);
+  pendingShellFeedback = null;
+}
+
+function bringWindowToForeground(win) {
+  if (!win || win.isDestroyed()) return;
+  const focusNow = () => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    try {
+      if (process.platform === 'darwin' && app.dock && typeof app.dock.show === 'function') app.dock.show();
+      app.focus({ steal: true });
+    } catch {
+      try {
+        app.focus();
+      } catch {
+        /* best effort */
+      }
+    }
+    win.moveTop();
+    win.focus();
+  };
+  focusNow();
+  for (const delayMs of [140, 360, 720]) {
+    setTimeout(focusNow, delayMs);
+  }
+}
 
 function showShellFeedback(payload) {
   const title = String(payload?.title || 'KeyShield');
   const detail = String(payload?.detail || payload?.body || '');
   const kind = String(payload?.kind || 'info');
   const win = BrowserWindow.getAllWindows()[0];
+  const visibleMs = feedbackVisibilityMs(kind);
   if (win && !win.isDestroyed()) {
-    const suffix = kind === 'error' ? `Error — ${title}` : title;
-    win.setTitle(`KeyShield — ${suffix}`);
-    if (titleResetTimer) clearTimeout(titleResetTimer);
-    titleResetTimer = setTimeout(() => {
-      if (!win.isDestroyed()) win.setTitle('KeyShield');
-    }, 4000);
+    applyFeedbackToWindow(win, kind, title, visibleMs);
+    pendingShellFeedback = null;
+  } else {
+    pendingShellFeedback = {
+      at: Date.now(),
+      kind,
+      title,
+    };
   }
   const focused = Boolean(win && !win.isDestroyed() && win.isFocused());
   if (kind !== 'busy' && (!focused || kind === 'error')) {
@@ -160,6 +217,7 @@ ipcMain.handle('ks-touch-id', async (_event, reason) => {
   try {
     await systemPreferences.promptTouchID(String(reason || 'Unlock KeyShield'));
     showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
+    bringWindowToForeground(BrowserWindow.getAllWindows()[0]);
     return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -296,6 +354,7 @@ async function createWindow() {
   buildMenu(win);
   await win.loadURL(startUrl());
   win.show();
+  flushPendingShellFeedback(win);
   return win;
 }
 
@@ -308,15 +367,13 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     const win = BrowserWindow.getAllWindows()[0];
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    }
+    bringWindowToForeground(win);
   });
 
   app.whenReady().then(async () => {
-    await maybeTouchId();
-    await createWindow();
+    const unlock = await maybeTouchId();
+    const win = await createWindow();
+    if (unlock?.ok) bringWindowToForeground(win);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
     });

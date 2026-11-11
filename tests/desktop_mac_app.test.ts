@@ -53,6 +53,25 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).not.toContain("vault-only");
   });
 
+  it("waits for Touch ID and then foregrounds the app window", () => {
+    const main = read("src/desktop/main.cjs");
+    expect(main).toContain("const unlock = await maybeTouchId();");
+    expect(main).toContain("const win = await createWindow();");
+    expect(main).toContain("if (unlock?.ok) bringWindowToForeground(win);");
+    expect(main).toContain("await systemPreferences.promptTouchID");
+    expect(main).toContain("bringWindowToForeground(BrowserWindow.getAllWindows()[0]);");
+    expect(main).toContain("flushPendingShellFeedback(win);");
+  });
+
+  it("keeps unlock feedback visible long enough to read", () => {
+    const main = read("src/desktop/main.cjs");
+    expect(main).toContain("function feedbackVisibilityMs(kind)");
+    expect(main).toContain("if (kind === 'success') return 6500;");
+    expect(main).toContain("if (kind === 'error') return 9000;");
+    expect(main).toContain("if (kind === 'busy') return 12000;");
+    expect(main).toContain("pendingShellFeedback");
+  });
+
   it("packed renderer talks to the hosted control plane by default", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
     expect(build).toContain("https://keyshield-production.up.railway.app");
