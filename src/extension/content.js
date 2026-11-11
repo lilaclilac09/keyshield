@@ -37,6 +37,12 @@
  *       existing chrome.storage token lands in localStorage before React.
  */
 
+(function (g) {
+  if (!g) return;
+  if (!g.browser && g.chrome) g.browser = g.chrome;
+  if (!g.chrome && g.browser) g.chrome = g.browser;
+})(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : self);
+
 // ── Provider definitions ────────────────────────────────────────────────────
 //
 // Each provider has:
@@ -788,9 +794,18 @@ function ksIsCursorFillHost(domain) {
     || host === 'cursor.demo.localhost';
 }
 
+function ksIsExtensionPage() {
+  try {
+    const p = String(location.protocol || '');
+    return p === 'chrome-extension:' || p === 'moz-extension:';
+  } catch {
+    return false;
+  }
+}
+
 function ksIsLocalFillDemo() {
   const path = String(location.pathname || '').toLowerCase();
-  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+  if (typeof location !== 'undefined' && ksIsExtensionPage()) {
     return path.includes('cursor-settings-fill-demo')
       || path.includes('nvidia-fill-demo')
       || path.includes('/journey/cursor')
@@ -849,7 +864,7 @@ function ksIsKiloFillContext() {
   const host = location.hostname;
   if (ksIsKiloFillHost(host) && ksIsKiloByokPath(location.pathname)) return true;
   const local = host === '127.0.0.1' || host === 'localhost';
-  if (typeof location !== 'undefined' && String(location.protocol || '') === 'chrome-extension:') {
+  if (typeof location !== 'undefined' && ksIsExtensionPage()) {
     return ksIsKiloByokPath(location.pathname);
   }
   return local && ksIsKiloByokPath(location.pathname);

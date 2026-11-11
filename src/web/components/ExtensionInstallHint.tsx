@@ -77,7 +77,7 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
         <li>Pin the KeyShield icon, then sign in here so the popup gets a session token.</li>
       </ol>
       <p className={`${compact ? 'text-[11px] mt-2' : 'text-[13px] mt-3'} text-[#5e6a91] leading-relaxed`}>
-        Firefox (not preferred): <code className="text-[#a8b3d8]">about:debugging</code> → This Firefox → Load Temporary Add-on → <code className="text-[#a8b3d8]">manifest.firefox.json</code>. Temporary loads clear when Firefox quits.
+        Firefox / Muse (browser-agnostic): <code className="text-[#a8b3d8]">about:debugging</code> → This Firefox → Load Temporary Add-on → <code className="text-[#a8b3d8]">manifest.muse.json</code> (same folder; <code className="text-[#a8b3d8]">manifest.firefox.json</code> is identical). Temporary loads clear when Firefox quits. Cursor Muse and Cursor Browser cannot load extensions — use Chrome or Firefox.
       </p>
       {onOpenDocs && (
         <button

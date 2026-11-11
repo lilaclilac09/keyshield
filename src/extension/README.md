@@ -8,8 +8,11 @@ This directory is the **unpacked extension root**. No build step required — al
 
 ```
 src/extension/
-├── manifest.json          Chrome MV3 manifest
-├── manifest.firefox.json  Firefox MV2 manifest
+├── manifest.json          Chrome / Edge / Brave / Arc MV3 (service worker)
+├── manifest.muse.json     Firefox / browser-agnostic MV3 (`browser.*`)
+├── manifest.firefox.json  same package as manifest.muse.json
+├── browser-api.js         chrome ↔ browser alias
+├── MUSE.md                what Muse actually supports vs Chrome, how to load
 ├── background.js          service worker (key save, x402, audit retention)
 ├── content.js             content script (key detection, x402 interceptor)
 ├── session-bridge.js      document_start token restore on dashboard hosts
@@ -46,14 +49,18 @@ folder.
 
 The extension picks up `manifest.json` automatically.
 
-## Install — Firefox
+## Install — Firefox / Muse (browser-agnostic)
+
+Cursor Muse (the model) and Cursor @Browser **cannot** load this extension.
+Use a real WebExtensions host. Full matrix: `MUSE.md`.
 
 1. Open `about:debugging`.
 2. Click **This Firefox** in the left sidebar.
 3. Click **Load Temporary Add-on…**
-4. Navigate to `src/extension/` and pick **`manifest.firefox.json`**.
+4. Navigate to `src/extension/` and pick **`manifest.muse.json`**
+   (`manifest.firefox.json` is the same MV3 file).
 
-Firefox MV2 add-ons loaded this way are removed when the browser closes — that's expected for development.
+Temporary add-ons are removed when the browser closes — that's expected for development.
 
 ## How it works
 

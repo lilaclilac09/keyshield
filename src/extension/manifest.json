@@ -55,12 +55,12 @@
         "http://127.0.0.1:3000/*",
         "http://localhost:3000/*"
       ],
-      "js": ["session-bridge.js"],
+      "js": ["browser-api.js", "session-bridge.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["browser-api.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

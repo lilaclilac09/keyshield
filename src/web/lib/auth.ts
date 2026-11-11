@@ -147,26 +147,41 @@ function getExtensionId(): string | null {
 }
 
 function hasChromeRuntime(): boolean {
-  return typeof chrome !== 'undefined' && !!chrome.runtime?.sendMessage;
+  if (typeof window === 'undefined') {
+    return typeof chrome !== 'undefined' && !!chrome.runtime?.sendMessage;
+  }
+  const w = window as any;
+  return !!(w.browser?.runtime?.sendMessage || w.chrome?.runtime?.sendMessage);
+}
+
+function postExtMessage(payload: Record<string, unknown>): void {
+  if (typeof window === 'undefined') return;
+  try { window.postMessage({ __ks_ext_message: payload }, window.location.origin); } catch { /* noop */ }
 }
 
 export function pushTokenToExtension(token: string): void {
+  const payload = { type: 'KS_TOKEN_REGISTER', token, user: getWalletAddress() ?? '' };
+  postExtMessage(payload);
   if (!hasChromeRuntime()) return;
   const id = getExtensionId();
   if (!id) return;
+  const runtime = (typeof window !== 'undefined' && ((window as any).browser?.runtime || (window as any).chrome?.runtime))
+    || (typeof chrome !== 'undefined' ? chrome.runtime : null);
   try {
-    chrome.runtime.sendMessage(id, {
-      type: 'KS_TOKEN_REGISTER', token, user: getWalletAddress() ?? '',
-    }, () => { /* ignore */ });
+    runtime.sendMessage(id, payload, () => { /* ignore */ });
   } catch { /* silent */ }
 }
 
 export function clearTokenInExtension(): void {
+  const payload = { type: 'KS_TOKEN_CLEAR' };
+  postExtMessage(payload);
   if (!hasChromeRuntime()) return;
   const id = getExtensionId();
   if (!id) return;
+  const runtime = (typeof window !== 'undefined' && ((window as any).browser?.runtime || (window as any).chrome?.runtime))
+    || (typeof chrome !== 'undefined' ? chrome.runtime : null);
   try {
-    chrome.runtime.sendMessage(id, { type: 'KS_TOKEN_CLEAR' }, () => {});
+    runtime.sendMessage(id, payload, () => {});
   } catch { /* silent */ }
 }
 
@@ -174,10 +189,17 @@ export async function pingExtension(): Promise<{ installed: boolean; hasToken: b
   if (!hasChromeRuntime()) return { installed: false, hasToken: false };
   const id = getExtensionId();
   if (!id) return { installed: false, hasToken: false };
+  const runtime = (typeof window !== 'undefined' && ((window as any).browser?.runtime || (window as any).chrome?.runtime))
+    || (typeof chrome !== 'undefined' ? chrome.runtime : null);
   return new Promise(resolve => {
+    if (!runtime?.sendMessage) {
+      resolve({ installed: false, hasToken: false });
+      return;
+    }
     try {
-      chrome.runtime.sendMessage(id, { type: 'KS_PING' }, (resp: any) => {
-        if (chrome.runtime.lastError) {
+      runtime.sendMessage(id, { type: 'KS_PING' }, (resp: any) => {
+        const lastError = runtime.lastError || (typeof chrome !== 'undefined' && chrome.runtime.lastError);
+        if (lastError) {
           resolve({ installed: false, hasToken: false });
         } else {
           resolve({ installed: true, hasToken: !!resp?.hasToken });

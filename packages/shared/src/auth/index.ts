@@ -252,16 +252,25 @@ const DEMO_FLAG = 'ks_demo';
 let _ksExtensionId: string | null = null;
 const _pendingPushes: Array<Record<string, unknown>> = [];
 
+function _postExtMessage(payload: Record<string, unknown>): void {
+  try { window.postMessage({ __ks_ext_message: payload }, window.location.origin); } catch { /* noop */ }
+}
+
 function _flushPending(): void {
-  if (!_ksExtensionId) return;
-  const c = (globalThis as { chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void; lastError?: unknown } } }).chrome ?? null;
-  const runtime = c?.runtime;
-  if (!runtime?.sendMessage) { _pendingPushes.length = 0; return; }
-  while (_pendingPushes.length) {
-    const p = _pendingPushes.shift()!;
-    try { runtime.sendMessage(_ksExtensionId, p, () => void runtime.lastError); }
-    catch { /* extension uninstalled / messaging blocked */ }
+  const g = globalThis as {
+    chrome?: { runtime?: { sendMessage?: (...args: unknown[]) => void; lastError?: unknown } };
+    browser?: { runtime?: { sendMessage?: (...args: unknown[]) => void; lastError?: unknown } };
+  };
+  const runtime = g.browser?.runtime || g.chrome?.runtime || null;
+  const queued = _pendingPushes.slice();
+  for (const p of queued) {
+    if (typeof window !== 'undefined') _postExtMessage(p);
+    if (_ksExtensionId && runtime?.sendMessage) {
+      try { runtime.sendMessage(_ksExtensionId, p, () => void runtime.lastError); }
+      catch { /* extension uninstalled / messaging blocked */ }
+    }
   }
+  if (_ksExtensionId) _pendingPushes.length = 0;
 }
 
 function _pushToExtension(payload: Record<string, unknown>): void {
