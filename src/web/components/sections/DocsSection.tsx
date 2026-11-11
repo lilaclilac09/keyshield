@@ -44,7 +44,30 @@ export const DocsSection: React.FC = () => {
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
         <h2 className="text-[24px] font-bold text-white uppercase tracking-wider">Quickstart</h2>
         <p className="text-[14px] text-[#a8b3d8] mt-1">From zero to first agent call in under a minute — or install the Chrome extension (preferred, next card) to save keys detected on provider sites while signed in here.</p>
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+          <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Test build</span>
+          <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Under development</span>
+          <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Not production release</span>
+        </div>
       </div>
+
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-3"><FileText size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Install links (placeholder behavior)</span></div>
+        <p className="text-[12px] text-[#a8b3d8] leading-relaxed">
+          These are docs-only placeholders for testing copy and flow. They are not a production installer or store listing.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a href={`${REPO_URL}/blob/main/DEVELOPMENT.md#mac-app-personal-dmg`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-[#243365] bg-[#0e1631] px-3 py-2 text-[12px] text-white hover:bg-white/5">
+            Desktop install (placeholder) <ArrowRight size={12} />
+          </a>
+          <a href={`${REPO_URL}/blob/main/src/extension/README.md#install--firefox--muse-browser-agnostic`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-[#243365] bg-[#0e1631] px-3 py-2 text-[12px] text-white hover:bg-white/5">
+            Extension install (placeholder) <ArrowRight size={12} />
+          </a>
+        </div>
+        <p className="text-[11px] text-[#8a96c2] mt-3">
+          Marketing release label: <strong className="text-white">v0.3 · 2026-11-11</strong>. Verify latest in <a href={`${REPO_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer" className="text-white hover:underline">CHANGELOG</a> and <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">GitHub main</a>.
+        </p>
+      </Card>
 
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Run this in your terminal</span></div>
