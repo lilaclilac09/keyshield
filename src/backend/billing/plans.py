@@ -21,7 +21,10 @@ FEATURE_COPY = {
     "auto_plugin": "Auto plugins — SDK / CLI inject the decrypted key at request time (`X-Upstream-API-Key`).",
     "biometric_zk": "Biometric ZK verify — passkey PRF proves this device. The server never sees the raw key.",
     "accelerate": "Acceleration — RPC cache, batch RPC, and parallel quote + analyze on the hot path.",
-    "low_latency": "Extreme low latency — Groq urgent path, cached Helius TTLs, sub-200ms trading budget.",
+    "low_latency": (
+        "Extreme low latency target — Groq urgent path, cached Helius TTLs. "
+        "Sub-200ms is unpublished (not measured / not an SLA)."
+    ),
 }
 
 WHY = {
@@ -34,7 +37,7 @@ WHY = {
         "A subscription pays for the control plane: Path A vault seats, "
         "passkey/PRF devices, session minting, auto-plugins, biometric ZK, "
         "and a predictable included proxy budget. Humans have calendars; "
-        "seats and latency SLAs are monthly."
+        "seats are monthly. Latency numbers are unpublished targets, not an SLA."
     ),
     "payg": (
         "Pay-as-you-go (ledger top-up, MPP streams, x402) pays for agent "
@@ -109,7 +112,7 @@ PLANS: dict[str, dict] = {
             "accelerate",
             "low_latency",
         ],
-        "promise": "Acceleration and extreme low latency for the trading / agent hot path.",
+        "promise": "Acceleration and an extreme-low-latency target for the trading / agent hot path (not a published SLA).",
         "blurb": "Fleet seats. RPC cache, batch, Groq-class latency. $100 included each month, then PAYG.",
     },
 }

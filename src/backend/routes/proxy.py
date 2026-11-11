@@ -7,8 +7,11 @@ header:
 
     X-Upstream-API-Key: <raw key>
 
-If the header is missing the proxy returns 401. The header value is used
-exactly once, for the single upstream call, and then dropped.
+If the header is missing the proxy may fall back to a platform env key.
+A platform key with prepaid balance ≤ 0 returns HTTP 402 before hold
+or upstream (a cache HIT is not a skip). Vault-owned keys still
+forward at $0. The header value is used exactly once, for the single
+upstream call, and then dropped.
 
 See docs/technical/SYNC_VAULT_ARCHITECTURE.md.
 """
@@ -151,6 +154,108 @@ def _velocity_observe(key: str, status: int, content, tokens: int) -> None:
         logger.warning("velocity observe failed: %s", exc)
 
 
+_PLATFORM_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "helius": "HELIUS_API_KEY",
+    "helius-rpc": "HELIUS_API_KEY",
+    "helius-das": "HELIUS_API_KEY",
+    "helius-enhanced": "HELIUS_API_KEY",
+    "0x": "ZEROX_API_KEY",
+    "titan": "TITAN_API_KEY",
+    "pyth": "PYTH_API_KEY",
+    "alchemy": "ALCHEMY_API_KEY",
+}
+
+_USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
+
+def _platform_api_key(upstream: str) -> str:
+    env_name = _PLATFORM_ENV.get(upstream)
+    if not env_name:
+        return ""
+    return os.getenv(env_name, "").strip()
+
+
+def _resolve_proxy_api_key(request: Request, upstream: str) -> tuple[str | None, str | None]:
+    header = request.headers.get("X-Upstream-API-Key")
+    if header:
+        return header, "user"
+    platform = _platform_api_key(upstream)
+    if platform:
+        return platform, "platform"
+    return None, None
+
+
+def _payment_resource(request: Request) -> str:
+    path = request.url.path
+    query = request.url.query
+    return f"{path}?{query}" if query else path
+
+
+def payment_required_response(upstream: str, resource: str) -> JSONResponse:
+    """HTTP 402 envelope matching ks-proxy `x402_body` (no upstream call)."""
+    payment_address = os.getenv("PAYMENT_ADDRESS", "0x0000000000000000000000000000000000000000")
+    body = {
+        "x402Version": 1,
+        "error": "X-PAYMENT-REQUIRED",
+        "accepts": [
+            {
+                "scheme": "exact",
+                "network": "base-sepolia",
+                "maxAmountRequired": "10000",
+                "resource": resource,
+                "description": f"KeyShield API proxy — {upstream}",
+                "mimeType": "application/json",
+                "payTo": payment_address,
+                "maxTimeoutSeconds": 300,
+                "asset": _USDC_BASE_SEPOLIA,
+                "extra": {"name": "USDC", "version": "2"},
+            }
+        ],
+    }
+    resp = JSONResponse(body, status_code=402)
+    resp.headers["X-Payment-Required"] = "x402"
+    return resp
+
+
+def _mpp_pays_for_call(request: Request, user_id: str) -> bool:
+    """Open MPP stream on X-Mpp-Stream-Id is already the payment channel."""
+    stream_id = _mpp_stream_id(request)
+    if stream_id is None or not user_id or user_id == "anonymous":
+        return False
+    from ..mpp import mpp_streams
+
+    try:
+        payload = mpp_streams.list_streams(user_id)
+    except Exception:
+        return False
+    for row in payload.get("streams") or []:
+        try:
+            if int(row.get("id", -1)) == stream_id and row.get("status") == "open":
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def refuse_unpaid_platform_call(
+    request: Request,
+    user_id: str,
+    upstream: str,
+    key_type: str,
+) -> JSONResponse | None:
+    """402 before hold/upstream/cache when a platform key would debit $0."""
+    if _mpp_pays_for_call(request, user_id):
+        return None
+    if usage_mod.prepaid_allows_upstream(user_id, key_type):
+        return None
+    return payment_required_response(upstream, _payment_resource(request))
+
+
 def _mpp_release(user_id: str, stream_id: int | None, hold_id: int | None) -> None:
     if not hold_id or stream_id is None:
         return
@@ -181,7 +286,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
     from ..proxy import api_router
     from ..proxy.x402_interceptor import PaymentRequired
 
-    api_key = request.headers.get("X-Upstream-API-Key")
+    api_key, key_type = _resolve_proxy_api_key(request, upstream)
     if not api_key:
         return JSONResponse(
             {"error": "missing X-Upstream-API-Key"},
@@ -194,6 +299,10 @@ async def proxy_route(upstream: str, path: str, request: Request):
     velocity_key, velocity_err = _velocity_admit(request, user_id)
     if velocity_err is not None:
         return velocity_err
+
+    unpaid = refuse_unpaid_platform_call(request, user_id, upstream, key_type or "user")
+    if unpaid is not None:
+        return unpaid
 
     body = await request.body()
     interceptor = _get_x402_interceptor()
@@ -240,7 +349,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
             model=usage_mod.extract_model(body, content),
             user_id=user_id,
             upstream=upstream,
-            key_type="user",
+            key_type=key_type or "user",
             method=str(request.method),
             path=f"/{path}",
             tokens_in=tokens_in,
@@ -274,6 +383,7 @@ async def proxy_route(upstream: str, path: str, request: Request):
 
     resp = JSONResponse(data, status_code=status)
     resp.headers["x-ks-cache"] = cache_status
+    resp.headers["x-ks-key-type"] = key_type or "user"
     if stream_complete is not None:
         resp.headers["x-ks-stream-complete"] = "1" if stream_complete else "0"
     if meter_header:
@@ -356,6 +466,9 @@ async def vault_proxy_route(upstream: str, path: str, request: Request):
     velocity_key, velocity_err = _velocity_admit(request, user_id)
     if velocity_err is not None:
         return velocity_err
+    unpaid = refuse_unpaid_platform_call(request, user_id, upstream, "vault")
+    if unpaid is not None:
+        return unpaid
     body = await request.body()
     interceptor = _get_x402_interceptor()
     hold_id, hold_err = _mpp_acquire_hold(request, user_id, upstream)
