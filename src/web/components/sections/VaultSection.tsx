@@ -6,6 +6,7 @@ import { StatCard } from '../ui/Card';
 import { callKeychain, detectUpstream, quickPasteError, storeDetectedKeys } from '../../lib/keychain';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
+import { humanActionError } from '../../lib/human-usable';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -17,17 +18,19 @@ interface Props {
 export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlockError, onStored }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<'save' | 'save-call' | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const detected = detectUpstream(paste);
 
   const saveAndCall = async (alsoCall: boolean) => {
     const gate = quickPasteError(paste);
     if (gate) {
-      setMsg(gate);
-      emitAppFeedback({ kind: 'error', title: 'Cannot save', detail: gate, source: 'save' });
+      const detail = humanActionError('vault-save', gate);
+      setMsg(detail);
+      emitAppFeedback({ kind: 'error', title: 'Cannot save', detail, source: 'save' });
       return;
     }
-    setBusy(true); setMsg(null);
+    setBusy(true); setBusyAction(alsoCall ? 'save-call' : 'save'); setMsg(null);
     emitAppFeedback({
       kind: 'busy',
       title: alsoCall ? 'Saving and calling…' : 'Saving…',
@@ -54,11 +57,12 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       }
       setPaste('');
     } catch (err) {
-      const detail = err instanceof Error ? err.message : 'Save failed';
+      const detail = humanActionError('vault-save', err);
       setMsg(detail);
       emitAppFeedback({ kind: 'error', title: 'Save failed', detail, source: 'save' });
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -69,9 +73,10 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : 'Auto-detects provider prefix'}</span>
-        <button type="button" disabled={busy || !paste.trim()} onClick={() => void saveAndCall(false)} className="h-9 px-3 rounded-lg bg-white text-black text-[13px] font-semibold disabled:opacity-50">Save</button>
-        <button type="button" disabled={busy || !detected.upstream} onClick={() => void saveAndCall(true)} className="h-9 px-3 rounded-lg border border-zinc-500 text-white text-[13px] font-semibold disabled:opacity-50">Save + Call</button>
+        <button type="button" disabled={busy || !paste.trim()} onClick={() => void saveAndCall(false)} className="h-9 px-3 rounded-lg bg-white text-black text-[13px] font-semibold disabled:opacity-50">{busyAction === 'save' ? 'Saving…' : 'Save'}</button>
+        <button type="button" disabled={busy || !detected.upstream} onClick={() => void saveAndCall(true)} className="h-9 px-3 rounded-lg border border-zinc-500 text-white text-[13px] font-semibold disabled:opacity-50">{busyAction === 'save-call' ? 'Saving + Calling…' : 'Save + Call'}</button>
       </div>
+      {busy && <p className="text-[12px] text-[#8a96c2]">Next step: wait for the save result before closing this window.</p>}
       {msg && <p className="text-[13px] text-[#a8b3d8]">{msg}</p>}
     </div>
     <div data-testid="vault-saved-apis" className="rounded-xl border border-[#243365] bg-[#0e1631] p-4 space-y-3">

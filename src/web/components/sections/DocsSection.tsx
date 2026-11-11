@@ -39,6 +39,22 @@ export const DocsSection: React.FC = () => {
         </div>
       </nav>
 
+      <Card variant="bordered">
+        <div className="flex items-center gap-2 text-white mb-2"><Shield size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Human-usable UX standard</span></div>
+        <p className="text-[12px] text-[#a8b3d8] leading-relaxed">
+          Operator-facing acceptance criteria for waiting states, readable feedback timing, actionable errors, and desktop focus behavior:
+          {' '}
+          <a
+            href={`${REPO_URL}/blob/main/docs/technical/human-usable-ui-standards.md`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-white hover:underline"
+          >
+            docs/technical/human-usable-ui-standards.md
+          </a>
+        </p>
+      </Card>
+
       {/* Quickstart */}
       <div id="docs-ch-1">
         <div className="flex items-center gap-2 text-[11px] text-white mb-1"><Rocket size={12} />CHAPTER 1</div>
