@@ -12,6 +12,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:web": "cd src/web && npm run dev",
+    "desktop:dev": "npm start --prefix src/desktop",
+    "desktop:pack": "npm run pack --prefix src/desktop",
     "dev:demo-next": "cd src/demo-next && npm run dev",
     "dev:worker": "npm run dev --workspace=@keyshield/sync-worker",
     "dev:api": "python3 -m uvicorn src.backend.app:app --host 127.0.0.1 --port 8001 --log-level info",

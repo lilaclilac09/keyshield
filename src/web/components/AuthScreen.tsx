@@ -3,6 +3,7 @@ import { Fingerprint, Loader2, AlertCircle, Play } from 'lucide-react';
 import { WalletConnector } from './WalletConnector';
 import { ExtensionInstallHint } from './ExtensionInstallHint';
 import { passkeyLogin, passkeySignup, setToken, setWalletAddress, notifyAuthChanged, clearPasskeyTrust, startDemoSession, API_BASE } from '../lib/auth';
+import { isDesktopShell } from '../lib/desktop-shell';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel } from '../lib/passkey-id';
 
 interface Props { onAuthenticated: () => void; }
@@ -16,6 +17,9 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState('');
   const [demoModel, setDemoModel] = useState('');
+  const [desktopToken, setDesktopToken] = useState('');
+  const [desktopTokenError, setDesktopTokenError] = useState('');
+  const desktop = isDesktopShell();
 
   useEffect(() => {
     const sync = () => {
@@ -106,6 +110,18 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   };
   const forgetDevice = () => { clearPasskeyTrust(); setUserId(null); setPreferWallet(true); };
 
+  const handleDesktopToken = () => {
+    const token = desktopToken.trim();
+    if (!token) {
+      setDesktopTokenError('Paste a session token from Developer on the live dashboard.');
+      return;
+    }
+    setDesktopTokenError('');
+    setToken(token);
+    notifyAuthChanged();
+    onAuthenticated();
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6 py-12">
       <div className="w-full max-w-lg flex flex-col items-center text-center">
@@ -132,6 +148,21 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
             )}
             {pkError && <div className="px-4 py-3 rounded-xl bg-red-950/40 border border-red-900/60 flex items-start gap-3"><AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" /><p className="text-[12px] text-red-300 leading-relaxed break-words text-left">{pkError}</p></div>}
             {userId && <button type="button" onClick={forgetDevice} className="w-full text-center py-1 text-[11px] text-[#5e6a91] hover:text-red-400 transition-colors">Forget this device</button>}
+            {desktop && (
+              <div className="pt-2 space-y-2 border-t border-[#243365]/40" data-testid="desktop-session-token">
+                <p className="text-[12px] text-[#8a96c2] text-left leading-relaxed">Mac app: Phantom&apos;s browser extension is not inside this window. Passkey still works when Chromium allows it. Otherwise paste the same session token from Developer on https://app.ks.aileena.xyz.</p>
+                <input
+                  data-testid="desktop-session-token-input"
+                  value={desktopToken}
+                  onChange={(e) => setDesktopToken(e.target.value)}
+                  placeholder="ksv2_… session token"
+                  autoComplete="off"
+                  className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[13px] font-mono text-white placeholder:text-[#3e4a72]"
+                />
+                <button type="button" onClick={handleDesktopToken} className="w-full h-9 rounded-lg border border-zinc-500 text-white text-[13px] font-semibold">Use session token</button>
+                {desktopTokenError && <p className="text-[12px] text-red-400 text-left">{desktopTokenError}</p>}
+              </div>
+            )}
           </div>
           {demoOn && (
                 <div className="mt-4 space-y-2">

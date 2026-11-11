@@ -38,6 +38,8 @@ export const API_BASE: string = (() => {
       : '';
 
   if (typeof window !== 'undefined') {
+    const desktopApi = window.keyshieldDesktop?.apiBase?.trim();
+    if (desktopApi) return desktopApi.replace(/\/$/, '');
     const host = window.location.hostname;
     // Hosted dashboard but bundle still has localhost API → public control plane.
     if (usePublicControlPlaneFallback(host, fromBuild)) {

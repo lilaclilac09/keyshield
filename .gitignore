@@ -12,6 +12,10 @@ node_modules/
 /out/
 .next/
 src/web/dist/
+src/desktop/renderer/
+src/desktop/out/
+src/desktop/release/
+src/desktop/icon.png
 src/proxy/target/
 src/programs/*/target/
 src/mobile/dist/
