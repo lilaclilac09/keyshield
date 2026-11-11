@@ -79,6 +79,21 @@ describe("Muse / browser-agnostic KeyShield extension", () => {
     expect(auth).toContain("__ks_ext_message");
   });
 
+  it("hardens Muse bridge handoff with actionable failures", () => {
+    const bridge = read("session-bridge.js");
+    const bg = read("background.js");
+    const popup = read("popup.js");
+    expect(bridge).toContain("ks_bridge_last_error");
+    expect(bridge).toContain("__ks_ext_bridge_status");
+    expect(bridge).toContain("sendBridgeMessage");
+    expect(bridge).toContain("KS_TOKEN_REGISTER");
+    expect(bg).toContain("DASHBOARD_BRIDGE_HOST_SUFFIXES");
+    expect(bg).toContain("unsupported URL");
+    expect(bg).toContain("invalid-token");
+    expect(popup).toContain("formatBridgeError");
+    expect(popup).toContain("maybeShowBridgeError");
+  });
+
   it("documents what Muse actually supports vs Chrome and how to load it", () => {
     const muse = read("MUSE.md");
     const readme = read("README.md");
