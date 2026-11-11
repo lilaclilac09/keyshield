@@ -46,6 +46,14 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>.
             Sign-in stuck? Open the Docs & Troubleshooting tab.
           </p>
+          <div className={`${compact ? 'mt-2' : 'mt-3'} flex flex-wrap gap-2 text-[11px]`}>
+            <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Test build</span>
+            <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Under development</span>
+            <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Not production release</span>
+          </div>
+          <p className={`${compact ? 'text-[11px] mt-2' : 'text-[12px] mt-2'} text-[#8a96c2] leading-relaxed`}>
+            Placeholder links: <a href={`${REPO_URL}/blob/main/DEVELOPMENT.md#mac-app-personal-dmg`} target="_blank" rel="noreferrer" className="text-white hover:underline">Desktop install (placeholder)</a> · <a href={`${REPO_URL}/blob/main/src/extension/README.md#install--firefox--muse-browser-agnostic`} target="_blank" rel="noreferrer" className="text-white hover:underline">Extension install (placeholder)</a>. Verify latest in <a href={`${REPO_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer" className="text-white hover:underline">CHANGELOG</a>.
+          </p>
         </div>
       </div>
       <ol className={`${compact ? 'mt-3 space-y-1.5 text-[12px]' : 'mt-4 space-y-2 text-[14px]'} list-decimal list-inside text-[#e8ecff]`}>
