@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>KeyShield: give agents access, not your API keys</title>
-<meta name="description" content="KeyShield is an open-source vault for API keys. The Chrome extension saves keys as you create them and fills them into your tools. Agents get a revocable session token instead of the key." />
+<meta name="description" content="KeyShield is an open-source vault for API keys. Browser-agnostic extension builds save keys as you create them and fill them into your tools. Agents get a revocable session token instead of the key." />
 <meta name="theme-color" content="#f6f3ec" />
 <link rel="canonical" href="https://ks.aileena.xyz/" />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -581,14 +581,19 @@ footer{border-top:1px solid var(--line);padding:56px 0 44px;font:400 14.5px/1.6 
     <div class="label">Open source · MIT · free to self-host</div>
     <h1>Give your agents access,<br class="br-lg"> <em>not your API keys.</em></h1>
     <div class="hero-row">
-      <p class="lede">KeyShield is a vault for your provider keys. The browser extension spots a key the moment you create it and saves it in one click, then fills it into your tools. Agents you run get a session token instead, and you can revoke it whenever you want.</p>
+      <p class="lede">KeyShield is a vault for your provider keys. Browser-agnostic extension builds (Chrome + Firefox/Muse docs) spot a key the moment you create it and save it in one click, then fill it into your tools. There is also a personal macOS DMG app path for the same dashboard. Agents you run get a session token instead, and you can revoke it whenever you want.</p>
       <div>
         <div class="cta">
           <a class="btn dark" href="#quickstart">Get started <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn ghost" href="#install-preview">Desktop install (placeholder)</a>
+          <a class="btn ghost" href="#install-preview">Extension install (placeholder)</a>
           <a class="link" href="#demo">Watch the flow <span class="ar">↓</span></a>
           <a class="link" href="https://github.com/lilaclilac09/keyshield">GitHub <span class="ar">→</span></a>
         </div>
-        <div class="facts"><span>Chrome extension</span><span>Passkey sign-in</span><span>OpenAI-compatible proxy</span></div>
+        <div class="facts"><span>Browser-agnostic extension path</span><span>Personal macOS DMG path</span><span>Revocable proxy-only tokens</span></div>
+        <div class="facts"><span>Test build</span><span>Under development</span><span>Not production release</span></div>
+        <div class="facts" id="install-preview"><span>Marketing release: v0.3 · 2026-11-11</span><span>Latest status: <a href="https://github.com/lilaclilac09/keyshield/blob/main/CHANGELOG.md">CHANGELOG</a> + <a href="https://github.com/lilaclilac09/keyshield">GitHub main</a></span></div>
+        <div class="facts"><span>Placeholder behavior:</span><span><a href="https://github.com/lilaclilac09/keyshield/blob/main/DEVELOPMENT.md#mac-app-personal-dmg">Desktop CTA links to personal DMG build docs, not a production installer</a></span><span><a href="https://github.com/lilaclilac09/keyshield/blob/main/src/extension/README.md#install--firefox--muse-browser-agnostic">Extension CTA links to local-load docs, not a store listing</a></span></div>
       </div>
     </div>
   </div>
