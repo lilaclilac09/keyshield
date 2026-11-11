@@ -68,6 +68,54 @@ function writePngIcon(dest) {
   fs.writeFileSync(dest, png);
 }
 
+function verifyMacBundleRuntime(appPath) {
+  const contents = path.join(appPath, 'Contents');
+  const frameworks = path.join(contents, 'Frameworks');
+  const checks = [
+    path.join(contents, 'Resources', 'icudtl.dat'),
+    path.join(frameworks, 'Electron Framework.framework', 'Resources', 'icudtl.dat'),
+  ];
+  let helperApps = [];
+  try {
+    helperApps = fs.readdirSync(frameworks).filter((name) => (
+      name.includes('Helper') && name.endsWith('.app')
+    ));
+  } catch {
+    helperApps = [];
+  }
+  for (const helper of helperApps) {
+    checks.push(path.join(
+      frameworks,
+      helper,
+      'Contents',
+      'Frameworks',
+      'Electron Framework.framework',
+      'Resources',
+      'icudtl.dat',
+    ));
+  }
+  const missing = checks.filter((file) => !fs.existsSync(file));
+  if (missing.length > 0) {
+    throw new Error([
+      `packaged app is missing Chromium runtime resources: ${appPath}`,
+      ...missing.map((file) => `  - ${file}`),
+    ].join('\n'));
+  }
+}
+
+function stageAppBundle(sourceApp, destApp) {
+  fs.rmSync(destApp, { recursive: true, force: true });
+  // Keep helper-framework symlinks relative; default cpSync rewrites them to absolute
+  // paths, which breaks icudtl.dat lookup after users move the app into /Applications.
+  fs.cpSync(sourceApp, destApp, {
+    recursive: true,
+    dereference: false,
+    verbatimSymlinks: true,
+    preserveTimestamps: true,
+  });
+  verifyMacBundleRuntime(destApp);
+}
+
 async function main() {
   run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')]);
 
@@ -117,6 +165,7 @@ async function main() {
       console.warn('missing app at', appPath);
       continue;
     }
+    verifyMacBundleRuntime(appPath);
     const zipName = `KeyShield-mac-${arch}.zip`;
     const zipPath = path.join(releaseDir, zipName);
     fs.rmSync(zipPath, { force: true });
@@ -132,7 +181,7 @@ async function main() {
     const staging = path.join(releaseDir, 'dmg-root');
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(staging, { recursive: true });
-    fs.cpSync(preferred.appPath, path.join(staging, 'KeyShield.app'), { recursive: true });
+    stageAppBundle(preferred.appPath, path.join(staging, 'KeyShield.app'));
     try {
       fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
     } catch {
