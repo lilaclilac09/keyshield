@@ -50,6 +50,8 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).toContain("KS_DESKTOP_LIVE");
     expect(main).toContain("promptTouchID");
     expect(main).toContain("persist:keyshield");
+    expect(main).toContain("packagedRuntimePreflight");
+    expect(main).toContain("KeyShield launch blocked");
     expect(main).not.toContain("vault-only");
   });
 
@@ -85,6 +87,14 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
     expect(build).toContain("https://keyshield-production.up.railway.app");
     expect(build).toContain("build:vite");
+  });
+
+  it("pack script preserves helper symlinks and validates runtime resources", () => {
+    const pack = read("src/desktop/scripts/pack-mac.cjs");
+    expect(pack).toContain("stageAppBundle");
+    expect(pack).toContain("verbatimSymlinks: true");
+    expect(pack).toContain("verifyMacBundleRuntime");
+    expect(pack).toContain("icudtl.dat");
   });
 
   it("desktop login fallback is gated and is not password login", () => {

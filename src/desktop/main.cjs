@@ -11,6 +11,7 @@ const {
   app,
   BrowserWindow,
   Menu,
+  dialog,
   session,
   protocol,
   net,
@@ -60,6 +61,62 @@ function hasRenderer() {
 
 function useBundle() {
   return !LIVE && hasRenderer();
+}
+
+function packagedRuntimePreflight() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return { ok: true, skipped: true };
+  const contents = path.resolve(process.resourcesPath, '..');
+  const frameworks = path.join(contents, 'Frameworks');
+  const checks = [
+    path.join(process.resourcesPath, 'icudtl.dat'),
+    path.join(frameworks, 'Electron Framework.framework', 'Resources', 'icudtl.dat'),
+  ];
+  let helperApps = [];
+  try {
+    helperApps = fs.readdirSync(frameworks).filter((name) => (
+      name.includes('Helper') && name.endsWith('.app')
+    ));
+  } catch {
+    helperApps = [];
+  }
+  for (const helper of helperApps) {
+    checks.push(path.join(
+      frameworks,
+      helper,
+      'Contents',
+      'Frameworks',
+      'Electron Framework.framework',
+      'Resources',
+      'icudtl.dat',
+    ));
+  }
+  const missing = checks.filter((file) => !fs.existsSync(file));
+  if (missing.length === 0) return { ok: true };
+  return {
+    ok: false,
+    appBundle: path.resolve(contents, '..'),
+    missing,
+  };
+}
+
+function blockStartup(report, reason) {
+  const details = [
+    reason ? `Reason: ${reason}` : null,
+    report?.appBundle ? `App: ${report.appBundle}` : null,
+    ...(report?.missing || []).map((file) => `Missing: ${file}`),
+  ].filter(Boolean).join('\n');
+  const message = [
+    'KeyShield cannot start because required Chromium runtime files are missing.',
+    'This install may show "Running in Background" without a visible window.',
+    '',
+    'Fix steps:',
+    '1) Delete /Applications/KeyShield.app',
+    '2) Reinstall from the latest KeyShield-mac-*.zip or rebuilt DMG',
+    '3) If you build locally, preserve symlinks when copying .app bundles',
+    '',
+    details,
+  ].join('\n');
+  dialog.showErrorBox('KeyShield launch blocked', message);
 }
 
 function serveRenderer(requestUrl) {
@@ -391,12 +448,21 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    const preflight = packagedRuntimePreflight();
+    if (!preflight.ok) {
+      blockStartup(preflight);
+      app.quit();
+      return;
+    }
     const unlock = await maybeTouchId();
     const win = await createWindow();
     if (unlock?.ok) bringWindowToForeground(win);
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
     });
+  }).catch((err) => {
+    blockStartup(null, err instanceof Error ? err.message : String(err));
+    app.quit();
   });
 }
 
