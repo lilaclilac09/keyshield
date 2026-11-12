@@ -23,6 +23,13 @@ describe("resolvePasskeyUserId", () => {
   it("is empty when nothing is registered", () => {
     expect(resolvePasskeyUserId({ passkeyUser: "  ", wallet: null })).toBeNull();
   });
+
+  it("ignores Gmail addresses left in ks_wallet after email signup", () => {
+    expect(resolvePasskeyUserId({
+      passkeyUser: "you@gmail.com",
+      wallet: "you@gmail.com",
+    })).toBeNull();
+  });
 });
 
 describe("shouldShowPasskeyPanel", () => {

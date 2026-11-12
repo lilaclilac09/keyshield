@@ -3,6 +3,8 @@
  * Face ID needs this id even when sessionStorage / ks_token is gone.
  */
 
+import { passkeyIdentityFrom } from './session-scope';
+
 export const PASSKEY_USER_KEY = 'ks_passkey_user';
 export const WALLET_KEY = 'ks_wallet';
 
@@ -10,17 +12,16 @@ export function resolvePasskeyUserId(opts: {
   passkeyUser?: string | null;
   wallet?: string | null;
 }): string | null {
-  const passkey = (opts.passkeyUser ?? '').trim();
+  const passkey = passkeyIdentityFrom(opts.passkeyUser);
   if (passkey) return passkey;
-  const wallet = (opts.wallet ?? '').trim();
-  return wallet || null;
+  return passkeyIdentityFrom(opts.wallet);
 }
 
 export function shouldShowPasskeyPanel(opts: {
   userId: string | null;
   preferWallet: boolean;
 }): boolean {
-  return Boolean(opts.userId) && !opts.preferWallet;
+  return Boolean(passkeyIdentityFrom(opts.userId)) && !opts.preferWallet;
 }
 
 export function shortPasskeyLabel(userId: string): string {

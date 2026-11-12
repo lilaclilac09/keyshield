@@ -135,6 +135,10 @@ def test_agent_self_register_then_login(tmp_path, monkeypatch):
     assert login.status_code == 200, login.text
     assert login.json()["token"]
     assert login.json()["scope"] == "proxy"
+    token = login.json()["token"]
+    vault = client.get("/manage/vault", headers={"Authorization": f"Bearer {token}"})
+    assert vault.status_code == 403
+    assert vault.json()["error"] == "insufficient_scope"
 
 
 def test_agent_self_register_requires_ed25519_pubkey(tmp_path, monkeypatch):

@@ -85,6 +85,12 @@ export function humanActionError(action: HumanAction, raw: unknown): string {
     if (/401|unauthorized|log in|sign in/i.test(lower)) {
       return withNextStep('Session expired while saving.', 'sign in again, then retry Save');
     }
+    if (/403|insufficient_scope|proxy-only/i.test(lower)) {
+      return withNextStep(
+        'This session cannot write the vault.',
+        'sign in with your Google email (Human tab), then paste the key again',
+      );
+    }
   }
 
   if (action === 'wallet-connect') {

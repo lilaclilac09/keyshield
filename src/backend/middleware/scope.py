@@ -75,7 +75,7 @@ def _bearer(scope: dict) -> str:
 
 FORBIDDEN_BODY = {
     "error": "insufficient_scope",
-    "detail": "This token is proxy-only. Use an owner session (sign in with your passkey).",
+    "detail": "This token is proxy-only. Use an owner session (sign in with email or passkey).",
     "required_scope": "owner",
 }
 

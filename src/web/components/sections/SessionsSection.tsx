@@ -3,7 +3,8 @@ import { LogOut, RefreshCw } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { apiFetch, getToken, getWalletAddress, getPasskeyTrust } from '../../lib/auth';
+import { apiFetch, getToken, getWalletAddress, getAuthMethod, getPasskeyTrust } from '../../lib/auth';
+import { authMethodLabel } from '../../lib/session-scope';
 import { relTime } from '../../lib/time';
 
 interface SessionRow { token_id: string; device_label?: string | null; ip?: string | null; user_agent?: string | null; last_seen_at?: number | null; expires_at?: number | null; is_current: boolean; }
@@ -38,8 +39,8 @@ export const SessionsSection: React.FC<{ onLogout: () => void }> = ({ onLogout }
       <Card title="Current Session" headerRight={<Badge variant={expiringSoon ? 'warning' : 'success'} dot>{expiringSoon ? 'Expiring Soon' : 'Active'}</Badge>}>
         <div className="space-y-2">
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Token</span><code className="text-[12px] font-mono text-[#e8ecff]">{token ? `${token.slice(0,8)}\u2026${token.slice(-8)}` : '\u2014'}</code></div>
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Wallet</span><code className="text-[12px] font-mono text-[#e8ecff]">{wallet.length > 12 ? `${wallet.slice(0,6)}\u2026${wallet.slice(-6)}` : wallet}</code></div>
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">{getPasskeyTrust() ? 'Passkey \xb7 WebAuthn' : 'Solana wallet \xb7 ed25519'}</span></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">{wallet.includes('@') ? 'Account' : 'Wallet'}</span><code className="text-[12px] font-mono text-[#e8ecff]">{wallet.length > 12 && !wallet.includes('@') ? `${wallet.slice(0,6)}\u2026${wallet.slice(-6)}` : wallet}</code></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">{getPasskeyTrust() ? 'Passkey \xb7 WebAuthn' : authMethodLabel(getAuthMethod(), wallet)}</span></div>
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Expires</span><span className="text-[12px] text-[#e8ecff]">{current?.expires_at ? fmtCountdown(current.expires_at) : '\u2264 24 hours'}</span></div>
           {current?.ip && <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">IP</span><code className="text-[12px] font-mono text-[#a8b3d8]">{maskIp(current.ip)}</code></div>}
           {current?.device_label && <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Device</span><span className="text-[12px] text-[#e8ecff]">{current.device_label}</span></div>}

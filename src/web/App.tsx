@@ -7,7 +7,8 @@ import { SolanaProvider } from './components/SolanaProvider';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useVaults } from './hooks/useVaults';
-import { getWalletAddress, apiFetch, clearAuth, notifyAuthChanged, isAuthenticated as hasStoredToken } from './lib/auth';
+import { getWalletAddress, apiFetch, clearAuth, notifyAuthChanged, isAuthenticated as hasStoredToken, isProxySession } from './lib/auth';
+import { AgentSessionScreen } from './components/AgentSessionScreen';
 import { readPasskeyUserIdFromStorage } from './lib/passkey-id';
 import { wantsShopDemo } from './lib/shop-demo';
 import { syncExtensionVaultKey } from './lib/vault-key';
@@ -230,6 +231,10 @@ const MainContent: React.FC = () => {
         }}
       />
     );
+  }
+
+  if (isProxySession()) {
+    return <AgentSessionScreen onLogout={handleLogout} />;
   }
 
   const fullAddr = publicKey?.toBase58() ?? getWalletAddress() ?? '';

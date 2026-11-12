@@ -18,6 +18,7 @@ describe("human-usable ux helpers", () => {
   it("maps vault save gates to actionable copy", () => {
     expect(humanActionError("vault-save", "Paste a key first")).toContain("Paste an API key first.");
     expect(humanActionError("vault-save", "Unrecognized key format.")).toContain("including prefix");
+    expect(humanActionError("vault-save", "insufficient_scope")).toContain("cannot write the vault");
   });
 
   it("maps wallet cancellation to actionable retry", () => {

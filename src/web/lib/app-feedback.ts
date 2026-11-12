@@ -37,11 +37,22 @@ export function subscribeAppFeedback(listener: (fb: AppFeedback) => void): () =>
 
 export async function copyWithFeedback(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text);
+    const desktopWrite = typeof window !== 'undefined' ? window.keyshieldDesktop?.writeText : undefined;
+    if (desktopWrite) {
+      await desktopWrite(text);
+    } else {
+      await navigator.clipboard.writeText(text);
+    }
     emitAppFeedback({ kind: 'success', title: 'Copied', source: 'copy' });
     return true;
   } catch {
-    emitAppFeedback({ kind: 'error', title: 'Copy failed', source: 'copy' });
-    return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      emitAppFeedback({ kind: 'success', title: 'Copied', source: 'copy' });
+      return true;
+    } catch {
+      emitAppFeedback({ kind: 'error', title: 'Copy failed', source: 'copy' });
+      return false;
+    }
   }
 }

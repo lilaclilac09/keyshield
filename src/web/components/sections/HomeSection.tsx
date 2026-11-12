@@ -19,6 +19,7 @@ import {
 } from '../../lib/purchases';
 import type { PlanSnapshot } from '../PlanCatalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
+import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
 
 interface Props {
   home: KeychainHome | null;
@@ -142,6 +143,7 @@ export const HomeSection: React.FC<Props> = ({
 
   return (
     <div className="space-y-8" data-testid="home-metrics">
+      <ExtensionTokenCopy />
       <div>
         <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency · subscription</p>
         <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Speed</h2>

@@ -26,6 +26,17 @@ import {
 } from './host-deploy';
 import { mergeSessionSides, parseExtensionSession } from './ext-session';
 import { readApiErrorMessage, resolvePasskeyUserId } from './passkey-id';
+import {
+  AUTH_METHOD_KEY,
+  SESSION_SCOPE_KEY,
+  isEmailAccountId,
+  readTokenScope,
+  type AuthMethod,
+  type SessionScope,
+} from './session-scope';
+
+export { readTokenScope, isEmailAccountId };
+export type { AuthMethod, SessionScope };
 
 export const API_BASE: string = (() => {
   // vite's `define` replaces this literal string with the build-time value.
@@ -100,13 +111,48 @@ export function getToken(): string | null {
 
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(SESSION_SCOPE_KEY, readTokenScope(token));
   pushTokenToExtension(token);
   syncExtensionVaultKey();
+}
+
+export function getSessionScope(): SessionScope {
+  const stored = localStorage.getItem(SESSION_SCOPE_KEY);
+  if (stored === 'proxy' || stored === 'owner') return stored;
+  return readTokenScope(getToken());
+}
+
+export function isProxySession(): boolean {
+  return getSessionScope() === 'proxy';
+}
+
+export function setAuthMethod(method: AuthMethod): void {
+  localStorage.setItem(AUTH_METHOD_KEY, method);
+}
+
+export function getAuthMethod(): AuthMethod | null {
+  const raw = localStorage.getItem(AUTH_METHOD_KEY);
+  if (
+    raw === 'password' ||
+    raw === 'google' ||
+    raw === 'passkey' ||
+    raw === 'wallet' ||
+    raw === 'agent' ||
+    raw === 'demo' ||
+    raw === 'token'
+  ) {
+    return raw;
+  }
+  if (isProxySession()) return 'agent';
+  if (isEmailAccountId(getWalletAddress())) return 'password';
+  return null;
 }
 
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(WALLET_KEY);
+  localStorage.removeItem(SESSION_SCOPE_KEY);
+  localStorage.removeItem(AUTH_METHOD_KEY);
   clearTokenInExtension();
   clearExtensionVaultKey();
   lockVault();
@@ -121,11 +167,11 @@ export function getWalletAddress(): string | null {
   return localStorage.getItem(WALLET_KEY);
 }
 
-export function setWalletAddress(addr: string): void {
+export function setWalletAddress(addr: string, opts?: { seedPasskey?: boolean }): void {
   localStorage.setItem(WALLET_KEY, addr);
-  // Seed the Face ID id so jumping out of Sign-in still shows
-  // "Sign In as abcd…wxyz" instead of only the wallet connector.
-  if (addr && !localStorage.getItem(PASSKEY_USER)) {
+  // Seed Face ID id for wallets / passkey ids only — never a Gmail address.
+  const seed = opts?.seedPasskey ?? !isEmailAccountId(addr);
+  if (seed && addr && !isEmailAccountId(addr) && !localStorage.getItem(PASSKEY_USER)) {
     localStorage.setItem(PASSKEY_USER, addr);
   }
 }
