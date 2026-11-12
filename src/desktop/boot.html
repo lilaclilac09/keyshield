@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>KeyShield</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #0b1226;
+      color: #e8ecff;
+      font-family: -apple-system, BlinkMacSystemFont, "Montserrat", "Inter", sans-serif;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    main {
+      width: min(440px, 92vw);
+      text-align: center;
+      padding: 32px 24px 40px;
+      border: 1px solid #243365;
+      border-radius: 16px;
+      background: #131c39;
+    }
+    h1 {
+      margin: 12px 0 8px;
+      font-size: 28px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    p {
+      margin: 0 0 12px;
+      color: #a8b3d8;
+      line-height: 1.45;
+      font-size: 14px;
+    }
+    button, a.btn {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 10px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid #2e4585;
+      background: #0e1631;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #e8ecff;
+      color: #0b1226;
+      border-color: #e8ecff;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>KeyShield</h1>
+    <p>Your API vault is opening. If this screen stays up, the dashboard did not load — open login below.</p>
+    <button class="primary" id="open-login" type="button">Open login</button>
+    <a class="btn" id="live" href="https://app.ks.aileena.xyz/" target="_blank" rel="noreferrer">Open live dashboard in browser</a>
+  </main>
+  <script>
+    document.getElementById('open-login').addEventListener('click', function () {
+      location.href = 'https://app.ks.aileena.xyz/';
+    });
+  </script>
+</body>
+</html>
