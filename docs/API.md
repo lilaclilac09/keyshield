@@ -50,9 +50,41 @@ KeyShield mints a **bearer session token**. Every authenticated endpoint expects
 Authorization: Bearer <token>
 ```
 
-There are four ways to get a token. Pick whichever fits your client.
+Humans should start with a Google email (Gmail) + password. A Solana wallet is optional, not required. Agents self-register with an ed25519 key.
 
-### 1. Wallet login (Solana — Phantom / Solflare / Backpack)
+### 1. Email / password (default for humans)
+
+```
+POST /auth/signup                   → { token, userId, registered: true }
+     body: { email, password }      email is lowercased; password min 8 chars
+POST /auth/login                    → { token, userId, registered }
+     body: { email or userId, password }
+```
+
+Gmail addresses work. First `/auth/login` for a new identity still registers a password (SDK/CLI). `/auth/signup` returns 409 if the email already exists.
+
+### 1b. Google OAuth (optional — needs secrets on the API)
+
+```
+GET  /auth/google/status            → { enabled, env, aliases, detail }
+GET  /auth/google/start?json=1      → { url, state }   or 503 if not configured
+GET  /auth/google/callback          Google redirect (do not call by hand)
+GET  /auth/google/poll?state=       Mac app poll (202 pending, then token)
+POST /auth/google/exchange          { ticket } → { token, userId, provider: "google" }
+```
+
+Live Google sign-in requires:
+
+| Env | Alias | Purpose |
+|-----|-------|---------|
+| `GOOGLE_CLIENT_ID` | `KS_GOOGLE_CLIENT_ID` | OAuth Web client id |
+| `GOOGLE_CLIENT_SECRET` | `KS_GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | `KS_GOOGLE_REDIRECT_URI` | Must be `https://<api-host>/auth/google/callback` |
+| `KS_GOOGLE_SUCCESS_URL` | — | Optional dashboard URL after callback |
+
+Without those secrets the dashboard still shows **Sign in with Google email**; the button focuses the Gmail + password form instead of failing silently.
+
+### 2. Wallet login (optional Solana — Phantom / Solflare / Backpack)
 
 ```
 GET  /auth/wallet-challenge         → { challenge, nonce }
@@ -62,7 +94,7 @@ POST /auth/wallet-login             → { token, userId }
 
 The wallet signs `challenge`. `passphrase` is anything that derives a vault encryption key (the UI uses the signature over `VAULT_KEY_MESSAGE` from `src/web/lib/vault-key.ts`).
 
-### 2. Passkey login (WebAuthn-PRF — Face ID / Touch ID / hardware key)
+### 3. Passkey login (WebAuthn-PRF — Face ID / Touch ID / hardware key)
 
 ```
 GET  /auth/passkey/auth-options?user_id=...                          → WebAuthn options
@@ -72,23 +104,19 @@ POST /auth/passkey/auth-verify?user_id=...&passphrase=...            → { token
 
 You must have already enrolled a passkey on this device (see *Passkey enrollment* below).
 
-### 3. Agent login (ed25519 — for SDK / CLI agents)
+### 4. Agent register + login (ed25519 — no human wallet required)
 
 ```
+POST /auth/agent-register           → { ok, id, name, owner, pubkeyB58 }
+     body: { name, pubkeyB58 }
 POST /auth/agent-challenge          → { challenge, nonce }
 POST /auth/agent-login              → { token, scope: "proxy" }
      body: { pubkeyB58, signature, challenge, nonce }
 ```
 
-The agent must be registered first via `POST /agents/register`. Agent tokens
+An agent can self-register at `/auth/agent-register`, or an owner can still
+register a pubkey via `POST /agents/register` after signing in. Agent tokens
 are **proxy-only** (see *Token scopes* below).
-
-### 4. Username/password login (test only)
-
-```
-POST /auth/login                    → { token }
-     body: { userId, password }
-```
 
 ### Passkey enrollment (after first login)
 

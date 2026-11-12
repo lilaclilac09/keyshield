@@ -14,10 +14,12 @@ from src.backend.mpp import mpp_onchain
 
 def _iso_dbs(tmp_path, monkeypatch):
     from src.backend.agents import agents as agents_mod
+    from src.backend.auth import ratelimit as rl_mod
 
     monkeypatch.setattr(sess_mod, "DB_PATH", tmp_path / "sessions.db")
     monkeypatch.setattr(agents_mod, "DB_PATH", tmp_path / "agents.db")
     monkeypatch.setenv("SERVER_SECRET", "test-agent-register-secret")
+    rl_mod.agent_register_limiter.reset()
 
 
 def _keypair():
@@ -103,6 +105,47 @@ def test_unregistered_agent_login_is_401(tmp_path, monkeypatch):
     )
     assert login.status_code == 401
     assert login.json()["error"] == "agent not registered"
+
+
+def test_agent_self_register_then_login(tmp_path, monkeypatch):
+    """An agent can register without a human wallet, then sign in."""
+    _iso_dbs(tmp_path, monkeypatch)
+    client = TestClient(app)
+    sk, pub = _keypair()
+    reg = client.post("/auth/agent-register", json={"pubkeyB58": pub, "name": "self-bot"})
+    assert reg.status_code == 200, reg.text
+    body = reg.json()
+    assert body["ok"] is True
+    assert body["owner"] == pub
+    assert body["pubkeyB58"] == pub
+    assert "agent-login" in body["next"]
+
+    chal = client.post("/auth/agent-challenge")
+    challenge = chal.json()["challenge"]
+    sig = base64.b64encode(sk.sign(challenge.encode()).signature).decode()
+    login = client.post(
+        "/auth/agent-login",
+        json={
+            "pubkeyB58": pub,
+            "challenge": challenge,
+            "nonce": chal.json()["nonce"],
+            "signature": sig,
+        },
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["token"]
+    assert login.json()["scope"] == "proxy"
+
+
+def test_agent_self_register_requires_ed25519_pubkey(tmp_path, monkeypatch):
+    _iso_dbs(tmp_path, monkeypatch)
+    client = TestClient(app)
+    missing = client.post("/auth/agent-register", json={"name": "no-key"})
+    assert missing.status_code == 400
+    assert "pubkeyB58" in missing.json()["error"]
+    bad = client.post("/auth/agent-register", json={"name": "bad", "pubkeyB58": "not-a-key"})
+    assert bad.status_code == 400
+    assert "ed25519" in bad.json()["error"]
 
 
 def test_register_returns_id_and_plan_shows_account(tmp_path, monkeypatch):

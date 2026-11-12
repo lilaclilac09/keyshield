@@ -379,31 +379,201 @@ export async function walletLogin(
   return res.json();
 }
 
+function emailOrUserPayload(id: string, password: string): Record<string, string> {
+  return id.includes('@')
+    ? { email: id.toLowerCase(), password }
+    : { userId: id, password };
+}
+
 export async function passwordLogin(
   userId: string,
   password: string,
-): Promise<{ token: string; userId: string }> {
+): Promise<{ token: string; userId: string; registered?: boolean }> {
   const id = userId.trim();
   if (!id || !password) {
-    throw new Error('User ID and password required');
+    throw new Error('Email and password required');
   }
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: id, password }),
+      body: JSON.stringify(emailOrUserPayload(id, password)),
     });
   } catch (e) {
     throw describeApiNetError(e, '/auth/login');
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(readApiErrorMessage(err, 'Password login failed'));
+    throw new Error(readApiErrorMessage(err, 'Email sign-in failed'));
+  }
+  const body = await res.json() as { token?: string; userId?: string; registered?: boolean };
+  if (!body.token) throw new Error('Email sign-in failed');
+  return { token: body.token, userId: body.userId || id, registered: body.registered };
+}
+
+export async function passwordSignup(
+  email: string,
+  password: string,
+): Promise<{ token: string; userId: string; registered?: boolean }> {
+  const id = email.trim();
+  if (!id || !password) {
+    throw new Error('Email and password required');
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: id.toLowerCase(), password }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/signup');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Email signup failed'));
+  }
+  const body = await res.json() as { token?: string; userId?: string; registered?: boolean };
+  if (!body.token) throw new Error('Email signup failed');
+  return { token: body.token, userId: body.userId || id.toLowerCase(), registered: body.registered };
+}
+
+export type GoogleAuthStatus = {
+  enabled: boolean;
+  detail: string;
+  env?: Record<string, boolean>;
+  aliases?: string[];
+};
+
+export async function googleAuthStatus(): Promise<GoogleAuthStatus> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/google/status`);
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/google/status');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Could not check Google sign-in'));
+  }
+  return res.json();
+}
+
+export async function startGoogleAuth(desktop: boolean): Promise<{ url: string; state: string }> {
+  const qs = new URLSearchParams({ json: '1' });
+  if (desktop) qs.set('desktop', '1');
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/google/start?${qs.toString()}`);
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/google/start');
+  }
+  const body = await res.json().catch(() => ({})) as { url?: string; state?: string; detail?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(readApiErrorMessage(body, 'Google sign-in is not configured'));
+  }
+  if (!body.url || !body.state) throw new Error('Google sign-in did not return a URL');
+  return { url: body.url, state: body.state };
+}
+
+export async function pollGoogleAuth(state: string): Promise<
+  { pending: true } | { pending?: false; token: string; userId: string; registered?: boolean }
+> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/google/poll?state=${encodeURIComponent(state)}`);
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/google/poll');
+  }
+  const body = await res.json().catch(() => ({})) as {
+    pending?: boolean; token?: string; userId?: string; registered?: boolean; detail?: string; error?: string;
+  };
+  if (res.status === 202 || body.pending) return { pending: true };
+  if (!res.ok) throw new Error(readApiErrorMessage(body, 'Google sign-in timed out'));
+  if (!body.token) throw new Error('Google sign-in did not return a session');
+  return { token: body.token, userId: body.userId || '', registered: body.registered };
+}
+
+export async function exchangeGoogleTicket(ticket: string): Promise<{ token: string; userId: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/google/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/google/exchange');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Google sign-in ticket expired'));
   }
   const body = await res.json() as { token?: string; userId?: string };
-  if (!body.token) throw new Error('Password login failed');
-  return { token: body.token, userId: body.userId || id };
+  if (!body.token) throw new Error('Google sign-in failed');
+  return { token: body.token, userId: body.userId || '' };
+}
+
+export async function agentSelfRegister(name: string, pubkeyB58: string): Promise<{
+  id: number; name: string; owner: string; pubkeyB58: string;
+}> {
+  const agentName = name.trim();
+  const pub = pubkeyB58.trim();
+  if (!agentName || !pub) throw new Error('Agent name and public key required');
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/agent-register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: agentName, pubkeyB58: pub }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/agent-register');
+  }
+  const body = await res.json().catch(() => ({})) as {
+    id?: number; name?: string; owner?: string; pubkeyB58?: string; error?: string; detail?: string;
+  };
+  if (!res.ok) throw new Error(readApiErrorMessage(body, 'Agent registration failed'));
+  return {
+    id: Number(body.id),
+    name: body.name || agentName,
+    owner: body.owner || pub,
+    pubkeyB58: body.pubkeyB58 || pub,
+  };
+}
+
+export async function agentChallengeLogin(pubkeyB58: string, signatureB64: string, challenge: string, nonce: string): Promise<{
+  token: string; scope?: string;
+}> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/agent-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pubkeyB58, signature: signatureB64, challenge, nonce }),
+    });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/agent-login');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(readApiErrorMessage(err, 'Agent login failed'));
+  }
+  const body = await res.json() as { token?: string; scope?: string };
+  if (!body.token) throw new Error('Agent login failed');
+  return { token: body.token, scope: body.scope };
+}
+
+export async function fetchAgentChallenge(): Promise<{ challenge: string; nonce: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/agent-challenge`, { method: 'POST' });
+  } catch (e) {
+    throw describeApiNetError(e, '/auth/agent-challenge');
+  }
+  if (!res.ok) throw new Error('Failed to fetch agent challenge');
+  return res.json();
 }
 
 // ── Passkey helpers ───────────────────────────────────────────────────────

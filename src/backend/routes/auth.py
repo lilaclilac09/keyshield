@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import base64
+import html
+import re
 import secrets
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from ..auth import session as sess_mod
+from ..auth import google_oauth as google_mod
 from ..auth import passkey as pk_mod
 from ..auth import ratelimit as rl_mod
+from ..auth import session as sess_mod
 
 
 router = APIRouter()
@@ -102,29 +105,68 @@ def _auth_error(message: str, status: int) -> JSONResponse:
     return JSONResponse({"error": message, "detail": message}, status_code=status)
 
 
-@router.post("/auth/login")
-async def auth_login(request: Request):
-    """Registered userId + password opens a session.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+_SIGNUP_PASSWORD_MIN = 8
 
-    First login for a userId stores the password hash. Later logins must
-    match that hash. Wallet and passkey stay available; this path is for
-    SDK / CLI / the AuthScreen password form.
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        return _auth_error("invalid json", 400)
-    if not isinstance(body, dict):
-        return _auth_error("userId and password required", 400)
-    user_id = str(body.get("userId") or body.get("user_id") or "").strip()
+
+def _looks_like_email(value: str) -> bool:
+    return bool(_EMAIL_RE.match(value))
+
+
+def _limited(limiter, request: Request, message: str):
+    if limiter.allow(rl_mod.client_ip(request)):
+        return None
+    return _auth_error(message, 429)
+
+
+def _password_from_body(body: dict) -> str:
     password = body.get("password")
     if not isinstance(password, str):
-        password = "" if password is None else str(password)
-    if not user_id or not password:
-        return _auth_error("userId and password required", 400)
+        return "" if password is None else str(password)
+    return password
+
+
+def _account_id(body: dict, *, require_email: bool) -> tuple[str | None, JSONResponse | None]:
+    """Resolve email or userId. Emails are lowercased. Signup requires an email."""
+    if not isinstance(body, dict):
+        msg = "email and password required" if require_email else "userId and password required"
+        return None, _auth_error(msg, 400)
+    email = str(body.get("email") or "").strip().lower()
+    user_id = str(body.get("userId") or body.get("user_id") or "").strip()
+    if email:
+        if not _looks_like_email(email):
+            return None, _auth_error(
+                "Enter a valid email (Gmail works). Next step: use you@gmail.com and try again.",
+                400,
+            )
+        return email, None
+    if require_email:
+        return None, _auth_error(
+            "email and password required. Next step: enter your Google email and a password.",
+            400,
+        )
+    if not user_id:
+        return None, _auth_error("userId and password required", 400)
+    if "@" in user_id:
+        uid = user_id.lower()
+        if not _looks_like_email(uid):
+            return None, _auth_error(
+                "Enter a valid email (Gmail works). Next step: use you@gmail.com and try again.",
+                400,
+            )
+        return uid, None
+    return user_id, None
+
+
+def _open_password_session(user_id: str, password: str, *, register: bool) -> JSONResponse:
     if sess_mod.is_deleted(user_id):
         return _auth_error("account deleted", 403)
     if sess_mod.has_password(user_id):
+        if register:
+            return _auth_error(
+                "An account already exists for this email. Next step: sign in with this email and password.",
+                409,
+            )
         if not sess_mod.verify_password(user_id, password):
             return _auth_error("invalid credentials", 401)
         registered = False
@@ -132,7 +174,71 @@ async def auth_login(request: Request):
         sess_mod.register_password(user_id, password)
         registered = True
     token = sess_mod.create_token(user_id, password)
-    return JSONResponse({"token": token, "userId": user_id, "registered": registered})
+    return JSONResponse(
+        {"token": token, "userId": user_id, "registered": registered, "method": "password"}
+    )
+
+
+@router.post("/auth/login")
+async def auth_login(request: Request):
+    """Email or userId + password opens a session.
+
+    First login for an identity stores the password hash. Later logins must
+    match that hash. Wallet and passkey stay available; this path is the
+    default for humans with a Google/Gmail address on AuthScreen.
+    """
+    limited = _limited(
+        rl_mod.login_limiter,
+        request,
+        "too many login attempts. Next step: wait a minute and try again.",
+    )
+    if limited is not None:
+        return limited
+    try:
+        body = await request.json()
+    except Exception:
+        return _auth_error("invalid json", 400)
+    user_id, err = _account_id(body if isinstance(body, dict) else {}, require_email=False)
+    if err is not None:
+        return err
+    password = _password_from_body(body if isinstance(body, dict) else {})
+    if not user_id or not password:
+        return _auth_error("userId and password required", 400)
+    return _open_password_session(user_id, password, register=False)
+
+
+@router.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Create an account with an email (Gmail included) + password.
+
+    Duplicate emails return 409 so the UI can send the user to Sign in.
+    """
+    limited = _limited(
+        rl_mod.login_limiter,
+        request,
+        "too many signup attempts. Next step: wait a minute and try again.",
+    )
+    if limited is not None:
+        return limited
+    try:
+        body = await request.json()
+    except Exception:
+        return _auth_error("invalid json", 400)
+    user_id, err = _account_id(body if isinstance(body, dict) else {}, require_email=True)
+    if err is not None:
+        return err
+    password = _password_from_body(body if isinstance(body, dict) else {})
+    if not user_id or not password:
+        return _auth_error(
+            "email and password required. Next step: enter your Google email and a password.",
+            400,
+        )
+    if len(password) < _SIGNUP_PASSWORD_MIN:
+        return _auth_error(
+            f"password must be at least {_SIGNUP_PASSWORD_MIN} characters. Next step: choose a longer password.",
+            400,
+        )
+    return _open_password_session(user_id, password, register=True)
 
 
 @router.post("/auth/logout")
@@ -141,6 +247,152 @@ async def auth_logout(request: Request):
     if token:
         sess_mod.delete(token)
     return JSONResponse({"ok": True})
+
+
+# ─── Google OAuth (optional; email+password still works without secrets) ──
+
+
+def _google_html(title: str, body: str, status: int = 200) -> HTMLResponse:
+    safe_title = html.escape(title)
+    safe_body = html.escape(body)
+    return HTMLResponse(
+        f"""<!doctype html><html><head><meta charset="utf-8"><title>{safe_title}</title>
+<style>body{{font-family:system-ui,sans-serif;background:#0b1226;color:#e8ecff;display:flex;
+align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}}
+main{{max-width:28rem;line-height:1.45}} h1{{font-size:1.25rem}} p{{color:#a8b3d8}}</style>
+</head><body><main><h1>{safe_title}</h1><p>{safe_body}</p></main></body></html>""",
+        status_code=status,
+    )
+
+
+@router.get("/auth/google/status")
+async def google_status():
+    return JSONResponse(google_mod.status_payload())
+
+
+@router.get("/auth/google/start")
+async def google_start(request: Request):
+    limited = _limited(
+        rl_mod.login_limiter,
+        request,
+        "too many Google sign-in attempts. Next step: wait a minute and try again.",
+    )
+    if limited is not None:
+        return limited
+    if not google_mod.configured():
+        payload = google_mod.status_payload()
+        return JSONResponse(payload, status_code=503)
+    desktop = request.query_params.get("desktop") == "1"
+    origin = (request.headers.get("Origin") or "").strip()
+    return_url = google_mod.resolve_success_url(origin + "/" if origin else None)
+    state = google_mod.new_state(desktop=desktop, return_url=return_url)
+    redirect_uri = google_mod.resolve_redirect_uri(str(request.base_url))
+    url = google_mod.authorization_url(state, redirect_uri)
+    want_json = request.query_params.get("json") == "1" or "application/json" in (
+        request.headers.get("accept") or ""
+    )
+    if want_json:
+        return JSONResponse({"url": url, "state": state, "desktop": desktop})
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/auth/google/callback")
+async def google_callback(request: Request):
+    params = request.query_params
+    err = (params.get("error") or "").strip()
+    state = (params.get("state") or "").strip()
+    code = (params.get("code") or "").strip()
+    row = google_mod.get_state(state)
+    if err:
+        google_mod.consume_state(state)
+        detail = (
+            f"Google sign-in was cancelled ({err}). Next step: return to KeyShield "
+            "and tap Continue with Google, or use your Gmail and password."
+        )
+        return _google_html("Google sign-in cancelled", detail, 400)
+    if not row:
+        return _google_html(
+            "Google sign-in expired",
+            "This Google sign-in link expired. Next step: return to KeyShield and tap Continue with Google again.",
+            400,
+        )
+    if not code:
+        google_mod.consume_state(state)
+        return _google_html(
+            "Google sign-in incomplete",
+            "Google did not return an authorization code. Next step: tap Continue with Google again.",
+            400,
+        )
+    try:
+        info = google_mod.exchange_code(
+            code, google_mod.resolve_redirect_uri(str(request.base_url))
+        )
+    except Exception as exc:
+        google_mod.consume_state(state)
+        return _google_html(
+            "Google sign-in failed",
+            f"{exc}. Next step: return to KeyShield and use your Gmail and a password, or retry Continue with Google.",
+            401,
+        )
+    email = info["email"]
+    if sess_mod.is_deleted(email):
+        google_mod.consume_state(state)
+        return _google_html(
+            "Account deleted",
+            "This Google email belongs to a deleted KeyShield account. Next step: use a different Google account.",
+            403,
+        )
+    registered = not sess_mod.has_password(email)
+    if registered:
+        # Random password so a stranger cannot claim this Google account via
+        # first-login /auth/login. Password signup for the same email 409s.
+        sess_mod.register_password(email, secrets.token_urlsafe(32))
+    token = sess_mod.create_token(email, "")
+    ticket = google_mod.store_session(state, token=token, user_id=email, registered=registered)
+    if row.get("desktop"):
+        return _google_html(
+            "Signed in with Google",
+            "Return to the KeyShield app — this window can close. The login window stays on your Mac.",
+        )
+    dest = google_mod.resolve_success_url(row.get("return_url"))
+    sep = "&" if "?" in dest else "?"
+    return RedirectResponse(f"{dest}{sep}ks_google={ticket}", status_code=302)
+
+
+@router.get("/auth/google/poll")
+async def google_poll(state: str = ""):
+    row = google_mod.poll_state(state)
+    if row is None:
+        return _auth_error(
+            "unknown or expired Google sign-in. Next step: tap Continue with Google again.",
+            400,
+        )
+    if row.get("pending"):
+        return JSONResponse({"pending": True}, status_code=202)
+    return JSONResponse(row)
+
+
+@router.post("/auth/google/exchange")
+async def google_exchange(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return _auth_error("invalid json", 400)
+    ticket = str((body or {}).get("ticket") or (body or {}).get("ks_google") or "").strip()
+    row = google_mod.take_ticket(ticket)
+    if not row:
+        return _auth_error(
+            "Google sign-in ticket expired. Next step: tap Continue with Google again.",
+            400,
+        )
+    return JSONResponse(
+        {
+            "token": row["token"],
+            "userId": row["userId"],
+            "registered": row.get("registered", False),
+            "provider": "google",
+        }
+    )
 
 
 @router.get("/auth/wallet-challenge")
@@ -331,6 +583,81 @@ async def agent_login(request: Request):
     except Exception:
         pass
     return JSONResponse({"token": token, "scope": sess_mod.SCOPE_PROXY})
+
+
+def _valid_agent_pubkey(pubkey: str) -> bool:
+    try:
+        import base58 as _b58
+        from nacl.signing import VerifyKey
+
+        VerifyKey(_b58.b58decode(pubkey))
+        return True
+    except Exception:
+        return False
+
+
+@router.post("/auth/agent-register")
+async def agent_register_public(request: Request):
+    """Public agent self-register — no human wallet required.
+
+    Body: { name, pubkeyB58 }. The agent then signs POST /auth/agent-challenge
+    and logs in at POST /auth/agent-login.
+    """
+    limited = _limited(
+        rl_mod.agent_register_limiter,
+        request,
+        "too many agent registrations. Next step: wait a minute and try again.",
+    )
+    if limited is not None:
+        return limited
+    try:
+        body = await request.json()
+    except Exception:
+        return _auth_error("invalid json", 400)
+    if not isinstance(body, dict):
+        return _auth_error("name and pubkeyB58 required", 400)
+    from ..agents import agents as agents_mod
+
+    name = str(body.get("name") or "").strip() or "agent"
+    pubkey = str(
+        body.get("pubkeyB58") or body.get("agentPubkey") or body.get("agent_pubkey") or ""
+    ).strip()
+    if not pubkey:
+        return _auth_error(
+            "pubkeyB58 required. Next step: generate an ed25519 keypair and send the public key.",
+            400,
+        )
+    if not _valid_agent_pubkey(pubkey):
+        return _auth_error(
+            "pubkeyB58 must be a 32-byte ed25519 key in base58. Next step: generate a new agent keypair.",
+            400,
+        )
+    owner = pubkey
+    from ..billing import plans as plans_mod
+
+    try:
+        plans_mod.assert_slot(owner, "runtime", extra=1)
+    except plans_mod.PlanLimitError as exc:
+        body_out = dict(exc.payload)
+        body_out.setdefault("error", body_out.get("detail"))
+        return JSONResponse(body_out, status_code=402)
+    try:
+        agent_id = agents_mod.register(owner, pubkey, name=name)
+    except ValueError as e:
+        return JSONResponse(
+            {"error": str(e), "ok": True, "duplicate": True, "owner": owner, "pubkeyB58": pubkey},
+            status_code=409,
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "id": agent_id,
+            "name": name[:64],
+            "owner": owner,
+            "pubkeyB58": pubkey,
+            "next": "POST /auth/agent-challenge then POST /auth/agent-login with the signature",
+        }
+    )
 
 
 # ─── Passkey routes (WebAuthn) ──────────────────────────────────

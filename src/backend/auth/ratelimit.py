@@ -57,3 +57,6 @@ def client_ip(request: Request) -> str:
 
 # S1: passkey signup — 10/min and 50/day per IP, shared by options + verify.
 signup_limiter = WindowLimiter([(10, 60.0), (50, 86_400.0)])
+# Email/password + Google start, and public agent self-register.
+login_limiter = WindowLimiter([(30, 60.0), (200, 86_400.0)])
+agent_register_limiter = WindowLimiter([(10, 60.0), (50, 86_400.0)])

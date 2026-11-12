@@ -228,6 +228,17 @@ ipcMain.on('ks-feedback', (_event, payload) => {
   showShellFeedback(payload || {});
 });
 
+ipcMain.on('ks-focus-main', () => {
+  bringWindowToForeground(BrowserWindow.getAllWindows()[0]);
+});
+
+ipcMain.on('ks-open-external', (_event, url) => {
+  const href = String(url || '');
+  if (/^https?:\/\//i.test(href)) {
+    void shell.openExternal(href);
+  }
+});
+
 async function maybeTouchId() {
   if (process.platform !== 'darwin') return { skipped: true };
   if (typeof systemPreferences.promptTouchID !== 'function') return { skipped: true };

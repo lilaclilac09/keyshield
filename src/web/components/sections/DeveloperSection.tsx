@@ -108,7 +108,11 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
         <div className="space-y-1.5">
           {[
             { m: 'POST', p: '/auth/demo-session', d: 'KS_DEMO_MODE owner-signed demo login' },
-            { m: 'POST', p: '/auth/login', d: 'userId + password \u2192 token' },
+            { m: 'POST', p: '/auth/signup', d: 'Google email + password \u2192 new account token' },
+            { m: 'POST', p: '/auth/login', d: 'email or userId + password \u2192 token' },
+            { m: 'GET', p: '/auth/google/status', d: 'Whether GOOGLE_CLIENT_ID/SECRET are configured' },
+            { m: 'GET', p: '/auth/google/start', d: 'Start Google OAuth (503 if secrets missing)' },
+            { m: 'POST', p: '/auth/agent-register', d: 'Agent self-register (ed25519 pubkey, no wallet)' },
             { m: 'GET', p: '/auth/wallet-challenge', d: 'Get one-time signing challenge' },
             { m: 'POST', p: '/auth/wallet-login', d: 'Submit signature + passphrase \u2192 token' },
             { m: 'POST', p: '/auth/logout', d: 'Revoke current session' },
