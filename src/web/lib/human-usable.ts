@@ -54,7 +54,7 @@ function defaultStep(action: HumanAction): string {
     case 'email-signup':
       return 'use a valid Gmail address and a password of at least 8 characters';
     case 'google-auth':
-      return 'enter your Gmail and a password below, or tap Continue with Google again';
+      return 'tap Sign in with Google again';
     case 'agent-register':
       return 'enter an agent name and tap Generate & register again';
     case 'agent-login':
@@ -128,11 +128,10 @@ export function humanActionError(action: HumanAction, raw: unknown): string {
   }
 
   if (action === 'google-auth') {
-    if (/not configured|503|GOOGLE_CLIENT/i.test(lower)) {
-      return withNextStep(
-        'Live Google OAuth is not configured on this server.',
-        'enter your Gmail address and a password, then Create account',
-      );
+    // Missing secrets: the Google button is hidden. Never show the old
+    // "Live Google OAuth is not configured" / password-form dump copy.
+    if (/not configured|503|GOOGLE_CLIENT|GOOGLE_NOT_CONFIGURED/i.test(lower)) {
+      return '';
     }
   }
 

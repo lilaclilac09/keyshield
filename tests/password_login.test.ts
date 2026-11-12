@@ -21,7 +21,11 @@ describe("email + password sign-in on AuthScreen", () => {
     expect(src).toContain('data-testid="passkey-signup"');
     expect(src).toContain("<WalletConnector");
     expect(src).toContain("forgetDevice");
-    expect(src).toContain("Sign in with Google email");
+    expect(src).toContain("Sign in with Google");
+    expect(src).not.toContain("Sign in with Google email");
+    expect(src).not.toContain("Live Google OAuth is not configured");
+    expect(src).toContain("googleStatus?.enabled !== false");
+    expect(src).toContain("isGoogleNotConfigured");
     expect(src).toContain("Create account");
     expect(src).toContain("setAuthMethod");
     expect(src).toContain("seedPasskey");

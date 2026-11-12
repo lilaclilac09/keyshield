@@ -189,6 +189,12 @@ Optional but useful:
 |---|---|---|
 | `LOGLEVEL` | `INFO` | `DEBUG` for verbose logs |
 | `KS_DATABASE_URL` | sqlite (in container) | Postgres URL for production billing/agents persistence |
+| `GOOGLE_CLIENT_ID` | unset | OAuth Web client id (`KS_GOOGLE_CLIENT_ID` alias). Required for Sign in with Google. |
+| `GOOGLE_CLIENT_SECRET` | unset | OAuth client secret (`KS_GOOGLE_CLIENT_SECRET` alias) |
+| `GOOGLE_REDIRECT_URI` | derived from request URL | Must be `https://<api-host>/auth/google/callback` |
+| `KS_GOOGLE_SUCCESS_URL` | `https://app.ks.aileena.xyz/` | Dashboard URL after Google callback |
+
+Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` the dashboard hides the Google button. It does not show a “not configured” warning.
 
 After the first deploy, note the Railway-assigned domain
 (e.g. `keyshield-production.up.railway.app`) and copy that hostname for

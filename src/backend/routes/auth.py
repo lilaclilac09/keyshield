@@ -307,7 +307,7 @@ async def google_callback(request: Request):
         google_mod.consume_state(state)
         detail = (
             f"Google sign-in was cancelled ({err}). Next step: return to KeyShield "
-            "and tap Continue with Google, or use your Gmail and password."
+            "and tap Sign in with Google again."
         )
         return _google_html("Google sign-in cancelled", detail, 400)
     if not row:
@@ -331,7 +331,7 @@ async def google_callback(request: Request):
         google_mod.consume_state(state)
         return _google_html(
             "Google sign-in failed",
-            f"{exc}. Next step: return to KeyShield and use your Gmail and a password, or retry Continue with Google.",
+            f"{exc}. Next step: return to KeyShield and tap Sign in with Google again.",
             401,
         )
     email = info["email"]

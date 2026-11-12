@@ -82,7 +82,7 @@ Live Google sign-in requires:
 | `GOOGLE_REDIRECT_URI` | `KS_GOOGLE_REDIRECT_URI` | Must be `https://<api-host>/auth/google/callback` |
 | `KS_GOOGLE_SUCCESS_URL` | — | Optional dashboard URL after callback |
 
-Without those secrets the dashboard still shows **Sign in with Google email**; the button focuses the Gmail + password form instead of failing silently.
+Without those secrets `GET /auth/google/status` returns `{ enabled: false }` with an empty `detail`, and the dashboard **hides** Sign in with Google. It never shows “Live Google OAuth is not configured…” and never dumps that button into the password form. Email + password signup remains available as its own path.
 
 ### 2. Wallet login (optional Solana — Phantom / Solflare / Backpack)
 

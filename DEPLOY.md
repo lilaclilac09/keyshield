@@ -40,6 +40,20 @@ JWT_SECRET=<generate with: openssl rand -hex 32>
 PYTHONUNBUFFERED=1
 ```
 
+Live Google sign-in (account picker). Set these on the **Python API** service, not Vercel:
+
+```
+GOOGLE_CLIENT_ID=<Google Cloud OAuth 2.0 Web client id>
+GOOGLE_CLIENT_SECRET=<Google Cloud OAuth client secret>
+GOOGLE_REDIRECT_URI=https://api.ks.aileena.xyz/auth/google/callback
+KS_GOOGLE_SUCCESS_URL=https://app.ks.aileena.xyz/
+```
+
+In Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Web client:
+Authorized redirect URI must be exactly `https://api.ks.aileena.xyz/auth/google/callback`.
+Without `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` the dashboard hides Sign in with Google (no warning copy).
+Aliases `KS_GOOGLE_CLIENT_ID` / `KS_GOOGLE_CLIENT_SECRET` / `KS_GOOGLE_REDIRECT_URI` also work.
+
 Add custom domain in Railway → Settings → Networking → **Generate Domain** then **Add Custom Domain** `api.ks.aileena.xyz`. Railway gives you a CNAME target like `xxx.up.railway.app` — paste that into Cloudflare DNS as:
 
 ```

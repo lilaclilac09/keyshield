@@ -26,4 +26,18 @@ describe("human-usable ux helpers", () => {
     expect(detail).toContain("Wallet request was cancelled.");
     expect(detail).toContain("Next step:");
   });
+
+  it("never maps missing Google secrets to the password-fallback warning", () => {
+    for (const raw of [
+      "Live Google OAuth is not configured on this server.",
+      "GOOGLE_NOT_CONFIGURED",
+      "503",
+      "GOOGLE_CLIENT_ID missing",
+    ]) {
+      const detail = humanActionError("google-auth", raw);
+      expect(detail).not.toContain("Live Google OAuth is not configured");
+      expect(detail).not.toMatch(/enter your Gmail/i);
+      expect(detail).not.toMatch(/Create account/i);
+    }
+  });
 });
