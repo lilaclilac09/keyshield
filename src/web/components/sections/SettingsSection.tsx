@@ -5,7 +5,8 @@ import { Button } from '../ui/Button';
 import { Toggle } from '../ui/Toggle';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
-import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../../lib/auth';
+import { apiFetch, clearAuth, clearPasskeyTrust, notifyAuthChanged, getPasskeyTrust, getAuthMethod, registerPasskey, listPasskeys, deletePasskey, setPasskeyTrust } from '../../lib/auth';
+import { authMethodLabel, isEmailAccountId } from '../../lib/session-scope';
 import { getPrefs, setPrefs, type VaultPreferences } from '../../lib/preferences';
 import { fetchDeleteAccountChallenge, deleteAccount } from '../../lib/api';
 import { PlanCatalog, type DeviceLevelCopy, type DeviceLevelId, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
@@ -85,10 +86,10 @@ export const SettingsSection: React.FC<{ addr: string }> = ({ addr }) => {
 
   return (
     <div className="space-y-4">
-      <Card title="Identity" description="Wallet that owns the vault. Recovery = wallet seed phrase.">
+      <Card title="Identity" description={isEmailAccountId(addr) ? 'Google email that owns this vault. Recovery = that email and password.' : 'Wallet that owns the vault. Recovery = wallet seed phrase.'}>
         <div className="space-y-2">
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Wallet</span><code className="text-[12px] font-mono text-[#e8ecff]">{addr || '\u2014'}</code></div>
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">Solana ed25519 · zero-knowledge passphrase</span></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">{isEmailAccountId(addr) ? 'Account' : 'Wallet'}</span><code className="text-[12px] font-mono text-[#e8ecff]">{addr || '\u2014'}</code></div>
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Auth</span><span className="text-[12px] text-[#e8ecff]">{getPasskeyTrust() ? 'Passkey · WebAuthn' : authMethodLabel(getAuthMethod(), addr)}</span></div>
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#0e1631] border border-[#243365]"><span className="text-[11px] text-[#8a96c2]">Encryption</span><span className="text-[12px] text-[#e8ecff]">AES-256-GCM · PBKDF2-HMAC-SHA256 (100k rounds)</span></div>
         </div>
       </Card>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { getToken } from '../lib/auth';
+import { copyWithFeedback, emitAppFeedback } from '../lib/app-feedback';
 
 /** Session token on Home. Leftover + stamp trunks live on Troubleshooting only. */
 export const ExtensionTokenCopy: React.FC = () => {
@@ -8,14 +9,14 @@ export const ExtensionTokenCopy: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    if (!token) return;
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* clipboard may be denied */
+    if (!token) {
+      emitAppFeedback({ kind: 'error', title: 'Session token missing', source: 'copy' });
+      return;
     }
+    const ok = await copyWithFeedback(token);
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
   if (!token) return null;

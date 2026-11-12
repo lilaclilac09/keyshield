@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { Wallet, Check, Loader2, AlertCircle } from 'lucide-react';
-import { clearAuth, fetchChallenge, isAuthenticated, notifyAuthChanged, setToken, setWalletAddress, walletLogin } from '../lib/auth';
+import { clearAuth, fetchChallenge, isAuthenticated, notifyAuthChanged, setAuthMethod, setToken, setWalletAddress, walletLogin } from '../lib/auth';
 import { emitAppFeedback } from '../lib/app-feedback';
 import { humanActionError } from '../lib/human-usable';
 import { VAULT_KEY_MESSAGE, deriveVaultPassphrase, registerExtensionVaultKey } from '../lib/vault-key';
@@ -57,7 +57,7 @@ export const WalletConnector: React.FC<Props> = ({ onConnect }) => {
         emitAppFeedback({ kind: 'busy', title: 'Authenticating wallet…', source: 'auth' });
         const { token, userId } = await walletLogin(publicKey.toBase58(), sig, ch, passphrase);
         await registerExtensionVaultKey(keySig);
-        setToken(token); setWalletAddress(userId); notifyAuthChanged();
+        setToken(token); setWalletAddress(userId, { seedPasskey: true }); setAuthMethod('wallet'); notifyAuthChanged();
         emitAppFeedback({ kind: 'success', title: 'Wallet connected', source: 'auth' });
         advancedRef.current = true; setPhase('done'); onConnect();
       } catch (err: unknown) {

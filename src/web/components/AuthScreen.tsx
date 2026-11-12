@@ -20,10 +20,12 @@ import {
   agentSelfRegister,
   fetchAgentChallenge,
   agentChallengeLogin,
+  setAuthMethod,
+  type AuthMethod,
   type GoogleAuthStatus,
 } from '../lib/auth';
 import { focusLoginWindow, isDesktopShell, openDesktopExternal } from '../lib/desktop-shell';
-import { emitAppFeedback } from '../lib/app-feedback';
+import { copyWithFeedback, emitAppFeedback } from '../lib/app-feedback';
 import { humanActionError } from '../lib/human-usable';
 import { readPasskeyUserIdFromStorage, shortPasskeyLabel } from '../lib/passkey-id';
 import { generateAgentKeypair, signAgentChallenge, type AgentKeypair } from '../lib/agent-pubkey';
@@ -75,9 +77,15 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   const [agentReady, setAgentReady] = useState(false);
   const agentKeys = useRef<AgentKeypair | null>(null);
 
-  const finishSession = (token: string, accountId: string, title: string) => {
+  const finishSession = (
+    token: string,
+    accountId: string,
+    title: string,
+    opts: { method: AuthMethod; seedPasskey?: boolean },
+  ) => {
     setToken(token);
-    setWalletAddress(accountId);
+    setWalletAddress(accountId, { seedPasskey: opts.seedPasskey ?? false });
+    setAuthMethod(opts.method);
     notifyAuthChanged();
     focusLoginWindow();
     emitAppFeedback({ kind: 'success', title, source: 'auth' });
@@ -131,7 +139,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       .then((out) => {
         if (cancelled) return;
         window.history.replaceState({}, '', window.location.pathname);
-        finishSession(out.token, out.userId, 'Signed in with Google');
+        finishSession(out.token, out.userId, 'Signed in with Google', { method: 'google' });
       })
       .catch((e) => {
         if (cancelled) return;
@@ -154,7 +162,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       if (!out.token) throw new Error('demo session missing token');
       sessionStorage.setItem('ks_landing', 'home');
       if (out.agent?.pubkey_b58) sessionStorage.setItem('ks_demo_agent', out.agent.pubkey_b58);
-      finishSession(out.token, out.userId, 'Demo session started');
+      finishSession(out.token, out.userId, 'Demo session started', { method: 'demo' });
     } catch (e) {
       const detail = humanActionError('demo-login', e);
       setDemoError(detail);
@@ -175,7 +183,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     emitAppFeedback({ kind: 'busy', title: 'Unlocking with passkey…', source: 'unlock' });
     try {
       const { token, userId: signed } = await passkeyLogin();
-      finishSession(token, signed, 'Signed in');
+      finishSession(token, signed, 'Signed in', { method: 'passkey', seedPasskey: true });
     } catch (e) {
       const detail = humanActionError('passkey-signin', e);
       setPkError(detail);
@@ -193,7 +201,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     emitAppFeedback({ kind: 'busy', title: 'Creating passkey…', source: 'unlock' });
     try {
       const { token, userId: created } = await passkeySignup();
-      finishSession(token, created, 'Account created');
+      finishSession(token, created, 'Account created', { method: 'passkey', seedPasskey: true });
     } catch (e) {
       const detail = humanActionError('passkey-signup', e);
       setPkError(detail);
@@ -214,7 +222,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       return;
     }
     setDesktopTokenError('');
-    finishSession(token, email.trim() || 'desktop', 'Session token saved');
+    finishSession(token, email.trim() || 'desktop', 'Session token saved', { method: 'token' });
   };
 
   const focusEmail = (hint: string) => {
@@ -250,7 +258,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           await new Promise((r) => window.setTimeout(r, 1500));
           const row = await pollGoogleAuth(state);
           if ('token' in row && row.token) {
-            finishSession(row.token, row.userId, 'Signed in with Google');
+            finishSession(row.token, row.userId, 'Signed in with Google', { method: 'google' });
             return;
           }
         }
@@ -303,6 +311,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
         out.token,
         out.userId,
         kind === 'signup' || out.registered ? 'Account created' : 'Signed in',
+        { method: 'password' },
       );
     } catch (e) {
       const action = kind === 'signup' ? 'email-signup' : 'email-login';
@@ -365,7 +374,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       const { challenge, nonce } = await fetchAgentChallenge();
       const signature = await signAgentChallenge(kp.privateKey, challenge);
       const out = await agentChallengeLogin(kp.publicKeyB58, signature, challenge, nonce);
-      finishSession(out.token, kp.publicKeyB58, 'Agent signed in');
+      finishSession(out.token, kp.publicKeyB58, 'Agent signed in', { method: 'agent' });
     } catch (e) {
       const detail = humanActionError('agent-login', e);
       setAgentError(detail);
@@ -555,6 +564,14 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                   <div className="rounded-lg border border-amber-800/60 bg-amber-950/20 p-3">
                     <p className="text-[11px] text-amber-300 mb-1">You keep this seed — copy it now.</p>
                     <code className="text-[11px] font-mono text-amber-200 break-all">{agentSeed}</code>
+                    <button
+                      type="button"
+                      data-testid="agent-seed-copy"
+                      onClick={() => { void copyWithFeedback(agentSeed); }}
+                      className="mt-2 h-8 px-3 rounded-lg bg-amber-200 text-amber-950 text-[12px] font-semibold"
+                    >
+                      Copy seed
+                    </button>
                   </div>
                 )}
                 <button

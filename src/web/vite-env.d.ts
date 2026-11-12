@@ -12,6 +12,7 @@ declare global {
     notify?: (payload: { kind?: string; title: string; detail?: string; source?: string }) => void;
     focusMainWindow?: () => void;
     openExternal?: (url: string) => void;
+    writeText?: (text: string) => Promise<{ ok: boolean }>;
   }
   interface Window {
     keyshieldDesktop?: KeyshieldDesktopShell;

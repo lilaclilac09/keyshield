@@ -126,3 +126,33 @@ def test_login_accepts_email_alias_for_new_account(tmp_path, monkeypatch):
     assert res.status_code == 200
     assert res.json()["userId"] == "bot@gmail.com"
     assert res.json()["registered"] is True
+
+
+def test_gmail_signup_can_list_and_store_vault(tmp_path, monkeypatch):
+    from src.backend.routes import vault as vault_mod
+
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setattr(vault_mod, "_DB_PATH", tmp_path / "vault.db")
+    client = TestClient(app)
+    created = client.post(
+        "/auth/signup", json={"email": "aileen@gmail.com", "password": "keychain1"}
+    )
+    assert created.status_code == 200, created.text
+    token = created.json()["token"]
+    hdr = {"Authorization": f"Bearer {token}"}
+    listed = client.get("/manage/vault", headers=hdr)
+    assert listed.status_code == 200, listed.text
+    assert isinstance(listed.json(), list)
+    store = client.post(
+        "/manage/store",
+        headers=hdr,
+        json={"upstream": "openai", "apiKey": "sk-proj-testkey-not-real-0000"},
+    )
+    assert store.status_code == 200, store.text
+    again = client.get("/manage/vault", headers=hdr)
+    assert again.status_code == 200, again.text
+    rows = again.json()
+    assert isinstance(rows, list)
+    assert any(row.get("upstream") == "openai" for row in rows)
+    home = client.get("/keychain/home", headers=hdr)
+    assert home.status_code == 200, home.text

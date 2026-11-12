@@ -12,6 +12,19 @@ describe("agent self-register UI", () => {
     expect(src).toContain("Generate & register");
     expect(src).toContain("No Solana wallet");
     expect(src).toContain("agent-register-next-step");
+    expect(src).toContain("agent-seed-copy");
+    expect(src).toContain("copyWithFeedback");
+    expect(src).toContain("method: 'agent'");
+  });
+
+  it("proxy agent sessions stay on a copy-token screen, not the vault dashboard", () => {
+    const app = readFileSync("src/web/App.tsx", "utf8");
+    expect(app).toContain("isProxySession");
+    expect(app).toContain("AgentSessionScreen");
+    const panel = readFileSync("src/web/components/AgentSessionScreen.tsx", "utf8");
+    expect(panel).toContain('data-testid="agent-session"');
+    expect(panel).toContain("Copy agent token");
+    expect(panel).toContain("copyWithFeedback");
   });
 
   it("client posts /auth/agent-register then /auth/agent-login", () => {

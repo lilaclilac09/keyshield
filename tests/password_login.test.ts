@@ -23,6 +23,9 @@ describe("email + password sign-in on AuthScreen", () => {
     expect(src).toContain("forgetDevice");
     expect(src).toContain("Sign in with Google email");
     expect(src).toContain("Create account");
+    expect(src).toContain("setAuthMethod");
+    expect(src).toContain("seedPasskey");
+    expect(src).toContain("method: 'password'");
   });
 
   it("documents Google OAuth env vars without requiring them to boot", () => {

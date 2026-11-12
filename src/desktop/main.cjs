@@ -18,6 +18,7 @@ const {
   ipcMain,
   shell,
   Notification,
+  clipboard,
 } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -237,6 +238,11 @@ ipcMain.on('ks-open-external', (_event, url) => {
   if (/^https?:\/\//i.test(href)) {
     void shell.openExternal(href);
   }
+});
+
+ipcMain.handle('ks-clipboard-write', (_event, text) => {
+  clipboard.writeText(String(text || ''));
+  return { ok: true };
 });
 
 async function maybeTouchId() {

@@ -117,7 +117,13 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
         if (!r.ok) {
           setVaultItems(local);
           if (r.status >= 400 && local.length === 0) {
-            setError(r.status === 401 ? 'sign in again to load vault' : `vault list failed (${r.status})`);
+            setError(
+              r.status === 401
+                ? 'sign in again to load vault'
+                : r.status === 403
+                  ? 'This session is proxy-only. Sign in with email to open the vault.'
+                  : `vault list failed (${r.status})`,
+            );
           }
           return;
         }
