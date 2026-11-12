@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { verifyMacBundleRuntime } = require('../runtime-preflight.cjs');
 
 const desktopDir = path.resolve(__dirname, '..');
 const releaseDir = path.join(desktopDir, 'release');
@@ -68,39 +69,14 @@ function writePngIcon(dest) {
   fs.writeFileSync(dest, png);
 }
 
-function verifyMacBundleRuntime(appPath) {
-  const contents = path.join(appPath, 'Contents');
-  const frameworks = path.join(contents, 'Frameworks');
-  const checks = [
-    path.join(contents, 'Resources', 'icudtl.dat'),
-    path.join(frameworks, 'Electron Framework.framework', 'Resources', 'icudtl.dat'),
-  ];
-  let helperApps = [];
-  try {
-    helperApps = fs.readdirSync(frameworks).filter((name) => (
-      name.includes('Helper') && name.endsWith('.app')
-    ));
-  } catch {
-    helperApps = [];
-  }
-  for (const helper of helperApps) {
-    checks.push(path.join(
-      frameworks,
-      helper,
-      'Contents',
-      'Frameworks',
-      'Electron Framework.framework',
-      'Resources',
-      'icudtl.dat',
-    ));
-  }
-  const missing = checks.filter((file) => !fs.existsSync(file));
-  if (missing.length > 0) {
-    throw new Error([
-      `packaged app is missing Chromium runtime resources: ${appPath}`,
-      ...missing.map((file) => `  - ${file}`),
-    ].join('\n'));
-  }
+function copyOpenHelpers(destDir) {
+  const commandSrc = path.join(desktopDir, 'Open-KeyShield.command');
+  const readmeSrc = path.join(desktopDir, 'OPEN-ME.txt');
+  const commandDest = path.join(destDir, 'Open-KeyShield.command');
+  const readmeDest = path.join(destDir, 'OPEN-ME.txt');
+  fs.copyFileSync(commandSrc, commandDest);
+  fs.chmodSync(commandDest, 0o755);
+  fs.copyFileSync(readmeSrc, readmeDest);
 }
 
 function stageAppBundle(sourceApp, destApp) {
@@ -136,8 +112,11 @@ async function main() {
     appCategoryType: 'public.app-category.utilities',
     overwrite: true,
     prune: true,
-    asar: true,
-    extraResource: [path.join(desktopDir, 'renderer')],
+    asar: { unpack: '**/preload.cjs' },
+    extraResource: [
+      path.join(desktopDir, 'renderer'),
+      path.join(desktopDir, 'boot.html'),
+    ],
     icon: iconPng,
     darwinDarkModeSupport: true,
     osxSign: false,
@@ -147,6 +126,7 @@ async function main() {
       if (file === '/release' || file.startsWith('/release/')) return true;
       if (file.startsWith('/scripts')) return true;
       if (file === '/renderer' || file.startsWith('/renderer/')) return true;
+      if (file === '/Open-KeyShield.command' || file === '/OPEN-ME.txt') return true;
       return false;
     },
     appCopyright: 'KeyShield',
@@ -154,6 +134,8 @@ async function main() {
       NSFaceIDUsageDescription: 'Unlock KeyShield with Touch ID.',
       CFBundleDisplayName: 'KeyShield',
       CFBundleName: 'KeyShield',
+      LSBackgroundOnly: false,
+      LSUIElement: false,
     },
   });
 
@@ -166,10 +148,11 @@ async function main() {
       continue;
     }
     verifyMacBundleRuntime(appPath);
+    copyOpenHelpers(appDir);
     const zipName = `KeyShield-mac-${arch}.zip`;
     const zipPath = path.join(releaseDir, zipName);
     fs.rmSync(zipPath, { force: true });
-    run('zip', ['-r', '-y', zipPath, 'KeyShield.app'], { cwd: appDir });
+    run('zip', ['-r', '-y', zipPath, 'KeyShield.app', 'Open-KeyShield.command', 'OPEN-ME.txt'], { cwd: appDir });
     zipped.push({ arch, appPath, zipPath });
     console.log('zip', zipPath);
   }
@@ -182,6 +165,7 @@ async function main() {
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(staging, { recursive: true });
     stageAppBundle(preferred.appPath, path.join(staging, 'KeyShield.app'));
+    copyOpenHelpers(staging);
     try {
       fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
     } catch {
@@ -197,44 +181,14 @@ async function main() {
         '-format', 'UDZO',
         dmgPath,
       ], { stdio: 'inherit' });
+      if (fs.existsSync(dmgPath)) console.log('dmg', dmgPath);
     } else {
-      // Do not ISO the raw .app: genisoimage renames Electron helper apps
-      // ("KeyShield Helper (GPU).app" → KEYSH000.APP) and breaks the bundle.
-      // Put the zip + install notes in the DMG instead.
-      const zipStage = path.join(releaseDir, 'dmg-zips');
-      fs.rmSync(zipStage, { recursive: true, force: true });
-      fs.mkdirSync(zipStage, { recursive: true });
-      const arm = zipped.find((z) => z.arch === 'arm64') || preferred;
-      fs.copyFileSync(arm.zipPath, path.join(zipStage, 'KeyShield.zip'));
-      fs.writeFileSync(path.join(zipStage, 'README.txt'), [
-        'KeyShield for Mac (unsigned personal build)',
-        '',
-        'This disk image was packed on Linux, so it carries KeyShield.zip',
-        '(Apple Silicon) instead of a raw .app (ISO would break helper names).',
-        '',
-        '1. Unzip KeyShield.zip',
-        '2. Drag KeyShield.app to Applications',
-        '3. First launch: right-click KeyShield.app → Open',
-        '   or: xattr -cr /Applications/KeyShield.app',
-        '',
-        'Intel Mac: use KeyShield-mac-x64.zip from the same release/ folder.',
-        'Same dashboard as https://app.ks.aileena.xyz',
-        'Does not need local Python :8001 or Rust :8000.',
-        'For a Finder drag-to-Applications DMG, run `npm run pack` on a Mac.',
-        '',
-      ].join('\n'));
-      const mkisofs = spawnSync('genisoimage', [
-        '-V', 'KeyShield',
-        '-r',
-        '-J',
-        '-o', dmgPath,
-        zipStage,
-      ], { stdio: 'inherit' });
-      if (mkisofs.status !== 0) {
-        console.warn('genisoimage failed — use the zip files in release/.');
-      }
+      // Do not write KeyShield.dmg on Linux. A genisoimage ISO named .dmg
+      // is not a launchable Mac app (and ISO mangles helper names if you
+      // pack the raw .app). Ship the zip + Open-KeyShield.command instead.
+      console.log('skip dmg on', process.platform, '— use', preferred.zipPath);
+      console.log('Aileen: unzip KeyShield-mac-arm64.zip, then Open-KeyShield.command');
     }
-    if (fs.existsSync(dmgPath)) console.log('dmg', dmgPath);
   }
 
   console.log('packed', apps);

@@ -13,7 +13,6 @@ const {
   Menu,
   dialog,
   session,
-  protocol,
   net,
   systemPreferences,
   ipcMain,
@@ -23,6 +22,7 @@ const {
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { inspectMacBundle } = require('./runtime-preflight.cjs');
 
 const DASHBOARD_HOST = 'app.ks.aileena.xyz';
 const DASHBOARD_ORIGIN = `https://${DASHBOARD_HOST}`;
@@ -38,18 +38,11 @@ function rendererDir() {
   return path.join(__dirname, 'renderer');
 }
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'https',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
-      stream: true,
-    },
-  },
-]);
+function bootHtmlPath() {
+  const packaged = path.join(process.resourcesPath, 'boot.html');
+  if (app.isPackaged && fs.existsSync(packaged)) return packaged;
+  return path.join(__dirname, 'boot.html');
+}
 
 function hasRenderer() {
   try {
@@ -66,37 +59,7 @@ function useBundle() {
 function packagedRuntimePreflight() {
   if (process.platform !== 'darwin' || !app.isPackaged) return { ok: true, skipped: true };
   const contents = path.resolve(process.resourcesPath, '..');
-  const frameworks = path.join(contents, 'Frameworks');
-  const checks = [
-    path.join(process.resourcesPath, 'icudtl.dat'),
-    path.join(frameworks, 'Electron Framework.framework', 'Resources', 'icudtl.dat'),
-  ];
-  let helperApps = [];
-  try {
-    helperApps = fs.readdirSync(frameworks).filter((name) => (
-      name.includes('Helper') && name.endsWith('.app')
-    ));
-  } catch {
-    helperApps = [];
-  }
-  for (const helper of helperApps) {
-    checks.push(path.join(
-      frameworks,
-      helper,
-      'Contents',
-      'Frameworks',
-      'Electron Framework.framework',
-      'Resources',
-      'icudtl.dat',
-    ));
-  }
-  const missing = checks.filter((file) => !fs.existsSync(file));
-  if (missing.length === 0) return { ok: true };
-  return {
-    ok: false,
-    appBundle: path.resolve(contents, '..'),
-    missing,
-  };
+  return inspectMacBundle(contents);
 }
 
 function blockStartup(report, reason) {
@@ -106,17 +69,13 @@ function blockStartup(report, reason) {
     ...(report?.missing || []).map((file) => `Missing: ${file}`),
   ].filter(Boolean).join('\n');
   const message = [
-    'KeyShield cannot start because required Chromium runtime files are missing.',
-    'This install may show "Running in Background" without a visible window.',
-    '',
-    'Fix steps:',
-    '1) Delete /Applications/KeyShield.app',
-    '2) Reinstall from the latest KeyShield-mac-*.zip or rebuilt DMG',
-    '3) If you build locally, preserve symlinks when copying .app bundles',
+    'KeyShield hit a launch problem. A window should still open.',
+    'If macOS refused to open the app, run Open-KeyShield.command from the zip,',
+    'or: xattr -cr /Applications/KeyShield.app && open /Applications/KeyShield.app',
     '',
     details,
   ].join('\n');
-  dialog.showErrorBox('KeyShield launch blocked', message);
+  dialog.showErrorBox('KeyShield needs a moment', message);
 }
 
 function serveRenderer(requestUrl) {
@@ -125,7 +84,8 @@ function serveRenderer(requestUrl) {
   let rel = decodeURIComponent(url.pathname || '/');
   if (rel === '/' || rel === '') rel = '/index.html';
   const file = path.normalize(path.join(root, rel));
-  if (!file.startsWith(root)) {
+  const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (file !== root && !file.startsWith(rootPrefix)) {
     return new Response('forbidden', { status: 403 });
   }
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -135,7 +95,10 @@ function serveRenderer(requestUrl) {
 }
 
 function installHttpsHandler(ses) {
-  if (!useBundle() && !SYNC_PROXY) return;
+  if (!useBundle() && !SYNC_PROXY) return false;
+  // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
+  // — that replaces Chromium's standard https handler and can prevent the window
+  // from ever loading.
   ses.protocol.handle('https', (request) => {
     let url;
     try {
@@ -152,11 +115,27 @@ function installHttpsHandler(ses) {
     }
     return net.fetch(request, { bypassCustomProtocolHandlers: true });
   });
+  return true;
 }
 
 function startUrl() {
-  if (useBundle()) return `${DASHBOARD_ORIGIN}/`;
   return `${DASHBOARD_ORIGIN}/`;
+}
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label || `timeout ${ms}ms`)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
 
 let titleResetTimer = null;
@@ -198,6 +177,7 @@ function bringWindowToForeground(win) {
     win.show();
     try {
       if (process.platform === 'darwin' && app.dock && typeof app.dock.show === 'function') app.dock.show();
+      if (typeof app.setActivationPolicy === 'function') app.setActivationPolicy('regular');
       app.focus({ steal: true });
     } catch {
       try {
@@ -336,9 +316,39 @@ function buildMenu(win) {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+async function loadDashboard(win) {
+  try {
+    await withTimeout(win.loadURL(startUrl()), 12000, 'dashboard-load-timeout');
+    return;
+  } catch (first) {
+    const detail = first instanceof Error ? first.message : String(first);
+    showShellFeedback({
+      kind: 'error',
+      title: 'Dashboard failed to load',
+      detail,
+      source: 'proxy',
+    });
+    try {
+      await withTimeout(win.loadURL(`${DASHBOARD_ORIGIN}/?desktop=1`), 10000, 'live-dashboard-timeout');
+      return;
+    } catch {
+      const boot = bootHtmlPath();
+      if (fs.existsSync(boot)) {
+        await win.loadFile(boot);
+        return;
+      }
+      throw first;
+    }
+  }
+}
+
 async function createWindow() {
   const ses = session.fromPartition('persist:keyshield');
-  installHttpsHandler(ses);
+  try {
+    installHttpsHandler(ses);
+  } catch (err) {
+    console.error('https handler skipped', err);
+  }
 
   ses.setPermissionRequestHandler((_wc, permission, callback) => {
     const allow = new Set([
@@ -367,7 +377,7 @@ async function createWindow() {
     minHeight: 640,
     title: 'KeyShield',
     backgroundColor: '#0b1226',
-    show: false,
+    show: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
@@ -379,6 +389,9 @@ async function createWindow() {
       webviewTag: false,
     },
   });
+
+  win.once('ready-to-show', () => bringWindowToForeground(win));
+  bringWindowToForeground(win);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(DASHBOARD_ORIGIN) || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
@@ -412,17 +425,24 @@ async function createWindow() {
       detail: errorDescription || String(errorCode),
       source: 'proxy',
     });
+    const boot = bootHtmlPath();
+    if (fs.existsSync(boot) && !String(_url || '').includes('boot.html')) {
+      void win.loadFile(boot);
+    }
   });
 
   buildMenu(win);
-  await win.loadURL(startUrl());
-  win.show();
+  await loadDashboard(win);
+  bringWindowToForeground(win);
   flushPendingShellFeedback(win);
   return win;
 }
 
 app.setName('KeyShield');
 app.commandLine.appendSwitch('enable-features', 'WebAuthentication,WebAuthenticationPasskeys');
+if (process.platform === 'darwin' && typeof app.setActivationPolicy === 'function') {
+  try { app.setActivationPolicy('regular'); } catch { /* older Electron */ }
+}
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -450,15 +470,20 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     const preflight = packagedRuntimePreflight();
     if (!preflight.ok) {
+      // Warn, but do not app.quit() — a false-positive preflight previously
+      // left KeyShield running in the background with no window.
       blockStartup(preflight);
-      app.quit();
-      return;
     }
-    const unlock = await maybeTouchId();
     const win = await createWindow();
-    if (unlock?.ok) bringWindowToForeground(win);
+    bringWindowToForeground(win);
+    void maybeTouchId();
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+      const existing = BrowserWindow.getAllWindows()[0];
+      if (existing) {
+        bringWindowToForeground(existing);
+        return;
+      }
+      void createWindow();
     });
   }).catch((err) => {
     blockStartup(null, err instanceof Error ? err.message : String(err));
