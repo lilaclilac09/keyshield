@@ -10,3 +10,24 @@ export function isDesktopShell(): boolean {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   return /Electron/i.test(ua);
 }
+
+/** Keep the login window in front after a sign-in gesture. */
+export function focusLoginWindow(): void {
+  try {
+    window.keyshieldDesktop?.focusMainWindow?.();
+  } catch {
+    /* web dashboard — no desktop bridge */
+  }
+}
+
+export function openDesktopExternal(url: string): void {
+  try {
+    if (window.keyshieldDesktop?.openExternal) {
+      window.keyshieldDesktop.openExternal(url);
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}

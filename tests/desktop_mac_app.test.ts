@@ -227,13 +227,18 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(report.warnings.some((file) => file.endsWith("index.html"))).toBe(true);
   });
 
-  it("desktop login fallback is gated and is not password login", () => {
+  it("desktop login keeps email signup in front and session-token fallback", () => {
     const auth = read("src/web/components/AuthScreen.tsx");
     expect(auth).toContain("isDesktopShell");
     expect(auth).toContain('data-testid="desktop-session-token"');
-    expect(auth).not.toContain("passwordLogin");
-    expect(auth).not.toMatch(/type="password"/);
+    expect(auth).toContain("passwordLogin");
+    expect(auth).toMatch(/type="password"/);
+    expect(auth).toContain("focusLoginWindow");
+    expect(auth).toContain("Sign in with Google email");
     expect(read("src/web/lib/desktop-shell.ts")).toMatch(/Electron/i);
+    expect(read("src/web/lib/desktop-shell.ts")).toContain("focusLoginWindow");
+    expect(read("src/desktop/preload.cjs")).toContain("focusMainWindow");
+    expect(read("src/desktop/main.cjs")).toContain("ks-focus-main");
   });
 
   it("treats Electron userAgent as a desktop shell when preload is missing", () => {

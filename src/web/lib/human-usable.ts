@@ -17,7 +17,12 @@ type HumanAction =
   | 'wallet-connect'
   | 'vault-save'
   | 'desktop-touch-id'
-  | 'demo-login';
+  | 'demo-login'
+  | 'email-login'
+  | 'email-signup'
+  | 'google-auth'
+  | 'agent-register'
+  | 'agent-login';
 
 function normalizeMessage(raw: unknown, fallback: string): string {
   if (raw instanceof Error && raw.message) return raw.message.trim();
@@ -44,6 +49,16 @@ function defaultStep(action: HumanAction): string {
       return 'click Sign In again or paste a session token from the hosted dashboard';
     case 'demo-login':
       return 'retry once; if it still fails, sign in with passkey or wallet first';
+    case 'email-login':
+      return 'check the email and password, or tap Create account if this is your first time';
+    case 'email-signup':
+      return 'use a valid Gmail address and a password of at least 8 characters';
+    case 'google-auth':
+      return 'enter your Gmail and a password below, or tap Continue with Google again';
+    case 'agent-register':
+      return 'enter an agent name and tap Generate & register again';
+    case 'agent-login':
+      return 'register the agent first, then tap Sign in as this agent';
     default:
       return 'retry once from this screen';
   }
@@ -95,6 +110,24 @@ export function humanActionError(action: HumanAction, raw: unknown): string {
 
   if (action === 'demo-login' && /missing token|missing session/i.test(lower)) {
     return withNextStep('Demo login returned an incomplete session.', defaultStep(action));
+  }
+
+  if (action === 'email-signup' || action === 'email-login') {
+    if (/already exists/i.test(lower)) {
+      return withNextStep('An account already exists for this email.', 'tap Sign in with this email and password');
+    }
+    if (/invalid credentials/i.test(lower)) {
+      return withNextStep('That email or password did not match.', 'check Caps Lock, or create an account if this is your first time');
+    }
+  }
+
+  if (action === 'google-auth') {
+    if (/not configured|503|GOOGLE_CLIENT/i.test(lower)) {
+      return withNextStep(
+        'Live Google OAuth is not configured on this server.',
+        'enter your Gmail address and a password, then Create account',
+      );
+    }
   }
 
   if (isNetworkError(lower)) {
