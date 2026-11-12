@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 from fastapi.testclient import TestClient
 
 from src.backend.app import app
 from src.backend.auth import google_oauth as google_mod
 from src.backend.auth import session as sess_mod
+
+FORBIDDEN_COPY = (
+    "Live Google OAuth is not configured",
+    "enter your Gmail address and a password",
+    "Next step: enter your Gmail",
+)
 
 
 def _iso(tmp_path, monkeypatch):
@@ -20,7 +28,14 @@ def _iso(tmp_path, monkeypatch):
     monkeypatch.delenv("KS_GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("KS_GOOGLE_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_REDIRECT_URI", raising=False)
+    monkeypatch.delenv("KS_GOOGLE_REDIRECT_URI", raising=False)
     google_mod.reset()
+
+
+def _assert_no_warning_copy(payload: dict) -> None:
+    blob = str(payload)
+    for needle in FORBIDDEN_COPY:
+        assert needle not in blob
 
 
 def test_google_status_disabled_without_secrets(tmp_path, monkeypatch):
@@ -31,8 +46,11 @@ def test_google_status_disabled_without_secrets(tmp_path, monkeypatch):
     body = res.json()
     assert body["enabled"] is False
     assert body["env"]["GOOGLE_CLIENT_ID"] is False
-    assert "GOOGLE_CLIENT_ID" in body["detail"]
+    assert body["env"]["GOOGLE_CLIENT_SECRET"] is False
+    assert "GOOGLE_CLIENT_ID" in body["missing"]
     assert "KS_GOOGLE_CLIENT_ID" in body["aliases"]
+    assert body["detail"] == ""
+    _assert_no_warning_copy(body)
 
 
 def test_google_start_without_secrets_is_503(tmp_path, monkeypatch):
@@ -40,8 +58,42 @@ def test_google_start_without_secrets_is_503(tmp_path, monkeypatch):
     client = TestClient(app)
     res = client.get("/auth/google/start?json=1")
     assert res.status_code == 503
-    assert res.json()["enabled"] is False
-    assert "Next step" in res.json()["detail"]
+    body = res.json()
+    assert body["enabled"] is False
+    assert body["detail"] == ""
+    _assert_no_warning_copy(body)
+
+
+def test_google_start_with_env_opens_account_picker(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://testserver/auth/google/callback")
+    client = TestClient(app, follow_redirects=False)
+    start = client.get("/auth/google/start?json=1")
+    assert start.status_code == 200, start.text
+    body = start.json()
+    assert "accounts.google.com" in body["url"]
+    qs = parse_qs(urlparse(body["url"]).query)
+    assert qs["prompt"] == ["select_account"]
+    assert qs["response_type"] == ["code"]
+    assert qs["client_id"] == ["test-client-id.apps.googleusercontent.com"]
+    assert qs["redirect_uri"] == ["http://testserver/auth/google/callback"]
+    assert body["state"]
+
+
+def test_google_start_uses_ks_aliases(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setenv("KS_GOOGLE_CLIENT_ID", "alias-client.apps.googleusercontent.com")
+    monkeypatch.setenv("KS_GOOGLE_CLIENT_SECRET", "alias-secret")
+    monkeypatch.setenv("KS_GOOGLE_REDIRECT_URI", "http://testserver/auth/google/callback")
+    client = TestClient(app)
+    status = client.get("/auth/google/status").json()
+    assert status["enabled"] is True
+    start = client.get("/auth/google/start?json=1")
+    assert start.status_code == 200
+    assert "accounts.google.com" in start.json()["url"]
+    assert "alias-client.apps.googleusercontent.com" in start.json()["url"]
 
 
 def test_google_callback_mocked_mints_gmail_session(tmp_path, monkeypatch):

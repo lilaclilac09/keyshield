@@ -490,7 +490,22 @@ export type GoogleAuthStatus = {
   detail: string;
   env?: Record<string, boolean>;
   aliases?: string[];
+  missing?: string[];
 };
+
+export class GoogleNotConfiguredError extends Error {
+  readonly code = 'GOOGLE_NOT_CONFIGURED';
+  constructor() {
+    super('GOOGLE_NOT_CONFIGURED');
+    this.name = 'GoogleNotConfiguredError';
+  }
+}
+
+export function isGoogleNotConfigured(err: unknown): boolean {
+  if (err instanceof GoogleNotConfiguredError) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return /GOOGLE_NOT_CONFIGURED/i.test(msg);
+}
 
 export async function googleAuthStatus(): Promise<GoogleAuthStatus> {
   let res: Response;
@@ -503,7 +518,14 @@ export async function googleAuthStatus(): Promise<GoogleAuthStatus> {
     const err = await res.json().catch(() => ({}));
     throw new Error(readApiErrorMessage(err, 'Could not check Google sign-in'));
   }
-  return res.json();
+  const body = await res.json() as GoogleAuthStatus;
+  return {
+    enabled: Boolean(body.enabled),
+    detail: body.enabled ? (body.detail || '') : '',
+    env: body.env,
+    aliases: body.aliases,
+    missing: body.missing,
+  };
 }
 
 export async function startGoogleAuth(desktop: boolean): Promise<{ url: string; state: string }> {
@@ -515,9 +537,14 @@ export async function startGoogleAuth(desktop: boolean): Promise<{ url: string; 
   } catch (e) {
     throw describeApiNetError(e, '/auth/google/start');
   }
-  const body = await res.json().catch(() => ({})) as { url?: string; state?: string; detail?: string; error?: string };
+  const body = await res.json().catch(() => ({})) as {
+    url?: string; state?: string; detail?: string; error?: string; enabled?: boolean;
+  };
   if (!res.ok) {
-    throw new Error(readApiErrorMessage(body, 'Google sign-in is not configured'));
+    if (res.status === 503 || body.enabled === false) {
+      throw new GoogleNotConfiguredError();
+    }
+    throw new Error(readApiErrorMessage(body, 'Google sign-in failed'));
   }
   if (!body.url || !body.state) throw new Error('Google sign-in did not return a URL');
   return { url: body.url, state: body.state };

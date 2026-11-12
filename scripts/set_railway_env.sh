@@ -50,6 +50,12 @@ fi
 railway variables --set "KS_X402_ENABLED=0"
 echo "✓ KS_X402_ENABLED=0  (set to 1 when x402 receiver is ready)"
 
+# ── Google OAuth (set in Railway dashboard → Variables; do not commit secrets) ─
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# GOOGLE_REDIRECT_URI=https://api.ks.aileena.xyz/auth/google/callback
+# KS_GOOGLE_SUCCESS_URL=https://app.ks.aileena.xyz/
+
 # ── Convenience ───────────────────────────────────────────────────────────────
 railway variables --set "KS_PROGRAM_ID=41P2wHKAr69aSgLgt1QdKH6VVgK6uFYKM7hpKAyBxr9j"
 echo "✓ KS_PROGRAM_ID"

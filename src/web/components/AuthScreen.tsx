@@ -15,6 +15,7 @@ import {
   passwordSignup,
   googleAuthStatus,
   startGoogleAuth,
+  isGoogleNotConfigured,
   pollGoogleAuth,
   exchangeGoogleTicket,
   agentSelfRegister,
@@ -125,7 +126,10 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
   useEffect(() => {
     googleAuthStatus()
       .then(setGoogleStatus)
-      .catch(() => setGoogleStatus({ enabled: false, detail: '' }));
+      .catch(() => {
+        // Status check failed — keep the Google button visible so a tap
+        // can still start live OAuth if the API has secrets.
+      });
   }, []);
 
   useEffect(() => {
@@ -225,12 +229,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     finishSession(token, email.trim() || 'desktop', 'Session token saved', { method: 'token' });
   };
 
-  const focusEmail = (hint: string) => {
-    setGoogleHint(hint);
-    emailRef.current?.focus();
-    emailRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  };
-
   const handleGoogle = async () => {
     setGoogleBusy(true);
     setGoogleHint('');
@@ -238,17 +236,6 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
     focusLoginWindow();
     emitAppFeedback({ kind: 'busy', title: 'Continue with Google…', source: 'auth' });
     try {
-      const status = googleStatus ?? await googleAuthStatus();
-      setGoogleStatus(status);
-      if (!status.enabled) {
-        const detail = humanActionError(
-          'google-auth',
-          status.detail || 'Live Google OAuth is not configured on this server.',
-        );
-        focusEmail(detail);
-        emitAppFeedback({ kind: 'info', title: 'Use your Google email below', detail, source: 'auth' });
-        return;
-      }
       const { url, state } = await startGoogleAuth(desktop);
       if (desktop) {
         openDesktopExternal(url);
@@ -266,8 +253,17 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
       }
       window.location.assign(url);
     } catch (e) {
+      if (isGoogleNotConfigured(e)) {
+        setGoogleStatus({ enabled: false, detail: '' });
+        setGoogleHint('');
+        return;
+      }
       const detail = humanActionError('google-auth', e);
-      focusEmail(detail);
+      if (!detail) {
+        setGoogleStatus({ enabled: false, detail: '' });
+        return;
+      }
+      setGoogleHint(detail);
       emitAppFeedback({ kind: 'error', title: 'Google sign-in failed', detail, source: 'auth' });
     } finally {
       setGoogleBusy(false);
@@ -405,22 +401,26 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
           <div data-testid="auth-card" className="w-full rounded-xl border border-[#243365]/50 p-4 bg-[#131c39] space-y-3">
             {mode === 'human' ? (
               <>
-                <button
-                  type="button"
-                  data-testid="google-email-signin"
-                  onClick={handleGoogle}
-                  disabled={busy}
-                  className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl border border-[#2e4585] bg-white text-[#1f1f1f] font-semibold disabled:opacity-70 disabled:cursor-wait"
-                >
-                  {googleBusy ? <Loader2 size={18} className="animate-spin" /> : <GoogleMark />}
-                  <span className="text-[14px]">{googleBusy ? 'Continue with Google…' : 'Sign in with Google email'}</span>
-                </button>
-                {googleBusy && (
+                {googleStatus?.enabled !== false && (
+                  <button
+                    type="button"
+                    data-testid="google-email-signin"
+                    onClick={handleGoogle}
+                    disabled={busy}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl border border-[#2e4585] bg-white text-[#1f1f1f] font-semibold disabled:opacity-70 disabled:cursor-wait"
+                  >
+                    {googleBusy ? <Loader2 size={18} className="animate-spin" /> : <GoogleMark />}
+                    <span className="text-[14px]">{googleBusy ? 'Continue with Google…' : 'Sign in with Google'}</span>
+                  </button>
+                )}
+                {googleBusy && googleStatus?.enabled !== false && (
                   <p data-testid="google-next-step" className="text-[12px] text-[#8a96c2] text-left px-1">
                     Next step: {desktop ? 'finish Google in your browser, then keep this KeyShield window in front.' : 'choose the Google account in the next screen.'}
                   </p>
                 )}
-                {googleHint && <p className="text-[12px] text-[#a8b3d8] text-left px-1">{googleHint}</p>}
+                {googleHint && (
+                  <p className="text-[12px] text-[#a8b3d8] text-left px-1">{googleHint}</p>
+                )}
 
                 <div className="flex items-center gap-2 py-1">
                   <div className="flex-1 border-t border-[#243365]/50" />

@@ -9,9 +9,10 @@ Live Google sign-in needs these env vars on the Python API:
   KS_GOOGLE_SUCCESS_URL     optional; browser return URL after callback
                             (default https://app.ks.aileena.xyz/)
 
-Without the client id/secret the dashboard still ships email+password
-signup (Gmail addresses included). This module only runs the OAuth
-round-trip when those secrets are present.
+Without the client id/secret the dashboard hides Sign in with Google.
+Email+password signup still works. This module only runs the OAuth
+round-trip when those secrets are present. Never surface a
+"not configured" warning to the human login screen.
 """
 
 from __future__ import annotations
@@ -69,20 +70,13 @@ def status_payload() -> dict:
     secret = bool(client_secret())
     redirect = bool(redirect_uri_env())
     enabled = cid and secret
-    if enabled:
-        detail = "Google OAuth is configured. Continue with Google opens a Google account picker."
-    else:
-        missing = []
-        if not cid:
-            missing.append("GOOGLE_CLIENT_ID")
-        if not secret:
-            missing.append("GOOGLE_CLIENT_SECRET")
-        detail = (
-            "Google OAuth is not configured on this server. Next step: enter your "
-            "Gmail address and a password, or set "
-            + " and ".join(missing)
-            + " (aliases KS_GOOGLE_CLIENT_ID / KS_GOOGLE_CLIENT_SECRET) on the API."
-        )
+    missing: list[str] = []
+    if not cid:
+        missing.append("GOOGLE_CLIENT_ID")
+    if not secret:
+        missing.append("GOOGLE_CLIENT_SECRET")
+    # Keep detail empty when disabled — the login UI hides the Google button
+    # and must never show operator/env copy to humans.
     return {
         "enabled": enabled,
         "provider": "google",
@@ -97,7 +91,12 @@ def status_payload() -> dict:
             "KS_GOOGLE_CLIENT_SECRET",
             "KS_GOOGLE_REDIRECT_URI",
         ],
-        "detail": detail,
+        "missing": missing,
+        "detail": (
+            "Google OAuth is configured. Continue with Google opens a Google account picker."
+            if enabled
+            else ""
+        ),
     }
 
 

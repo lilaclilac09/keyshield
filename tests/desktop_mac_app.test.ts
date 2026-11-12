@@ -234,7 +234,9 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(auth).toContain("passwordLogin");
     expect(auth).toMatch(/type="password"/);
     expect(auth).toContain("focusLoginWindow");
-    expect(auth).toContain("Sign in with Google email");
+    expect(auth).toContain("Sign in with Google");
+    expect(auth).not.toContain("Sign in with Google email");
+    expect(auth).not.toContain("Live Google OAuth is not configured");
     expect(read("src/web/lib/desktop-shell.ts")).toMatch(/Electron/i);
     expect(read("src/web/lib/desktop-shell.ts")).toContain("focusLoginWindow");
     expect(read("src/desktop/preload.cjs")).toContain("focusMainWindow");
