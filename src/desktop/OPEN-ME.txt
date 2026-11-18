@@ -2,11 +2,14 @@ KeyShield for Mac (unsigned personal build)
 
 Open this way (Apple Silicon zip):
 
-1. Double-click Open-KeyShield.command
-2. If macOS asks, click Open
-3. KeyShield should appear with the login screen
+1. Unzip KeyShield-mac-arm64.zip.
+2. RIGHT-CLICK Open-KeyShield.command and choose Open.
+   (A plain double-click is refused for scripts from a downloaded
+   zip — macOS calls them "unidentified developer". Right-click
+   shows the Open button.)
+3. KeyShield should appear with the login screen.
 
-If that is blocked:
+If that is blocked, run this in Terminal:
 
   xattr -cr /Applications/KeyShield.app
   open /Applications/KeyShield.app
@@ -18,3 +21,8 @@ The zip is the installable Mac bundle.
 
 Same dashboard as https://app.ks.aileena.xyz
 Does not need local Python :8001 or Rust :8000.
+
+If the app opens but shows an error screen, use its Copy diagnostics
+button, or read the launch log at:
+  ~/Library/Logs/KeyShield/keyshield-desktop.log
+BUILD-INFO.txt next to this file records which build you installed.

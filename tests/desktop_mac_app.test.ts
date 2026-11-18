@@ -126,6 +126,13 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).toContain("persist:keyshield");
     expect(main).toContain("packagedRuntimePreflight");
     expect(main).toContain("inspectMacBundle");
+    expect(main).toContain("renderer-server.cjs");
+    expect(main).toContain("showDiagnosticsScreen");
+    expect(main).toContain("probeMounted");
+    expect(main).toContain("render-process-gone");
+    expect(main).toContain("ks-reveal-log");
+    expect(read("src/desktop/preload.cjs")).toContain("revealLog");
+    expect(read("src/desktop/preload.cjs")).toContain("getDiagnostics");
     expect(main).not.toContain("vault-only");
     expect(main).not.toContain("protocol.registerSchemesAsPrivileged");
   });
@@ -171,6 +178,8 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
     expect(build).toContain("https://keyshield-production.up.railway.app");
     expect(build).toContain("build:vite");
+    expect(build).toContain("verifyRendererDist");
+    expect(build).toContain("assets");
   });
 
   it("pack script preserves helper symlinks, uses Electron 33 checks, and ships Open-KeyShield.command", () => {
@@ -184,6 +193,9 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(pack).toContain("skip dmg on");
     expect(pack).not.toContain("Helper.app/Contents/Frameworks/Electron Framework.framework/Resources/icudtl.dat");
     expect(pack).toContain("boot.html");
+    expect(pack).toContain("BUILD-INFO");
+    expect(pack).toContain("ditto");
+    expect(pack).toContain("verifyRendererDist");
   });
 
   it("accepts a real Electron 33 bundle that PR #137 preflight rejected", () => {
@@ -315,9 +327,14 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     const cmd = read("src/desktop/Open-KeyShield.command");
     expect(cmd).toContain("xattr -cr");
     expect(cmd).toContain("/Applications/KeyShield.app");
-    expect(cmd).toContain("codesign --sign - --force --deep");
+    expect(cmd).toContain("ditto");
+    // Ad-hoc signing with --deep is known to break Electron bundles, and
+    // it is unnecessary once quarantine is cleared.
+    expect(cmd).not.toContain("codesign --sign - --force --deep");
     expect(cmd).toContain("open \"$DEST\"");
     expect(read("src/desktop/OPEN-ME.txt")).toContain("Open-KeyShield.command");
-    expect(read("src/desktop/boot.html")).toContain("Open login");
+    expect(read("src/desktop/OPEN-ME.txt")).toContain("RIGHT-CLICK");
+    expect(read("src/desktop/boot.html")).toContain("Retry the app");
+    expect(read("src/desktop/boot.html")).toContain("Copy diagnostics");
   });
 });

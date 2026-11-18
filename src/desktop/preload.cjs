@@ -12,4 +12,6 @@ contextBridge.exposeInMainWorld('keyshieldDesktop', {
   focusMainWindow: () => ipcRenderer.send('ks-focus-main'),
   openExternal: (url) => ipcRenderer.send('ks-open-external', String(url || '')),
   writeText: (text) => ipcRenderer.invoke('ks-clipboard-write', String(text || '')),
+  revealLog: () => ipcRenderer.invoke('ks-reveal-log'),
+  getDiagnostics: () => ipcRenderer.invoke('ks-diagnostics'),
 });

@@ -18,24 +18,43 @@
       justify-content: center;
     }
     main {
-      width: min(440px, 92vw);
-      text-align: center;
-      padding: 32px 24px 40px;
+      width: min(520px, 92vw);
+      text-align: left;
+      padding: 32px 24px 28px;
       border: 1px solid #243365;
       border-radius: 16px;
       background: #131c39;
     }
     h1 {
-      margin: 12px 0 8px;
-      font-size: 28px;
+      margin: 0 0 8px;
+      font-size: 24px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
+      text-align: center;
     }
     p {
       margin: 0 0 12px;
       color: #a8b3d8;
-      line-height: 1.45;
+      line-height: 1.5;
       font-size: 14px;
+    }
+    p.reason {
+      color: #e8ecff;
+      font-weight: 600;
+    }
+    pre {
+      margin: 0 0 16px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #0b1226;
+      border: 1px solid #243365;
+      color: #c6d0f2;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 160px;
+      overflow: auto;
     }
     button, a.btn {
       display: block;
@@ -50,6 +69,7 @@
       font-size: 14px;
       font-weight: 600;
       text-decoration: none;
+      text-align: center;
       cursor: pointer;
     }
     button.primary {
@@ -57,19 +77,80 @@
       color: #0b1226;
       border-color: #e8ecff;
     }
+    .note {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #7d89b5;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>KeyShield</h1>
-    <p>Your API vault is opening. If this screen stays up, the dashboard did not load — open login below.</p>
-    <button class="primary" id="open-login" type="button">Open login</button>
-    <a class="btn" id="live" href="https://app.ks.aileena.xyz/" target="_blank" rel="noreferrer">Open live dashboard in browser</a>
+    <p class="reason" id="reason">The dashboard did not open.</p>
+    <p id="detail">Something went wrong while opening KeyShield. Try the bundled app again, or open the live dashboard in your browser.</p>
+    <pre id="errors" style="display:none"></pre>
+    <button class="primary" id="retry" type="button">Retry the app</button>
+    <button id="open-live" type="button">Open live dashboard in browser</button>
+    <button id="copy-diagnostics" type="button">Copy diagnostics</button>
+    <button id="reveal-log" type="button">Reveal launch log</button>
+    <p class="note" id="log-path"></p>
   </main>
   <script>
-    document.getElementById('open-login').addEventListener('click', function () {
-      location.href = 'https://app.ks.aileena.xyz/';
-    });
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var reason = params.get('reason') || 'launch-failed';
+      var detail = params.get('detail') || '';
+      var errors = params.get('errors') || '';
+      var logPath = params.get('log') || '';
+
+      var reasonText = {
+        'dashboard-load-failed': 'The dashboard did not load.',
+        'blank-renderer': 'The dashboard page loaded, but nothing rendered.',
+        'renderer-crashed': 'The dashboard renderer crashed.',
+        'launch-failed': 'The dashboard did not open.'
+      }[reason] || 'The dashboard did not open.';
+      document.getElementById('reason').textContent = reasonText;
+      if (detail) document.getElementById('detail').textContent = detail;
+
+      var errorsEl = document.getElementById('errors');
+      if (errors) {
+        errorsEl.style.display = 'block';
+        errorsEl.textContent = errors;
+      }
+      if (logPath) {
+        document.getElementById('log-path').textContent = 'Launch log: ' + logPath;
+      }
+
+      var bridge = window.keyshieldDesktop || null;
+
+      document.getElementById('retry').addEventListener('click', function () {
+        location.href = 'https://app.ks.aileena.xyz/';
+      });
+      document.getElementById('open-live').addEventListener('click', function () {
+        var url = 'https://app.ks.aileena.xyz/';
+        if (bridge && bridge.openExternal) bridge.openExternal(url);
+        else window.open(url, '_blank', 'noopener,noreferrer');
+      });
+      document.getElementById('copy-diagnostics').addEventListener('click', function () {
+        var text = [
+          'KeyShield desktop diagnostics',
+          'reason: ' + reason,
+          detail ? 'detail: ' + detail : null,
+          errors ? 'renderer errors: ' + errors : null,
+          logPath ? 'log: ' + logPath : null
+        ].filter(Boolean).join('\n');
+        var done = function () {
+          document.getElementById('copy-diagnostics').textContent = 'Diagnostics copied';
+        };
+        if (bridge && bridge.writeText) bridge.writeText(text).then(done, done);
+        else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+      });
+      document.getElementById('reveal-log').addEventListener('click', function () {
+        if (bridge && bridge.revealLog) bridge.revealLog();
+      });
+    })();
   </script>
 </body>
 </html>
