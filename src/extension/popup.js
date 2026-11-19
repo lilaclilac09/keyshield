@@ -1,19 +1,30 @@
 import { permissionFor } from './lib/policy.js';
 
 const $ = (id) => document.getElementById(id);
-let found = null;
+let selected = null;
 let pendingUpdate = null;
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
   if (!response?.ok) throw new Error(response?.error || 'Vault unavailable — reopen the extension');
   return response;
 }
-function clearCandidates() {
-  found = null;
+function clearPending() {
+  selected = null;
   pendingUpdate = null;
-  $('candidate').replaceChildren();
-  $('candidates').hidden = true;
+  $('confirmation').hidden = true;
   $('confirm').hidden = true;
+  $('preview').textContent = '';
+}
+function showPending(pending) {
+  selected = pending;
+  pendingUpdate = null;
+  $('preview').textContent = pending.preview;
+  $('origin').textContent = pending.origin;
+  $('provider').replaceChildren(...pending.providers.map((provider) => new Option(provider, provider)));
+  $('provider').value = pending.provider;
+  $('confirmation').hidden = false;
+  $('confirm').hidden = true;
+  $('status').textContent = 'Confirm provider and label, then Save. Nothing saved yet.';
 }
 function renderEntries(entries) {
   $('entries').replaceChildren(...entries.map((entry) => new Option(
@@ -40,7 +51,6 @@ action('unlock', async () => {
 });
 action('lock', async () => {
   await send({ type: 'LOCK' });
-  clearCandidates();
   renderEntries([]);
   $('status').textContent = 'Vault locked';
 });
@@ -48,8 +58,11 @@ action('set-idle', async () => {
   await send({ type: 'IDLE', seconds: Number($('idle').value) });
   $('status').textContent = 'Idle lock updated for this session';
 });
-action('find', async () => {
-  clearCandidates();
+action('add', async () => {
+  const value = $('key-value').value;
+  $('key-value').value = '';
+  if (selected) await send({ type: 'CANCEL', id: selected.id });
+  clearPending();
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const permission = permissionFor(tab?.url);
   if (!permission) throw new Error('not a supported provider page');
@@ -57,23 +70,16 @@ action('find', async () => {
   if (!await chrome.permissions.contains(grant) && !await chrome.permissions.request(grant)) {
     throw new Error('not a supported provider page');
   }
-  found = await send({ type: 'FIND' });
-  $('candidate').replaceChildren(...found.candidates.map((item, index) => new Option(
-    `${item.provider} · ${item.preview}`, String(index),
-  )));
-  $('candidates').hidden = !found.candidates.length;
-  $('status').textContent = found.candidates.length ? 'Select a candidate, then Save. Nothing saved yet.' : 'No visible keys found';
+  showPending((await send({ type: 'ADD', value })).pending);
 });
-$('candidate').addEventListener('change', () => {
+$('provider').addEventListener('change', () => {
   pendingUpdate = null;
   $('confirm').hidden = true;
 });
 async function save(confirmDuplicate) {
-  if (!found) throw new Error('Find keys first');
-  const candidate = found.candidates[Number($('candidate').value)];
+  if (!selected) throw new Error('Add or select one key first');
   const payload = confirmDuplicate ? pendingUpdate : {
-    type: 'SAVE', candidate, label: $('label').value || candidate.provider,
-    origin: found.origin, tabId: found.tabId,
+    type: 'SAVE', id: selected.id, provider: $('provider').value, label: $('label').value || $('provider').value,
   };
   if (!payload) throw new Error('Choose Save first');
   const result = await send({ ...payload, confirmDuplicate });
@@ -82,25 +88,31 @@ async function save(confirmDuplicate) {
     $('confirm').hidden = false;
     $('status').textContent = 'Already saved — Update label? Confirm to change only the label.';
   } else {
-    clearCandidates();
+    clearPending();
     await refresh();
     $('status').textContent = 'Saved encrypted on this device';
   }
 }
 action('save', () => save(false));
 action('confirm', () => save(true));
-action('decline', async () => {
-  const candidate = found?.candidates[Number($('candidate').value)];
-  clearCandidates();
-  if (candidate) await send({ type: 'DECLINE', provider: candidate.provider });
-  $('status').textContent = 'Declined — nothing saved';
+action('cancel', async () => {
+  const id = selected?.id;
+  clearPending();
+  await send({ type: 'CANCEL', id, audit: true });
+  $('status').textContent = 'Cancelled — nothing saved';
 });
 action('fill', async () => {
   await send({ type: 'FILL', id: $('entries').value });
   $('status').textContent = 'Filled focused input on the saved origin';
 });
-window.addEventListener('pagehide', clearCandidates);
+window.addEventListener('pagehide', () => {
+  if (selected) chrome.runtime.sendMessage({ type: 'CANCEL', id: selected.id }).catch(() => {});
+  clearPending();
+});
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.vault) refresh();
 });
+if (location.pathname === '/confirm.html') $('add-form').hidden = true;
+try { showPending((await send({ type: 'PENDING' })).pending); }
+catch (error) { if (location.pathname === '/confirm.html') $('status').textContent = error.message; }
 await refresh();

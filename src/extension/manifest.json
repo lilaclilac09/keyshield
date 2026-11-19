@@ -2,11 +2,12 @@
   "manifest_version": 3,
   "name": "KeyShield — Device Vault",
   "version": "2.0.0",
-  "description": "Find keys only on request; save encrypted on this device.",
+  "description": "Save one selected or pasted key, encrypted on this device.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "optional_host_permissions": [
     "https://platform.openai.com/*",

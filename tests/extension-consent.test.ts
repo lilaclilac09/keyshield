@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { webcrypto } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { detectPage, PATTERNS, pairAWS } from '../src/extension/lib/detect.js';
+import { recognizeValue, PATTERNS } from '../src/extension/lib/recognize.js';
 import { PROVIDER_ORIGINS, permissionFor, requireProvider } from '../src/extension/lib/policy.js';
 import { LocalVault, ITERATIONS, audit } from '../src/extension/lib/vault.js';
 
@@ -22,57 +22,26 @@ function storage() {
   };
 }
 
-function rootFor(html: string) {
-  const nodes = [...html.matchAll(/<(input|code|pre|output)\b([^>]*)>([\s\S]*?)<\/\1>|<input\b([^>]*)>/g)].map((match) => {
-    const attrs = match[2] || match[4] || '';
-    return {
-      tagName: (match[1] || 'input').toUpperCase(),
-      type: attrs.match(/type="([^"]+)"/)?.[1] || 'text',
-      value: attrs.match(/value="([^"]*)"/)?.[1] || '',
-      innerText: (match[3] || '').replace(/<[^>]+>/g, ''),
-      parentElement: null,
-      hidden: attrs.includes('hidden'),
-      getClientRects: () => [1],
-    };
-  });
-  return {
-    location: { origin }, querySelectorAll: () => nodes,
-    defaultView: { getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }) },
-    createTreeWalker(el) {
-      let visited = false;
-      return { nextNode() { if (visited) return null; visited = true; return { parentElement: el, textContent: el.innerText }; } };
-    },
-  };
-}
-
 beforeAll(() => { Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true }); });
 
-describe('consent detector (synthetic adapter)', () => {
-  it('detects all nine complete FAKE samples in code blocks and returns only candidates', () => {
-    const hits = detectPage(patterns, origin, rootFor(readFileSync(`${directory}code-block.html`, 'utf8')));
-    expect(hits.map((hit) => hit.value).sort()).toEqual(samples.map((sample) => sample.value).sort());
-    expect(Object.keys(hits[0]).sort()).toEqual(['preview', 'provider', 'value']);
-    expect(hits.every((hit) => !hit.preview.includes('FAKE'))).toBe(true);
-    expect(pairAWS(hits).find((hit) => hit.provider === 'aws')?.value).toContain(samples[5].value);
-  });
-  it.each(['negative', 'empty', 'reveal'])('%s does not reveal a candidate', (name) => {
-    expect(detectPage(patterns, origin, rootFor(readFileSync(`${directory}${name}.html`, 'utf8')))).toEqual([]);
-  });
-  it('reads inputs and environment snippets', () => {
-    for (const [name, count] of [['input', 1], ['env', 3]] as const) {
-      expect(detectPage(patterns, origin, rootFor(readFileSync(`${directory}${name}.html`, 'utf8')))).toHaveLength(count);
+describe('single-value recognition (synthetic adapter)', () => {
+  it('recognizes each complete sample separately, never a page or multiple values', () => {
+    for (const sample of samples) {
+      expect(recognizeValue(sample.value, patterns)).toEqual({ provider: sample.provider, value: sample.value, preview: `••••${sample.value.slice(-4)}` });
     }
+    expect(recognizeValue(samples.map((sample) => sample.value).join('\n'), patterns)).toBeNull();
+    expect(recognizeValue(readFileSync(`${directory}code-block.html`, 'utf8'), patterns)).toBeNull();
   });
-  it('ignores masked, password, hidden and wrong-origin values', () => {
-    const value = samples[0].value;
-    for (const html of [`<input value="${value}****">`, `<input type="password" value="${value}">`, `<input hidden value="${value}">`]) {
-      expect(detectPage(patterns, origin, rootFor(html))).toEqual([]);
+  it('rejects negatives, empty, masked, oversized and surrounding page text', () => {
+    const { negatives } = JSON.parse(readFileSync(`${directory}keys.json`, 'utf8'));
+    for (const value of [...negatives.map((sample) => sample.value), '', '••••••••', `${samples[0].value}****`, `key: ${samples[0].value}`, 'x'.repeat(8193), null]) {
+      expect(recognizeValue(value, patterns)).toBeNull();
+      expect(recognizeValue(value)).toBeNull();
     }
-    expect(detectPage(patterns, 'https://evil.test', rootFor(`<output>${value}</output>`))).toEqual([]);
   });
   it('keeps the production patterns separate from the adapter', () => {
     expect(JSON.stringify(PATTERNS)).not.toContain('FAKE');
-    expect(pairAWS([])).toEqual([]);
+    for (const sample of samples) expect(recognizeValue(sample.value)).toBeNull();
   });
 });
 
@@ -91,7 +60,7 @@ describe('provider policy', () => {
 });
 
 describe('popup permission consent', () => {
-  it.each([false, true])('requests a missing optional permission only on Find (accepted=%s)', async (accepted) => {
+  it.each([false, true])('requests a missing optional permission only on Add key (accepted=%s)', async (accepted) => {
     const handlers = new Map<string, () => Promise<void>>();
     const nodes = new Map<string, any>();
     const document = { getElementById(id: string) {
@@ -101,20 +70,20 @@ describe('popup permission consent', () => {
     const messages: string[] = [];
     const grants: any[] = [];
     const chrome = {
-      runtime: { async sendMessage(message) { messages.push(message.type); return message.type === 'FIND' ? { ok: true, candidates: [] } : { ok: false }; } },
+      runtime: { async sendMessage(message) { messages.push(message.type); return message.type === 'ADD' ? { ok: true, pending: { id: 'one', preview: '••••AAAA', provider: 'openai', origin, providers: ['openai'] } } : { ok: false }; } },
       tabs: { async query() { return [{ url: 'https://platform.openai.com/api-keys' }]; } },
       permissions: { async contains() { return false; }, async request(grant) { grants.push(grant); return accepted; } },
       storage: { onChanged: { addListener() {} } },
     };
     const source = readFileSync('src/extension/popup.js', 'utf8').replace(/^import[^\n]+\n/, '');
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-    await new AsyncFunction('permissionFor', 'document', 'chrome', 'window', source)(permissionFor, document, chrome, { addEventListener() {} });
+    await new AsyncFunction('permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(permissionFor, document, chrome, { addEventListener() {} }, { pathname: '/popup.html' }, function () {});
     expect(grants).toEqual([]);
-    expect(messages).toEqual(['LIST']);
-    await handlers.get('find')!();
+    expect(messages).toEqual(['PENDING', 'LIST']);
+    await handlers.get('add')!();
     expect(grants).toEqual([{ origins: ['https://platform.openai.com/*'] }]);
-    expect(messages.includes('FIND')).toBe(accepted);
-    expect(nodes.get('status').textContent).toBe(accepted ? 'No visible keys found' : 'not a supported provider page');
+    expect(messages.includes('ADD')).toBe(accepted);
+    expect(nodes.get('status').textContent).toBe(accepted ? 'Confirm provider and label, then Save. Nothing saved yet.' : 'not a supported provider page');
   });
 });
 
@@ -186,7 +155,7 @@ describe('extension security surface', () => {
   it('manifests match shared policy without broad or passive capabilities', () => {
     for (const name of ['manifest.json', 'manifest.firefox.json']) {
       const manifest = JSON.parse(readFileSync(`src/extension/${name}`, 'utf8'));
-      expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting']);
+      expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting', 'contextMenus']);
       expect(manifest.optional_host_permissions).toEqual(PROVIDER_ORIGINS.map((host) => `${host}/*`));
       for (const field of ['content_scripts', 'host_permissions', 'externally_connectable']) expect(manifest[field]).toBeUndefined();
       expect(JSON.stringify(manifest)).not.toMatch(/<all_urls>|clipboardRead|\.test/);
@@ -196,6 +165,9 @@ describe('extension security surface', () => {
     function sources(dir: string): string[] {
       return readdirSync(dir, { withFileTypes: true }).flatMap((file) => file.isDirectory() ? (file.name === 'safari-wrapper' ? [] : sources(resolve(dir, file.name))) : /\.(js|html)$/.test(file.name) ? [readFileSync(resolve(dir, file.name), 'utf8')] : []);
     }
-    expect(sources('src/extension').join('\n')).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|clipboard|MutationObserver|tabs\.sendMessage|onMessageExternal|\/manage\/|session-bridge|pending.vault|auto_store/);
+    expect(sources('src/extension').join('\n')).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|clipboard|MutationObserver|tabs\.sendMessage|onMessageExternal|\/manage\/|session-bridge|pending.vault|auto_store|detectPage|querySelectorAll|createTreeWalker|innerText|Find keys on this page/);
+    const background = readFileSync('src/extension/background.js', 'utf8');
+    expect(background.match(/scripting\.executeScript/g)).toHaveLength(1);
+    expect(background.indexOf('scripting.executeScript')).toBeGreaterThan(background.indexOf("case 'FILL'"));
   });
 });

@@ -1,14 +1,71 @@
 import './browser-api.js';
-import { requireProvider } from './lib/policy.js';
-import { PATTERNS, detectPage, pairAWS } from './lib/detect.js';
+import { PROVIDER_ORIGINS, requireProvider } from './lib/policy.js';
+import { PATTERNS, recognizeValue } from './lib/recognize.js';
 import { LocalVault, audit } from './lib/vault.js';
 
 const vault = new LocalVault(chrome.storage.local);
+const providers = [...new Set(PATTERNS.map((pattern) => pattern.provider))];
+const menuOptions = {
+  id: 'save-selection', title: 'Save selection to KeyShield', contexts: ['selection'],
+  documentUrlPatterns: PROVIDER_ORIGINS.flatMap((origin) => origin === 'https://github.com'
+    ? [`${origin}/settings`, `${origin}/settings/*`] : [`${origin}/*`]),
+};
+let pending = null;
 let serial = (async () => {
   const stored = await chrome.storage.local.get(null);
   const legacy = Object.keys(stored).filter((key) => !['vault', 'auditLog'].includes(key));
   if (legacy.length) await chrome.storage.local.remove(legacy);
 })();
+
+function pendingMetadata() {
+  if (!pending) throw new Error('No pending value — add or select a key again');
+  if (pending.error) throw new Error(pending.error);
+  const { id, provider, preview, origin } = pending;
+  return { id, provider, preview, origin, providers };
+}
+
+function prepare(value, tab, origin) {
+  pending = null;
+  const candidate = recognizeValue(value);
+  if (!candidate) throw new Error('Not a recognised key, nothing saved');
+  pending = { ...candidate, id: crypto.randomUUID(), tabId: tab.id, origin };
+  return pendingMetadata();
+}
+
+async function handleSelection(info, tab) {
+  if (info.menuItemId !== menuOptions.id) return;
+  pending = null;
+  try {
+    const origin = await requireProvider(tab?.url, chrome.permissions);
+    if (!tab?.id) throw new Error('not a supported provider page');
+    prepare(info.selectionText, tab, origin);
+  } catch (error) {
+    pending = { id: crypto.randomUUID(), error: error.message };
+  }
+  const selected = pending;
+  try {
+    const window = await chrome.windows.create({ url: chrome.runtime.getURL('confirm.html'), type: 'popup', width: 410, height: 750 });
+    if (pending === selected) pending.windowId = window.id;
+  } catch (error) {
+    pending = null;
+    throw error;
+  }
+  return { ok: !selected.error, error: selected.error };
+}
+
+async function registerMenu() {
+  if (!chrome.contextMenus) return;
+  await chrome.contextMenus.removeAll();
+  chrome.contextMenus.create(menuOptions);
+}
+chrome.runtime.onInstalled.addListener(registerMenu);
+chrome.runtime.onStartup.addListener(registerMenu);
+chrome.contextMenus?.onClicked.addListener((info, tab) => {
+  serial = serial.catch(() => {}).then(() => handleSelection(info, tab));
+});
+chrome.windows?.onRemoved.addListener((id) => {
+  if (pending?.windowId === id) pending = null;
+});
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -33,33 +90,42 @@ async function handle(message) {
       return {};
     case 'LIST':
       return { entries: vault.list() };
-    case 'FIND': {
+    case 'ADD': {
+      pending = null;
       const { tab, origin } = await activeTab();
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, func: detectPage, args: [PATTERNS, origin],
-      });
-      return { candidates: pairAWS(results[0]?.result || []), origin, tabId: tab.id };
+      return { pending: prepare(message.value, tab, origin) };
     }
-    case 'DECLINE': {
-      const { origin } = await activeTab();
-      await audit(chrome.storage.local, 'declined', { provider: message.provider, origin });
+    case 'PENDING':
+      return { pending: pendingMetadata() };
+    case 'CANCEL': {
+      if (!pending || pending.id !== message.id) return {};
+      const cancelled = pending;
+      pending = null;
+      if (!cancelled.error && message.audit === true) await audit(chrome.storage.local, 'declined', cancelled);
       return {};
     }
     case 'SAVE': {
       vault.requireUnlocked();
-      const { tab, origin } = await activeTab();
-      if (origin !== message.origin || tab.id !== message.tabId) throw new Error('Page changed — find keys again');
-      const { provider, value, preview } = message.candidate || {};
-      if (typeof value !== 'string' || !value || typeof provider !== 'string') throw new Error('Select a candidate first');
+      pendingMetadata();
+      if (pending.id !== message.id) throw new Error('No pending value — add or select a key again');
+      const selected = pending;
+      const tab = await chrome.tabs.get(selected.tabId);
+      const origin = await requireProvider(tab.url, chrome.permissions);
+      if (origin !== selected.origin) throw new Error('Page changed — add or select the key again');
+      const { value, preview } = selected;
+      const provider = message.provider;
+      if (!providers.includes(provider)) throw new Error('Choose a supported provider');
       const result = await vault.save({ provider, value, preview, origin }, message.label, message.confirmDuplicate === true);
-      if (result.saved) await audit(chrome.storage.local, 'saved', { provider, origin });
+      if (result.saved) {
+        pending = null;
+        await audit(chrome.storage.local, 'saved', { provider, origin });
+      }
       return result;
     }
     case 'FILL': {
       const entry = vault.get(message.id);
       const { tab, origin } = await activeTab();
       if (origin !== entry.origin) throw new Error('Fill refused: this key belongs to another origin');
-      if (entry.provider === 'aws') throw new Error('AWS pairs cannot fill a single input');
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: (value, boundOrigin) => {
@@ -83,7 +149,7 @@ async function handle(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('popup.html')) return false;
+  if (sender.id !== chrome.runtime.id || !['popup.html', 'confirm.html'].some((page) => sender.url === chrome.runtime.getURL(page))) return false;
   serial = serial.catch(() => {}).then(async () => {
     try { respond({ ok: true, ...await handle(message) }); }
     catch (error) { respond({ ok: false, error: error.message }); }

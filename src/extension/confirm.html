@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Confirm KeyShield save</title>
+<style>
+body { font: 14px system-ui; width: 350px; padding: 16px; color: #172435; background: #f6f8fb; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+button, input, select { box-sizing: border-box; padding: 9px; margin: 5px 0; width: 100%; }
+button { cursor: pointer; }
+label { display: block; margin-top: 8px; }
+#status { min-height: 36px; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+</style>
+<h1>KeyShield</h1>
+<p>Device-local. Nothing saved until you choose Save.</p>
+<label>Vault passphrase (12+ characters)<input id="passphrase" type="password" autocomplete="off"></label>
+<button id="unlock">Create / unlock vault</button>
+<button id="lock">Lock vault</button>
+<label>Idle lock (seconds)<input id="idle" type="number" value="60" min="1" max="3600"></label>
+<button id="set-idle">Set idle lock</button>
+<hr>
+<section id="add-form" hidden>
+<label>Paste or type one key<input id="key-value" type="password" autocomplete="off"></label>
+<button id="add">Add key</button>
+</section>
+<section id="confirmation" hidden>
+<p id="preview"></p>
+<p id="origin"></p>
+<label>Provider<select id="provider"></select></label>
+<label>Label<input id="label" maxlength="100"></label>
+<button id="save">Save</button>
+<button id="confirm" hidden>Already saved — Update label?</button>
+<button id="cancel">Cancel</button>
+</section>
+<hr>
+<label>Saved keys<select id="entries"></select></label>
+<button id="fill">Fill into this page</button>
+<p id="status" role="status"></p>
+<script src="browser-api.js"></script>
+<script type="module" src="popup.js"></script>
+</html>
