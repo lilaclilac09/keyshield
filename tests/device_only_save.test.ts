@@ -21,7 +21,7 @@ import { apiFetch } from '../src/web/lib/auth';
 import { connectOpenRouter, fetchOpenRouterStatus } from '../src/web/lib/openrouter-interface';
 import { detectKeyOnServer, storeDetectedKeys } from '../src/web/lib/keychain';
 import { flushPendingVaultHits } from '../src/web/lib/vault-list';
-import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED } from '../src/web/lib/device-save';
+import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED, saveKeyOnDevice } from '../src/web/lib/device-save';
 import { registerSavingSecret } from '../src/web/lib/secret-guard';
 import { emitAppFeedback } from '../src/web/lib/app-feedback';
 import { humanActionError } from '../src/web/lib/human-usable';
@@ -151,6 +151,67 @@ describe.each(entries)('%s device-only save', (name, save) => {
 });
 
 describe('central guards and consent', () => {
+  it('decrypts, lists and reveals legacy encrypted entries without rewriting them on read', async () => {
+    const key = await vaultCrypto.deriveMasterKey(new Uint8Array(32).fill(7).buffer);
+    const legacy = { entries: { openai: { upstream: 'openai', apiKey: raw, addedAt: 123 } }, updatedAt: 123 };
+    const cipher = await vaultCrypto.encryptVault(key, legacy);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ token: 'synthetic-token', expiresAt: Date.now() + 600000 }))
+      .mockResolvedValueOnce(Response.json(cipher));
+    await unlock();
+    expect(vaultSession.listEntries()).toEqual([legacy.entries.openai]);
+    const vault = render(() => useVaults('', ''));
+    vault.refresh();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(1));
+    expect(hooks.states[0][0]).toMatchObject({ id: 'device:openai', upstream: 'openai', name: 'OpenAI' });
+    await expect(vault.decryptItem('device:openai')).resolves.toBe(raw);
+    expect(requests.some(({ body }) => body.includes('ciphertext'))).toBe(false);
+    expect(vaultSession.listEntries()).toEqual([legacy.entries.openai]);
+    await vault.deleteItem('device:openai');
+    expect(vaultSession.listEntries()).toEqual([]);
+    expectPrivate();
+  });
+  it('round-trips modal and quick-paste labels and expiry in ciphertext and renders device expiry warnings', async () => {
+    await unlock();
+    const expiry = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const vault = render(() => useVaults('', ''));
+    await vault.addItem({ upstream: 'openai', rawKey: raw, name: 'My development key', expiryDate: expiry, domain: 'openai.com' });
+    const first = '11111111-1111-4111-8111-111111111111';
+    const second = '22222222-2222-4222-8222-222222222222';
+    await storeDetectedKeys(`Panthermaze\n${first}\n${expiry}\nHeronplanet\n${second}\n2030-12-31`);
+    const key = await vaultCrypto.deriveMasterKey(new Uint8Array(32).fill(7).buffer);
+    const payload = JSON.parse(requests.filter(({ body }) => body.includes('ciphertext')).at(-1)!.body);
+    const decrypted = await vaultCrypto.decryptVault(key, payload);
+    expect(decrypted.entries.openai).toMatchObject({ name: 'My development key', expiresAt: expiry, domain: 'openai.com' });
+    expect(decrypted.entries.helius).toMatchObject({ apiKey: first, name: 'Panthermaze', expiresAt: expiry });
+    expect(decrypted.entries['helius#2']).toMatchObject({ apiKey: second, name: 'Heronplanet', expiresAt: '2030-12-31' });
+    vault.refresh();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(3));
+    const items = hooks.states[0];
+    expect(items[0]).toMatchObject({ name: 'My development key', expiryDate: expiry, domain: 'openai.com' });
+    expect(items[1]).toMatchObject({ name: 'Panthermaze', expiryDate: expiry });
+    expect(items[2]).toMatchObject({ name: 'Heronplanet', expiryDate: '2030-12-31' });
+    hooks.states = [];
+    const tree = render(() => VaultSection({ ...vaultProps, items, total: 3 }));
+    const visible = JSON.stringify(findNode(tree, (node) => node.props?.['data-testid'] === 'vault-saved-apis'));
+    expect(visible).toContain('Panthermaze');
+    expect(visible).toContain('Heronplanet');
+    expect(visible).toContain('soon');
+    for (const secret of [raw, first, second]) expectPrivate(secret);
+  });
+  it('masks raw or escaped credential labels and drops secret-bearing metadata fields before encryption', async () => {
+    await unlock();
+    await saveKeyOnDevice('openai', raw, { name: `label ${JSON.stringify(raw).replace(/s/g, '\\u0073')}`, domain: raw, expiresAt: raw });
+    const entry = vaultSession.listEntries()[0];
+    expect(entry.name).toBe(`${raw.slice(0, 6)}…${raw.slice(-4)}`);
+    expect(entry.domain).toBeUndefined();
+    expect(entry.expiresAt).toBeUndefined();
+    expect(JSON.stringify({ ...entry, apiKey: undefined })).not.toContain(raw);
+    const release = registerSavingSecret(raw);
+    try { await expect(apiFetch('/synthetic', { body: JSON.stringify({ metadata: { name: raw } }) })).rejects.toThrow('Refusing request'); }
+    finally { release(); }
+    expectPrivate();
+  });
   it('OpenRouter status refresh cannot replace a device save with stale hosted status', async () => {
     await unlock();
     let finish!: (response: Response) => void;

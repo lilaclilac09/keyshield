@@ -75,10 +75,11 @@ function entryToVault(entry: VaultEntry): VaultItem {
     const meta = providerMeta(upstream);
     return {
       id: `device:${entry.upstream}`,
-      name: `${meta.name}${entry.upstream.slice(upstream.length)}`,
+      name: entry.name || `${meta.name}${entry.upstream.slice(upstream.length)}`,
       type: 'api_key',
       value: `${API_BASE}/proxy/${upstream}/`,
-      domain: meta.domain,
+      domain: entry.domain || meta.domain,
+      expiryDate: entry.expiresAt,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
       tags: catalogTags(upstream, ['VAULT']),
@@ -89,12 +90,14 @@ function entryToVault(entry: VaultEntry): VaultItem {
   }
   return {
     id: `device:${entry.upstream}`,
-    name: userSecretLabel(entry.upstream),
+    name: entry.name || userSecretLabel(entry.upstream),
     type,
     value: '••••••',
     createdAt: entry.addedAt,
     lastUsedAt: entry.addedAt,
     tags: [type.replace('_', ' ')],
+    domain: entry.domain,
+    expiryDate: entry.expiresAt,
   };
 }
 
@@ -221,7 +224,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
-      await saveKeyOnDevice(upstream, rawKey);
+      await saveKeyOnDevice(upstream, rawKey, { name: data.name, expiresAt: data.expiryDate || undefined, domain: data.domain });
       refresh();
     },
     [refresh],

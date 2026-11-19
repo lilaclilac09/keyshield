@@ -19,6 +19,7 @@ import {
   emptyVault,
   encryptVault,
   type VaultEntry,
+  type VaultEntryMetadata,
   type VaultPlaintext,
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
@@ -210,7 +211,7 @@ export function getDecryptedKey(upstream: string): string | null {
 
 let pendingAddition: Promise<void> = Promise.resolve();
 
-export async function addEntry(upstream: string, apiKey: string): Promise<void> {
+export async function addEntry(upstream: string, apiKey: string, metadata: VaultEntryMetadata = {}): Promise<void> {
   const session = _state;
   const addition = pendingAddition.catch(() => {}).then(async () => {
     if (!session || _state !== session) throw new VaultLockedError();
@@ -221,7 +222,7 @@ export async function addEntry(upstream: string, apiKey: string): Promise<void> 
     let id = upstream;
     for (let suffix = 2; entries[id]; suffix++) id = `${upstream}#${suffix}`;
     await mutate((p) => {
-      p.entries[id] = { upstream: id, apiKey, addedAt: Date.now() };
+      p.entries[id] = { ...metadata, upstream: id, apiKey, addedAt: Date.now() };
     });
   });
   pendingAddition = addition;

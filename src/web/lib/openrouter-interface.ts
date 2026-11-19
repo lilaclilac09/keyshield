@@ -112,7 +112,7 @@ export async function connectOpenRouter(apiKey?: string): Promise<OpenRouterStat
     if (!looksLikeOpenRouterKey(key)) {
       throw new Error('Paste an OpenRouter key (sk-or-…) from https://openrouter.ai/keys');
     }
-    await saveKeyOnDevice(OPENROUTER_DEMO_UPSTREAM, key);
+    await saveKeyOnDevice(OPENROUTER_DEMO_UPSTREAM, key, { name: 'OpenRouter', domain: 'openrouter.ai' });
     window.dispatchEvent(new CustomEvent('ks-openrouter-connected'));
     return deviceOpenRouterStatus(key);
   }

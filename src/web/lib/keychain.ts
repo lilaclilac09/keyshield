@@ -213,7 +213,7 @@ async function writeManageStore(
   upstream: string,
   extra: { name?: string; expiresAt?: string; domain?: string; pageTitle?: string } = {},
 ): Promise<{ id?: string }> {
-  await saveKeyOnDevice(upstream, value);
+  await saveKeyOnDevice(upstream, value, extra);
   return { id: upstream };
 }
 

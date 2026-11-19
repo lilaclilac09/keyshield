@@ -102,7 +102,7 @@ describe("passkey is not required to save", () => {
     expect(home).not.toContain("storeDetectedKey");
     expect(home).not.toContain("ensureVerified");
     expect(home).not.toContain("Verifying with passkey");
-    expect(hook).toContain("await saveKeyOnDevice(upstream, rawKey)");
+    expect(hook).toContain("await saveKeyOnDevice(upstream, rawKey,");
     expect(hook).not.toContain("apiFetch('/manage/store'");
     expect(vault).toContain("DeviceVaultConsent");
     expect(hook).not.toMatch(/await unlock\(\)/);
