@@ -265,8 +265,8 @@ async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'dele
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
     // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
     // protects against silent overwrite (we threw, caller can retry).
-    reportVaultSyncChange(operation, false);
-    throw new VaultSyncChangeError(operation);
+    reportVaultSyncChange(operation, false, 'conflict');
+    throw new VaultSyncChangeError(operation, 'conflict');
   }
   _state.plaintext = next;
   reportVaultSyncChange(operation, true);
