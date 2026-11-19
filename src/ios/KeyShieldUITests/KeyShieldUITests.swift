@@ -119,11 +119,13 @@ final class KeyShieldUITests: XCTestCase {
 
         for attempt in 1...2 {
             tap("approvalDemo.request")
-            XCTAssertTrue(app.staticTexts["KeyShield Demo Agent"].exists)
-            XCTAssertTrue(app.staticTexts["Simulator approval fixture"].exists)
-            XCTAssertTrue(app.staticTexts["Run one mock operation"].exists)
-            XCTAssertTrue(app.staticTexts["POST"].exists)
-            XCTAssertTrue(app.staticTexts["/v1/mock"].exists)
+            XCTAssertTrue(app.navigationBars["Approve operation"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["approvalDemo.requester"].firstMatch.exists)
+            XCTAssertTrue(app.descendants(matching: .any)["approvalDemo.entry"].firstMatch.exists)
+            for text in ["KeyShield Demo Agent", "Simulator approval fixture", "Run one mock operation", "POST", "/v1/mock"] {
+                let label = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text))
+                XCTAssertTrue(label.firstMatch.exists, "Consent is missing \(text)")
+            }
             XCTAssertEqual(app.staticTexts["approval.host"].label, "api.provider.test")
             XCTAssertFalse(app.buttons["approval.useCode"].isEnabled)
             XCTAssertFalse(receipt.exists)
@@ -133,7 +135,7 @@ final class KeyShieldUITests: XCTestCase {
             if attempt == 1, permission.waitForExistence(timeout: 3) { permission.tap() }
             XCTAssertFalse(receipt.waitForExistence(timeout: 1))
             matchFaceID("Demo-0\(attempt * 3)-SystemFaceID", awaiting: receipt)
-            XCTAssertTrue(app.staticTexts["Agent receipt: Approved"].exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Agent receipt: Approved")).firstMatch.exists)
             screenshot("Demo-0\(attempt * 3 + 1)-Approved")
         }
 
@@ -142,11 +144,12 @@ final class KeyShieldUITests: XCTestCase {
         tap("approval.deny")
         XCTAssertTrue(app.staticTexts["approvalDemo.denied"].waitForExistence(timeout: 5))
         XCTAssertFalse(receipt.exists)
-        XCTAssertTrue(app.staticTexts["No active sessions"].exists)
         XCTAssertEqual(UIPasteboard.general.changeCount, clipboardChangeCount)
         screenshot("Demo-08-Denied")
         tap("approvalDemo.disable")
         XCTAssertFalse(request.exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["No active sessions"].exists)
     }
     #else
     func testStandardReleaseDoesNotOfferSimulatorDemo() {
