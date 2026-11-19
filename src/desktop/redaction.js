@@ -18,6 +18,7 @@
       .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
       .replace(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted email]')
       .replace(/FAKE_KEYSHIELD_NOT_A_KEY::(?:Bearer\s+)?[^\s"'<>]+/g, '[redacted]')
+      .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '[redacted]')
       .replace(/\b(?:sk[-_]|ks_|ksv\d_|ksz\d\.)[A-Za-z0-9_+/.=-]+/g, '[redacted]')
       .replace(/\b(?:eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*|[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
       .replace(/[A-Za-z0-9_+/=-]{24,}/g, '[redacted]');

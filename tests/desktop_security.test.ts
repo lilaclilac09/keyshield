@@ -32,6 +32,8 @@ describe('desktop diagnostics redaction — KS-SEC-001/002', () => {
     ['Authorization: Basic short-password', 'short-password'],
     ['Cookie: session=short-secret', 'short-secret'],
     ['Bearer short-secret', 'short-secret'],
+    ['AWS access key AKIAIOSFODNN7EXAMPLE', 'AKIAIOSFODNN7EXAMPLE'],
+    ['AWS session key ASIAIOSFODNN7EXAMPLE', 'ASIAIOSFODNN7EXAMPLE'],
     ['eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiYWxpY2UifQ.signature', 'eyJ1c2VyIjoiYWxpY2UifQ'],
     ['eyJhbGciOiJIUzI1NiJ9.e30.signature', 'eyJhbGciOiJIUzI1NiJ9.e30.signature'],
     ['sk-proj-short-secret ks_short-secret', 'short-secret'],
