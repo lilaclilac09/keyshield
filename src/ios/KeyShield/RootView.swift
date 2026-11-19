@@ -34,6 +34,14 @@ struct RootView: View {
                         Spacer()
                         Button("Lock", systemImage: "lock") { model.lockNow() }.labelStyle(.iconOnly).accessibilityIdentifier("session.lock")
                     }.padding(.horizontal).padding(.vertical, 10).background(.ultraThinMaterial)
+                    if let notice = model.notice {
+                        HStack {
+                            Text(notice).font(.callout).accessibilityIdentifier("session.notice")
+                            Spacer()
+                            Button("Dismiss", systemImage: "xmark") { model.notice = nil }
+                                .labelStyle(.iconOnly).accessibilityIdentifier("notice.dismiss")
+                        }.padding().background(ShieldTheme.accent.opacity(0.15))
+                    }
                     TabView(selection: $tab) {
                         HomeView(tab: $tab).tabItem { Label("Home", systemImage: "square.grid.2x2") }.tag(0)
                         VaultView().tabItem { Label("Vault", systemImage: "key.horizontal") }.tag(1)

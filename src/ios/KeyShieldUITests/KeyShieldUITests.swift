@@ -133,6 +133,18 @@ final class KeyShieldUITests: XCTestCase {
         tap("session.revoke")
         XCTAssertTrue(app.staticTexts["session.revoked"].exists)
     }
+    func testApprovedSimulatedProviderResultIsVisible() {
+        savedKey(); detail(); tap("detail.provider")
+        XCTAssertFalse(app.staticTexts["session.notice"].exists)
+        tap("approval.deny")
+        XCTAssertFalse(app.staticTexts["session.notice"].exists)
+        tap("detail.provider"); approveBiometric()
+        XCTAssertTrue(app.staticTexts["session.notice"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["session.notice"].label, "Provider response: HTTP 200")
+        screenshot("17-SimulatedProviderResult")
+        tap("notice.dismiss")
+        XCTAssertFalse(app.staticTexts["session.notice"].exists)
+    }
     func testRotateBumpsVersion() {
         savedKey(); detail(); tap("detail.rotate")
         type("key.value", rotated, secure: true); done(); tap("key.save")
