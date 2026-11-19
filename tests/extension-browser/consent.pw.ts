@@ -163,10 +163,16 @@ test('KS-EXT-003 masked selection rejected; revealed value accepted', async () =
   await expect(popup.locator('#provider')).toHaveValue('anthropic');
   expect((await state()).pending.value).toBe(samples[1].value);
 });
-test('KS-EXT-004 evil origin and missing permission are refused; menu is origin scoped', async () => {
+test('KS-EXT-004 missing permission needs Save consent; denial and evil origin refused', async () => {
   expect((await state()).menuOptions.documentUrlPatterns).not.toContain('https://evil.test/*');
-  expect(await selection('input')).toMatchObject({ ok: false, error: 'not a supported provider page' });
-  await expect(popup.locator('#confirmation')).toBeHidden();
+  expect(await selection('input')).toMatchObject({ ok: true });
+  await expect(popup.locator('#confirmation')).toBeVisible();
+  await expect(popup.locator('#status')).toHaveText(`Permission needed for ${origin}`);
+  await popup.evaluate(() => { chrome.permissions.request = () => Promise.resolve(false); });
+  await popup.locator('#save').click();
+  await expect(popup.locator('#status')).toHaveText('not a supported provider page');
+  expect(await stored()).toEqual({});
+  expect((await state()).entries).toBeNull();
   await popup.close();
   await page.goto('https://evil.test/input.html');
   expect(await selection('input')).toMatchObject({ ok: false, error: 'not a supported provider page' });

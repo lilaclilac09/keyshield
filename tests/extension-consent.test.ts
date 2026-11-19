@@ -60,7 +60,8 @@ describe('provider policy', () => {
 });
 
 describe('popup permission consent', () => {
-  it.each([false, true])('requests a missing optional permission only on Add key (accepted=%s)', async (accepted) => {
+  const clicks = [['add', '/popup.html'], ['save', '/popup.html'], ['confirm', '/popup.html'], ['fill', '/popup.html'], ['save', '/confirm.html'], ['confirm', '/confirm.html']];
+  it.each(clicks.flatMap(([button, pathname]) => [false, true].map((accepted) => ({ button, pathname, accepted }))))('$pathname $button requests permission synchronously before any other API (accepted=$accepted)', async ({ button, pathname, accepted }) => {
     const handlers = new Map<string, () => Promise<void>>();
     const nodes = new Map<string, any>();
     const document = { getElementById(id: string) {
@@ -69,21 +70,54 @@ describe('popup permission consent', () => {
     } };
     const messages: string[] = [];
     const grants: any[] = [];
+    const calls: string[] = [];
+    let inGesture = false;
+    let allow = true;
+    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: 'https://platform.openai.com', providers: ['openai'], permissionNeeded: true };
     const chrome = {
-      runtime: { async sendMessage(message) { messages.push(message.type); return message.type === 'ADD' ? { ok: true, pending: { id: 'one', preview: '••••AAAA', provider: 'openai', origin, providers: ['openai'] } } : { ok: false }; } },
-      tabs: { async query() { return [{ url: 'https://platform.openai.com/api-keys' }]; } },
-      permissions: { async contains() { return false; }, async request(grant) { grants.push(grant); return accepted; } },
+      runtime: { async sendMessage(message) {
+        calls.push(message.type); messages.push(message.type);
+        if (['PENDING', 'ADD'].includes(message.type)) return { ok: true, pending };
+        if (message.type === 'SAVE') return { ok: true, duplicate: true };
+        return { ok: true, entries: [] };
+      } },
+      tabs: { async query() { calls.push('query'); return [{ url: pathname === '/confirm.html' ? 'chrome-extension://unit/confirm.html' : 'https://platform.openai.com/api-keys' }]; } },
+      permissions: {
+        async contains() { calls.push('contains'); return false; },
+        request(grant) {
+          if (!inGesture) throw new Error('permissions.request after the user gesture');
+          calls.push('request'); grants.push(grant); return Promise.resolve(allow);
+        },
+      },
       storage: { onChanged: { addListener() {} } },
     };
     const source = readFileSync('src/extension/popup.js', 'utf8').replace(/^import[^\n]+\n/, '');
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-    await new AsyncFunction('permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(permissionFor, document, chrome, { addEventListener() {} }, { pathname: '/popup.html' }, function () {});
+    await new AsyncFunction('permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(permissionFor, document, chrome, { addEventListener() {} }, { pathname }, function () {});
     expect(grants).toEqual([]);
     expect(messages).toEqual(['PENDING', 'LIST']);
-    await handlers.get('add')!();
+    expect(nodes.get('status').textContent).toBe('Permission needed for https://platform.openai.com');
+    if (button === 'confirm') {
+      inGesture = true;
+      await handlers.get('save')!();
+      expect(nodes.get('confirm').hidden).toBe(false);
+    }
+    messages.length = 0; calls.length = 0; grants.length = 0;
+    allow = accepted;
+    inGesture = true;
+    queueMicrotask(() => { inGesture = false; });
+    const clicked = handlers.get(button)!();
+    expect(calls[0]).toBe('request');
+    await clicked;
     expect(grants).toEqual([{ origins: ['https://platform.openai.com/*'] }]);
-    expect(messages.includes('ADD')).toBe(accepted);
-    expect(nodes.get('status').textContent).toBe(accepted ? 'Confirm provider and label, then Save. Nothing saved yet.' : 'not a supported provider page');
+    const messageType = button === 'add' ? 'ADD' : button === 'fill' ? 'FILL' : 'SAVE';
+    expect(messages.includes(messageType)).toBe(accepted);
+    expect(calls).not.toContain('query');
+    expect(calls).not.toContain('contains');
+    if (!accepted) {
+      expect(messages).toEqual([]);
+      expect(nodes.get('status').textContent).toBe('not a supported provider page');
+    }
   });
 });
 

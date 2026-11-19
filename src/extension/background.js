@@ -1,5 +1,5 @@
 import './browser-api.js';
-import { PROVIDER_ORIGINS, requireProvider } from './lib/policy.js';
+import { PROVIDER_ORIGINS, permissionFor, requireProvider } from './lib/policy.js';
 import { PATTERNS, recognizeValue } from './lib/recognize.js';
 import { LocalVault, audit } from './lib/vault.js';
 
@@ -20,15 +20,15 @@ let serial = (async () => {
 function pendingMetadata() {
   if (!pending) throw new Error('No pending value — add or select a key again');
   if (pending.error) throw new Error(pending.error);
-  const { id, provider, preview, origin } = pending;
-  return { id, provider, preview, origin, providers };
+  const { id, provider, preview, origin, permissionNeeded } = pending;
+  return { id, provider, preview, origin, permissionNeeded, providers };
 }
 
-function prepare(value, tab, origin) {
+function prepare(value, tab, origin, permissionNeeded = false) {
   pending = null;
   const candidate = recognizeValue(value);
   if (!candidate) throw new Error('Not a recognised key, nothing saved');
-  pending = { ...candidate, id: crypto.randomUUID(), tabId: tab.id, origin };
+  pending = { ...candidate, id: crypto.randomUUID(), tabId: tab.id, origin, permissionNeeded };
   return pendingMetadata();
 }
 
@@ -36,9 +36,10 @@ async function handleSelection(info, tab) {
   if (info.menuItemId !== menuOptions.id) return;
   pending = null;
   try {
-    const origin = await requireProvider(tab?.url, chrome.permissions);
-    if (!tab?.id) throw new Error('not a supported provider page');
-    prepare(info.selectionText, tab, origin);
+    const permission = permissionFor(tab?.url);
+    if (!permission || !tab?.id) throw new Error('not a supported provider page');
+    const granted = await chrome.permissions.contains({ origins: [permission] });
+    prepare(info.selectionText, tab, new URL(tab.url).origin, !granted);
   } catch (error) {
     pending = { id: crypto.randomUUID(), error: error.message };
   }

@@ -3,6 +3,8 @@ import { permissionFor } from './lib/policy.js';
 const $ = (id) => document.getElementById(id);
 let selected = null;
 let pendingUpdate = null;
+let pageGrant = null;
+let selectedGrant = null;
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
   if (!response?.ok) throw new Error(response?.error || 'Vault unavailable — reopen the extension');
@@ -10,6 +12,7 @@ async function send(message) {
 }
 function clearPending() {
   selected = null;
+  selectedGrant = null;
   pendingUpdate = null;
   $('confirmation').hidden = true;
   $('confirm').hidden = true;
@@ -17,6 +20,7 @@ function clearPending() {
 }
 function showPending(pending) {
   selected = pending;
+  selectedGrant = { origins: [`${pending.origin}/*`] };
   pendingUpdate = null;
   $('preview').textContent = pending.preview;
   $('origin').textContent = pending.origin;
@@ -24,7 +28,7 @@ function showPending(pending) {
   $('provider').value = pending.provider;
   $('confirmation').hidden = false;
   $('confirm').hidden = true;
-  $('status').textContent = 'Confirm provider and label, then Save. Nothing saved yet.';
+  $('status').textContent = pending.permissionNeeded ? `Permission needed for ${pending.origin}` : 'Confirm provider and label, then Save. Nothing saved yet.';
 }
 function renderEntries(entries) {
   if (!$('entries')) return;
@@ -36,10 +40,15 @@ async function refresh() {
   try { renderEntries((await send({ type: 'LIST' })).entries); }
   catch { renderEntries([]); }
 }
-function action(id, handler) {
+function action(id, handler, permission = null) {
   $(id).addEventListener('click', async () => {
-    $(id).disabled = true;
-    try { await handler(); }
+    try {
+      const grant = permission === 'page' ? pageGrant : selectedGrant;
+      const request = permission && grant ? chrome.permissions.request(grant) : null;
+      $(id).disabled = true;
+      if (permission && (!request || !await request)) throw new Error('not a supported provider page');
+      await handler();
+    }
     catch (error) { $('status').textContent = error.message; }
     finally { $(id).disabled = false; }
   });
@@ -64,15 +73,8 @@ action('add', async () => {
   $('key-value').value = '';
   if (selected) await send({ type: 'CANCEL', id: selected.id });
   clearPending();
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  const permission = permissionFor(tab?.url);
-  if (!permission) throw new Error('not a supported provider page');
-  const grant = { origins: [permission] };
-  if (!await chrome.permissions.contains(grant) && !await chrome.permissions.request(grant)) {
-    throw new Error('not a supported provider page');
-  }
   showPending((await send({ type: 'ADD', value })).pending);
-});
+}, 'page');
 $('provider').addEventListener('change', () => {
   pendingUpdate = null;
   $('confirm').hidden = true;
@@ -94,8 +96,8 @@ async function save(confirmDuplicate) {
     $('status').textContent = 'Saved encrypted on this device';
   }
 }
-action('save', () => save(false));
-action('confirm', () => save(true));
+action('save', () => save(false), 'selection');
+action('confirm', () => save(true), 'selection');
 action('cancel', async () => {
   const id = selected?.id;
   clearPending();
@@ -105,7 +107,7 @@ action('cancel', async () => {
 if ($('fill')) action('fill', async () => {
   await send({ type: 'FILL', id: $('entries').value });
   $('status').textContent = 'Filled focused input on the saved origin';
-});
+}, 'page');
 window.addEventListener('pagehide', () => {
   if (selected) chrome.runtime.sendMessage({ type: 'CANCEL', id: selected.id }).catch(() => {});
   clearPending();
@@ -114,6 +116,11 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.vault) refresh();
 });
 if (location.pathname === '/confirm.html') $('add-form').hidden = true;
+else {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const permission = permissionFor(tab?.url);
+  pageGrant = permission ? { origins: [permission] } : null;
+}
 try { showPending((await send({ type: 'PENDING' })).pending); }
 catch (error) { if (location.pathname === '/confirm.html') $('status').textContent = error.message; }
 await refresh();
