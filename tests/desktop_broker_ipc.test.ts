@@ -7,7 +7,7 @@ const requireDesktop = createRequire(new URL('../src/desktop/package.json', impo
 const main = readFileSync('src/desktop/main.cjs', 'utf8');
 const preload = readFileSync('src/desktop/preload.cjs', 'utf8');
 
-async function harness(enabled = true, isPackaged = false, syncProxy = false) {
+async function harness(enabled = true, isPackaged = false, syncProxy = false, listenFailure = false) {
   const handlers = new Map<string, Function>();
   const passkey = { register: vi.fn(), get: vi.fn(() => null) };
   const nativeDialog = { showMessageBox: vi.fn(async () => ({ response: 1 })) };
@@ -16,13 +16,15 @@ async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   let changed = () => {};
   const broker = Object.fromEntries(['listAgents', 'registerAgent', 'revokeAgent', 'listRequests', 'deny', 'revokeRequest', 'beginApproval', 'approve', 'invalidateApprovals'].map((name) => [name, vi.fn()]));
   broker.listen = vi.fn(async () => ({ port: 12345 }));
+  if (listenFailure) broker.listen.mockRejectedValueOnce(new Error('EADDRINUSE'));
   broker.onChange = vi.fn((cb) => { changed = cb; });
   const app = { on: vi.fn(), setName: vi.fn(), quit: vi.fn(), requestSingleInstanceLock: () => false,
     isPackaged, getPath: () => '/unused', commandLine: { appendSwitch: vi.fn() } };
   const fetch = vi.fn(async () => Response.json({ challenge: 'observed-challenge', user: { id: 'account' }, rp: { id: 'app.ks.aileena.xyz' } }));
   const protocols = new Map<string, Function>();
   const ses = { fetch, protocol: { handle: (scheme: string, cb: Function) => protocols.set(scheme, cb) } };
-  const context = createContext({ URL, console: { log: vi.fn() }, process: { env: { ...(enabled ? { KS_DESKTOP_BROKER: '1' } : {}), ...(syncProxy ? { KS_DESKTOP_SYNC_PROXY: '1' } : {}) }, platform: 'test' },
+  const errorLog = vi.fn();
+  const context = createContext({ URL, console: { log: vi.fn(), error: errorLog }, process: { env: { ...(enabled ? { KS_DESKTOP_BROKER: '1' } : {}), ...(syncProxy ? { KS_DESKTOP_SYNC_PROXY: '1' } : {}) }, platform: 'test' },
     __dirname: '/unused', require: (name: string) => {
       if (name === 'electron') return { app, dialog: nativeDialog, systemPreferences: preferences, net: { fetch }, ipcMain: { handle: (name: string, cb: Function) => handlers.set(name, cb), on: vi.fn() } };
       if (name === './broker.cjs') return { createBroker: () => broker };
@@ -37,10 +39,17 @@ async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   const win = { isDestroyed: () => false, webContents: wc };
   (context as any).testWindow = win; runInContext('mainWindow = testWindow', context);
   (context as any).testSession = ses;
-  return { handlers, broker, frame, wc, context, passkey, changed, fetch, protocols, nativeDialog, preferences, pinOptions, win };
+  return { handlers, broker, frame, wc, context, passkey, changed, fetch, protocols, nativeDialog, preferences, pinOptions, win, errorLog };
 }
 
 describe('broker IPC main-frame boundary', () => {
+  it('continues normal startup after a broker listen failure', async () => {
+    const w = await harness(true, false, false, true);
+    expect(w.errorLog).toHaveBeenCalledWith('Approval broker unavailable; continuing without it', expect.objectContaining({ message: 'EADDRINUSE' }));
+    expect(runInContext('broker === null && brokerPort === null && registrationObserver === null', w.context)).toBe(true);
+    expect([...w.handlers.keys()].filter((name) => name.startsWith('ks-broker:'))).toEqual([]);
+    expect(w.wc).toBeDefined();
+  });
   it.each(['accepted', 'cancelled', 'dialog failed', 'Touch ID failed', 'Touch ID unavailable'])('uses main-owned native enrollment confirmation: %s', async (mode) => {
     const w = await harness();
     if (mode === 'cancelled') w.nativeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });

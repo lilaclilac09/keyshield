@@ -67,6 +67,17 @@ async function confirmApprovalPasskey({ credentialId }) {
 
 async function startBroker() {
   if (!BROKER_ENABLED || app.isPackaged) return;
+  try { await initializeBroker(); }
+  catch (error) {
+    broker?.server?.close();
+    broker = null;
+    brokerPort = null;
+    registrationObserver = null;
+    console.error('Approval broker unavailable; continuing without it', error);
+  }
+}
+
+async function initializeBroker() {
   const { createBroker } = require('./broker.cjs');
   const { createApprovalPasskey } = require('./approval-passkey.cjs');
   const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN,
