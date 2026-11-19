@@ -29,8 +29,9 @@ import {
 
 import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
 import {
-  isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
+  isVaultUnlocked, lockVault, listEntries, removeEntry,
 } from '../../lib/vault-session';
+import { saveKeyOnDevice } from '../../lib/device-save';
 import type { VaultEntry } from '../../lib/vault';
 import { CodeBlock } from '../ui/CodeBlock';
 import { ZkModeCard } from './ZkModeCard';
@@ -252,7 +253,7 @@ const AddDeviceKeyModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdded }
     setBusy(true);
     setErr('');
     try {
-      await addEntry(provider.id, keyValue);
+      await saveKeyOnDevice(provider.id, keyValue);
       // Wipe local copy immediately — vault-session now owns it.
       setKeyValue('');
       onAdded();
@@ -582,8 +583,6 @@ export const DeviceVaultSection: React.FC = () => {
     setErr('');
     try {
       await registerPasskey('Device Vault');
-      const addr = getWalletAddress();
-      if (addr) setPasskeyTrust(addr, '');
       refresh();
       setPhaseMsg('Unlocking…');
       await requestVaultUnlock();

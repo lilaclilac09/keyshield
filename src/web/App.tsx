@@ -22,7 +22,7 @@ import { VaultSection } from './components/sections/VaultSection';
 import { ZkModeCard } from './components/sections/ZkModeCard';
 import { ActivitySection } from './components/sections/ActivitySection';
 import { fetchKeychainHome, type KeychainHome } from './lib/keychain';
-import { flushPendingVaultHits, shouldRefreshVaultOnVisit, type PendingVaultHit } from './lib/vault-list';
+import { shouldRefreshVaultOnVisit } from './lib/vault-list';
 import { AgentsSection } from './components/sections/AgentsSection';
 import { EphemeralWalletsSection } from './components/sections/EphemeralWalletsSection';
 import { SharingSection } from './components/sections/SharingSection';
@@ -189,21 +189,6 @@ const MainContent: React.FC = () => {
     return () => window.clearInterval(t);
   }, [isAuthenticated, section, refresh, refreshHome]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const onMsg = (e: MessageEvent) => {
-      if (e.source !== window || !e.data) return;
-      const pending = e.data.__ks_pending_vault as PendingVaultHit[] | undefined;
-      if (!Array.isArray(pending) || pending.length === 0) return;
-      void flushPendingVaultHits(pending).then((n) => {
-        if (n > 0) { refresh(); refreshHome(); }
-      });
-    };
-    window.addEventListener('message', onMsg);
-    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
-    return () => window.removeEventListener('message', onMsg);
-  }, [isAuthenticated, refresh, refreshHome]);
-
   const handleLogout = async () => {
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
     try { await disconnect(); } catch {}
@@ -247,7 +232,7 @@ const MainContent: React.FC = () => {
       <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={async (data) => {
         try {
           await addItem(data);
-          emitAppFeedback({ kind: 'success', title: 'Saved to vault', detail: data.name || data.upstream, source: 'save' });
+          emitAppFeedback({ kind: 'success', title: 'Saved to vault', source: 'save' });
           refreshHome();
         } catch (err) {
           emitAppFeedback({
@@ -258,7 +243,7 @@ const MainContent: React.FC = () => {
           });
           throw err;
         }
-      }} initialData={prefilledData} />
+      }} initialData={prefilledData} onUnlock={unlock} />
       <div className="flex flex-1 min-h-0">
         <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => { void copyWithFeedback(fullAddr); }} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
@@ -280,7 +265,7 @@ const MainContent: React.FC = () => {
                 />
               )}
               {section === 'vault' && (<><VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} /><div className="mt-6"><ZkModeCard onUnlock={unlock} unlocking={vaultLoading} /></div></>)}
-              {section === 'activity' && <ActivitySection />}
+              {section === 'activity' && <ActivitySection onUnlock={unlock} />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
               {section === 'sessions' && <SessionsSection onLogout={handleLogout} />}
