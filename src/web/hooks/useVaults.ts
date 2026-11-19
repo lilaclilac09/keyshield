@@ -8,6 +8,7 @@ import {
   removeEntry,
   listEntries,
   isVaultUnlocked,
+  getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
 import {
@@ -73,7 +74,7 @@ function entryToVault(entry: VaultEntry): VaultItem {
   if (type === 'api_key') {
     const meta = providerMeta(upstream);
     return {
-      id: entry.upstream,
+      id: `device:${entry.upstream}`,
       name: `${meta.name}${entry.upstream.slice(upstream.length)}`,
       type: 'api_key',
       value: `${API_BASE}/proxy/${upstream}/`,
@@ -87,7 +88,7 @@ function entryToVault(entry: VaultEntry): VaultItem {
     };
   }
   return {
-    id: entry.upstream,
+    id: `device:${entry.upstream}`,
     name: userSecretLabel(entry.upstream),
     type,
     value: '••••••',
@@ -228,6 +229,11 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const deleteItem = useCallback(
     async (id: string) => {
+      if (id.startsWith('device:')) {
+        await removeEntry(id.slice('device:'.length));
+        refresh();
+        return;
+      }
       setVaultItems((prev) => prev.filter((i) => i.id !== id));
       try {
         if (isVaultUnlocked()) await removeEntry(id);
@@ -245,6 +251,11 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
+    if (id.startsWith('device:')) {
+      const value = getDecryptedKey(id.slice('device:'.length));
+      if (value === null) throw new Error('Unlock your device vault or save the key again.');
+      return value;
+    }
     const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
     if (r.status === 409) {
       const body = (await r.clone().json().catch(() => ({}))) as { error?: string };

@@ -168,9 +168,35 @@ describe('central guards and consent', () => {
     vault.refresh();
     await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(3));
     expect(hooks.states[0].map(({ id, upstream }: any) => [id, upstream])).toEqual([
-      ['helius', 'helius'], ['helius#2', 'helius'], ['helius#3', 'helius'],
+      ['device:helius', 'helius'], ['device:helius#2', 'helius'], ['device:helius#3', 'helius'],
     ]);
     for (const secret of [first, second, third]) expectPrivate(secret);
+  });
+  it('reveals device rows locally, including secondary keys, without colliding with hosted IDs', async () => {
+    await unlock();
+    await connectOpenRouter(raw);
+    await connectOpenRouter(`${raw}-second`);
+    const vault = render(() => useVaults('', ''));
+    requests = [];
+    await expect(vault.decryptItem('device:openrouter')).resolves.toBe(raw);
+    await expect(vault.decryptItem('device:openrouter#2')).resolves.toBe(`${raw}-second`);
+    await expect(vault.decryptItem('device:missing')).rejects.toThrow('Unlock your device vault');
+    expect(requests).toHaveLength(0);
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ value: 'synthetic-hosted-key' }));
+    await expect(vault.decryptItem('openrouter')).resolves.toBe('synthetic-hosted-key');
+    expect(requests).toHaveLength(0);
+    lockVault();
+    await expect(vault.decryptItem('device:openrouter')).rejects.toThrow('Unlock your device vault');
+    expect(requests).toHaveLength(0);
+  });
+  it('deletes a namespaced device row from the device vault, not hosted storage', async () => {
+    await unlock();
+    await connectOpenRouter(raw);
+    requests = [];
+    await render(() => useVaults('', '')).deleteItem('device:openrouter');
+    expect(getDecryptedKey('openrouter')).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes('/manage/vault/') && init?.method === 'DELETE')).toBe(false);
+    expectPrivate();
   });
   it.each([
     ['body', '/synthetic', (secret: string) => ({ method: 'POST', body: JSON.stringify({ value: secret }) })],
