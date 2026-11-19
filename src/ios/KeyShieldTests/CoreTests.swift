@@ -34,20 +34,6 @@ struct TestBiometrics: BiometricAuthorizer {
     let accepted: Bool
     func approve(_ operation: Operation) async throws -> Bool { accepted }
 }
-final class MockURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        do {
-            let (response, data) = try Self.handler!(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
-    }
-    override func stopLoading() {}
-}
-
 final class CoreTests: XCTestCase {
     var clock: TestClock!
     var policy: Policy!
@@ -73,7 +59,6 @@ final class CoreTests: XCTestCase {
     }
     override func tearDownWithError() throws {
         if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
-        MockURLProtocol.handler = nil
     }
     func fixture(_ name: String) throws -> [String: Any] {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "json"))
@@ -86,7 +71,7 @@ final class CoreTests: XCTestCase {
     }
     func grant(_ operation: Operation) throws -> Authorization {
         let challenge = try approvals.begin(operation)
-        return try approvals.approve(challenge.id, code: challenge.code, operation: operation)
+        return try approvals.approve(challenge.id, code: XCTUnwrap(challenge.code), operation: operation)
     }
     func token(_ id: UUID) throws -> String {
         let op = Operation(kind: .agentToken, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock")
@@ -158,35 +143,39 @@ final class CoreTests: XCTestCase {
         let fixture = try fixture("auth")
         XCTAssertEqual((fixture["codes"] as! [[String: Any]])[0]["single_use"] as? Bool, true)
         let op = Operation(kind: .copy, keyId: UUID()), challenge = try approvals.begin(op)
-        XCTAssertNotNil(challenge.code.range(of: "^[0-9]{6}$", options: .regularExpression))
-        _ = try approvals.approve(challenge.id, code: challenge.code, operation: op)
-        XCTAssertThrowsError(try approvals.approve(challenge.id, code: challenge.code, operation: op))
+        let code = try XCTUnwrap(challenge.code)
+        XCTAssertNotNil(code.range(of: "^[0-9]{6}$", options: .regularExpression))
+        _ = try approvals.approve(challenge.id, code: code, operation: op)
+        XCTAssertThrowsError(try approvals.approve(challenge.id, code: code, operation: op))
         let expired = try approvals.begin(op); clock.advance(30)
-        XCTAssertThrowsError(try approvals.approve(expired.id, code: expired.code, operation: op))
+        XCTAssertThrowsError(try approvals.approve(expired.id, code: XCTUnwrap(expired.code), operation: op))
     }
     func testCodeDenyMismatchAndErrorDoesNotEcho() throws {
         let op = Operation(kind: .copy, keyId: UUID()), c = try approvals.begin(op)
         do { _ = try approvals.approve(c.id, code: "sensitive-code", operation: op); XCTFail() }
         catch { XCTAssertFalse(String(describing: error).contains("sensitive-code")) }
-        XCTAssertThrowsError(try approvals.approve(c.id, code: c.code, operation: Operation(kind: .reveal, keyId: op.keyId)))
-        XCTAssertThrowsError(try approvals.approve(c.id, code: c.code, operation: op))
+        XCTAssertThrowsError(try approvals.approve(c.id, code: XCTUnwrap(c.code), operation: Operation(kind: .reveal, keyId: op.keyId)))
+        XCTAssertThrowsError(try approvals.approve(c.id, code: XCTUnwrap(c.code), operation: op))
         let denied = try approvals.begin(op); approvals.deny(denied.id)
-        XCTAssertThrowsError(try approvals.approve(denied.id, code: denied.code, operation: op))
+        XCTAssertThrowsError(try approvals.approve(denied.id, code: XCTUnwrap(denied.code), operation: op))
     }
     func testLockoutPersistsAcrossRestart() throws {
         let op = Operation(kind: .copy, keyId: UUID()), c = try approvals.begin(op)
         for _ in 0..<3 { XCTAssertThrowsError(try approvals.approve(c.id, code: "wrong", operation: op)) }
         let restarted = try ApprovalCenter(clock: clock, policy: policy, store: state, lock: lock)
-        XCTAssertThrowsError(try restarted.begin(op))
-        clock.advance(119); lock.unlock(); XCTAssertThrowsError(try restarted.begin(op))
-        clock.advance(1); _ = try restarted.begin(op)
+        XCTAssertNil(try restarted.begin(op).code)
+        XCTAssertEqual(restarted.codeLockoutRemaining, 120)
+        clock.advance(119); lock.unlock(); XCTAssertNil(try restarted.begin(op).code)
+        XCTAssertEqual(restarted.codeLockoutRemaining, 1)
+        clock.advance(1); XCTAssertNotNil(try restarted.begin(op).code)
+        XCTAssertEqual(restarted.codeLockoutRemaining, 0)
     }
     func testApprovalPersistenceFailureFailsClosed() throws {
         let op = Operation(kind: .copy, keyId: UUID()), c = try approvals.begin(op)
         state.fails = true
-        XCTAssertThrowsError(try approvals.approve(c.id, code: c.code, operation: op))
+        XCTAssertThrowsError(try approvals.approve(c.id, code: XCTUnwrap(c.code), operation: op))
         state.fails = false
-        XCTAssertThrowsError(try approvals.approve(c.id, code: c.code, operation: op))
+        XCTAssertThrowsError(try approvals.approve(c.id, code: XCTUnwrap(c.code), operation: op))
     }
     func testBiometricSingleDisplayedOperation() async throws {
         let op = Operation(kind: .reveal, keyId: UUID()), c = try approvals.begin(op)
@@ -264,39 +253,62 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try sessions.validate(token, method: "POST", url: url))
         try service.restore(empty, passphrase: "synthetic passphrase"); XCTAssertTrue(try vault.list().isEmpty)
     }
-    func testProviderRedactionAndOfflineFailure() async throws {
+    func testProviderReflectionIsHumanRedactedAndAgentMetadataOnly() async throws {
         let id = try entry(), token = try token(id), secret = value
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
-        let executor = ProviderRequestExecutor(vault: vault, audit: audit, session: URLSession(configuration: config))
-        MockURLProtocol.handler = { request in
+        let raw = Data(secret.utf8)
+        let forms = [secret, raw.base64EncodedString(), raw.map { String(format: "%02x", $0) }.joined(), raw.map { String(format: "%02X", $0) }.joined()]
+        let transport = MockProviderTransport { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + secret)
-            let encoded = Data(secret.utf8).base64EncodedString(), hex = Data(secret.utf8).map { String(format: "%02x", $0) }.joined()
-            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Echo": secret])!, Data((secret + encoded + hex).utf8))
+            return ProviderResponse(status: 200, headers: ["Echo": forms.joined()], body: Data(forms.joined().utf8))
         }
-        let result = try await executor.execute(token: token, keyId: id, method: "POST", url: url)
-        XCTAssertEqual(result.status, 200)
-        XCTAssertFalse(String(decoding: result.body, as: UTF8.self).contains(secret))
-        XCTAssertFalse(result.headers.values.contains(where: { $0.contains(secret) }))
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
+        let agent = try await executor.execute(token: token, keyId: id, method: "POST", url: url)
+        let encoded = try JSONEncoder().encode(agent)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["status", "outcome", "byteCount", "correlationId"])
+        XCTAssertEqual(agent.status, 200); XCTAssertEqual(agent.outcome, .success)
+        XCTAssertGreaterThan(agent.byteCount, 0)
+        XCTAssertEqual(try audit.events().last?.correlationId, agent.correlationId)
+        let op = Operation(kind: .providerRequest, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock")
+        let human = try await executor.execute(operation: op, authorization: grant(op))
+        for form in forms {
+            XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains(form))
+            XCTAssertFalse(String(decoding: human.body, as: UTF8.self).contains(form))
+            XCTAssertFalse(human.headers.values.contains(where: { $0.contains(form) }))
+        }
+        XCTAssertTrue(String(decoding: human.body, as: UTF8.self).contains("[REDACTED]"))
+    }
+    func testMockProviderFailureDoesNotRetry() async throws {
+        let id = try entry(), token = try token(id)
         var calls = 0
-        MockURLProtocol.handler = { _ in calls += 1; throw URLError(.notConnectedToInternet) }
-        do { _ = try await executor.execute(token: token, keyId: id, method: "POST", url: url); XCTFail() } catch { XCTAssertEqual(calls, 1) }
+        let transport = MockProviderTransport { _ in calls += 1; throw URLError(.notConnectedToInternet) }
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
+        do { _ = try await executor.execute(token: token, keyId: id, method: "POST", url: url); XCTFail() } catch {}
+        XCTAssertEqual(calls, 1)
     }
     func testProviderRedirectStatusRejected() async throws {
         let id = try entry(), token = try token(id)
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
-        MockURLProtocol.handler = { request in (HTTPURLResponse(url: request.url!, statusCode: 307, httpVersion: nil, headerFields: ["Location": "https://evil.test/collect"])!, Data()) }
-        let executor = ProviderRequestExecutor(vault: vault, audit: audit, session: URLSession(configuration: config))
+        let transport = MockProviderTransport { _ in ProviderResponse(status: 307, headers: ["Location": "https://evil.test/collect"], body: Data()) }
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
         do { _ = try await executor.execute(token: token, keyId: id, method: "POST", url: url); XCTFail() } catch {}
     }
-    func testRedirectDelegateNeverFollows() {
-        let delegate = RefuseRedirects(), session = URLSession(configuration: .ephemeral)
-        let request = URLRequest(url: URL(string: "https://evil.test/collect")!)
-        let response = HTTPURLResponse(url: url, statusCode: 307, httpVersion: nil, headerFields: nil)!
-        var completed = false
-        delegate.urlSession(session, task: session.dataTask(with: url), willPerformHTTPRedirection: response, newRequest: request) {
-            XCTAssertNil($0); completed = true
+    func testProviderRefusesEveryNonMockHostBeforeTransport() async throws {
+        let id = try entry()
+        var calls = 0
+        let transport = MockProviderTransport { _ in calls += 1; return ProviderResponse(status: 200, headers: [:], body: Data()) }
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
+        for host in ["api.openai.com", "api.anthropic.com", "localhost", "127.0.0.1", "other.test", "api.provider.test.evil.test"] {
+            let op = Operation(kind: .providerRequest, keyId: id, host: host, method: "POST", path: "/v1/mock")
+            do { _ = try await executor.execute(operation: op, authorization: grant(op)); XCTFail(host) } catch {}
+            let request = URLRequest(url: URL(string: "https://" + host + "/v1/mock")!)
+            XCTAssertThrowsError(try transport.send(request))
         }
-        XCTAssertTrue(completed); session.invalidateAndCancel()
+        let op = Operation(kind: .agentToken, keyId: id, host: "api.openai.com", method: "POST", path: "/v1/mock")
+        let realHostToken = try sessions.issue(operation: op, authorization: grant(op))
+        do { _ = try await executor.execute(token: realHostToken, keyId: id, method: "POST", url: URL(string: "https://api.openai.com/v1/mock")!); XCTFail() } catch {}
+        XCTAssertEqual(calls, 0)
+        let simulated = try await ProviderRequestExecutor(vault: vault, audit: audit).execute(token: token(id), keyId: id, method: "POST", url: url)
+        XCTAssertEqual(simulated.status, 200)
     }
     func testExpiredGrantAndUnapprovedProvider() throws {
         let id = try entry(), op = Operation(kind: .reveal, keyId: id), auth = try grant(op)
@@ -333,7 +345,35 @@ final class CoreTests: XCTestCase {
         let authorization = try await approvals.approveBiometrically(challenge.id, operation: op, authorizer: TestBiometrics(accepted: true))
         try authorization.consume(for: op)
         XCTAssertThrowsError(try authorization.consume(for: op))
-        XCTAssertThrowsError(try approvals.begin(op))
+        approvals.deny(challenge.id)
+        let freshOperation = Operation(kind: .reveal, keyId: UUID())
+        let fresh = try approvals.begin(freshOperation)
+        XCTAssertNil(fresh.code)
+        XCTAssertEqual(approvals.codeLockoutRemaining, 120)
+        XCTAssertThrowsError(try approvals.approve(fresh.id, code: "000000", operation: freshOperation))
+        let freshAuthorization = try await approvals.approveBiometrically(fresh.id, operation: freshOperation, authorizer: TestBiometrics(accepted: true))
+        try freshAuthorization.consume(for: freshOperation)
+        XCTAssertThrowsError(try freshAuthorization.consume(for: freshOperation))
+        let denied = try approvals.begin(op)
+        approvals.deny(denied.id)
+        do {
+            _ = try await approvals.approveBiometrically(denied.id, operation: op, authorizer: TestBiometrics(accepted: true)); XCTFail()
+        } catch {}
+        XCTAssertNil(try approvals.begin(op).code)
+    }
+    func testDeviceOnlyApprovalIssuesNoCodeAndRemainsSingleUse() async throws {
+        let op = Operation(kind: .copy, keyId: UUID())
+        let id = try approvals.beginDeviceApproval(op)
+        XCTAssertThrowsError(try approvals.approve(id, code: "000000", operation: op))
+        let authorization = try await approvals.approveBiometrically(id, operation: op, authorizer: TestBiometrics(accepted: true))
+        try authorization.consume(for: op)
+        XCTAssertThrowsError(try authorization.consume(for: op))
+        let denied = try approvals.beginDeviceApproval(op)
+        approvals.deny(denied)
+        do { _ = try await approvals.approveBiometrically(denied, operation: op, authorizer: TestBiometrics(accepted: true)); XCTFail() } catch {}
+        let expired = try approvals.beginDeviceApproval(op)
+        clock.advance(policy.codeTTL)
+        do { _ = try await approvals.approveBiometrically(expired, operation: op, authorizer: TestBiometrics(accepted: true)); XCTFail() } catch {}
     }
     func testIdleCountdownDoesNotRenewSession() {
         XCTAssertEqual(lock.secondsUntilLock, 60)
@@ -344,14 +384,13 @@ final class CoreTests: XCTestCase {
         let id = try entry()
         let op = Operation(kind: .providerRequest, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock")
         let authorization = try grant(op)
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MockURLProtocol.self]
         var calls = 0
-        MockURLProtocol.handler = { request in
+        let transport = MockProviderTransport { request in
             calls += 1
             XCTAssertEqual(request.httpMethod, "POST")
-            return (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
+            return ProviderResponse(status: 204, headers: [:], body: Data())
         }
-        let executor = ProviderRequestExecutor(vault: vault, audit: audit, session: URLSession(configuration: config))
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
         let response = try await executor.execute(operation: op, authorization: authorization)
         XCTAssertTrue(response.body.isEmpty); XCTAssertEqual(calls, 1)
         do { _ = try await executor.execute(operation: op, authorization: authorization); XCTFail() } catch {}

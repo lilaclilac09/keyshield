@@ -46,6 +46,15 @@ final class KeyShieldUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
+    #if !DEBUG
+    func testReleaseLaunchWithTestArgumentShowsNormalOnboarding() {
+        XCTAssertTrue(app.buttons["onboarding.create"].waitForExistence(timeout: 5))
+        screenshot("Release-IgnoresUITestMode")
+        tap("onboarding.create"); tap("onboarding.cancel")
+        XCTAssertTrue(app.buttons["onboarding.create"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Home"].exists)
+    }
+    #endif
     func testOnboardingCancelThenCreateAndMainScreens() {
         tap("onboarding.create"); tap("onboarding.cancel")
         XCTAssertTrue(app.buttons["onboarding.create"].exists)
@@ -77,22 +86,32 @@ final class KeyShieldUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Format not recognized"].exists)
         XCTAssertFalse(app.buttons["key.save"].isEnabled)
     }
-    func testCopyWrongCodeLockoutThenBiometric() {
+    func testCopyRequiresDeviceApprovalAndSessionCodesAreUnavailable() {
         savedKey(); detail(); tap("detail.copy")
         XCTAssertFalse(app.staticTexts["detail.clipboard"].exists)
-        tap("approval.useCode")
-        let code = app.staticTexts["approval.code"].label
-        let wrong = code == "000000" ? "111111" : "000000"
-        screenshot("09-Approval")
-        for _ in 0..<3 {
-            type("approval.input", wrong); done(); tap("approval.submitCode")
-        }
-        XCTAssertTrue(app.staticTexts["approval.message"].label.contains("lockout"))
-        screenshot("10-CodeLockout")
-        approveBiometric()
+        XCTAssertFalse(app.buttons["approval.useCode"].isEnabled)
+        XCTAssertEqual(app.buttons["approval.useCode"].label, "Session code — unavailable until secure out-of-band issuance")
+        XCTAssertFalse(app.staticTexts["approval.code"].exists)
+        XCTAssertFalse(app.textFields["approval.input"].exists)
+        XCTAssertFalse(app.buttons["approval.submitCode"].exists)
+        screenshot("09-DeviceApprovalOnly")
+        tap("approval.deny")
+        XCTAssertFalse(app.staticTexts["detail.clipboard"].exists)
+        tap("detail.copy"); approveBiometric()
         XCTAssertTrue(app.staticTexts["detail.clipboard"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["detail.clipboard"].label.contains("Clipboard clears"))
         XCTAssertFalse(app.debugDescription.contains(fixture))
+    }
+    func testBackgroundLocksAndClearsRevealedSecret() {
+        savedKey(); detail(); tap("detail.reveal"); approveBiometric()
+        XCTAssertTrue(app.staticTexts["detail.secret"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.buttons["lock.unlock"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.debugDescription.contains(fixture))
+        screenshot("10-BackgroundLocked")
+        tap("lock.unlock"); tab("Vault"); detail()
+        XCTAssertFalse(app.staticTexts["detail.secret"].exists)
     }
     func testRevealThenLockClearsVisibleSecret() {
         savedKey(); detail(); tap("detail.reveal"); approveBiometric()

@@ -46,7 +46,7 @@ struct DeviceBiometricAuthorizer: BiometricAuthorizer {
 
 final class ApprovalCenter {
     private struct State: Codable { var attempts = 0; var lockoutUntil: Date? }
-    private struct Pending { let operation: Operation; let code: String; let expires: Date }
+    private struct Pending { let operation: Operation; let code: String?; let expires: Date }
     private let clock: Clock
     private let policy: Policy
     private let store: ApprovalStateStore
@@ -66,11 +66,23 @@ final class ApprovalCenter {
         }
     }
     private func persist() throws { try store.write(JSONEncoder().encode(state)) }
-    func begin(_ operation: Operation) throws -> (id: UUID, code: String) {
-        try check()
-        let id = UUID(), code = try SecureRandom.code()
-        pending[id] = Pending(operation: operation, code: code, expires: clock.now.addingTimeInterval(policy.codeTTL))
-        biometricPending[id] = pending[id]
+    func beginDeviceApproval(_ operation: Operation) throws -> UUID {
+        try lock.requireUnlocked()
+        let id = UUID()
+        biometricPending[id] = Pending(operation: operation, code: nil, expires: clock.now.addingTimeInterval(policy.codeTTL))
+        return id
+    }
+    var codeLockoutRemaining: Int {
+        guard let until = state.lockoutUntil else { return 0 }
+        return max(0, Int(ceil(until.timeIntervalSince(clock.now))))
+    }
+    func begin(_ operation: Operation) throws -> (id: UUID, code: String?) {
+        try lock.requireUnlocked()
+        if codeLockoutRemaining == 0 { try check() }
+        let id = UUID(), code = codeLockoutRemaining == 0 ? try SecureRandom.code() : nil
+        let item = Pending(operation: operation, code: code, expires: clock.now.addingTimeInterval(policy.codeTTL))
+        if code != nil { pending[id] = item }
+        biometricPending[id] = item
         return (id, code)
     }
     func deny(_ id: UUID) { pending.removeValue(forKey: id); biometricPending.removeValue(forKey: id) }

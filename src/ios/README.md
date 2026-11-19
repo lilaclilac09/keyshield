@@ -31,6 +31,12 @@ Use a new result-bundle path for each run. To run just one target, add
 This zip contains a Release simulator app, not an IPA or a device-installable app.
 On a Mac with Xcode and a booted iOS 17+ simulator, extract and install it:
 
+An unsigned simulator build can launch onboarding but may fail to create a vault
+because Keychain requires application-identifier/keychain-access-groups entitlements
+(OSStatus -34018). It never falls back to an in-memory store in Release. Use Debug
+UI tests for the isolated harness; a person must provision signing/entitlements
+before checking the normal Keychain and real device-authentication flow.
+
 ```sh
 mkdir -p ~/KeyShield-Simulator
 ditto -x -k ~/KeyShield-iOS-Simulator.zip ~/KeyShield-Simulator
@@ -49,9 +55,9 @@ ditto -c -k --keepParent ~/ks-dd/Build/Products/Release-iphonesimulator/KeyShiel
   ~/KeyShield-iOS-Simulator.zip
 ```
 
-Only synthetic `FAKE_KEYSHIELD_NOT_A_KEY::` fixture envelopes can be stored. Provider requests are human-approved and restricted to approved `.test` hosts. No pasteboard observation or automatic import occurs.
+Only synthetic `FAKE_KEYSHIELD_NOT_A_KEY::` fixture envelopes can be stored. Provider calls are simulated in process for `api.provider.test` only; no URLSession or socket transport exists in the executor. All other hosts are refused. Agent results contain only status, outcome, byte count, and correlation ID, never provider bodies or headers. Human responses are redacted. No pasteboard observation or automatic import occurs.
 
-`-UITestMode` uses an isolated temporary vault, an in-memory key store and lockout store, and a device-authentication stub. Each process starts empty. Outside that mode, unlock/approval uses LocalAuthentication device-owner authentication (Face ID or device passcode); the encryption key is device-only Keychain data. Passkeys, cloud sync, phrase recovery, remote device revocation, and agent transport are explicitly unavailable.
+Debug builds alone support `-UITestMode`: an isolated temporary vault, in-memory key and lockout stores, and a device-authentication stub. Each process starts empty. The simulation button is also compiled only in Debug. Release ignores that argument and contains none of the harness. Outside Debug test mode, unlock/approval uses LocalAuthentication device-owner authentication (Face ID or device passcode); the encryption key is device-only Keychain data. Session-code approval is disabled in the UI until secure out-of-band issuance exists; no code is generated or shown by the UI. Passkeys, cloud sync, phrase recovery, remote device revocation, and agent transport are explicitly unavailable.
 
 Keep encrypted backups and their passphrases safe. Restore replaces entries after authentication and revokes in-memory agent sessions. Recovery screens explain the local-only limitations rather than promising companion-app capabilities.
 
@@ -60,4 +66,4 @@ Keep encrypted backups and their passphrases safe. Restore replaces entries afte
 - Choose an Apple Developer team and configure signing/provisioning before installing on a physical device or distributing through TestFlight. An unsigned device build only checks compilation.
 - Configure a real associated domain, entitlements, and the domain's Apple App Site Association file before implementing and enabling passkeys. The disabled passkey row does not provide authentication.
 - Check real Face ID and device-passcode authentication on a signed physical-device build; the UI-test stub does not verify either.
-- Deliberately review and lift the synthetic-only guard before real use: storage currently accepts only `FAKE_KEYSHIELD_NOT_A_KEY::` envelopes, and provider requests only target approved `.test` hosts. Do not import production credentials into this tester or silently remove either restriction.
+- Deliberately review and lift the synthetic-only guard before real use: storage currently accepts only `FAKE_KEYSHIELD_NOT_A_KEY::` envelopes, and provider calls are in-process mocks for `api.provider.test` only. Do not import production credentials into this tester or silently remove either restriction. A real network transport would require a separate security review.

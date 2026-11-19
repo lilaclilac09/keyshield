@@ -9,9 +9,9 @@ struct AgentsView: View {
                 Section {
                     Text("Agents receive permission, never the key.").font(.headline)
                     Text("No agent transport is connected on iOS. A session allows only its approved HTTPS host, method, and path.").font(.callout).foregroundStyle(.secondary)
-                    if model.canSimulate {
+                    #if DEBUG
                         Button("Simulate agent request", systemImage: "play.rectangle") { model.simulateAgent() }.accessibilityIdentifier("agents.simulate")
-                    }
+                    #endif
                 }
                 Section("Pending requests") {
                     if let id = model.pendingAgent {

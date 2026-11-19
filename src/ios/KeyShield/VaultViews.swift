@@ -105,11 +105,11 @@ struct KeyDetailView: View {
                 } header: { Text("Approval required") }
                 Section("Manage") {
                     Button("Rotate key", systemImage: "arrow.triangle.2.circlepath") { rotating = true }.accessibilityIdentifier("detail.rotate")
-                    if model.canSimulate {
-                        Button("Request approved provider call", systemImage: "network") {
+                    #if DEBUG
+                        Button("Request simulated provider call", systemImage: "network") {
                             model.request(Operation(kind: .providerRequest, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock"))
                         }.accessibilityIdentifier("detail.provider")
-                    }
+                    #endif
                     Button("Delete key", role: .destructive) { deleting = true }.accessibilityIdentifier("detail.delete")
                 }
             }
@@ -125,9 +125,6 @@ struct KeyDetailView: View {
 struct ApprovalView: View {
     @EnvironmentObject private var model: AppModel
     let item: DisplayApproval
-    @State private var usingCode = false
-    @State private var input = ""
-    @State private var attempts = 0
     @State private var message: String?
     @State private var busy = false
     private var remaining: Int { max(0, Int(ceil(item.expires.timeIntervalSince(model.now)))) }
@@ -151,21 +148,8 @@ struct ApprovalView: View {
                             busy = false
                         }
                     }.disabled(busy || remaining == 0).accessibilityIdentifier("approval.biometric")
-                    Button("Approve with session code", systemImage: "number") { usingCode = true }.accessibilityIdentifier("approval.useCode")
-                    if usingCode {
-                        Text(item.code).font(.largeTitle.monospaced().bold()).tracking(5).accessibilityIdentifier("approval.code")
-                        Text("Code expires in \(remaining)s · Single use").font(.caption).accessibilityIdentifier("approval.ttl")
-                        TextField("6-digit session code", text: $input).keyboardType(.numberPad).accessibilityIdentifier("approval.input")
-                        Button("Approve code") {
-                            do { try model.approveCode(input) }
-                            catch {
-                                attempts += 1; input = ""
-                                message = attempts >= model.policy.codeAttemptLimit
-                                    ? "Session code lockout for 120 seconds. You may still approve this displayed operation with Face ID / passcode."
-                                    : "Incorrect code or invalid approval. Attempt \(attempts) of \(model.policy.codeAttemptLimit)."
-                            }
-                        }.disabled(input.isEmpty || attempts >= model.policy.codeAttemptLimit || remaining == 0).accessibilityIdentifier("approval.submitCode")
-                    }
+                    Button("Session code — unavailable until secure out-of-band issuance") {}
+                        .disabled(true).accessibilityIdentifier("approval.useCode")
                     if remaining == 0 { Text("Approval expired. Deny and start again.").foregroundStyle(.orange) }
                     if let message { Text(message).foregroundStyle(.orange).accessibilityIdentifier("approval.message") }
                     Button("Passkey (requires signed build with associated domain)") {}.disabled(true).accessibilityIdentifier("approval.passkey")

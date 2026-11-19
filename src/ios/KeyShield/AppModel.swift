@@ -1,6 +1,7 @@
 import SwiftUI
 import LocalAuthentication
 
+#if DEBUG
 private final class EphemeralKeys: VaultKeyStore {
     private var key: Data?
     func load() throws -> Data? { key }
@@ -15,11 +16,11 @@ private struct TestVaultLocation: VaultLocation { let directory: URL }
 private struct UITestBiometrics: BiometricAuthorizer {
     func approve(_ operation: Operation) async throws -> Bool { true }
 }
+#endif
 
 struct DisplayApproval: Identifiable {
     let id: UUID
     let operation: Operation
-    let code: String
     let expires: Date
 }
 struct DisplaySession: Identifiable {
@@ -41,7 +42,9 @@ final class AppModel: ObservableObject {
     let backup: BackupService
     let clipboard: ClipboardService
     private let approvals: ApprovalCenter?
+    #if DEBUG
     let testMode: Bool
+    #endif
     @Published var created: Bool
     @Published var unlocked = false
     @Published var entries: [VaultEntry] = []
@@ -59,22 +62,29 @@ final class AppModel: ObservableObject {
     @Published var notice: String?
 
     init() {
+        #if DEBUG
         let testing = ProcessInfo.processInfo.arguments.contains("-UITestMode")
         testMode = testing
-        var rules = Policy()
-        if testing { rules.approvedProviders.append("api.provider.test") }
-        #if DEBUG
-        if !rules.approvedProviders.contains("api.provider.test") { rules.approvedProviders.append("api.provider.test") }
         #endif
+        var rules = Policy()
+        rules.approvedProviders.append("api.provider.test")
         policy = rules
         let manager = LockManager(policy: rules)
         lock = manager
         let agents = AgentSessions(policy: rules, lock: manager)
         sessions = agents
+        #if DEBUG
         let location: VaultLocation = testing
             ? TestVaultLocation(directory: FileManager.default.temporaryDirectory.appendingPathComponent("KeyShieldUITest-" + UUID().uuidString))
             : ApplicationSupportLocation()
-        let store = VaultStore(lock: manager, keyStore: testing ? EphemeralKeys() : KeychainVaultKeyStore(), location: location, sessions: agents)
+        let keyStore: VaultKeyStore = testing ? EphemeralKeys() : KeychainVaultKeyStore()
+        let approvalStore: ApprovalStateStore = testing ? EphemeralApprovalState() : DefaultsApprovalStateStore()
+        #else
+        let location: VaultLocation = ApplicationSupportLocation()
+        let keyStore: VaultKeyStore = KeychainVaultKeyStore()
+        let approvalStore: ApprovalStateStore = DefaultsApprovalStateStore()
+        #endif
+        let store = VaultStore(lock: manager, keyStore: keyStore, location: location, sessions: agents)
         vault = store
         let log = AuditLog(url: location.directory.appendingPathComponent("audit.jsonl"), key: { try store.vaultKey() })
         audit = log
@@ -82,20 +92,13 @@ final class AppModel: ObservableObject {
         clipboard = ClipboardService(policy: rules, vault: store, audit: log)
         created = FileManager.default.fileExists(atPath: location.directory.appendingPathComponent("vault.json").path)
         do {
-            approvals = try ApprovalCenter(policy: rules, store: testing ? EphemeralApprovalState() : DefaultsApprovalStateStore(), lock: manager)
+            approvals = try ApprovalCenter(policy: rules, store: approvalStore, lock: manager)
         } catch {
             approvals = nil
             self.error = "Approval storage could not be loaded. Access is disabled."
         }
     }
 
-    var canSimulate: Bool {
-        #if DEBUG
-        return true
-        #else
-        return testMode
-        #endif
-    }
     func perform(_ work: () throws -> Void) {
         do { try work(); error = nil } catch { self.error = "Operation failed. No sensitive details were recorded." }
     }
@@ -109,10 +112,14 @@ final class AppModel: ObservableObject {
     func unlock() async {
         do {
             let accepted: Bool
+            #if DEBUG
             if testMode { accepted = true }
             else {
                 accepted = try await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your KeyShield vault")
             }
+            #else
+            accepted = try await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your KeyShield vault")
+            #endif
             guard accepted else { throw ShieldError.denied }
             lock.unlock(); unlocked = true; notice = nil; refresh()
         } catch { self.error = "Unlock was not approved. Try Face ID / passcode again." }
@@ -160,22 +167,21 @@ final class AppModel: ObservableObject {
     func request(_ operation: Operation) {
         perform {
             guard let approvals else { throw ShieldError.storage }
-            let challenge = try approvals.begin(operation)
-            approval = DisplayApproval(id: challenge.id, operation: operation, code: challenge.code, expires: clock.now.addingTimeInterval(policy.codeTTL))
+            let id = try approvals.beginDeviceApproval(operation)
+            approval = DisplayApproval(id: id, operation: operation, expires: clock.now.addingTimeInterval(policy.codeTTL))
         }
     }
     func denyApproval() {
         if let approval { approvals?.deny(approval.id) }
         approval = nil
     }
-    func approveCode(_ code: String) throws {
-        guard let approval, let approvals else { throw ShieldError.denied }
-        let grant = try approvals.approve(approval.id, code: code, operation: approval.operation)
-        try complete(grant, operation: approval.operation)
-    }
     func approveBiometric() async throws {
         guard let approval, let approvals else { throw ShieldError.denied }
+        #if DEBUG
         let authorizer: BiometricAuthorizer = testMode ? UITestBiometrics() : DeviceBiometricAuthorizer()
+        #else
+        let authorizer: BiometricAuthorizer = DeviceBiometricAuthorizer()
+        #endif
         let grant = try await approvals.approveBiometrically(approval.id, operation: approval.operation, authorizer: authorizer)
         try complete(grant, operation: approval.operation)
     }
@@ -206,10 +212,12 @@ final class AppModel: ObservableObject {
         }
         approval = nil; refresh()
     }
+    #if DEBUG
     func simulateAgent() {
-        guard canSimulate, let entry = entries.first else { error = "Save a synthetic key first."; return }
+        guard let entry = entries.first else { error = "Save a synthetic key first."; return }
         pendingAgent = entry.id
     }
+    #endif
     func revoke(_ id: UUID) {
         guard let i = activeSessions.firstIndex(where: { $0.id == id }) else { return }
         sessions.revoke(activeSessions[i].token); activeSessions[i].revoked = true
