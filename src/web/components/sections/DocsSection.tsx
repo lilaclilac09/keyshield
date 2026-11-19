@@ -4,7 +4,7 @@ import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { API_BASE, getToken } from '../../lib/auth';
+import { API_BASE } from '../../lib/auth';
 import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
 import { TroubleshootingSection } from './TroubleshootingSection';
@@ -122,8 +122,8 @@ export const DocsSection: React.FC = () => {
           Anyone can get their own key at openrouter.ai/keys — KeyShield will not proxy it without a session. Activity → Connect pastes the key into `/manage/store`, vproxy, and Meter.
         </p>
         <div className="space-y-3">
-          <CodeBlock code={openrouterCurlSnippet(getToken() ?? '<TOKEN_HERE>')} />
-          <CodeBlock code={openrouterPythonSnippet(getToken() ?? '<TOKEN_HERE>')} />
+          <CodeBlock code={openrouterCurlSnippet('<YOUR_AGENT_TOKEN>')} />
+          <CodeBlock code={openrouterPythonSnippet('<YOUR_AGENT_TOKEN>')} />
           <p className="text-[11px] text-[#5e6a91]">Files: `src/web/lib/openrouter-interface.ts` · `src/backend/proxy/openrouter_interface.py` · path `{OPENROUTER_CHAT_PATH}`</p>
         </div>
       </Card>
