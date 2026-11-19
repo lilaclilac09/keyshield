@@ -35,7 +35,6 @@ import { saveKeyOnDevice } from '../../lib/device-save';
 import type { VaultEntry } from '../../lib/vault';
 import { CodeBlock } from '../ui/CodeBlock';
 import { ZkModeCard } from './ZkModeCard';
-import { AgentApprovalsPanel } from './AgentApprovalsPanel';
 
 // ── Getting-started tutorial (collapsible, dismissible) ──────────────
 
@@ -681,8 +680,6 @@ export const DeviceVaultSection: React.FC = () => {
       </div>
 
       <GettingStartedGuide />
-
-      {window.keyshieldDesktop?.broker && <AgentApprovalsPanel broker={window.keyshieldDesktop.broker} />}
 
       {err && (
         <div className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-900/60 flex items-start gap-2">
