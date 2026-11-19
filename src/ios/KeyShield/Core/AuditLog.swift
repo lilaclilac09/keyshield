@@ -36,4 +36,10 @@ final class AuditLog {
             return try JSONDecoder().decode(AuditEvent.self, from: Cipher.open(data, key: key()))
         }
     }
+    func archiveUnreadableLog() throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let archive = url.appendingPathExtension("unreadable-" + UUID().uuidString)
+        do { try FileManager.default.moveItem(at: url, to: archive) }
+        catch { throw ShieldError.audit }
+    }
 }

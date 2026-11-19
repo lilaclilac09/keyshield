@@ -31,13 +31,18 @@ final class BackupService {
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
         let entries = try JSONDecoder().decode([Entry].self, from: Cipher.open(envelope.ciphertext, key: derive(passphrase, salt: envelope.salt)))
         guard Set(entries.map { $0.metadata.id }).count == entries.count else { throw ShieldError.invalid }
-        let key = try vault.vaultKey()
+        let existingKey = try vault.keyStore.load()
+        let key = try existingKey ?? SecureRandom.bytes(32)
         let records = try entries.map { entry -> StoredEntry in
             guard let value = String(data: entry.value, encoding: .utf8), value.hasPrefix("FAKE_KEYSHIELD_NOT_A_KEY::"), KeyDetector().detect(value) != nil else { throw ShieldError.invalid }
             return StoredEntry(metadata: entry.metadata, ciphertext: try Cipher.seal(entry.value, key: key))
         }
-        try audit.append(actor: .human, action: .restore, outcome: .success)
+        if existingKey == nil {
+            try vault.keyStore.save(key)
+            try audit.archiveUnreadableLog()
+        }
         try vault.commit(records)
         vault.sessions.revokeAll()
+        try audit.append(actor: .human, action: .restore, outcome: .success)
     }
 }

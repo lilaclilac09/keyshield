@@ -253,6 +253,31 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try sessions.validate(token, method: "POST", url: url))
         try service.restore(empty, passphrase: "synthetic passphrase"); XCTAssertTrue(try vault.list().isEmpty)
     }
+    func testRestoreRecoversMigratedVaultWithoutDeviceKey() throws {
+        let id = try entry(), originalKey = try XCTUnwrap(keys.key)
+        let log = AuditLog(clock: clock, url: directory.appendingPathComponent("audit.jsonl"), key: { try self.vault.vaultKey() })
+        let service = BackupService(vault: vault, audit: log)
+        let backup = try service.export(passphrase: "migration backup")
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let oldVault = try Data(contentsOf: vaultURL)
+        let oldAudit = try Data(contentsOf: directory.appendingPathComponent("audit.jsonl"))
+        keys.key = nil
+        XCTAssertThrowsError(try vault.list())
+        XCTAssertThrowsError(try service.restore(backup, passphrase: "wrong"))
+        XCTAssertThrowsError(try service.restore(Data(backup.dropLast()), passphrase: "migration backup"))
+        XCTAssertNil(keys.key)
+        XCTAssertEqual(try Data(contentsOf: vaultURL), oldVault)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("audit.jsonl")), oldAudit)
+        try service.restore(backup, passphrase: "migration backup")
+        XCTAssertNotEqual(keys.key, originalKey)
+        XCTAssertEqual(try vault.list().map(\.id), [id])
+        let operation = Operation(kind: .reveal, keyId: id)
+        XCTAssertEqual(try vault.withSecret(id, authorization: grant(operation), operation: operation) { $0 }, value)
+        XCTAssertEqual(try log.events().filter { $0.action == .restore }.count, 1)
+        let archives = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("audit.jsonl.unreadable-") }
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(archives.first)), oldAudit)
+    }
     func testProviderReflectionIsHumanRedactedAndAgentMetadataOnly() async throws {
         let id = try entry(), token = try token(id), secret = value
         let raw = Data(secret.utf8)
