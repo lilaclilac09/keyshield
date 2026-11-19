@@ -12,6 +12,7 @@
  */
 
 import { setZkRootFromPrf, clearZkRoot } from './zk';
+import { reportVaultSyncChange, VaultSyncChangeError } from './vault-sync-status';
 import {
   decryptVault,
   deriveMasterKey,
@@ -232,10 +233,10 @@ export async function addEntry(upstream: string, apiKey: string, metadata: Vault
 export async function removeEntry(upstream: string): Promise<void> {
   await mutate((p) => {
     delete p.entries[upstream];
-  });
+  }, 'delete');
 }
 
-async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
+async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete' = 'save'): Promise<void> {
   if (!_state) throw new Error('vault locked');
   const next: VaultPlaintext = {
     entries: { ..._state.plaintext.entries },
@@ -253,14 +254,22 @@ async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
   if (Object.values(next.entries).some(({ apiKey }) => apiKey && outgoing.includes(JSON.stringify(apiKey).slice(1, -1)))) {
     throw new Error('Refusing unsafe vault sync payload');
   }
-  const result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  let result;
+  try {
+    result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  } catch {
+    reportVaultSyncChange(operation, false);
+    throw new VaultSyncChangeError(operation);
+  }
   if (result === 'conflict') {
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
     // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
     // protects against silent overwrite (we threw, caller can retry).
-    throw new Error('vault conflict — another device wrote first; reload to refresh');
+    reportVaultSyncChange(operation, false);
+    throw new VaultSyncChangeError(operation);
   }
   _state.plaintext = next;
+  reportVaultSyncChange(operation, true);
 }
 
 export class VaultLockedError extends Error {

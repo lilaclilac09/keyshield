@@ -18,6 +18,7 @@ import {
 } from '../lib/vault-list';
 import { revealZkItem } from '../lib/zk';
 import { saveKeyOnDevice } from '../lib/device-save';
+import { VaultSyncChangeError } from '../lib/vault-sync-status';
 import { emitAppFeedback } from '../lib/app-feedback';
 import { catalogTags, formatExpiry, providerMeta } from '../lib/provider-catalog';
 
@@ -217,7 +218,12 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const deleteItem = useCallback(
     async (id: string) => {
       if (id.startsWith('device:')) {
-        await removeEntry(id.slice('device:'.length));
+        try {
+          await removeEntry(id.slice('device:'.length));
+        } catch (err) {
+          if (err instanceof VaultSyncChangeError) return;
+          throw err;
+        }
         refresh();
         return;
       }

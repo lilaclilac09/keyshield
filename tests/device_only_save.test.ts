@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect } from 'react';
 import { readFileSync } from 'node:fs';
+import { SAVE_SYNC_FAILED, getVaultSyncStatus, reportVaultSyncChange } from '../src/web/lib/vault-sync-status';
 
 const hooks = vi.hoisted(() => ({ states: [] as any[], index: 0 }));
 vi.mock('react', async (importOriginal) => ({
@@ -101,6 +102,7 @@ function expectPrivate(secret = raw) {
 
 const vaultProps = { items: [], total: 0, searchQuery: '', onAdd: vi.fn(), onDelete: vi.fn(), onDecrypt: vi.fn() };
 async function quickSave(alsoCall: boolean): Promise<void> {
+  reportVaultSyncChange('save', true);
   let tree = render(() => VaultSection(vaultProps));
   findNode(tree, (node) => node.type === 'textarea').props.onChange({ target: { value: raw } });
   tree = render(() => VaultSection(vaultProps));
@@ -109,6 +111,7 @@ async function quickSave(alsoCall: boolean): Promise<void> {
   const last = hooks.states.find((state) => typeof state === 'string' && (state.startsWith(DEVICE_VAULT_REQUIRED) || state.startsWith('Device vault save failed')));
   if (last?.startsWith(DEVICE_VAULT_REQUIRED)) throw new DeviceVaultRequiredError();
   if (last) throw new Error(last);
+  if (getVaultSyncStatus().message) throw new Error(getVaultSyncStatus().message!);
 }
 const entries = [
   ['modal addItem', () => render(() => useVaults('', '')).addItem({ upstream: 'openrouter', rawKey: raw, value: raw, name: raw })],
@@ -141,7 +144,7 @@ describe.each(entries)('%s device-only save', (name, save) => {
     if (failure === 'sync network') failNetwork = true;
     if (failure === 'encryption') vi.spyOn(vaultCrypto, 'encryptVault').mockRejectedValue(new Error(raw));
     if (failure === 'unsafe ciphertext') vi.spyOn(vaultCrypto, 'encryptVault').mockResolvedValue({ version: 1, iv: 'iv', ciphertext: raw, updatedAt: 1 });
-    await expect(save()).rejects.toThrow('Device vault save failed. Unlock the vault and retry.');
+    await expect(save()).rejects.toThrow(failure === 'sync network' ? SAVE_SYNC_FAILED : 'Device vault save failed. Unlock the vault and retry.');
     expect(getDecryptedKey('openrouter')).toBeNull();
     expectPrivate();
     if (failure !== 'sync network') expect(requests).toHaveLength(0);
