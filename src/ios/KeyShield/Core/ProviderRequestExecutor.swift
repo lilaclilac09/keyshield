@@ -66,7 +66,10 @@ final class ProviderRequestExecutor {
             try audit.append(actor: actor, action: .providerRequest, keyId: keyId, outcome: .failure, correlationId: correlationId)
             throw ShieldError.network
         }
-        guard !(300..<400).contains(response.status) else { throw ShieldError.denied }
+        guard !(300..<400).contains(response.status) else {
+            try audit.append(actor: actor, action: .providerRequest, keyId: keyId, outcome: .failure, correlationId: correlationId)
+            throw ShieldError.denied
+        }
         let raw = Data(secret.utf8)
         let forms = [secret, raw.base64EncodedString(), raw.map { String(format: "%02x", $0) }.joined(), raw.map { String(format: "%02X", $0) }.joined()]
         func redact(_ value: String) -> String { forms.reduce(value) { $0.replacingOccurrences(of: $1, with: "[REDACTED]") } }

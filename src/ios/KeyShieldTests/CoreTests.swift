@@ -278,6 +278,34 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(archives.count, 1)
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(archives.first)), oldAudit)
     }
+    func testCopyAndProviderAuditOnlyTheirFinalOutcomeOnce() async throws {
+        let id = try entry()
+        let log = AuditLog(clock: clock, url: directory.appendingPathComponent("audit.jsonl"), key: { try self.vault.vaultKey() })
+        let board = TestPasteboard()
+        let clipboard = ClipboardService(clock: clock, pasteboard: board, vault: vault, audit: log)
+        let copy = Operation(kind: .copy, keyId: id)
+        try clipboard.copy(id, authorization: grant(copy))
+        board.fails = true
+        XCTAssertThrowsError(try clipboard.copy(id, authorization: grant(copy)))
+        let copies = try log.events().filter { $0.action == .copy }
+        XCTAssertEqual(copies.map(\.outcome), [.success, .failure])
+        let operation = Operation(kind: .providerRequest, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock")
+        _ = try await ProviderRequestExecutor(vault: vault, audit: log).execute(operation: operation, authorization: grant(operation))
+        let failure = MockProviderTransport { _ in throw ShieldError.network }
+        do {
+            _ = try await ProviderRequestExecutor(vault: vault, audit: log, transport: failure).execute(operation: operation, authorization: grant(operation)); XCTFail()
+        } catch {}
+        let redirect = MockProviderTransport { _ in ProviderResponse(status: 307, headers: [:], body: Data()) }
+        do {
+            _ = try await ProviderRequestExecutor(vault: vault, audit: log, transport: redirect).execute(operation: operation, authorization: grant(operation)); XCTFail()
+        } catch {}
+        let requests = try log.events().filter { $0.action == .providerRequest }
+        XCTAssertEqual(requests.map(\.outcome), [.success, .failure, .failure])
+        let reveal = Operation(kind: .reveal, keyId: id)
+        XCTAssertThrowsError(try vault.withSecret(id, authorization: grant(reveal), operation: reveal) { _ in throw ShieldError.storage })
+        _ = try vault.withSecret(id, authorization: grant(reveal), operation: reveal) { $0.count }
+        XCTAssertEqual(try log.events().filter { $0.action == .reveal }.map(\.outcome), [.failure, .success])
+    }
     func testProviderReflectionIsHumanRedactedAndAgentMetadataOnly() async throws {
         let id = try entry(), token = try token(id), secret = value
         let raw = Data(secret.utf8)

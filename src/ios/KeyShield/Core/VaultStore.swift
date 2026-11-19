@@ -21,9 +21,9 @@ final class VaultStore {
     let location: VaultLocation
     let sessions: AgentSessions
     private var url: URL { location.directory.appendingPathComponent("vault.json") }
-    private func audit(_ action: AuditEvent.Action, id: UUID? = nil) throws {
+    private func audit(_ action: AuditEvent.Action, id: UUID? = nil, outcome: AuditEvent.Outcome = .success) throws {
         try AuditLog(clock: clock, url: location.directory.appendingPathComponent("audit.jsonl"), key: { try self.vaultKey() })
-            .append(actor: .human, action: action, keyId: id, outcome: .success)
+            .append(actor: .human, action: action, keyId: id, outcome: outcome)
     }
     init(clock: Clock = SystemClock(), lock: LockManager, keyStore: VaultKeyStore = KeychainVaultKeyStore(), location: VaultLocation = ApplicationSupportLocation(), sessions: AgentSessions) {
         self.clock = clock; self.lock = lock; self.keyStore = keyStore; self.location = location; self.sessions = sessions
@@ -102,8 +102,13 @@ final class VaultStore {
         try lock.requireUnlocked()
         guard operation.keyId == id, operation.kind != .agentToken else { throw ShieldError.denied }
         try authorization.consume(for: operation)
-        let result = try secret(id, body: body)
-        try audit(operation.kind == .copy ? .copy : operation.kind == .providerRequest ? .providerRequest : .reveal, id: id)
+        let result: T
+        do { result = try secret(id, body: body) }
+        catch {
+            if operation.kind == .reveal { try audit(.reveal, id: id, outcome: .failure) }
+            throw error
+        }
+        if operation.kind == .reveal { try audit(.reveal, id: id) }
         return result
     }
     private func secret<T>(_ id: UUID, body: (String) throws -> T) throws -> T {

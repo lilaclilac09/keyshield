@@ -30,8 +30,13 @@ final class ClipboardService {
     deinit { timer?.invalidate() }
     func copy(_ id: UUID, authorization: Authorization) throws {
         let expires = clock.now.addingTimeInterval(policy.clipboardClear)
-        try vault.withSecret(id, authorization: authorization, operation: Operation(kind: .copy, keyId: id)) {
-            try pasteboard.write($0, expires: expires)
+        do {
+            try vault.withSecret(id, authorization: authorization, operation: Operation(kind: .copy, keyId: id)) {
+                try pasteboard.write($0, expires: expires)
+            }
+        } catch {
+            try audit.append(actor: .human, action: .copy, keyId: id, outcome: .failure)
+            throw error
         }
         copied = (pasteboard.changeCount, expires)
         clearFailed = false
