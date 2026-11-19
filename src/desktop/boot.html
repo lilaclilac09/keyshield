@@ -89,27 +89,30 @@
   <main>
     <h1>KeyShield</h1>
     <p class="reason" id="reason">The dashboard did not open.</p>
-    <p id="detail">Something went wrong while opening KeyShield. Try the bundled app again, or open the live dashboard in your browser.</p>
+    <p id="detail">Something went wrong while opening KeyShield. Retry this app or quit and reinstall a complete build.</p>
     <pre id="errors" style="display:none"></pre>
     <button class="primary" id="retry" type="button">Retry the app</button>
-    <button id="open-live" type="button">Open live dashboard in browser</button>
+    <button id="quit" type="button">Quit</button>
     <button id="copy-diagnostics" type="button">Copy diagnostics</button>
     <button id="reveal-log" type="button">Reveal launch log</button>
     <p class="note" id="log-path"></p>
   </main>
+  <script src="redaction.js"></script>
   <script>
     (function () {
       var params = new URLSearchParams(location.search);
-      var reason = params.get('reason') || 'launch-failed';
-      var detail = params.get('detail') || '';
-      var errors = params.get('errors') || '';
-      var logPath = params.get('log') || '';
+      var redact = window.keyshieldRedaction.redact;
+      var reason = redact(params.get('reason') || 'launch-failed');
+      var detail = redact(params.get('detail') || '');
+      var errors = redact(params.get('errors') || '');
+      var logPath = redact(params.get('log') || '');
 
       var reasonText = {
         'dashboard-load-failed': 'The dashboard did not load.',
         'blank-renderer': 'The dashboard page loaded, but nothing rendered.',
         'renderer-crashed': 'The dashboard renderer crashed.',
-        'launch-failed': 'The dashboard did not open.'
+        'launch-failed': 'The dashboard did not open.',
+        'startup-blocked': 'KeyShield could not start safely.'
       }[reason] || 'The dashboard did not open.';
       document.getElementById('reason').textContent = reasonText;
       if (detail) document.getElementById('detail').textContent = detail;
@@ -126,12 +129,10 @@
       var bridge = window.keyshieldDesktop || null;
 
       document.getElementById('retry').addEventListener('click', function () {
-        location.href = 'https://app.ks.aileena.xyz/';
+        if (bridge && bridge.retry) bridge.retry();
       });
-      document.getElementById('open-live').addEventListener('click', function () {
-        var url = 'https://app.ks.aileena.xyz/';
-        if (bridge && bridge.openExternal) bridge.openExternal(url);
-        else window.open(url, '_blank', 'noopener,noreferrer');
+      document.getElementById('quit').addEventListener('click', function () {
+        if (bridge && bridge.quit) bridge.quit();
       });
       document.getElementById('copy-diagnostics').addEventListener('click', function () {
         var text = [
@@ -140,7 +141,7 @@
           detail ? 'detail: ' + detail : null,
           errors ? 'renderer errors: ' + errors : null,
           logPath ? 'log: ' + logPath : null
-        ].filter(Boolean).join('\n');
+        ].filter(Boolean).map(redact).join('\n');
         var done = function () {
           document.getElementById('copy-diagnostics').textContent = 'Diagnostics copied';
         };

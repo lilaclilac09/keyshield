@@ -6,10 +6,8 @@
  *
  * What changed from the previous pack script:
  *
- * - The bundle check is fatal-only: a missing renderer is a warning (the
- *   app falls back to the live dashboard), while a missing main executable,
- *   framework binary or ICU data still fails the pack. The runtime check
- *   never blocks launch at all — it only warns.
+ * - Packaging validates renderer assets and runtime files; packaged startup
+ *   failures show a local diagnostics screen instead of hosted content.
  * - The icon is a real .icns when built on macOS (generated from the same
  *   in-code artwork at every size iconutil needs). Other platforms keep
  *   the PNG with a warning.
@@ -249,6 +247,7 @@ async function main() {
     extraResource: [
       path.join(desktopDir, 'renderer'),
       path.join(desktopDir, 'boot.html'),
+      path.join(desktopDir, 'redaction.js'),
     ],
     icon: icns || iconPng,
     darwinDarkModeSupport: true,
@@ -258,6 +257,7 @@ async function main() {
       if (file === '/out' || file.startsWith('/out/')) return true;
       if (file === '/release' || file.startsWith('/release/')) return true;
       if (file.startsWith('/scripts')) return true;
+      if (file === '/e2e' || file.startsWith('/e2e/')) return true;
       if (file === '/renderer' || file.startsWith('/renderer/')) return true;
       if (file === '/Open-KeyShield.command' || file === '/OPEN-ME.txt') return true;
       return false;

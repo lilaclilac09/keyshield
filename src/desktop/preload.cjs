@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld('keyshieldDesktop', {
   writeText: (text) => ipcRenderer.invoke('ks-clipboard-write', String(text || '')),
   revealLog: () => ipcRenderer.invoke('ks-reveal-log'),
   getDiagnostics: () => ipcRenderer.invoke('ks-diagnostics'),
+  retry: () => ipcRenderer.send('ks-retry'),
+  quit: () => ipcRenderer.send('ks-quit'),
 });

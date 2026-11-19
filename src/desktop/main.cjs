@@ -40,6 +40,9 @@ const path = require('node:path');
 const { inspectMacBundle, fatalMissing } = require('./runtime-preflight.cjs');
 const { hasRenderer, serveDashboardRequest } = require('./renderer-server.cjs');
 const { createDiagnostics } = require('./diagnostics.cjs');
+const { redact } = require('./redaction.js');
+const { installRequestAudit } = require('./request-audit.cjs');
+const { validateRenderer, startupFailure, authorizeTouchId } = require('./startup-policy.cjs');
 
 const diagnostics = createDiagnostics();
 diagnostics.log('KeyShield desktop starting');
@@ -52,8 +55,10 @@ const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
 const LIVE = process.env.KS_DESKTOP_LIVE === '1';
 const SYNC_PROXY = process.env.KS_DESKTOP_SYNC_PROXY === '1';
+const PACKAGED = app.isPackaged || process.env.KS_DESKTOP_FORCE_PACKAGED === '1';
 
 function rendererDir() {
+  if (process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
   if (app.isPackaged) return path.join(process.resourcesPath, 'renderer');
   return path.join(__dirname, 'renderer');
 }
@@ -73,6 +78,7 @@ function useBundle() {
 }
 
 function packagedRuntimePreflight() {
+  if (process.env.KS_DESKTOP_FORCE_PREFLIGHT_FAILURE === '1') return { ok: false, missing: ['forced preflight failure'] };
   if (process.platform !== 'darwin' || !app.isPackaged) return { ok: true, skipped: true };
   const contents = path.resolve(process.resourcesPath, '..');
   return inspectMacBundle(contents);
@@ -94,10 +100,11 @@ function blockStartup(report, reason) {
     '',
     details,
   ].join('\n');
-  dialog.showErrorBox('KeyShield needs a moment', message);
+  dialog.showErrorBox('KeyShield needs a moment', redact(message));
 }
 
 function installHttpsHandler(ses) {
+  if (process.env.KS_DESKTOP_FORCE_INTERCEPT_FAILURE === '1') throw new Error('forced HTTPS handler failure');
   if (!useBundle() && !SYNC_PROXY) return false;
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
   // — that replaces Chromium's standard https handler and can prevent the window
@@ -199,8 +206,8 @@ function bringWindowToForeground(win) {
 }
 
 function showShellFeedback(payload) {
-  const title = String(payload?.title || 'KeyShield');
-  const detail = String(payload?.detail || payload?.body || '');
+  const title = redact(payload?.title || 'KeyShield');
+  const detail = redact(payload?.detail || payload?.body || '');
   const kind = String(payload?.kind || 'info');
   const win = BrowserWindow.getAllWindows()[0];
   const visibleMs = feedbackVisibilityMs(kind);
@@ -250,57 +257,42 @@ ipcMain.handle('ks-clipboard-write', (_event, text) => {
 ipcMain.handle('ks-reveal-log', () => {
   try {
     shell.showItemInFolder(diagnostics.logPath);
-    return { ok: true, logPath: diagnostics.logPath };
+    return { ok: true, logPath: redact(diagnostics.logPath) };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: redact(err instanceof Error ? err.message : String(err)) };
   }
 });
 
 ipcMain.handle('ks-diagnostics', () => ({
   ok: true,
-  logPath: diagnostics.logPath,
+  logPath: redact(diagnostics.logPath),
   summary: diagnostics.summary(),
 }));
 
-async function maybeTouchId() {
-  if (process.platform !== 'darwin') return { skipped: true };
-  if (typeof systemPreferences.promptTouchID !== 'function') return { skipped: true };
-  try {
-    await systemPreferences.promptTouchID('Unlock KeyShield');
-    showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
-    return { ok: true };
-  } catch (err) {
-    // No biometrics, user cancelled, or unsigned app — do not lock her out.
-    const reason = err instanceof Error ? err.message : String(err);
-    showShellFeedback({
-      kind: 'info',
-      title: 'Continuing without Touch ID',
-      detail: `Touch ID was not completed (${reason}). Next step: continue in KeyShield and tap Sign In again, or paste a session token.`,
-      source: 'unlock',
-    });
-    return { skipped: true };
-  }
-}
-
 ipcMain.handle('ks-touch-id', async (_event, reason) => {
-  if (process.platform !== 'darwin' || typeof systemPreferences.promptTouchID !== 'function') {
-    return { ok: true, skipped: true };
-  }
-  try {
-    await systemPreferences.promptTouchID(String(reason || 'Unlock KeyShield'));
+  const result = await authorizeTouchId(systemPreferences, process.platform, redact(reason || 'Unlock KeyShield'));
+  if (result.ok) {
     showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
     bringWindowToForeground(BrowserWindow.getAllWindows()[0]);
-    return { ok: true };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    showShellFeedback({
+  } else {
+    const feedback = {
       kind: 'error',
-      title: 'Touch ID cancelled',
-      detail: `Touch ID was cancelled (${error}). Next step: tap Sign In again or use the session token fallback in the auth card.`,
+      title: 'Touch ID authorization failed',
+      detail: result.error,
       source: 'unlock',
-    });
-    return { ok: false, error };
+    };
+    showShellFeedback(feedback);
+    try {
+      await _event.sender.executeJavaScript(`window.dispatchEvent(new CustomEvent('ks-app-feedback', { detail: ${JSON.stringify(feedback)} }));`);
+    } catch { /* The requesting window may have closed. */ }
   }
+  return result;
+});
+
+ipcMain.on('ks-quit', () => app.quit());
+ipcMain.on('ks-retry', () => {
+  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  void createWindow();
 });
 
 function buildMenu(win) {
@@ -357,7 +349,7 @@ function buildMenu(win) {
 /**
  * Show the diagnostics screen (boot.html) with the reason for the failure
  * and the renderer errors captured so far. The screen itself offers Retry
- * (reload the dashboard), Open in browser, Copy diagnostics and Reveal log.
+ * (restart local startup checks), Quit, Copy diagnostics and Reveal log.
  * If boot.html itself is missing, fall back to an error box — a bundle
  * that broken still has to say so out loud.
  */
@@ -370,19 +362,19 @@ async function showDiagnosticsScreen(win, reason, detail) {
       'KeyShield could not open',
       [
         `KeyShield could not load the dashboard (${reason}).`,
-        detail ? `Detail: ${detail}` : null,
+        detail ? `Detail: ${redact(detail)}` : null,
         '',
         'The fallback screen is missing from this install, so there is nothing to show.',
         `Launch details were written to:\n${diagnostics.logPath}`,
-      ].filter(Boolean).join('\n'),
+      ].filter(Boolean).map(redact).join('\n'),
     );
     return;
   }
   const query = {
-    reason: String(reason || 'launch-failed'),
-    detail: String(detail || '').slice(0, 500),
-    log: diagnostics.logPath,
-    errors: diagnostics.recentErrors().slice(-3).map((entry) => entry.message).join(' | ').slice(0, 500),
+    reason: redact(reason || 'launch-failed'),
+    detail: redact(detail).slice(0, 500),
+    log: redact(diagnostics.logPath),
+    errors: redact(diagnostics.recentErrors().slice(-3).map((entry) => entry.message).join(' | ')).slice(0, 500),
   };
   try {
     await win.loadFile(boot, { query });
@@ -424,6 +416,10 @@ async function loadDashboard(win) {
   } catch (first) {
     const detail = first instanceof Error ? first.message : String(first);
     diagnostics.log(`dashboard load failed: ${detail}`);
+    if (PACKAGED) {
+      await showDiagnosticsScreen(win, 'dashboard-load-failed', detail);
+      return 'diagnostics';
+    }
     showShellFeedback({
       kind: 'error',
       title: 'Dashboard failed to load',
@@ -443,11 +439,21 @@ async function loadDashboard(win) {
 
 async function createWindow() {
   const ses = session.fromPartition('persist:keyshield');
-  try {
-    installHttpsHandler(ses);
-  } catch (err) {
-    diagnostics.log(`https handler skipped: ${err instanceof Error ? err.message : String(err)}`);
-    console.error('https handler skipped', err);
+  installRequestAudit(ses, process.env.KS_DESKTOP_REQUEST_AUDIT);
+  let failure = startupFailure({
+    packaged: PACKAGED,
+    preflight: packagedRuntimePreflight(),
+    rendererValid: validateRenderer(rendererDir()),
+    api: process.env.KS_DESKTOP_API_URL,
+  });
+  if (!failure) {
+    try {
+      if (ses.protocol.isProtocolHandled && await ses.protocol.isProtocolHandled('https')) ses.protocol.unhandle('https');
+      installHttpsHandler(ses);
+    } catch (err) {
+      diagnostics.log(`https handler skipped: ${err instanceof Error ? err.message : String(err)}`);
+      if (PACKAGED) failure = 'Bundled HTTPS handler could not be installed';
+    }
   }
 
   ses.setPermissionRequestHandler((_wc, permission, callback) => {
@@ -504,7 +510,10 @@ async function createWindow() {
   win.webContents.on('did-finish-load', () => {
     if (process.platform !== 'darwin') return;
     void win.webContents.insertCSS(`
-      html.ks-desktop, html { --ks-desktop-drag: 38px; }
+      html.ks-desktop, html { --ks-desktop-drag: 38px; overflow-y: auto !important; }
+      body { overflow-y: auto !important; }
+      #root > .min-h-screen { height: auto !important; min-height: 100vh; padding-top: 48px !important; padding-bottom: 32px !important; }
+      #root > .min-h-screen > * { flex-shrink: 0; }
       body::before {
         content: '';
         position: fixed;
@@ -553,6 +562,11 @@ async function createWindow() {
   });
 
   buildMenu(win);
+  if (failure) {
+    await showDiagnosticsScreen(win, 'startup-blocked', failure);
+    bringWindowToForeground(win);
+    return win;
+  }
   const loaded = await loadDashboard(win);
   if (loaded === 'dashboard') {
     const mounted = await probeMounted(win);
@@ -578,20 +592,23 @@ if (process.platform === 'darwin' && typeof app.setActivationPolicy === 'functio
   try { app.setActivationPolicy('regular'); } catch { /* older Electron */ }
 }
 
-app.on('uncaughtException', (err) => {
+function reportFatalError(err) {
   const message = err instanceof Error ? (err.stack || err.message) : String(err);
   diagnostics.log(`uncaught exception: ${message}`);
   dialog.showErrorBox(
     'KeyShield hit a problem',
     [
       'KeyShield hit an unexpected problem and will close.',
-      err instanceof Error ? err.message : String(err),
+      redact(err instanceof Error ? err.message : String(err)),
       '',
-      `Details were written to:\n${diagnostics.logPath}`,
+      `Details were written to:\n${redact(diagnostics.logPath)}`,
     ].join('\n'),
   );
   app.quit();
-});
+}
+
+process.on('uncaughtException', reportFatalError);
+process.on('unhandledRejection', reportFatalError);
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -620,15 +637,9 @@ if (!gotLock) {
     const preflight = packagedRuntimePreflight();
     if (!preflight.skipped) {
       diagnostics.log(`preflight ok=${preflight.ok} missing=${JSON.stringify(preflight.missing || [])} warnings=${JSON.stringify(preflight.warnings || [])}`);
-      if (!preflight.ok) {
-        // Warn, but do not app.quit() — a false-positive preflight previously
-        // left KeyShield running in the background with no window.
-        blockStartup(preflight);
-      }
     }
     const win = await createWindow();
     bringWindowToForeground(win);
-    void maybeTouchId();
     app.on('activate', () => {
       const existing = BrowserWindow.getAllWindows()[0];
       if (existing) {

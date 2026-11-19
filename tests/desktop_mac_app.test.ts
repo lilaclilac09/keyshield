@@ -122,7 +122,7 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).toContain("app.ks.aileena.xyz");
     expect(main).toContain("renderer");
     expect(main).toContain("KS_DESKTOP_LIVE");
-    expect(main).toContain("promptTouchID");
+    expect(read("src/desktop/startup-policy.cjs")).toContain("promptTouchID");
     expect(main).toContain("persist:keyshield");
     expect(main).toContain("packagedRuntimePreflight");
     expect(main).toContain("inspectMacBundle");
@@ -137,20 +137,17 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).not.toContain("protocol.registerSchemesAsPrivileged");
   });
 
-  it("shows the window before Touch ID and does not quit on preflight warnings", () => {
+  it("shows the window without unsolicited Touch ID and keeps a local preflight error window", () => {
     const main = read("src/desktop/main.cjs");
     expect(main).toContain("show: true");
     expect(main).toContain("const win = await createWindow();");
-    expect(main).toContain("void maybeTouchId();");
-    expect(main.indexOf("const win = await createWindow();")).toBeLessThan(
-      main.indexOf("void maybeTouchId();"),
-    );
+    expect(main).not.toContain("void maybeTouchId();");
     expect(main).not.toContain("const unlock = await maybeTouchId();");
     expect(main).toContain("bringWindowToForeground(win);");
     expect(main).toContain("loadDashboard");
     expect(main).toContain("boot.html");
     expect(main).not.toMatch(/blockStartup\(preflight\);\s*app\.quit\(\)/);
-    expect(main).toContain("await systemPreferences.promptTouchID");
+    expect(main).toContain("await authorizeTouchId");
     expect(main).toContain("bringWindowToForeground(BrowserWindow.getAllWindows()[0]);");
     expect(main).toContain("flushPendingShellFeedback(win);");
   });

@@ -16,6 +16,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { redact } = require('./redaction.js');
 
 function defaultLogPath() {
   if (process.platform === 'darwin') {
@@ -31,7 +32,7 @@ function logFilePath(customPath) {
 function appendLog(logPath, line) {
   try {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${redact(line)}\n`, { mode: 0o600 });
   } catch {
     // Logging must never break launch.
   }
@@ -48,15 +49,15 @@ function createDiagnostics(customLogPath) {
     recordRendererError(message, source) {
       const entry = {
         at: new Date().toISOString(),
-        message: String(message || ''),
-        source: String(source || ''),
+        message: redact(message),
+        source: redact(source),
       };
       errors.push(entry);
       if (errors.length > 50) errors.shift();
       appendLog(file, `renderer-error${entry.source ? ` [${entry.source}]` : ''} ${entry.message}`);
     },
     recentErrors() {
-      return errors.slice();
+      return errors.map((entry) => ({ ...entry, message: redact(entry.message), source: redact(entry.source) }));
     },
     summary() {
       const lines = [
@@ -70,7 +71,7 @@ function createDiagnostics(customLogPath) {
           lines.push(`- ${entry.at}${entry.source ? ` [${entry.source}]` : ''} ${entry.message}`);
         }
       }
-      return lines.join('\n');
+      return redact(lines.join('\n'));
     },
   };
 }

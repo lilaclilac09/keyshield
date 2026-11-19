@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const root = resolve(__dirname, "..");
 const require = createRequire(import.meta.url);
+const { redact } = require("../src/desktop/redaction.js");
 const rendererServer = require("../src/desktop/renderer-server.cjs") as {
   contentTypeFor: (file: string) => string;
   resolveRendererFile: (rootDir: string, requestPath: string) => string | null;
@@ -151,7 +152,7 @@ describe("diagnostics log", () => {
     expect(readFileSync(logPath, "utf8")).toContain("Cannot access X");
     expect(diag.recentErrors()).toHaveLength(1);
     expect(diag.summary()).toContain("Cannot access X before initialization");
-    expect(diag.summary()).toContain(logPath);
+    expect(diag.summary()).toContain(redact(logPath));
   });
 
   it("keeps only the most recent renderer errors", () => {
