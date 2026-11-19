@@ -231,6 +231,7 @@ export async function addEntry(upstream: string, apiKey: string, metadata: Vault
 }
 
 export async function removeEntry(upstream: string): Promise<void> {
+  if (_state && !Object.hasOwn(_state.plaintext.entries, upstream)) return;
   await mutate((p) => {
     delete p.entries[upstream];
   }, 'delete');
