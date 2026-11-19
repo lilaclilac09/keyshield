@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { redact } = require('../src/desktop/redaction.js');
 const { createDiagnostics } = require('../src/desktop/diagnostics.cjs');
 const { requestShape, installRequestAudit } = require('../src/desktop/request-audit.cjs');
-const { startupFailure, validateApiOverride, validateRenderer, authorizeTouchId } = require('../src/desktop/startup-policy.cjs');
+const { startupFailure, validateApiOverride, validateRenderer, authorizeTouchId, safeRuntimeEntries, runtimePreflightDetail } = require('../src/desktop/startup-policy.cjs');
 const samples = require('../src/desktop/e2e/keys.json').samples;
 
 describe('desktop diagnostics redaction — KS-SEC-001/002', () => {
@@ -57,6 +57,32 @@ describe('desktop diagnostics redaction — KS-SEC-001/002', () => {
 describe('startup policy — KS-HUM-003/SEC-002/SAFE-002', () => {
   const healthy = { packaged: true, preflight: { ok: true }, rendererValid: true, api: '' };
   it('accepts a complete offline bundle', () => expect(startupFailure(healthy)).toBeNull());
+  it('preserves safe runtime basenames through logs and startup diagnostics without exposing paths', () => {
+    const report = { ok: false, missing: ['/Users/private/KeyShield.app/Contents/Frameworks/Electron Framework.framework/Resources/icudtl.dat', '/Applications/KeyShield.app/Contents/Frameworks/Electron Framework.framework/Electron Framework'], warnings: ['/Users/private/KeyShield.app/Contents/Resources/snapshot_blob.bin'] };
+    const detail = runtimePreflightDetail(report);
+    const failure = startupFailure({ ...healthy, preflight: report });
+    const dir = mkdtempSync(join(tmpdir(), 'desktop-runtime-diagnostics-'));
+    try {
+      const file = join(dir, 'launch.log');
+      const diag = createDiagnostics(file);
+      diag.log(`preflight ok=false ${detail}`);
+      diag.recordRendererError(failure, '');
+      for (const output of [redact(failure), readFileSync(file, 'utf8'), diag.summary()]) {
+        expect(output).toContain('icudtl.dat');
+        expect(output).toContain('Electron_Framework');
+        expect(output).toContain('snapshot_blob.bin');
+        expect(output).not.toContain('/Users');
+        expect(output).not.toContain('/Applications');
+        expect(output).not.toContain('private');
+      }
+    } finally { rmSync(dir, { recursive: true }); }
+  });
+  it('rejects unsafe runtime entries and tolerates empty reports', () => {
+    expect(safeRuntimeEntries(['../icudtl.dat', 'icudtl.dat', '.', '..', '/Users/private/token?secret', 'bad\nname', 'AKIAIOSFODNN7EXAMPLE', 'a'.repeat(32), null])).toEqual(['icudtl.dat']);
+    expect(safeRuntimeEntries(undefined)).toEqual([]);
+    expect(runtimePreflightDetail({})).toBe('missing: none reported; warnings: none reported');
+    expect(startupFailure({ ...healthy, preflight: { ok: false } })).toContain('Packaged runtime preflight failed');
+  });
   it.each([
     { preflight: { ok: false } }, { rendererValid: false }, { interceptError: true }, { api: 'http://example.test' },
   ])('blocks unsafe packaged startup %j', (failure) => expect(startupFailure({ ...healthy, ...failure })).toBeTruthy());

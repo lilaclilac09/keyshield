@@ -2,6 +2,17 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { redact } = require('./redaction.js');
+
+function safeRuntimeEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return [...new Set(entries.filter((entry) => typeof entry === 'string').map((entry) => path.basename(entry).replace(/ /g, '_'))
+    .filter((entry) => /^[A-Za-z0-9._-]+$/.test(entry) && entry !== '.' && entry !== '..' && redact(entry) === entry))];
+}
+
+function runtimePreflightDetail(report) {
+  return `missing: ${safeRuntimeEntries(report.missing).join(', ') || 'none reported'}; warnings: ${safeRuntimeEntries(report.warnings).join(', ') || 'none reported'}`;
+}
 
 function validateApiOverride(value) {
   if (!value) return;
@@ -28,7 +39,7 @@ function validateRenderer(root) {
 function startupFailure({ packaged, preflight, rendererValid, interceptError, api }) {
   try { validateApiOverride(api); } catch { return 'Invalid API override: HTTPS is required except on loopback'; }
   if (!packaged) return null;
-  if (!preflight.ok) return 'Packaged runtime preflight failed';
+  if (!preflight.ok) return `Packaged runtime preflight failed (${runtimePreflightDetail(preflight)})`;
   if (!rendererValid) return 'Bundled renderer is missing or incomplete';
   if (interceptError) return 'Bundled HTTPS handler could not be installed';
   return null;
@@ -44,4 +55,4 @@ async function authorizeTouchId(preferences, platform, reason) {
   } catch { return { ok: false, error: 'Touch ID was canceled or could not verify authorization' }; }
 }
 
-module.exports = { validateApiOverride, validateRenderer, startupFailure, authorizeTouchId };
+module.exports = { validateApiOverride, validateRenderer, startupFailure, authorizeTouchId, safeRuntimeEntries, runtimePreflightDetail };

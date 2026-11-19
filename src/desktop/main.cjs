@@ -42,7 +42,7 @@ const { hasRenderer, serveDashboardRequest } = require('./renderer-server.cjs');
 const { createDiagnostics } = require('./diagnostics.cjs');
 const { redact } = require('./redaction.js');
 const { installRequestAudit } = require('./request-audit.cjs');
-const { validateRenderer, startupFailure, authorizeTouchId } = require('./startup-policy.cjs');
+const { validateRenderer, startupFailure, authorizeTouchId, runtimePreflightDetail } = require('./startup-policy.cjs');
 
 const diagnostics = createDiagnostics();
 diagnostics.log('KeyShield desktop starting');
@@ -636,7 +636,7 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     const preflight = packagedRuntimePreflight();
     if (!preflight.skipped) {
-      diagnostics.log(`preflight ok=${preflight.ok} missing=${JSON.stringify(preflight.missing || [])} warnings=${JSON.stringify(preflight.warnings || [])}`);
+      diagnostics.log(`preflight ok=${preflight.ok} ${runtimePreflightDetail(preflight)}`);
     }
     const win = await createWindow();
     bringWindowToForeground(win);
