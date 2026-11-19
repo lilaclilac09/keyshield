@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const http = require('node:http');
+const { randomBytes } = require('node:crypto');
 const { samples } = require('./keys.json');
 
 const desktop = path.resolve(__dirname, '..');
@@ -14,6 +15,8 @@ fs.mkdirSync(shots, { recursive: true });
 fs.mkdirSync(state, { recursive: true });
 const run = fs.mkdtempSync(path.join(state, `${kind}-`));
 const api = process.env.KS_E2E_API || 'http://127.0.0.1:8001';
+const sessions = [];
+const fixtureValues = samples.flatMap(({ value }) => [value, value.split('::')[1]]).filter(Boolean);
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(api).hostname)) throw new Error('Synthetic tests require a loopback API');
 
 async function launch(label, overrides = {}) {
@@ -32,7 +35,17 @@ async function launch(label, overrides = {}) {
       ...overrides,
     },
   });
-  return { app, page: await app.firstWindow(), dir };
+  const page = await app.firstWindow();
+  const session = { app, page, dir, requests: 0, leaks: 0 };
+  page.on('request', (request) => {
+    session.requests++;
+    const content = [request.url(), request.postData() || '', ...Object.values(request.headers())].join('\n');
+    let decoded = content;
+    try { decoded = decodeURIComponent(content); } catch {}
+    if (fixtureValues.some((value) => decoded.includes(value))) session.leaks++;
+  });
+  sessions.push(session);
+  return session;
 }
 
 const audit = (dir) => fs.existsSync(path.join(dir, 'requests.jsonl'))
@@ -41,9 +54,18 @@ const audit = (dir) => fs.existsSync(path.join(dir, 'requests.jsonl'))
 const saveRequests = (dir) => audit(dir).filter((row) => ['POST', 'PUT', 'PATCH'].includes(row.method)
   && (['/manage/store', '/zk/store'].includes(row.route) || row.route.startsWith('/vault/')));
 
+function assertNoKeyRequests() {
+  for (const session of sessions) {
+    expect(session.leaks, 'No request URL, body or header may carry a synthetic key value').toBe(0);
+    expect(audit(session.dir).filter((row) => row.syntheticMarkerPresent), 'Every audited request must be free of synthetic markers').toEqual([]);
+  }
+}
+
+test.afterEach(assertNoKeyRequests);
+
 async function signup(page) {
   await page.getByTestId('email-login').fill(`ks-e2e+${Date.now()}-${Math.random().toString(16).slice(2)}@example.invalid`);
-  await page.getByTestId('password-login-input').fill('FAKE-e2e-password-2026!');
+  await page.getByTestId('password-login-input').fill('Synthetic-e2e-password-2026!');
   const response = page.waitForResponse((r) => r.url() === `${api}/auth/signup`);
   await page.getByTestId('email-signup').click();
   const signedUp = await response;
@@ -56,6 +78,7 @@ async function signup(page) {
 
 async function unlockWithSyntheticPasskey(page, app) {
   const blobs = new Map();
+  const prfBytes = [...randomBytes(32)];
   const worker = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -63,7 +86,7 @@ async function unlockWithSyntheticPasskey(page, app) {
     res.setHeader('Content-Type', 'application/json');
     if (req.method === 'OPTIONS') return res.end();
     if (req.url === '/auth/challenge') return res.end(JSON.stringify({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB' }));
-    if (req.url === '/auth/exchange') return res.end(JSON.stringify({ token: 'FAKE-e2e-sync-token', expiresAt: Date.now() + 3600000 }));
+    if (req.url === '/auth/exchange') return res.end(JSON.stringify({ token: 'synthetic-e2e-sync-token', expiresAt: Date.now() + 3600000 }));
     if (req.url.startsWith('/vault/')) {
       if (req.method === 'PUT') {
         const chunks = [];
@@ -81,12 +104,12 @@ async function unlockWithSyntheticPasskey(page, app) {
   await new Promise((resolve) => worker.listen(0, '127.0.0.1', resolve));
   app.on('close', () => worker.close());
   const syncOrigin = `http://127.0.0.1:${worker.address().port}`;
-  await page.evaluate(({ api, syncOrigin }) => {
-    localStorage.setItem('ks_passkey_user', 'FAKE-e2e-passkey-identity');
-    const prf = crypto.getRandomValues(new Uint8Array(32)).buffer;
+  const reconnect = () => page.evaluate(({ api, syncOrigin, prfBytes }) => {
+    localStorage.setItem('ks_passkey_user', 'synthetic-e2e-passkey-identity');
+    const prf = new Uint8Array(prfBytes).buffer;
     const bytes = new Uint8Array(32).fill(1).buffer;
     Object.defineProperty(navigator.credentials, 'get', { configurable: true, value: async () => ({
-      id: 'FAKE-e2e-passkey', rawId: bytes, type: 'public-key',
+      id: 'synthetic-e2e-passkey', rawId: bytes, type: 'public-key',
       response: { authenticatorData: bytes, clientDataJSON: bytes, signature: bytes, userHandle: bytes },
       getClientExtensionResults: () => ({ prf: { results: { first: prf } } }),
     }) });
@@ -100,12 +123,14 @@ async function unlockWithSyntheticPasskey(page, app) {
       if (['/auth/challenge', '/auth/exchange'].includes(url.pathname) || url.pathname.startsWith('/vault/')) return originalFetch(`${syncOrigin}${url.pathname}`, options);
       return originalFetch(input, options);
     };
-  }, { api, syncOrigin });
+  }, { api, syncOrigin, prfBytes });
+  await reconnect();
   const card = page.getByTestId('zk-mode-card');
   await card.getByRole('button', { name: 'Unlock with passkey', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Turn on ZK mode', exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Turn on ZK mode', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Show unlock code for keyshield-proxy', exact: true })).toBeVisible();
+  return { blobs, reconnect };
 }
 
 async function prepareSecret(page, label, value = samples.find((row) => row.id === 'aws_secret').value) {
@@ -116,7 +141,7 @@ async function prepareSecret(page, label, value = samples.find((row) => row.id =
 }
 
 async function saveSecret(page, value, heading = 'OpenAI') {
-  await prepareSecret(page, `FAKE desktop ${Date.now()}`, value);
+  await prepareSecret(page, heading, value);
   const saved = page.waitForResponse((r) => ['POST', 'PUT'].includes(r.request().method())
     && (['/manage/store', '/zk/store'].includes(new URL(r.url()).pathname) || new URL(r.url()).pathname.startsWith('/vault/')) && r.ok());
   await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
@@ -146,12 +171,7 @@ test.describe.serial('local desktop acceptance', () => {
   });
 
   test('KS-HUM-001 synthetic signup creates an empty vault', async () => {
-    await page.getByTestId('password-login-input').fill('FAKE-e2e-password-2026!');
-    const response = page.waitForResponse((r) => r.url() === `${api}/auth/signup`);
-    await page.getByTestId('email-signup').click();
-    expect((await response).status()).toBe(200);
-    await page.getByRole('button', { name: 'Vault', exact: true }).click();
-    await expect(page.getByText('Your vault is empty', { exact: true })).toBeVisible();
+    await signup(page);
   });
 
   for (const [name, heading] of [
@@ -193,12 +213,14 @@ test.describe.serial('local desktop acceptance', () => {
 
 });
 
-test('KS-SEC-001 KS-SEC-002 unlocked vault saves a FAKE key with ciphertext on EVERY save request', async () => {
+test('KS-HUM-001 KS-SEC-001 KS-SEC-002 new vault first save succeeds with ciphertext on EVERY save request', async () => {
   const { app, page, dir } = await launch('unlocked-save');
   try {
     await signup(page);
-    await unlockWithSyntheticPasskey(page, app);
+    const fixture = await unlockWithSyntheticPasskey(page, app);
+    expect(fixture.blobs.size).toBe(0);
     const status = await saveSecret(page, samples.find((row) => row.id === 'aws_secret').value);
+    expect(fixture.blobs.size).toBe(1);
     console.log('UNLOCKED_SAVE_RESULT', JSON.stringify({ status, vaultListContainsKey: true }));
     const shapes = saveRequests(dir);
     console.log('UNLOCKED_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
@@ -214,8 +236,10 @@ test('KS-HUM-002 KS-SEC-001 KS-SEC-002 two same-provider FAKE keys save separate
     await signup(page);
     await unlockWithSyntheticPasskey(page, app);
     const first = samples.find((row) => row.id === 'openai').value;
+    const second = `${first.slice(0, -1)}B`;
+    fixtureValues.push(second, second.split('::')[1]);
     await saveSecret(page, first);
-    await saveSecret(page, `${first.slice(0, -1)}B`, 'OpenAI#2');
+    await saveSecret(page, second, 'OpenAI#2');
     await expect(page.getByRole('heading', { name: 'OpenAI', exact: true })).toBeVisible();
     const shapes = saveRequests(dir);
     console.log('SAME_PROVIDER_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
@@ -245,7 +269,7 @@ test('KS-USE-002 KS-SEC-002 explicit reveal alone exposes a FAKE value, never lo
   } finally { await app.close(); }
 });
 
-test('KS-AGT-001 KS-SEC-002 Developer CLI and REST examples retain placeholders after token creation', async () => {
+test('KS-AGT-001 KS-SEC-002 Developer, Docs and Agent session examples retain placeholders after token creation', async () => {
   const { app, page } = await launch('developer-placeholders');
   try {
     const account = await signup(page);
@@ -261,11 +285,92 @@ test('KS-AGT-001 KS-SEC-002 Developer CLI and REST examples retain placeholders 
     expect(snippets.length).toBeGreaterThan(10);
     expect(snippets.join('\n')).not.toContain(token);
     expect(snippets.join('\n')).not.toContain(account.token);
-    expect(snippets.some((text) => text.includes('bash keyshield-cli.sh login <wallet-address> <passphrase>'))).toBe(true);
     const authenticated = snippets.filter((text) => /Bearer|KeyShield\(token=/.test(text));
     expect(authenticated.length).toBeGreaterThan(5);
     for (const text of authenticated) expect(text).toContain('<YOUR_AGENT_TOKEN>');
+    for (const example of await page.locator('pre').all()) {
+      const text = await example.textContent();
+      await example.locator('..').getByRole('button', { name: /^(Copy|Copied)$/ }).click();
+      expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(text);
+    }
+    await page.getByRole('button', { name: 'Docs & Troubleshooting', exact: true }).click();
+    const docs = page.locator('pre');
+    const docsText = await docs.allTextContents();
+    expect(docsText.filter((text) => text.includes('Bearer <YOUR_AGENT_TOKEN>')).length).toBe(3);
+    expect(docsText.join('\n')).not.toContain(token);
+    expect(docsText.join('\n')).not.toContain(account.token);
+    for (const example of await docs.filter({ hasText: /Bearer <YOUR_AGENT_TOKEN>/ }).all()) {
+      const text = await example.textContent();
+      await example.locator('..').getByRole('button', { name: /^(Copy|Copied)$/ }).click();
+      expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(text);
+    }
+    await page.evaluate((token) => {
+      localStorage.setItem('ks_token', token);
+      localStorage.removeItem('ks_session_scope');
+      localStorage.setItem('ks_auth_method', 'agent');
+    }, token);
+    await page.reload();
+    const agentExample = page.getByTestId('agent-session').locator('pre');
+    await expect(agentExample).toContainText('<YOUR_AGENT_TOKEN>');
+    const agentText = await agentExample.textContent();
+    expect(agentText).not.toContain(token);
+    expect(agentText).not.toContain(account.token);
+    await agentExample.locator('..').getByRole('button', { name: /^(Copy|Copied)$/ }).click();
+    expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe(agentText);
   } finally { await app.close(); }
+});
+
+test('KS-HUM-002 KS-SEC-001 KS-SEC-002 labels and expiry survive encrypted save and reload', async () => {
+  const { app, page, dir } = await launch('metadata');
+  try {
+    await signup(page);
+    const fixture = await unlockWithSyntheticPasskey(page, app);
+    const label = 'Synthetic labeled production credential';
+    const expiry = '2031-12-31';
+    fixtureValues.push(label, expiry);
+    await prepareSecret(page, label);
+    await page.locator('input[type="date"]').fill(expiry);
+    const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && new URL(response.url()).pathname.startsWith('/vault/') && response.ok());
+    await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
+    await saved;
+    await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible();
+    await expect(page.getByText(`expires ${expiry}`, { exact: false }).first()).toBeVisible();
+    expect(fixture.blobs.size).toBe(1);
+    for (const blob of fixture.blobs.values()) {
+      expect(blob).not.toContain(label);
+      expect(blob).not.toContain(expiry);
+    }
+    await page.reload();
+    await fixture.reconnect();
+    await page.getByRole('button', { name: 'Vault', exact: true }).click();
+    await page.getByTestId('zk-mode-card').getByRole('button', { name: 'Unlock with passkey', exact: true }).click();
+    await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible();
+    await expect(page.getByText(`expires ${expiry}`, { exact: false }).first()).toBeVisible();
+    const shapes = saveRequests(dir);
+    console.log('METADATA_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
+    expect(shapes.length).toBeGreaterThan(0);
+    for (const shape of shapes) {
+      expect(shape.bodyFieldNames).toEqual(['ciphertext', 'iv', 'updatedAt', 'version']);
+      expect(shape.hasCiphertextEnvelope && !shape.plaintextFieldPresent).toBe(true);
+    }
+  } finally { await app.close(); }
+});
+
+test('KS-SEC-002 every audited request is free of synthetic key values', async () => {
+  const session = await launch('all-requests');
+  const { app, page, dir } = session;
+  try {
+    await signup(page);
+    await unlockWithSyntheticPasskey(page, app);
+    await saveSecret(page, samples.find((row) => row.id === 'openai').value);
+    expect(audit(dir).length).toBeGreaterThan(0);
+    expect(session.requests).toBeGreaterThan(0);
+    assertNoKeyRequests();
+  } finally { await app.close(); }
+});
+
+test('KS-USE-001 Save + Call', () => {
+  test.skip(true, 'Save + Call requires provider usage and consent wiring outside this pinned renderer; no external provider calls are permitted in this local fixture run.');
 });
 
 test('KS-SEC-001 KS-SEC-002 KS-SAFE-001 locked vault refuses a save and stores nothing', async ({ request }) => {

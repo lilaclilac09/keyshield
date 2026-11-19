@@ -26,7 +26,7 @@ const path = require('node:path');
 const { inspectMacBundle, verifyMacBundleRuntime } = require('../runtime-preflight.cjs');
 const { hasRenderer } = require('../renderer-server.cjs');
 const { verifyRendererDist } = require('./build-renderer.cjs');
-const { sourceRevision, withRendererSource, writeDmgBuildInfo } = require('./build-provenance.cjs');
+const { sourceRevision, withRendererSource, writeDmgBuildInfo, fetchPinnedRenderer } = require('./build-provenance.cjs');
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
@@ -186,6 +186,7 @@ function writeBuildInfo(reports, rendererAssets, sources, dmgSha256, dest = path
     `renderer commit: ${sources.renderer.commit}`,
     `renderer parents: ${sources.renderer.parents.join(' ') || 'none'}`,
     `renderer commit tree: ${sources.renderer.commitTree}`,
+    `renderer inputs: ${JSON.stringify(sources.renderer.inputs || {})}`,
     `renderer tree: ${sources.renderer.tree}`,
     `renderer dirty: ${sources.renderer.dirty}`,
     `renderer repository dirty: ${sources.renderer.repositoryDirty}`,
@@ -215,12 +216,16 @@ function zipApp(appDir, zipPath) {
 }
 
 async function main() {
+  const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
+  if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
+  const rendererRef = fetchPinnedRenderer(repoRoot, pin);
   const sources = {
     createdAt: new Date().toISOString(),
     desktop: sourceRevision(repoRoot, 'src/desktop'),
   };
-  sources.renderer = withRendererSource(repoRoot, process.env.KS_RENDERER_REF, (root, dist) => {
+  sources.renderer = withRendererSource(repoRoot, rendererRef, (root, dist) => {
     const revision = sourceRevision(root, 'src/web');
+    revision.inputs = pin.inputs;
     run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
       env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
     });

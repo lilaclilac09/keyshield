@@ -1,5 +1,11 @@
 # KeyShield desktop (Mac)
 
+Packaging defaults to `renderer-inputs.json`. It fetches the exact integration
+commit from origin, verifies its tree, ordered parents, intermediate merges and
+input closure, and refuses mismatches. `KS_RENDERER_PIN=/path/to/pin.json` selects
+another reviewed pin; `KS_RENDERER_REF`, if set, must match that pin. Renderer
+input revisions are included in BUILD-INFO and the DMG provenance sidecar.
+
 An Electron shell that wraps the `src/web` dashboard 1:1 (home, vault,
 payments, agents, developer tokens, and the rest). It does not reimplement
 vault, billing, MPP, agents, or the proxy. By default it talks to the
@@ -44,18 +50,19 @@ Output lands in `release/`:
   SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
   (renderer parent SHAs identify revisions included in integration merges)
 
-To build the renderer from a different immutable revision without switching
-the desktop checkout:
+To build with another reviewed integration pin without switching the desktop
+checkout:
 
 ```sh
-KS_RENDERER_REF=<full-commit-sha> npm run pack
+KS_RENDERER_PIN=/absolute/path/to/renderer-inputs.json npm run pack
 ```
 
-The selected revision is resolved locally (fetch it first if necessary), built
-in a detached temporary git worktree with its own dependencies, and removed
-afterward. An unknown ref or failed build aborts packaging, never substitutes
-the current renderer. Build output stays outside the selected source worktree.
-Without the override the current `src/web` working tree is built as before.
+The selected integration commit is fetched from origin and verified against
+the pin, built in a detached temporary git worktree with its own dependencies,
+and removed afterward. An invalid pin, missing commit or failed build aborts
+packaging, never substitutes the current renderer. Build output stays outside
+the selected source worktree. Without the override the committed desktop pin
+is used; uncommitted changes in the current `src/web` are never substituted.
 Source dirty flags include untracked source files but exclude generated web
 `dist`; whole-checkout flags also capture edits to shared dependency inputs.
 Revisions/dirty flags are captured before the renderer build. The external
@@ -162,6 +169,15 @@ same-provider keys, explicit reveal without diagnostic leakage, and placeholder
 Developer snippets after minting a real local agent token. DNS resolution of
 external hosts is disabled during Electron tests; bundled dashboard assets are
 still served through the desktop's local protocol handler.
+The three shared example surfaces are Developer, Docs & Troubleshooting, and
+Agent session. Their displayed and copied examples use placeholders. Coverage
+also includes first save into an empty vault, encrypted label/expiry persistence
+across reload and unlock, and an all-request synthetic-key guard (URLs, bodies,
+headers in memory plus every redacted audit record). Save + Call is explicitly
+skipped: provider usage/consent is outside this pinned renderer and no external
+provider calls are allowed. `KS_E2E_EVIDENCE=/existing/directory/results.txt`
+appends redacted per-acceptance-case results, skip reasons and target totals;
+it does not include error payloads or credential values.
 These tests do not verify authenticator/worker authentication, and
 ciphertext-shaped fields alone are not proof of encryption.
 

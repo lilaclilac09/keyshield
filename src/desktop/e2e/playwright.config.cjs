@@ -7,5 +7,5 @@ module.exports = defineConfig({
   workers: 1,
   timeout: 45000,
   expect: { timeout: 10000 },
-  reporter: 'list',
+  reporter: [['list'], [require.resolve('./evidence-reporter.cjs')]],
 });

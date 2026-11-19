@@ -37,6 +37,41 @@ function withRendererSource(root, ref, build) {
   }
 }
 
+function validatePinShape(pin) {
+  const sha = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+  if (!pin || pin.schemaVersion !== 1 || !pin.inputs || !Object.values(pin.inputs).length || !Object.values(pin.inputs).every(sha) || !Array.isArray(pin.merges)) throw new Error('Invalid renderer pin');
+  for (const node of [pin, ...pin.merges]) {
+    if (!sha(node.commit) || !sha(node.tree) || !Array.isArray(node.parents) || node.parents.length < 2 || !node.parents.every(sha)) throw new Error('Invalid renderer pin merge');
+  }
+}
+
+function verifyRendererPin(root, pin) {
+  validatePinShape(pin);
+  const nodes = new Map([pin, ...pin.merges].map((node) => [node.commit, node]));
+  if (nodes.size !== pin.merges.length + 1) throw new Error('Duplicate renderer pin merge');
+  const visited = new Set();
+  const leaves = [];
+  const visit = (commit) => {
+    const node = nodes.get(commit);
+    if (!node) { leaves.push(commit); return; }
+    if (visited.has(commit)) throw new Error('Repeated renderer pin merge');
+    visited.add(commit);
+    if (git(root, ['rev-parse', `${commit}^{tree}`]) !== node.tree) throw new Error('Renderer pin tree mismatch');
+    const parents = git(root, ['show', '-s', '--format=%P', commit]).split(' ').filter(Boolean);
+    if (JSON.stringify(parents) !== JSON.stringify(node.parents)) throw new Error('Renderer pin parents mismatch');
+    node.parents.forEach(visit);
+  };
+  visit(pin.commit);
+  if (visited.size !== nodes.size || JSON.stringify(leaves.sort()) !== JSON.stringify(Object.values(pin.inputs).sort())) throw new Error('Renderer pin inputs mismatch');
+  return pin.commit;
+}
+
+function fetchPinnedRenderer(root, pin) {
+  validatePinShape(pin);
+  git(root, ['fetch', '--no-tags', 'origin', pin.commit]);
+  return verifyRendererPin(root, pin);
+}
+
 function writeDmgBuildInfo(dmg, sources) {
   const info = {
     schemaVersion: 1,
@@ -48,4 +83,4 @@ function writeDmgBuildInfo(dmg, sources) {
   return info;
 }
 
-module.exports = { sourceRevision, withRendererSource, writeDmgBuildInfo };
+module.exports = { sourceRevision, withRendererSource, writeDmgBuildInfo, verifyRendererPin, fetchPinnedRenderer };
