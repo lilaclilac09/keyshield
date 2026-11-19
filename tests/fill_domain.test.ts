@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assignKeysToInputs,
@@ -276,64 +274,6 @@ describe("pickKeyForInput", () => {
   });
 });
 
-describe("extension fill uses queued vault keys", () => {
-  it("background returns pending keys so Cursor blanks get pasted", () => {
-    const bg = readFileSync(resolve(__dirname, "../src/extension/background.js"), "utf8");
-    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
-    expect(bg).toContain("function pendingKeysForUpstreams");
-    expect(bg).toContain("function getKeysForDomain");
-    expect(bg).toContain("function fillCursorTabsFromPending");
-    expect(bg).toContain("function injectedAutoFill");
-    expect(content).toContain("function ksAutoFillEmptyInputs");
-    expect(content).toContain("function ksLooksLikeCursorApiBlank");
-    expect(content).toContain("function ksLooksLikeKeyNameField");
-    expect(content).toContain("function ksFillPageNow");
-    expect(content).toContain("function ksIsLocalFillDemo");
-    expect(bg).toContain("function _isFillableTabUrl");
-    expect(bg).toContain("fillCursorTabsFromPending");
-    expect(bg).toContain("/journey/cursor");
-    expect(bg).toContain("GET_KEYS_FOR_DOMAIN");
-    const popup = readFileSync(resolve(__dirname, "../src/extension/popup.js"), "utf8");
-    expect(popup).toContain("return fillActiveTab()");
-    expect(popup).not.toContain("paste into the Cursor API black box");
-    const leftover = readFileSync(resolve(__dirname, "../src/extension/patch-leftover-bridge.py"), "utf8");
-    expect(leftover).toContain("async function copyPreferredCursorKey(){return refreshFillStatus();}");
-    const demo = readFileSync(resolve(__dirname, "../src/web/public/cursor-settings-fill-demo.html"), "utf8");
-    expect(demo).toContain("OpenAI API Key");
-    expect(demo).toContain("127.0.0.1:5173/cursor-settings-fill-demo.html");
-    expect(content).toContain("isKeyShieldDashboardHost() && !ksIsLocalFillDemo() && !ksIsKiloFillContext()");
-    expect(content).toContain("(ksIsKiloFillContext() || ksIsCursorFillContext() || ksIsNvidiaFillContext()) ? remaining[0]");
-    expect(content).toContain("function ksIsNvidiaFillContext");
-    expect(content).toContain("nvapi-");
-    expect(bg).toContain("NVIDIA_FILL_UPSTREAMS");
-    expect(bg).toContain("_hintsWantNvidia");
-    expect(bg).toContain("if (!message.silent) notify");
-    expect(popup).toContain('ver === "1.2.5"');
-    const nvidiaDemo = readFileSync(resolve(__dirname, "../src/web/public/nvidia-fill-demo.html"), "utf8");
-    expect(nvidiaDemo).toContain("NVIDIA API Key");
-    expect(nvidiaDemo).toContain("127.0.0.1:5173/nvidia-fill-demo.html");
-    expect(nvidiaDemo).toContain("data-testid=\"nvidia-api-key\"");
-    expect(bg).toContain("'app.kilo.ai'");
-    expect(bg).toContain("function _isKiloKeyFetchContext");
-    expect(bg).toContain("function ensureFillSession");
-    expect(bg).toContain("function fillTabNow");
-    expect(bg).toContain("function scheduleKiloFillRetries");
-    expect(bg).toContain("['openrouter', 'nvidia', 'openai', 'anthropic', 'groq']");
-    expect(content).toContain("function ksIsKiloFillContext");
-    expect(content).toContain("function ksPreferredKiloFillKey");
-    expect(content).toContain("window.__ksFillPageNow");
-    expect(content).toContain("function ksKiloRouteBlob");
-    expect(popup).toContain("function autoDetectAndFill");
-    expect(popup).toContain("Sign in with passkey");
-    const kiloDemo = readFileSync(resolve(__dirname, "../src/web/public/kilo-byok-fill-demo.html"), "utf8");
-    expect(kiloDemo).toContain("OpenRouter API Key");
-    expect(kiloDemo).toContain("127.0.0.1:5173/kilo-byok-fill-demo.html");
-    expect(kiloDemo).toContain("data-testid=\"kilo-openrouter-key\"");
-    expect(kiloDemo).toContain("ok 1.2.5");
-    expect(kiloDemo).toContain("NVIDIA");
-  });
-});
-
 describe("Kilo BYOK provider change refill", () => {
   it("selected provider wins over a static OpenRouter label", () => {
     expect(wantedUpstreamForKilo("Anthropic", "openrouter api key")).toBe("anthropic");
@@ -344,14 +284,5 @@ describe("Kilo BYOK provider change refill", () => {
     expect(shouldRefillAfterProviderChange("sk-or-v1-LOCALONLY", "sk-or-v1-LOCALONLY")).toBe(true);
     expect(shouldRefillAfterProviderChange("sk-user-typed", "sk-or-v1-LOCALONLY")).toBe(false);
     expect(shouldRefillAfterProviderChange("sk-user-typed", undefined)).toBe(false);
-  });
-
-  it("content.js wires the refill and an idempotency guard", () => {
-    const content = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
-    expect(content).toContain("function ksRefillAfterProviderChange");
-    expect(content).toContain("function ksWantedUpstream");
-    expect(content).toContain("document.addEventListener('change', ksOnProviderPickerEvent, true)");
-    expect(content).toContain("if (window.__ksContentLoaded) return;");
-    expect(content.indexOf("window.__ksContentLoaded")).toBeLessThan(content.indexOf("const PROVIDERS"));
   });
 });

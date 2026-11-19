@@ -1,60 +1,13 @@
-# KeyShield Safari Extension (macOS / iOS wrapper)
+# Safari wrapper (compilation only)
 
-Safari does not load unpacked `manifest.json` directly. You must wrap
-`src/extension/` into an Xcode Safari Web Extension App.
+Requires macOS, Xcode and Node.js. The generator stages only runtime resources, then invokes Apple's converter. The shared origin policy produces the staged manifest. Generated output is not source: the default `src/extension/safari-wrapper/` is ignored, and external output must not be committed.
 
-## Prerequisites
-
-- macOS with Xcode 15+
-- Xcode command-line tools selected:
-  `sudo xcode-select -s /Applications/Xcode.app`
-- Xcode license accepted:
-  `sudo xcodebuild -license accept`
-- Apple Developer signing identity (free account works for local device runs)
-
-## Build the Safari wrapper
-
-From repo root:
-
-```bash
-npm run extension:build-safari
+```sh
+SAFARI_PROJECT_ROOT=/tmp/ks-safari bash src/scripts/build-safari.sh
+xcodebuild -project /tmp/ks-safari/KeyShield/KeyShield.xcodeproj -scheme 'KeyShield (iOS)' -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/ks-safari/ios-build CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project /tmp/ks-safari/KeyShield/KeyShield.xcodeproj -scheme 'KeyShield (macOS)' -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/ks-safari/mac-build CODE_SIGNING_ALLOWED=NO build
 ```
 
-This generates:
+Rerun the generator after runtime changes. `SAFARI_APP_NAME`, `SAFARI_BUNDLE_ID`, and `SAFARI_PROJECT_ROOT` override naming/output. Build with a fresh output root for independent reproducibility; converter `--force` updates an existing wrapper.
 
-- `src/extension/safari-wrapper/KeyShield/KeyShield.xcodeproj`
-
-## Install / enable in Safari
-
-1. Open the generated project:
-   `open src/extension/safari-wrapper/KeyShield/KeyShield.xcodeproj`
-2. In Xcode, set **Signing Team** for both targets:
-   - KeyShield (app)
-   - KeyShield Extension
-3. Run the app target once.
-4. Safari → **Settings** → **Extensions** → enable **KeyShield**.
-5. For first-run website access prompts, choose **Allow on Every Website**
-   (or per-site, if you prefer stricter behavior).
-
-## Quick manual test (Safari + system-style API prompt)
-
-1. Open `https://app.ks.aileena.xyz/?ext=1&demo=shop` and sign in.
-2. Open a page containing an API-key-shaped value on a supported host.
-3. Confirm KeyShield shows an in-page approval card with:
-   - `Use once`
-   - `Always allow`
-   - `Not now`
-4. Click **Use once**:
-   - The detected key should save once and show saved status.
-5. Trigger detection again on the same host and click **Always allow**:
-   - Future detections on that host auto-save without re-prompting.
-
-## Limitations
-
-- Wrapper generation requires macOS + Xcode (`xcrun safari-web-extension-converter`).
-- Re-run `npm run extension:build-safari` after changing files in
-  `src/extension/`.
-- iOS Safari testing requires the wrapped app installed on a device/simulator;
-  enable extension in iOS Settings → Safari → Extensions.
-- Signing/provisioning remains a local Xcode step and cannot be completed from
-  Linux CI.
+Unsigned simulator/macOS compilation does not establish Safari runtime permission, injection, or fill behavior. Enabling an extension on a device requires normal Apple signing and user approval. This extension uses extension-only device-local storage; shared human/agent vault interoperability is UNVERIFIED. See [README.md](README.md) for the security boundary and storage format.

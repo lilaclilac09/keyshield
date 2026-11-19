@@ -10,7 +10,6 @@ import {
 import { needsPasskey } from "../src/web/lib/zk-verify";
 import { detectUpstream, extractDetectedKeys, resolveApiKeyInput, looksLikePlaceholderSecret } from "../src/web/lib/keychain";
 import {
-  flushPendingVaultHits,
   previewPendingVaultHits,
   mergeVaultRows,
   pendingHitsToFillKeys,
@@ -123,8 +122,6 @@ describe("Vault page saved-key hero", () => {
     expect(hook).toContain("Save the API key again");
     const card = readFileSync(resolve(root, "src/web/components/VaultItemCard.tsx"), "utf8");
     expect(card).toContain("if (!v)");
-    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
-    expect(bg).toContain("apiKey: String(value ?? '')");
   });
 });
 
@@ -156,35 +153,6 @@ describe("pending vault preview", () => {
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(hook).toContain("previewPendingVaultHits");
     expect(hook).toContain("__ks_pending_vault");
-    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
-    expect(bg).toContain("function pendingKeysForUpstreams");
-    expect(bg).toContain("ks_pending_vault");
-  });
-});
-
-describe("flushPendingVaultHits", () => {
-  it("is the dashboard write path for extension-queued keys", () => {
-    expect(flushPendingVaultHits).toBeTypeOf("function");
-    const hook = readFileSync(resolve(root, "src/web/App.tsx"), "utf8");
-    expect(hook).toContain("flushPendingVaultHits");
-    expect(hook).toContain("__ks_pending_vault");
-    const bridge = readFileSync(resolve(root, "src/extension/session-bridge.js"), "utf8");
-    expect(bridge).toContain("__ks_pending_vault");
-    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
-    expect(bg).toContain("queuePendingVault");
-    expect(bg).toContain("ks_pending_vault");
-    expect(bg).toContain("pendingApis");
-  });
-});
-
-describe("leftover harvest still queues when HTTP store fails", () => {
-  it("does not bail before writing ks_pending_vault", () => {
-    const leftover = readFileSync(resolve(root, "src/extension/patch-leftover-bridge.py"), "utf8");
-    expect(leftover).not.toContain("if(!token)return{saved:0}");
-    expect(leftover).toContain("leftoverQueuePending");
-    expect(leftover).toContain("leftoverFillCursorTabs");
-    expect(leftover).toContain("sk-(?:proj-|svcacct-|admin-)?");
-    expect(leftover).toContain("ks_pending_vault");
   });
 });
 

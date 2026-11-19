@@ -1,162 +1,36 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KeyShield</title>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      width: 280px;
-      margin: 0;
-      padding: 12px 14px 14px;
-      background: #0a0d1a;
-      color: #e4e4e7;
-      font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
-      font-size: 13px;
-      line-height: 1.45;
-    }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .row {
-      margin: 0 0 10px;
-      padding: 10px;
-      border: 1px solid #1c2238;
-      border-radius: 8px;
-      background: #020408;
-    }
-    .row:last-of-type { margin-bottom: 0; }
-    .line {
-      margin: 0 0 8px;
-      font-size: 12px;
-      color: #a1a1aa;
-    }
-    .line:last-child { margin-bottom: 0; }
-    .line.ok { color: #34d399; }
-    .line.err { color: #f87171; }
-    .saved-count {
-      margin: 0 0 8px;
-      font-size: 22px;
-      font-weight: 700;
-      color: #fafafa;
-      line-height: 1.1;
-    }
-    .api-row {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      padding: 8px 0;
-      border-bottom: 1px solid #1c2238;
-    }
-    .api-row strong { font-size: 12px; color: #e4e4e7; }
-    .api-row .api-note { font-size: 11px; color: #8a96c2; }
-    .api-row code { font-size: 11px; color: #93b4ff; word-break: break-all; }
-    .sub { margin: 0 0 8px; color: #71717a; font-size: 12px; }
-    button {
-      cursor: pointer;
-      display: block;
-      width: 100%;
-      margin: 0;
-      padding: 8px 10px;
-      background: #5b8cff;
-      color: #fff;
-      border: 1px solid #5b8cff;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-    }
-    button.secondary {
-      background: transparent;
-      color: #e4e4e7;
-      border-color: #27272a;
-    }
-    button.danger {
-      background: transparent;
-      color: #f87171;
-      border-color: rgba(239, 68, 68, 0.3);
-      margin-top: 8px;
-    }
-    .status {
-      margin: 10px 0 0;
-      padding: 7px 10px;
-      border-radius: 8px;
-      font-size: 12px;
-      display: none;
-    }
-    .status.ok {
-      display: block;
-      background: rgba(16, 185, 129, 0.12);
-      color: #34d399;
-    }
-    .status.err {
-      display: block;
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-    }
-    body.signed-in .guest-only { display: none !important; }
-    body:not(.signed-in) .signed-only { display: none !important; }
-    .extra { display: none !important; }
-    #copy-status, #fill-ms, #saved-count { display: none; }
-  </style>
-</head>
-<body data-ui="three-line">
-  <h1>KeyShield — Sovereign Vault</h1>
-
-  <section class="row" id="row-auth">
-    <button id="signin" class="guest-only">Sign in</button>
-    <div id="signed-pane" class="signed-only">
-      <p id="signed-status" class="saved-count">0 saved</p>
-      <p id="collected-line" class="line ok">0 collected</p>
-      <p id="saved-count" class="sub">0 saved</p>
-      <div id="saved-apis"></div>
-      <p id="saved-empty" class="sub">None yet. Detect stays on.</p>
-      <button id="clear-top" class="danger">Sign out</button>
-    </div>
-  </section>
-
-  <section class="row" id="row-detect">
-    <p id="detect-line" class="line">detect · checking…</p>
-    <div id="detect-ready" class="status" style="display:block">ok 1.2.5 &lt;all_urls&gt;</div>
-    <p id="ext-latest" class="line ok">1.2.5 · latest</p>
-  </section>
-
-  <section class="row" id="row-copy">
-    <p id="filled-line" class="line">0 filled · —</p>
-    <p id="copy-status" class="line">0 filled · —</p>
-    <p id="fill-ms" class="line">—</p>
-  </section>
-
-  <div id="status" class="status"></div>
-
-  <div class="extra" hidden>
-    <span id="conn"></span>
-    <div id="build"></div>
-    <button id="allow-detect"></button>
-    <button id="fill-tab-signed"></button>
-    <button id="copy-cursor-key">Copy Cursor key</button>
-    <button id="copy-cursor-key-signed"></button>
-    <button id="fill-tab"></button>
-    <button id="use-hosted-top"></button>
-    <textarea id="manual"></textarea>
-    <button id="register"></button>
-    <button id="clear"></button>
-    <input id="api" type="text" />
-    <input id="dash" type="text" />
-    <button id="save"></button>
-    <div id="fingerprint"></div>
-    <input id="remote" type="text" />
-    <button id="point-remote"></button>
-    <button id="point-local"></button>
-    <button id="point-prod"></button>
-    <button id="export-vault"></button>
-    <input id="import-file" type="file" />
-    <button id="import-vault"></button>
-    <div id="backup-status"></div>
-  </div>
-  <script src="browser-api.js"></script>
-  <script src="popup.js"></script>
-</body>
+<meta charset="utf-8">
+<title>KeyShield device vault</title>
+<style>
+body { font: 14px system-ui; width: 350px; padding: 16px; color: #172435; background: #f6f8fb; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+button, input, select { box-sizing: border-box; padding: 9px; margin: 5px 0; width: 100%; }
+button { cursor: pointer; }
+label { display: block; margin-top: 8px; }
+#status { min-height: 36px; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+</style>
+<h1>KeyShield</h1>
+<p>Device-local. Nothing saved until you choose Save.</p>
+<label>Vault passphrase (12+ characters)<input id="passphrase" type="password" autocomplete="off"></label>
+<button id="unlock">Create / unlock vault</button>
+<button id="lock">Lock vault</button>
+<label>Idle lock (seconds)<input id="idle" type="number" value="60" min="1" max="3600"></label>
+<button id="set-idle">Set idle lock</button>
+<hr>
+<button id="find">Find keys on this page</button>
+<section id="candidates" hidden>
+<label>Candidate<select id="candidate"></select></label>
+<label>Label<input id="label" maxlength="100"></label>
+<button id="save">Save</button>
+<button id="confirm" hidden>Already saved — Update label?</button>
+<button id="decline">Decline</button>
+</section>
+<hr>
+<label>Saved keys<select id="entries"></select></label>
+<button id="fill">Fill into this page</button>
+<p id="status" role="status"></p>
+<script src="browser-api.js"></script>
+<script type="module" src="popup.js"></script>
 </html>
