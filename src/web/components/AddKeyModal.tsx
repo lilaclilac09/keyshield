@@ -3,8 +3,10 @@ import { X, Eye, EyeOff, Key, Lock, FileText, Terminal, KeyRound } from 'lucide-
 import { VaultItem, VaultItemType, TYPE_PREFIX } from '../types';
 import { getPrefs } from '../lib/preferences';
 import { detectUpstream, resolveApiKeyInput } from '../lib/keychain';
+import { DeviceVaultRequiredError } from '../lib/device-save';
+import { DeviceVaultConsent } from './DeviceVaultConsent';
 
-interface Props { isOpen: boolean; onClose: () => void; onSave: (item: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => Promise<void> | void; initialData?: Partial<VaultItem>; }
+interface Props { isOpen: boolean; onClose: () => void; onSave: (item: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => Promise<void> | void; initialData?: Partial<VaultItem>; onUnlock?: () => void; }
 
 const PROVIDERS = [
   { id: 'openrouter', name: 'OpenRouter (Nemotron free)', tag: 'ai', domain: 'openrouter.ai', placeholder: 'paste sk-or-v1-\u2026 here' },
@@ -30,12 +32,13 @@ function slugify(s: string): string { return s.trim().toLowerCase().replace(/[^a
 
 const inputCls = 'w-full bg-[#0e1631] border border-[#243365] rounded-lg px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72] focus:outline-none focus:ring-1 focus:ring-white/10 focus:border-zinc-600 transition-colors';
 
-export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialData }) => {
+export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialData, onUnlock }) => {
   const [type, setType] = useState<VaultItemType>('api_key');
   const [name, setName] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [notes, setNotes] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [needsVault, setNeedsVault] = useState(false);
   const [busy, setBusy] = useState(false);
   const [provider, setProvider] = useState(PROVIDERS[0]);
   const [apiKeyValue, setApiKeyValue] = useState('');
@@ -69,7 +72,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
   if (!isOpen) return null;
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setBusy(true); setSaveError('');
+    e.preventDefault(); setBusy(true); setSaveError(''); setNeedsVault(false);
     try {
       let upstream: string; let rawKey: string; let domain = ''; let tag = type.replace('_', ' ');
       if (type === 'api_key') {
@@ -96,7 +99,7 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
       }
       await onSave({ name: type === 'api_key' ? (name || (PROVIDERS.find(p => p.id === upstream) || provider).name) : name, domain, upstream, rawKey, value: rawKey, expiryDate, notes, type, tags: [tag, 'vault'] });
       reset(); onClose();
-    } catch (err) { setSaveError(err instanceof Error ? err.message : 'Failed to save'); }
+    } catch (err) { setNeedsVault(err instanceof DeviceVaultRequiredError); setSaveError(err instanceof Error ? err.message : 'Failed to save'); }
     finally { setBusy(false); }
   };
 
@@ -139,12 +142,13 @@ export const AddKeyModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialD
           {saveError && <div className="px-3 py-2 rounded-lg bg-red-950/30 border border-red-900/50"><p className="text-[12px] text-red-400">{saveError}</p></div>}
 
           <div className="pt-3 flex items-center justify-between border-t border-[#243365]/50">
-            <span className="text-[11px] text-[#5e6a91]" title="Without ZK mode the hosted vault keeps a server-readable copy so the hosted proxy can use it">Hosted vault · zero-knowledge only with ZK mode</span>
+            <span className="text-[11px] text-[#5e6a91]">Device vault · encrypted on this device</span>
             <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] text-[#a8b3d8] hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
               <button type="submit" disabled={busy} className="px-5 py-2 rounded-lg bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-[#5e6a91] text-black text-[13px] font-semibold uppercase tracking-wider transition-colors">{busy ? 'Encrypting\u2026' : 'Save Secret'}</button>
             </div>
           </div>
         </form>
+        {needsVault && <div className="px-6 pb-4 overflow-auto"><DeviceVaultConsent onUnlock={onUnlock} /></div>}
       </div>
     </div>
   );

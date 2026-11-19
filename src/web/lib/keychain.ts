@@ -2,7 +2,7 @@
 
 import { API_BASE, apiFetch } from './auth';
 import { emitVaultChanged } from './vault-list';
-import { vaultStoreName } from './provider-catalog';
+import { saveKeyOnDevice } from './device-save';
 import { extractPageKeyRecords, labelForDetectedKey } from './page-key-labels';
 
 export interface DetectedKey {
@@ -192,9 +192,7 @@ export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiB
 }
 
 export async function detectKeyOnServer(value: string): Promise<DetectedKey> {
-  const r = await apiFetch('/keychain/detect', { method: 'POST', body: JSON.stringify({ value }) });
-  if (!r.ok) throw new Error('detect failed');
-  return r.json();
+  return detectUpstream(value);
 }
 
 export async function fetchRpcCache(): Promise<{ methods: RpcCacheMethod[]; writes_bypass: string[]; lowest_ttl_sec: number | null }> {
@@ -215,22 +213,8 @@ async function writeManageStore(
   upstream: string,
   extra: { name?: string; expiresAt?: string; domain?: string; pageTitle?: string } = {},
 ): Promise<{ id?: string }> {
-  const pageName = extra.name || labelForDetectedKey(value, extractPageKeyRecords(value));
-  const stored = await apiFetch('/manage/store', {
-    method: 'POST',
-    body: JSON.stringify({
-      upstream,
-      apiKey: value,
-      value,
-      name: vaultStoreName({ upstream, value, name: pageName, host: extra.domain, pageTitle: extra.pageTitle }),
-      expires_at: extra.expiresAt || undefined,
-      domain: extra.domain || undefined,
-      pageTitle: extra.pageTitle || undefined,
-    }),
-  });
-  const body = await stored.json().catch(() => ({ detail: 'store failed' }));
-  if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
-  return body as { id?: string };
+  await saveKeyOnDevice(upstream, value);
+  return { id: upstream };
 }
 
 export async function storeDetectedKey(
@@ -242,8 +226,6 @@ export async function storeDetectedKey(
   const up = (upstream || detected.upstream || '').trim();
   if (!value.trim()) throw new Error('Paste a key first');
   if (!up) throw new Error('unrecognized key shape — pick a provider or paste a known prefix');
-  // Write /manage/store only. /keychain/store used to overwrite the latest
-  // helius row, so a sixth UUID ate one of the five already in Vault.
   const saved = await writeManageStore(value, up, extra);
   emitVaultChanged();
   return {

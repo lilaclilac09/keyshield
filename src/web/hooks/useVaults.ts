@@ -1,15 +1,10 @@
 /**
- * useVaults — SQLite `/manage/*` vault.
- *
- * Detect + save POST `/manage/store` with the API key. List GET
- * `/manage/vault` (masked). Reveal GET `/manage/decrypt/{id}`. No
- * passkey / Device Vault unlock on this path.
+ * Device-local saves alongside existing hosted `/manage/*` records.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
 import { isAuthenticated, requestVaultUnlock, API_BASE, apiFetch } from '../lib/auth';
 import {
-  addEntry,
   removeEntry,
   listEntries,
   isVaultUnlocked,
@@ -22,9 +17,10 @@ import {
   VAULT_CHANGED_EVENT,
   type PendingVaultHit,
 } from '../lib/vault-list';
-import { revealZkItem, storeZkItem } from '../lib/zk';
+import { revealZkItem } from '../lib/zk';
+import { saveKeyOnDevice } from '../lib/device-save';
 import { emitAppFeedback } from '../lib/app-feedback';
-import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
+import { catalogTags, formatExpiry, providerMeta } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
   const idx = slug.indexOf('__');
@@ -220,38 +216,10 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      // Detect + save never prompts passkey. Reveal is GET /manage/decrypt.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
-      if (isVaultUnlocked()) {
-        try {
-          await addEntry(upstream, rawKey);
-        } catch {
-          throw new Error('Device vault save failed. Unlock the vault and retry.');
-        }
-        refresh();
-        return;
-      }
-      const stored = await apiFetch('/manage/store', {
-        method: 'POST',
-        body: JSON.stringify({
-          upstream,
-          apiKey: rawKey,
-          value: rawKey,
-          name: vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }),
-        }),
-      });
-      if (!stored.ok) {
-        const err = (await stored.json().catch(() => ({ detail: 'store failed' }))) as { detail?: string; error?: string };
-        if (stored.status === 409 && err.error === 'zk_mode') {
-          // ZK mode on: plaintext is refused, so encrypt here and save ciphertext.
-          await storeZkItem(upstream, rawKey, vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }));
-          refresh();
-          return;
-        }
-        throw new Error(err.detail ?? 'store failed');
-      }
+      await saveKeyOnDevice(upstream, rawKey);
       refresh();
     },
     [refresh],

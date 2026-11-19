@@ -13,6 +13,7 @@
  * has access to the unwrapped vault state.
  */
 import type { VaultCipher } from './vault';
+import { assertSafeRequest } from './secret-guard';
 
 /**
  * Thrown on a 401 from the Worker. Callers should re-authenticate
@@ -85,14 +86,17 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
     },
 
     async push(vaultId, cipher, getToken) {
-      const res = await fetch(vaultUrl(syncUrl, vaultId), {
+      const url = vaultUrl(syncUrl, vaultId);
+      const options = {
         method: 'PUT',
         headers: {
           ...authHeaders(getToken),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(cipher),
-      });
+      };
+      assertSafeRequest(url, options);
+      const res = await fetch(url, options);
       if (res.status === 409) return 'conflict';
       if (res.status === 401) throw new SyncAuthError();
       if (!res.ok) {

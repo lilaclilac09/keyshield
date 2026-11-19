@@ -1,4 +1,5 @@
 import type { AppFeedbackKind } from './app-feedback';
+import { redactSavingSecrets } from './secret-guard';
 
 export const HUMAN_FEEDBACK_VISIBLE_MS: Record<AppFeedbackKind, number> = {
   success: 6500,
@@ -69,7 +70,7 @@ function isNetworkError(message: string): boolean {
 }
 
 export function humanActionError(action: HumanAction, raw: unknown): string {
-  const detail = normalizeMessage(raw, 'Request failed');
+  const detail = redactSavingSecrets(normalizeMessage(raw, 'Request failed'));
   const lower = detail.toLowerCase();
 
   if (action === 'vault-save') {

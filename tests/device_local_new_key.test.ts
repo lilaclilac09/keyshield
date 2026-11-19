@@ -92,11 +92,9 @@ describe('canonical dashboard new key device-local privacy', () => {
     expectPrivate();
   });
 
-  it('preserves the hosted-mode plaintext store contract when no device vault is unlocked', async () => {
-    await useVaults('', '').addItem({ ...input, name: 'Synthetic key' });
-    const store = requests.find(({ url }) => url.endsWith('/manage/store'));
-    expect(store?.init?.method).toBe('POST');
-    expect(JSON.parse(String(store?.init?.body))).toMatchObject({ upstream: 'openai', apiKey: raw, value: raw });
+  it('requires a device vault instead of posting new plaintext keys in hosted mode', async () => {
+    await expect(useVaults('', '').addItem({ ...input, name: 'Synthetic key' })).rejects.toThrow('Keys are saved only on this device.');
+    expect(requests).toHaveLength(0);
   });
 
   it('does not include user-controlled secret labels in success diagnostics', () => {

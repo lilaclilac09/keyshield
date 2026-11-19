@@ -6,8 +6,7 @@
  * This is not a public unauthenticated proxy.
  */
 import { API_BASE, apiFetch, getToken } from './auth';
-import { storeUpstreamKey } from './api';
-import { addEntry, isVaultUnlocked } from './vault-session';
+import { saveKeyOnDevice } from './device-save';
 
 export const OPENROUTER_DEMO_UPSTREAM = 'openrouter';
 export const OPENROUTER_DEMO_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
@@ -101,20 +100,15 @@ export async function connectOpenRouter(apiKey?: string): Promise<OpenRouterStat
     if (!looksLikeOpenRouterKey(key)) {
       throw new Error('Paste an OpenRouter key (sk-or-…) from https://openrouter.ai/keys');
     }
-    await storeUpstreamKey(OPENROUTER_DEMO_UPSTREAM, key);
-    try {
-      await apiFetch('/demo/upstream-key', {
-        method: 'POST',
-        body: JSON.stringify({ upstream: OPENROUTER_DEMO_UPSTREAM, apiKey: key }),
-      });
-    } catch {
-      /* /manage/store already wrote; demo paste is optional */
-    }
-    if (isVaultUnlocked()) {
-      try { await addEntry(OPENROUTER_DEMO_UPSTREAM, key); } catch { /* ignore */ }
-    }
-    try { sessionStorage.setItem('ks_or_connected', '1'); } catch { /* ignore */ }
+    await saveKeyOnDevice(OPENROUTER_DEMO_UPSTREAM, key);
     window.dispatchEvent(new CustomEvent('ks-openrouter-connected'));
+    return {
+      upstream: OPENROUTER_DEMO_UPSTREAM, model: OPENROUTER_DEMO_MODEL,
+      chat_path: OPENROUTER_CHAT_PATH, model_url: OPENROUTER_MODEL_URL,
+      key_configured: true, key_source: 'device-local', key_prefix: maskOpenRouterKey(key),
+      public_unauthenticated_proxy: false, requires_session: true,
+      requires_openrouter_key: true, anyone_can_call: false,
+    };
   }
   return fetchOpenRouterStatus();
 }

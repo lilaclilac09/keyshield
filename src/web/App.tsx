@@ -197,6 +197,8 @@ const MainContent: React.FC = () => {
       if (!Array.isArray(pending) || pending.length === 0) return;
       void flushPendingVaultHits(pending).then((n) => {
         if (n > 0) { refresh(); refreshHome(); }
+      }).catch(() => {
+        emitAppFeedback({ kind: 'error', title: 'Pending keys not saved', detail: 'Unlock or create your device vault, then retry.', source: 'save' });
       });
     };
     window.addEventListener('message', onMsg);
@@ -258,7 +260,7 @@ const MainContent: React.FC = () => {
           });
           throw err;
         }
-      }} initialData={prefilledData} />
+      }} initialData={prefilledData} onUnlock={unlock} />
       <div className="flex flex-1 min-h-0">
         <Sidebar items={NAV} active={section} onNavigate={goSection} walletAddress={fullAddr} connected={!!fullAddr} sol={home?.wallet.sol} usdc={home?.wallet.usdc} onCopyAddress={() => { void copyWithFeedback(fullAddr); }} onLogout={handleLogout} />
         <main className="flex-1 min-w-0 flex flex-col bg-[#0b1226]">
@@ -280,7 +282,7 @@ const MainContent: React.FC = () => {
                 />
               )}
               {section === 'vault' && (<><VaultSection items={items} total={allItems.length} searchQuery={searchQuery} onAdd={() => setIsAddModalOpen(true)} onDelete={deleteItem} onDecrypt={decryptItem} unlocked={unlocked} unlocking={vaultLoading} unlockError={vaultError} onUnlock={unlock} onStored={() => { refreshHome(); refresh(); }} /><div className="mt-6"><ZkModeCard onUnlock={unlock} unlocking={vaultLoading} /></div></>)}
-              {section === 'activity' && <ActivitySection />}
+              {section === 'activity' && <ActivitySection onUnlock={unlock} />}
               {section === 'agents' && (<><AgentsSection /><EphemeralWalletsSection /></>)}
               {section === 'sharing' && <SharingSection addr={fullAddr} />}
               {section === 'sessions' && <SessionsSection onLogout={handleLogout} />}

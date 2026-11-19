@@ -8,6 +8,7 @@
  */
 
 import { prfSalt } from './sync-auth';
+import { assertSafeRequest } from './secret-guard';
 import {
   enrollVault,
   unlockVault,
@@ -299,6 +300,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
+  assertSafeRequest(`${API_BASE}${path}`, { ...options, headers });
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
@@ -335,6 +337,7 @@ export async function proxyFetch(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('X-Upstream-API-Key', apiKey);
+  assertSafeRequest(`${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`, { ...options, headers });
   try {
     return await fetch(
       `${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`,
