@@ -19,10 +19,12 @@ let page: Page;
 let popup: Page;
 let tabId: number;
 let port: number;
+let output: string;
 
 test.beforeAll(async () => {
-  const output = resolve(root, 'dist/extension-acceptance');
-  mkdirSync(output, { recursive: true });
+  const parent = resolve(root, 'dist/extension-acceptance');
+  mkdirSync(parent, { recursive: true });
+  output = mkdtempSync(resolve(parent, 'run-'));
   build = resolve(output, 'extension');
   execFileSync('node', ['src/extension/build.mjs', build], { cwd: root });
   const policy = resolve(build, 'lib/policy.js');
@@ -58,7 +60,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve) => server.close(() => resolve())); });
 test.beforeEach(async ({}, info) => {
-  const profile = mkdtempSync(resolve(root, 'dist/extension-acceptance/profile-'));
+  const profile = mkdtempSync(resolve(output, 'profile-'));
   const extension = info.title.startsWith('KS-EXT-004') ? build : grantedBuild;
   context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium', headless: true, ignoreHTTPSErrors: true,
@@ -75,7 +77,7 @@ test.afterEach(async ({}, info) => {
   expect(requests.filter((req) => req.method !== 'GET')).toEqual([]);
   expect(JSON.stringify(requests)).not.toContain('FAKE_KEYSHIELD');
   console.log(`${info.title}: mock requests=${requests.length}, non-GET=0, transmitted secrets=0`);
-  if (popup && !popup.isClosed()) await popup.screenshot({ path: resolve(root, `dist/extension-acceptance/${info.title.split(' ')[0]}.png`), fullPage: true });
+  if (popup && !popup.isClosed()) await popup.screenshot({ path: resolve(output, `${info.title.split(' ')[0]}.png`), fullPage: true });
   await context?.close();
 });
 async function openPopup() {
@@ -235,6 +237,32 @@ test('KS-EXT-007 hashes, UUIDs, placeholders, identifiers, public base58 and mul
     await expect(popup.locator('#status')).toHaveText('Not a recognised key, nothing saved');
   }
   expect(await stored()).toEqual({});
+});
+test('KS-EXT-008 closing confirmation discards selection and refuses later Save', async () => {
+  await openPopup();
+  await unlock();
+  await popup.close();
+  const before = await stored();
+  expect((await state()).entries).toEqual([]);
+  await selection('input');
+  await expect(popup.locator('#preview')).toContainText(samples[0].value.slice(-4));
+  const { id, provider } = (await state()).pending;
+  await popup.close();
+  await expect.poll(async () => (await state()).pending).toBeNull();
+  expect((await state()).entries).toEqual([]);
+  expect(await stored()).toEqual(before);
+  expect(JSON.stringify(await stored())).not.toContain('FAKE_KEYSHIELD');
+  expect(JSON.stringify(await stored())).not.toContain(samples[0].value);
+  await openPopup();
+  const result = await popup.evaluate((payload) => chrome.runtime.sendMessage(payload), {
+    type: 'SAVE', id, provider, label: 'Closed selection',
+  });
+  expect(result).toMatchObject({ ok: false, error: expect.stringContaining('No pending value') });
+  expect((await state()).entries).toEqual([]);
+  expect(await stored()).toEqual(before);
+  const serialized = JSON.stringify(await stored());
+  expect(serialized).not.toContain('FAKE_KEYSHIELD');
+  for (const sample of samples) expect(serialized).not.toContain(sample.value);
 });
 test('KS-USE-001 fill only the focused input on the saved origin; evil gets nothing', async () => {
   await openPopup();
