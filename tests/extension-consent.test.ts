@@ -152,6 +152,10 @@ describe('device local vault', () => {
 });
 
 describe('extension security surface', () => {
+  it('offers Fill only in the normal popup, not the selection confirmation window', () => {
+    expect(readFileSync('src/extension/confirm.html', 'utf8')).not.toMatch(/id="(?:fill|entries)"/);
+    expect(readFileSync('src/extension/popup.html', 'utf8')).toContain('id="fill"');
+  });
   it('manifests match shared policy without broad or passive capabilities', () => {
     for (const name of ['manifest.json', 'manifest.firefox.json']) {
       const manifest = JSON.parse(readFileSync(`src/extension/${name}`, 'utf8'));

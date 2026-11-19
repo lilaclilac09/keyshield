@@ -127,6 +127,7 @@ test('KS-EXT-001 selection of one value offers confirm; other page values never 
   await page.goto(`${origin}/code-block.html`);
   expect(await stored()).toEqual({});
   await selection('code >> nth=0');
+  await expect(popup.locator('#fill')).toHaveCount(0);
   await expect(popup.locator('#preview')).toHaveText('••••AAAA');
   expect((await state()).pending.value).toBe(samples[0].value);
   expect(await stored()).toEqual({});

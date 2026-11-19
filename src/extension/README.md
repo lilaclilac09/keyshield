@@ -7,7 +7,7 @@ Load this folder unpacked in Chromium. For Firefox, package a copy using `manife
 1. Open a supported provider dashboard. In the popup, paste/type **one** value and click **Add key**; approve that provider's optional site permission. Nothing on the page is read.
 2. Alternatively, select exactly one value and choose **Save selection to KeyShield** from the context menu. This requires the provider's site permission to have already been granted; otherwise it refuses. The confirmation window shows only its masked preview, provider selector and label. iOS Safari uses Add key because it lacks context menus.
 3. Confirm/change the provider and label. Create/unlock the local vault with a passphrase of at least 12 characters, then click **Save** separately. A duplicate needs **Already saved — Update label?** confirmation; only its original label changes. Cancel or close discards the pending value, with no queue.
-4. Focus an input on the **same saved origin**, then click **Fill into this page**.
+4. Close the selection confirmation window if open. Focus an input on the **same saved origin**, then open the normal toolbar popup and click **Fill into this page**. The selection confirmation window is save-only and has no Fill control.
 5. Lock explicitly or let the idle timer lock (60 seconds by default; 1–3600 seconds configurable for the current background session). Worker shutdown also locks. There is no recovery for a forgotten passphrase.
 
 ## Supported boundary

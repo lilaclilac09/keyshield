@@ -27,6 +27,7 @@ function showPending(pending) {
   $('status').textContent = 'Confirm provider and label, then Save. Nothing saved yet.';
 }
 function renderEntries(entries) {
+  if (!$('entries')) return;
   $('entries').replaceChildren(...entries.map((entry) => new Option(
     `${entry.label || entry.provider} · ${entry.preview} · ${entry.origin}`, entry.id,
   )));
@@ -101,7 +102,7 @@ action('cancel', async () => {
   await send({ type: 'CANCEL', id, audit: true });
   $('status').textContent = 'Cancelled — nothing saved';
 });
-action('fill', async () => {
+if ($('fill')) action('fill', async () => {
   await send({ type: 'FILL', id: $('entries').value });
   $('status').textContent = 'Filled focused input on the saved origin';
 });
