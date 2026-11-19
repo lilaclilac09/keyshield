@@ -25,7 +25,8 @@ const path = require('node:path');
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
-const webDir = path.join(repoRoot, 'src', 'web');
+const sourceRoot = process.env.KS_RENDERER_SOURCE_ROOT || repoRoot;
+const webDir = path.join(sourceRoot, 'src', 'web');
 const dest = path.join(desktopDir, 'renderer');
 const stampFile = path.join(desktopDir, '.renderer-install-stamp');
 
@@ -41,8 +42,7 @@ const env = {
 
 function installStamp() {
   const hash = crypto.createHash('sha256');
-  for (const name of ['package.json', 'package-lock.json']) {
-    const file = path.join(webDir, name);
+  for (const file of [path.join(webDir, 'package.json'), path.join(webDir, 'package-lock.json'), path.join(sourceRoot, 'package-lock.json')]) {
     if (fs.existsSync(file)) hash.update(fs.readFileSync(file));
   }
   return hash.digest('hex');
@@ -60,10 +60,11 @@ function nodeModulesFresh() {
 
 function installDependencies() {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const lockfile = path.join(webDir, 'package-lock.json');
+  const installRoot = fs.existsSync(path.join(sourceRoot, 'package-lock.json')) ? sourceRoot : webDir;
+  const lockfile = path.join(installRoot, 'package-lock.json');
   const args = fs.existsSync(lockfile) ? ['ci'] : ['install'];
-  const install = spawnSync(npm, args, { cwd: webDir, env, stdio: 'inherit' });
-  if (install.status !== 0) process.exit(install.status || 1);
+  const install = spawnSync(npm, args, { cwd: installRoot, env, stdio: 'inherit' });
+  if (install.status !== 0) throw new Error(`renderer dependency installation failed (${install.status})`);
   fs.writeFileSync(stampFile, `${installStamp()}\n`);
 }
 
@@ -106,7 +107,7 @@ function verifyRendererDist(dist) {
 function main() {
   if (!fs.existsSync(path.join(webDir, 'package.json'))) {
     console.error('src/web/package.json missing');
-    process.exit(1);
+    throw new Error('src/web/package.json missing');
   }
   if (!nodeModulesFresh()) {
     console.log('installing src/web dependencies…');
@@ -115,15 +116,15 @@ function main() {
     console.log('src/web dependencies are up to date — skipping install');
   }
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const build = spawnSync(npm, ['run', 'build:vite'], { cwd: webDir, env, stdio: 'inherit' });
-  if (build.status !== 0) process.exit(build.status || 1);
-  const dist = path.join(webDir, 'dist');
+  const dist = process.env.KS_RENDERER_DIST_DIR || path.join(webDir, 'dist');
+  const build = spawnSync(npm, ['run', 'build:vite', '--', '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' });
+  if (build.status !== 0) throw new Error(`renderer build failed (${build.status})`);
   const report = verifyRendererDist(dist);
   if (!report.ok) {
     console.error('renderer build is incomplete — refusing to ship it:');
     for (const file of report.missing) console.error(`  missing: ${file}`);
     console.error('Fix the src/web build, then run this again.');
-    process.exit(1);
+    throw new Error('renderer build is incomplete');
   }
   fs.rmSync(dest, { recursive: true, force: true });
   fs.cpSync(dist, dest, { recursive: true });

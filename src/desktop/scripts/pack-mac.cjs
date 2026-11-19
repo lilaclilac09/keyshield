@@ -26,6 +26,7 @@ const path = require('node:path');
 const { inspectMacBundle, verifyMacBundleRuntime } = require('../runtime-preflight.cjs');
 const { hasRenderer } = require('../renderer-server.cjs');
 const { verifyRendererDist } = require('./build-renderer.cjs');
+const { sourceRevision, withRendererSource, writeDmgBuildInfo } = require('./build-provenance.cjs');
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
@@ -173,20 +174,20 @@ function electronVersion() {
   }
 }
 
-function gitCommit() {
-  try {
-    const r = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' });
-    return r.status === 0 ? r.stdout.trim() : 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
-
-function writeBuildInfo(reports, rendererAssets) {
+function writeBuildInfo(reports, rendererAssets, sources, dmgSha256, dest = path.join(releaseDir, 'BUILD-INFO.txt')) {
   const lines = [
     'KeyShield Mac build',
-    `date: ${new Date().toISOString()}`,
-    `git: ${gitCommit()}`,
+    `date: ${sources.createdAt}`,
+    `git: ${sources.desktop.commit}`,
+    `desktop commit: ${sources.desktop.commit}`,
+    `desktop tree: ${sources.desktop.tree}`,
+    `desktop dirty: ${sources.desktop.dirty}`,
+    `desktop repository dirty: ${sources.desktop.repositoryDirty}`,
+    `renderer commit: ${sources.renderer.commit}`,
+    `renderer tree: ${sources.renderer.tree}`,
+    `renderer dirty: ${sources.renderer.dirty}`,
+    `renderer repository dirty: ${sources.renderer.repositoryDirty}`,
+    `dmg sha256: ${dmgSha256 || 'see external KeyShield.dmg.build-info.json (available after image creation)'}`,
     `electron: ${electronVersion()}`,
     `platform: ${process.platform} ${process.arch}`,
     `renderer assets: ${rendererAssets}`,
@@ -198,7 +199,6 @@ function writeBuildInfo(reports, rendererAssets) {
   }
   lines.push('', 'If the app does not open, copy this file and the launch log');
   lines.push('~/Library/Logs/KeyShield/keyshield-desktop.log when reporting it.');
-  const dest = path.join(releaseDir, 'BUILD-INFO.txt');
   fs.writeFileSync(dest, `${lines.join('\n')}\n`);
   return dest;
 }
@@ -213,7 +213,17 @@ function zipApp(appDir, zipPath) {
 }
 
 async function main() {
-  run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')]);
+  const sources = {
+    createdAt: new Date().toISOString(),
+    desktop: sourceRevision(repoRoot, 'src/desktop'),
+  };
+  sources.renderer = withRendererSource(repoRoot, process.env.KS_RENDERER_REF, (root, dist) => {
+    const revision = sourceRevision(root, 'src/web');
+    run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
+      env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
+    });
+    return revision;
+  });
 
   const rendererDir = path.join(desktopDir, 'renderer');
   if (!hasRenderer(rendererDir)) {
@@ -291,7 +301,7 @@ async function main() {
     console.log('packed', appPath);
   }
 
-  const buildInfo = writeBuildInfo(reports, rendererReport.assets.length);
+  const buildInfo = writeBuildInfo(reports, rendererReport.assets.length, sources);
   for (const entry of zipped) {
     fs.copyFileSync(buildInfo, path.join(entry.appDir, 'BUILD-INFO.txt'));
     zipApp(entry.appDir, entry.zipPath);
@@ -302,6 +312,7 @@ async function main() {
   if (preferred) {
     const dmgPath = path.join(releaseDir, 'KeyShield.dmg');
     fs.rmSync(dmgPath, { force: true });
+    fs.rmSync(`${dmgPath}.build-info.json`, { force: true });
     const staging = path.join(releaseDir, 'dmg-root');
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(staging, { recursive: true });
@@ -323,7 +334,9 @@ async function main() {
         '-format', 'UDZO',
         dmgPath,
       ], { stdio: 'inherit' });
-      if (fs.existsSync(dmgPath)) console.log('dmg', dmgPath);
+      const info = writeDmgBuildInfo(dmgPath, sources);
+      writeBuildInfo(reports, rendererReport.assets.length, sources, info.sha256);
+      console.log('dmg', dmgPath);
     } else {
       // Do not write KeyShield.dmg on Linux. A genisoimage ISO named .dmg
       // is not a launchable Mac app (and ISO mangles helper names if you
@@ -336,7 +349,11 @@ async function main() {
   console.log('packed', apps);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { writeBuildInfo };

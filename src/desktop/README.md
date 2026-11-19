@@ -40,6 +40,27 @@ Output lands in `release/`:
 - `KeyShield.dmg` — macOS only; drag the app to `/Applications`
 - `BUILD-INFO.txt` — Electron version, git commit, date, renderer asset
   count, preflight report for the build you just made
+- `KeyShield.dmg.build-info.json` — full desktop/renderer commit and tree
+  SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
+
+To build the renderer from a different immutable revision without switching
+the desktop checkout:
+
+```sh
+KS_RENDERER_REF=<full-commit-sha> npm run pack
+```
+
+The selected revision is resolved locally (fetch it first if necessary), built
+in a detached temporary git worktree with its own dependencies, and removed
+afterward. An unknown ref or failed build aborts packaging, never substitutes
+the current renderer. Build output stays outside the selected source worktree.
+Without the override the current `src/web` working tree is built as before.
+Source dirty flags include untracked source files but exclude generated web
+`dist`; whole-checkout flags also capture edits to shared dependency inputs.
+Revisions/dirty flags are captured before the renderer build. The external
+`release/BUILD-INFO.txt` receives the final DMG hash after creation. Copies
+inside archives point to the detached JSON instead: an image cannot contain
+its own final checksum without changing that checksum.
 
 `npm run pack` on Linux produces the zips but no `.dmg` (a Linux-made
 `.dmg` is not a launchable Mac app). `npm run verify` syntax-checks every
@@ -125,8 +146,15 @@ FAKE sample envelopes copied from the acceptance fixtures into `e2e/keys.json`,
 and never invoke a real provider. `KS_E2E_API` may select another loopback API.
 Screenshots go to `~/shots/after-{source,installed}-*.png`; isolated profiles,
 redacted logs and request audits go to `~/.local/state/keyshield-e2e/`.
-The save test is dynamically expected to fail if the shared web renderer sends
-plaintext first. It prints *all* observed save request shapes, not values;
+Save tests are ordinary, independent tests: an unlocked save must succeed and
+list the key with **every** audited save encrypted, while a fresh, locked email
+session must visibly refuse the save and leave the real backend empty. They
+fail (without `test.fail`) against a plaintext-first renderer. They print only
+request shapes and backend item counts, not values. The unlocked fixture uses
+a synthetic PRF credential and an in-page mock for passkey options and the sync
+worker's challenge/exchange/blob transport; it invokes the real UI unlock and
+client crypto. Python `/zk/enable`, saves, and list requests are not mocked.
+These tests do not verify authenticator/worker authentication, and
 ciphertext-shaped fields alone are not proof of encryption.
 
 `KS_DESKTOP_REQUEST_AUDIT=/existing/directory/requests.jsonl` opts into a

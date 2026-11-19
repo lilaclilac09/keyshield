@@ -37,6 +37,58 @@ async function launch(label, overrides = {}) {
 const audit = (dir) => fs.existsSync(path.join(dir, 'requests.jsonl'))
   ? fs.readFileSync(path.join(dir, 'requests.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
 
+const saveRequests = (dir) => audit(dir).filter((row) => ['POST', 'PUT', 'PATCH'].includes(row.method)
+  && (['/manage/store', '/zk/store'].includes(row.route) || row.route.startsWith('/vault/')));
+
+async function signup(page) {
+  await page.getByTestId('email-login').fill(`ks-e2e+${Date.now()}-${Math.random().toString(16).slice(2)}@example.invalid`);
+  await page.getByTestId('password-login-input').fill('FAKE-e2e-password-2026!');
+  const response = page.waitForResponse((r) => r.url() === `${api}/auth/signup`);
+  await page.getByTestId('email-signup').click();
+  const signedUp = await response;
+  expect(signedUp.ok()).toBe(true);
+  const account = await signedUp.json();
+  await page.getByRole('button', { name: 'Vault', exact: true }).click();
+  await expect(page.getByText('Your vault is empty', { exact: true })).toBeVisible();
+  return account;
+}
+
+async function unlockWithSyntheticPasskey(page) {
+  await page.evaluate(({ api }) => {
+    localStorage.setItem('ks_passkey_user', 'FAKE-e2e-passkey-identity');
+    const prf = crypto.getRandomValues(new Uint8Array(32)).buffer;
+    const bytes = new Uint8Array(32).fill(1).buffer;
+    Object.defineProperty(navigator.credentials, 'get', { configurable: true, value: async () => ({
+      id: 'FAKE-e2e-passkey', rawId: bytes, type: 'public-key',
+      response: { authenticatorData: bytes, clientDataJSON: bytes, signature: bytes, userHandle: bytes },
+      getClientExtensionResults: () => ({ prf: { results: { first: prf } } }),
+    }) });
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, options) => {
+      const url = new URL(typeof input === 'string' ? input : input.url || input.toString(), location.href);
+      const json = (data, status = 200) => Promise.resolve(new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } }));
+      if (url.origin === new URL(api).origin && url.pathname === '/auth/passkey/auth-options') {
+        return json({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB', allowCredentials: [] });
+      }
+      if (url.pathname === '/auth/challenge') return json({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB' });
+      if (url.pathname === '/auth/exchange') return json({ token: 'FAKE-e2e-sync-token', expiresAt: Date.now() + 3600000 });
+      if (url.pathname.startsWith('/vault/')) return json({}, (options?.method || 'GET') === 'GET' ? 404 : 200);
+      return originalFetch(input, options);
+    };
+  }, { api });
+  const card = page.getByTestId('zk-mode-card');
+  await card.getByRole('button', { name: 'Unlock with passkey', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Turn on ZK mode', exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Turn on ZK mode', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Show unlock code for keyshield-proxy', exact: true })).toBeVisible();
+}
+
+async function prepareSecret(page, label) {
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByPlaceholder('e.g. Production API key', { exact: true }).fill(label);
+  await page.getByTestId('new-secret-api-key').fill(samples.find((row) => row.id === 'aws_secret').value);
+}
+
 test.describe.serial('local desktop acceptance', () => {
   let app, page, dir;
   test.beforeAll(async () => ({ app, page, dir } = await launch('account')));
@@ -101,23 +153,53 @@ test.describe.serial('local desktop acceptance', () => {
     }
   });
 
-  test('KS-SEC-002 save sends only ciphertext, not a plaintext-first request', async () => {
-    await page.getByRole('button', { name: 'Vault', exact: true }).click();
-    await page.getByRole('button', { name: 'New', exact: true }).click();
-    await page.getByTestId('new-secret-api-key').fill(samples.find((row) => row.id === 'aws_secret').value);
-    const saved = page.waitForResponse((r) => new URL(r.url()).pathname === '/manage/store' && r.request().method() === 'POST');
+});
+
+test('KS-SEC-001 KS-SEC-002 unlocked vault saves a FAKE key with ciphertext on EVERY save request', async () => {
+  const { app, page, dir } = await launch('unlocked-save');
+  try {
+    await signup(page);
+    await unlockWithSyntheticPasskey(page);
+    const label = `FAKE desktop unlocked ${Date.now()}`;
+    await prepareSecret(page, label);
+    const saved = page.waitForResponse((r) => r.request().method() === 'POST'
+      && ['/manage/store', '/zk/store'].includes(new URL(r.url()).pathname) && r.ok());
     await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
-    expect((await saved).ok()).toBe(true);
-    await expect.poll(() => audit(dir).filter((row) => row.route === '/manage/store').length).toBeGreaterThan(0);
-    const shapes = audit(dir).filter((row) => ['/manage/store', '/zk/store'].includes(row.route));
-    console.log('SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
-    expect(shapes.some((row) => row.syntheticMarkerPresent)).toBe(true);
-    await page.screenshot({ path: path.join(shots, `after-${kind}-save.png`) });
-    const plaintext = shapes.some((row) => row.plaintextFieldPresent);
-    test.fail(plaintext, 'Shared web vault sends plaintext before encryption; owned by the separate web fix');
-    expect(plaintext, 'No plaintext-first save is allowed').toBe(false);
-    expect(shapes.some((row) => row.hasCiphertextEnvelope)).toBe(true);
-  });
+    const response = await saved;
+    expect(response.ok()).toBe(true);
+    await expect(page.getByTestId('vault-saved-apis')).toContainText(label);
+    console.log('UNLOCKED_SAVE_RESULT', JSON.stringify({ status: response.status(), vaultListContainsKey: true }));
+    const shapes = saveRequests(dir);
+    console.log('UNLOCKED_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
+    expect(shapes.length, 'At least one save request must be audited').toBeGreaterThan(0);
+    expect.soft(shapes.filter((row) => row.plaintextFieldPresent), 'Plaintext observed in unlocked vault save').toEqual([]);
+    expect(shapes.every((row) => row.hasCiphertextEnvelope && !row.plaintextFieldPresent), 'EVERY save request must contain ciphertext and no plaintext').toBe(true);
+  } finally { await app.close(); }
+});
+
+test('KS-SEC-001 KS-SEC-002 KS-SAFE-001 locked vault refuses a save and stores nothing', async ({ request }) => {
+  const { app, page, dir } = await launch('locked-save');
+  try {
+    const account = await signup(page);
+    // A fresh email session has neither vault-session state nor an in-memory ZK root.
+    await expect(page.getByTestId('zk-mode-card').getByRole('button', { name: 'Unlock with passkey', exact: true })).toBeVisible();
+    const list = async () => {
+      const response = await request.get(`${api}/manage/vault`, { headers: { Authorization: `Bearer ${account.token}` } });
+      expect(response.ok()).toBe(true);
+      return response.json();
+    };
+    expect((await list()).length).toBe(0);
+    await prepareSecret(page, `FAKE desktop locked ${Date.now()}`);
+    await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
+    await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).some((button) => button.disabled && /Encrypting|Saving/.test(button.textContent)));
+    const shapes = saveRequests(dir);
+    const rows = await list();
+    console.log('LOCKED_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
+    console.log('LOCKED_BACKEND_ITEM_COUNT', rows.length);
+    expect.soft(shapes.filter((row) => row.plaintextFieldPresent), 'Plaintext observed while vault is locked').toEqual([]);
+    expect.soft(rows.length, 'A refused locked-vault save must not create a backend item').toBe(0);
+    await expect(page.locator('form').getByText(/(?:unlock|locked|cannot save|refused)/i)).toBeVisible();
+  } finally { await app.close(); }
 });
 
 for (const [label, env] of [
