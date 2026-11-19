@@ -1,0 +1,23 @@
+{
+  "synthetic_only": true,
+  "allowed_capture_origins": [
+    "https://dashboard.provider.test"
+  ],
+  "approved_provider_origin": "https://api.provider.test",
+  "untrusted_origin": "https://evil.test",
+  "permission_required": true,
+  "explicit_save_click_required": true,
+  "session_ttl_seconds": 60,
+  "code_ttl_seconds": 30,
+  "code_attempt_limit": 3,
+  "lockout_seconds": 120,
+  "clipboard_clear_seconds": 30,
+  "idle_lock_seconds": 60,
+  "scope": {
+    "method": "POST",
+    "path": "/v1/mock",
+    "key_id": "key-alpha"
+  },
+  "network_rule": "Only a human-approved provider-bound bearer request may carry plaintext to api.provider.test over TLS; never forward authentication across origins. All domains are mock .test domains; intercept locally. Never access real providers.",
+  "clock": "2030-01-01T00:00:00Z"
+}
