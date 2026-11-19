@@ -119,6 +119,10 @@ struct HomeView: View {
                     Label("Encrypted on this device", systemImage: "checkmark.shield.fill").foregroundStyle(ShieldTheme.accent)
                     Text("Saved keys are hidden until you reveal them. Agent access is scoped to a single provider, method, and path.").foregroundStyle(.secondary)
                     Button { tab = 1 } label: { Label("Open your vault", systemImage: "arrow.right") }.buttonStyle(.borderedProminent).accessibilityIdentifier("home.vault")
+                    NavigationLink { PaymentsView() } label: {
+                        Label("Payments", systemImage: "receipt").frame(maxWidth: .infinity, alignment: .leading)
+                            .padding().background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
+                    }.accessibilityIdentifier("home.payments")
                     Divider()
                     Text("PERMISSION, NOT POSSESSION").font(.caption.monospaced()).foregroundStyle(.secondary)
                     Text("No agent transport is connected. This tester build uses synthetic credentials only; it does not connect to real providers.").font(.callout)

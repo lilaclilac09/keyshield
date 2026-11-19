@@ -92,6 +92,27 @@ Debug builds alone support `-UITestMode`: an isolated temporary vault, in-memory
 
 Keep encrypted backups and their passphrases safe. Restore replaces entries after authentication and revokes in-memory agent sessions. Recovery screens explain the local-only limitations rather than promising companion-app capabilities.
 
+## Payments demo ledger
+
+Home → **Payments** opens a read-only ledger, not another tab. It starts empty and
+truthfully records no payments. **Show demo receipts** opts into bundled Swift
+JSON examples, grouped Human / Agent then full `DEMO_` wallet, with MPP and x402
+receipt details. Every example is marked DEMO, uses `.test` hosts and fictional
+`DEMO_USDC`, and disappears when the toggle is off or the screen is recreated.
+Nothing is written to the vault or audit log; there is no payment transport.
+
+The separate signed simulator artifact is `KeyShield-iOS-Simulator-Payments.zip`;
+install it using the same instructions above. The original simulator zip is not
+replaced. Debug unit/UI tests cover validation, the empty default, opt-in,
+receipt detail, and opt-out. `testReleasePaymentsZipSmoke` exercises that flow
+without flags on a fresh simulator; point its runner's `UITargetAppPath` and
+matching dependent product path at the extracted zip, not a rebuilt app.
+
+Web features still absent natively include live account/payment history,
+billing and usage totals, wallet connections/signing, MPP open/meter/capture/close/
+withdraw, top-ups and purchases, x402 probes/auto-pay, explorer navigation, and
+receipt download/print. No native screen offers pay, retry, top-up, or connect.
+
 ## Needs a person
 
 - Choose an Apple Developer team and configure signing/provisioning before installing on a physical device or distributing through TestFlight. An unsigned device build only checks compilation.
