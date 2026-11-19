@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Eye, EyeOff, RotateCw } from 'lucide-react';
+import { Terminal, RotateCw } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { RevealField } from '../ui/RevealField';
@@ -11,8 +11,6 @@ import { frameworkSnippets } from '../../lib/keychain';
 export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaultUpstreams = [] }) => {
   const token = getToken() ?? '';
   const wallet = getWalletAddress() ?? 'YOUR_WALLET';
-  const [injectedAt, setInjectedAt] = useState<number | null>(null);
-  const [tick, setTick] = useState(0);
   const [orStatus, setOrStatus] = useState<OpenRouterStatus | null>(null);
   const [agentTok, setAgentTok] = useState<string>('');
   const [agentErr, setAgentErr] = useState<string>('');
@@ -35,13 +33,7 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
     return () => window.removeEventListener('ks-openrouter-connected', onOr);
   }, []);
 
-  React.useEffect(() => {
-    if (!injectedAt) return;
-    const id = window.setInterval(() => { const elapsed = Math.floor((Date.now() - injectedAt) / 1000); if (elapsed >= 30) { setInjectedAt(null); window.clearInterval(id); } else { setTick(t => t + 1); } }, 1000);
-    return () => window.clearInterval(id);
-  }, [injectedAt]);
-
-  const t = agentTok || (injectedAt && token ? token : '<TOKEN_HERE>');
+  const t = '<YOUR_AGENT_TOKEN>';
   const onRotate = async () => { try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {} clearAuth(); clearPasskeyTrust(); notifyAuthChanged(); };
 
   return (
@@ -50,7 +42,7 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
         <RevealField value={token} label="Session token" autoHideSec={30} />
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-[11px] text-[#8a96c2]">Wallet: <span className="font-mono text-[#a8b3d8]">{wallet.length > 16 ? `${wallet.slice(0,8)}\u2026${wallet.slice(-6)}` : wallet}</span></span></div>
-          <Button variant={injectedAt ? 'secondary' : 'ghost'} size="sm" onClick={() => setInjectedAt(injectedAt ? null : Date.now())}>{injectedAt ? <EyeOff size={11} /> : <Eye size={11} />}{injectedAt ? `Injected \xb7 clears in ${30 - Math.floor((Date.now() - injectedAt) / 1000)}s` : 'Inject token into snippets'}</Button>
+          <p className="text-[11px] text-[#8a96c2]">Examples use placeholders. Set credentials only in your own environment.</p>
         </div>
       </Card>
 
