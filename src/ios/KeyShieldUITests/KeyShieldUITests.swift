@@ -113,6 +113,63 @@ final class KeyShieldUITests: XCTestCase {
         tab("Activity"); XCTAssertTrue(app.buttons["activity.export"].exists); screenshot("05-Activity")
         tab("Settings"); XCTAssertTrue(app.buttons["settings.backup"].exists); screenshot("06-Settings")
     }
+    func testDeveloperExampleCopiesOnlyThePlaceholderSnippet() throws {
+        create()
+        tab("Settings")
+        tap("settings.developer")
+        XCTAssertTrue(app.navigationBars["Developer"].exists)
+        XCTAssertTrue(app.staticTexts["Web proxy reference only"].exists)
+        screenshot("18-Developer")
+
+        tap("developer.example.curl")
+        let source = app.staticTexts["developer.example.source"]
+        XCTAssertTrue(source.exists)
+        XCTAssertTrue(source.label.contains("<YOUR_AGENT_TOKEN>"))
+        XCTAssertTrue(source.label.contains("/vproxy/openai/v1/models"))
+        let expected = source.label.filter { !$0.isWhitespace }
+        tap("developer.example.copy")
+        XCTAssertTrue(app.staticTexts["Placeholder example copied"].exists)
+        screenshot("19-PlaceholderExampleCopied")
+
+        tab("Vault")
+        tap("vault.add")
+        let label = app.textFields["key.label"]
+        XCTAssertTrue(label.exists)
+        label.tap()
+        label.press(forDuration: 1)
+        let paste = try XCTUnwrap(app.menuItems.matching(NSPredicate(format: "label == 'Paste'"))
+            .allElementsBoundByIndex.first { $0.isHittable }
+            ?? app.buttons.matching(NSPredicate(format: "label == 'Paste'"))
+            .allElementsBoundByIndex.first { $0.identifier != "key.paste" && $0.isHittable })
+        paste.tap()
+        let pasted = try XCTUnwrap(label.value as? String)
+        XCTAssertEqual(pasted.filter { !$0.isWhitespace }, expected)
+        XCTAssertFalse(pasted.contains(fixture))
+        tap("key.cancel")
+    }
+    func testDocsSupportsNativeAndWebOnlyTroubleshooting() {
+        create()
+        tab("Settings")
+        tap("settings.docs")
+        XCTAssertTrue(app.navigationBars["Docs & Troubleshooting"].exists)
+        screenshot("20-DocsAndTroubleshooting")
+        tap("docs.topic.approvals")
+        XCTAssertTrue(app.navigationBars["Unlock and approvals"].exists)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Session-code approval is unavailable")).firstMatch.exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        tap("docs.topic.browser")
+        XCTAssertTrue(app.navigationBars["Legacy browser extension"].exists)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "lacks the session bridge")).firstMatch.exists)
+        XCTAssertFalse(app.buttons["Copy example"].exists)
+        screenshot("21-LegacyBrowserHelp")
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tap("settings.developer")
+        tap("developer.docs")
+        XCTAssertTrue(app.navigationBars["Docs & Troubleshooting"].exists)
+    }
     func testExplicitSaveAndDuplicateCancel() {
         create(); tab("Vault"); add()
         XCTAssertTrue(app.buttons["key.save"].isEnabled)
