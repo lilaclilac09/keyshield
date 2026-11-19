@@ -32,6 +32,7 @@ import { ActivitySection } from '../src/web/components/sections/ActivitySection'
 import { AddKeyModal } from '../src/web/components/AddKeyModal';
 import { DeviceVaultConsent } from '../src/web/components/DeviceVaultConsent';
 import { makeHttpSyncBackend } from '../src/web/lib/sync';
+import { HomeSection } from '../src/web/components/sections/HomeSection';
 
 const raw = 'sk-or-v1-SYNTHETIC-device-local-new-key';
 let requests: Array<{ url: string; headers: [string, string][]; body: string }>;
@@ -150,6 +151,38 @@ describe.each(entries)('%s device-only save', (name, save) => {
 });
 
 describe('central guards and consent', () => {
+  it('Home counts device APIs and skips both call actions without sending a key', async () => {
+    const props = { home: null, walletConnected: false, onRefresh: vi.fn(), onGo: vi.fn() };
+    let tree = render(() => HomeSection(props));
+    expect(findNode(tree, (node) => node.props?.['data-testid'] === 'home-call-first').props.disabled).toBe(true);
+    await unlock();
+    await connectOpenRouter(raw);
+    await connectOpenRouter(`${raw}-second`);
+    requests = [];
+    tree = render(() => HomeSection(props));
+    const saved = findNode(tree, (node) => node.props?.['data-testid'] === 'home-saved-apis');
+    expect(saved.props.children[0].props.children[0]).toBe(2);
+    const callFirst = findNode(tree, (node) => node.props?.['data-testid'] === 'home-call-first');
+    expect(callFirst.props.disabled).toBe(false);
+    callFirst.props.onClick();
+    findNode(tree, (node) => node.props?.['data-testid'] === 'api-call-openrouter').props.onClick();
+    expect(hooks.states).toContain(DEVICE_CALL_SKIPPED);
+    expect(requests).toHaveLength(0);
+    expectPrivate();
+    lockVault();
+    tree = render(() => HomeSection(props));
+    expect(findNode(tree, (node) => node.props?.['data-testid'] === 'home-saved-apis').props.children[0].props.children[0]).toBe(0);
+  });
+  it('Home still calls existing hosted rows even when a device entry uses the same provider', async () => {
+    await unlock();
+    await connectOpenRouter(raw);
+    requests = [];
+    const home = { wallet: {}, ledger: {}, rpc_cache: { lowest_ttl_sec: 2 }, apis: [{ id: 'hosted', name: 'Hosted', upstream: 'openrouter', prefix: 'masked' }] } as any;
+    const tree = render(() => HomeSection({ home, walletConnected: false, onRefresh: vi.fn(), onGo: vi.fn() }));
+    findNode(tree, (node) => node.props?.['data-testid'] === 'home-call-first').props.onClick();
+    await vi.waitFor(() => expect(requests.some(({ url }) => url.endsWith('/keychain/call'))).toBe(true));
+    expect(JSON.stringify(requests)).not.toContain(raw);
+  });
   it('preserves multiple pasted and later keys per provider, while identical values are no-ops', async () => {
     await unlock();
     const first = '11111111-1111-4111-8111-111111111111';
