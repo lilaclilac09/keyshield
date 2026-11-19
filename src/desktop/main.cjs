@@ -173,22 +173,32 @@ function installHttpsHandler(ses) {
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
   // — that replaces Chromium's standard https handler and can prevent the window
   // from ever loading.
+  const forward = (request, url = request.url) => ses.fetch(url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    duplex: 'half',
+    credentials: request.credentials,
+    redirect: request.redirect,
+    signal: request.signal,
+    bypassCustomProtocolHandlers: true,
+  });
   const handle = (request) => {
     let url;
     try {
       url = new URL(request.url);
     } catch {
-      return net.fetch(request, { bypassCustomProtocolHandlers: true });
+      return forward(request);
     }
     if (useBundle() && url.hostname === DASHBOARD_HOST) {
       return serveRenderer(request.url);
     }
     if (SYNC_PROXY && url.hostname === SYNC_HOST) {
       const local = `${LOCAL_SYNC}${url.pathname}${url.search}`;
-      return net.fetch(local, { bypassCustomProtocolHandlers: true });
+      return forward(request, local);
     }
-    const forward = (req) => net.fetch(req, { bypassCustomProtocolHandlers: true });
-    return registrationObserver ? registrationObserver.observe(request, forward) : forward(request);
+    return registrationObserver && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.session === ses
+      ? registrationObserver.observe(request, forward) : forward(request);
   };
   ses.protocol.handle('https', handle);
   if (registrationObserver) ses.protocol.handle('http', handle);

@@ -20,7 +20,10 @@ function createRegistrationObserver({ apiOrigin, origin, now = Date.now }) {
       const issuedGeneration = generation;
       const response = await forward(request);
       if (registering && issuedGeneration === generation) {
-        if (response.ok && identity && request.headers.get('origin') === origin) {
+        const referer = request.headers.get('referer');
+        let trustedReferer = !referer;
+        try { if (referer) trustedReferer = new URL(referer).origin === origin; } catch {}
+        if (response.ok && identity && trustedReferer) {
           try {
             const options = await response.clone().json();
             if (typeof options.challenge === 'string' && options.challenge &&

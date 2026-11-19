@@ -7,7 +7,7 @@ const requireDesktop = createRequire(new URL('../src/desktop/package.json', impo
 const main = readFileSync('src/desktop/main.cjs', 'utf8');
 const preload = readFileSync('src/desktop/preload.cjs', 'utf8');
 
-async function harness(enabled = true, isPackaged = false) {
+async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   const handlers = new Map<string, Function>();
   const passkey = { register: vi.fn(), get: vi.fn(() => null) };
   let changed = () => {};
@@ -17,7 +17,9 @@ async function harness(enabled = true, isPackaged = false) {
   const app = { on: vi.fn(), setName: vi.fn(), quit: vi.fn(), requestSingleInstanceLock: () => false,
     isPackaged, getPath: () => '/unused', commandLine: { appendSwitch: vi.fn() } };
   const fetch = vi.fn(async () => Response.json({ challenge: 'observed-challenge', user: { id: 'account' }, rp: { id: 'app.ks.aileena.xyz' } }));
-  const context = createContext({ URL, console: { log: vi.fn() }, process: { env: enabled ? { KS_DESKTOP_BROKER: '1' } : {}, platform: 'test' },
+  const protocols = new Map<string, Function>();
+  const ses = { fetch, protocol: { handle: (scheme: string, cb: Function) => protocols.set(scheme, cb) } };
+  const context = createContext({ URL, console: { log: vi.fn() }, process: { env: { ...(enabled ? { KS_DESKTOP_BROKER: '1' } : {}), ...(syncProxy ? { KS_DESKTOP_SYNC_PROXY: '1' } : {}) }, platform: 'test' },
     __dirname: '/unused', require: (name: string) => {
       if (name === 'electron') return { app, net: { fetch }, ipcMain: { handle: (name: string, cb: Function) => handlers.set(name, cb), on: vi.fn() } };
       if (name === './broker.cjs') return { createBroker: () => broker };
@@ -28,10 +30,11 @@ async function harness(enabled = true, isPackaged = false) {
   runInContext(main, context);
   await runInContext('startBroker()', context);
   const frame = { url: 'https://app.ks.aileena.xyz/device-vault', parent: null };
-  const wc = { mainFrame: frame, send: vi.fn() };
+  const wc = { mainFrame: frame, send: vi.fn(), session: ses };
   const win = { isDestroyed: () => false, webContents: wc };
   (context as any).testWindow = win; runInContext('mainWindow = testWindow', context);
-  return { handlers, broker, frame, wc, context, passkey, changed, fetch };
+  (context as any).testSession = ses;
+  return { handlers, broker, frame, wc, context, passkey, changed, fetch, protocols };
 }
 
 describe('broker IPC main-frame boundary', () => {
@@ -59,21 +62,52 @@ describe('broker IPC main-frame boundary', () => {
     }
     expect(w.broker.approve).not.toHaveBeenCalled(); expect(w.passkey.register).not.toHaveBeenCalled();
   });
-  it('accepts only the real main frame at the dashboard origin, including approve and pin', async () => {
+  it.each([true, false])('accepts the main session registration GET without Origin (Referer present: %s)', async (withReferer) => {
     const w = await harness(); const event = { sender: w.wc, senderFrame: w.frame }; const payload = { requestId: 'r', assertion: {}, secret: 'synthetic' };
     w.handlers.get('ks-broker:approve')!(event, payload); expect(w.broker.approve).toHaveBeenCalledWith(payload);
     const registrationRequest = new Request('https://keyshield-production.up.railway.app/auth/passkey/register-options', {
-      headers: { Origin: 'https://app.ks.aileena.xyz', Authorization: 'Bearer account-session' } });
-    const protocols = new Map<string, Function>();
-    (w.context as any).testSession = { protocol: { handle: (scheme: string, cb: Function) => protocols.set(scheme, cb) } };
+      headers: { ...(withReferer ? { Referer: 'https://app.ks.aileena.xyz/device-vault' } : {}), Authorization: 'Bearer account-session' } });
     runInContext('installHttpsHandler(testSession)', w.context);
-    expect([...protocols.keys()]).toEqual(['https', 'http']);
-    await protocols.get('https')!(registrationRequest);
-    expect(w.fetch).toHaveBeenCalledWith(registrationRequest, { bypassCustomProtocolHandlers: true });
+    expect([...w.protocols.keys()]).toEqual(['https', 'http']);
+    await w.protocols.get('https')!(registrationRequest);
+    expect(w.fetch).toHaveBeenCalledWith(registrationRequest.url, expect.objectContaining({
+      method: 'GET', headers: registrationRequest.headers, bypassCustomProtocolHandlers: true }));
     const response = { response: { clientDataJSON: Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge: 'observed-challenge', origin: 'https://app.ks.aileena.xyz' })).toString('base64url') } };
     await w.handlers.get('ks-broker:pinApprovalPasskey')!(event, { response, expectedChallenge: 'renderer-lie' });
     expect(w.passkey.register).toHaveBeenCalledWith(response, 'observed-challenge', 'account', expect.any(Function));
     w.handlers.get('ks-broker:invalidateApprovals')!(event); expect(w.broker.invalidateApprovals).toHaveBeenCalled();
+  });
+  it('does not observe registration through a different session', async () => {
+    const w = await harness(); w.wc.session = {} as any;
+    runInContext('installHttpsHandler(testSession)', w.context);
+    await w.protocols.get('https')!(new Request('https://keyshield-production.up.railway.app/auth/passkey/register-options', {
+      headers: { Referer: 'https://app.ks.aileena.xyz/', Authorization: 'Bearer account-session' } }));
+    expect(w.fetch).toHaveBeenCalledTimes(1);
+    await expect(w.handlers.get('ks-broker:pinApprovalPasskey')!({ sender: w.wc, senderFrame: w.frame }, { response: {} })).rejects.toThrow('approval_registration_unavailable');
+    expect(w.passkey.register).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['http://localhost:8787/auth/register', 'http://localhost:8787/auth/register'],
+    ['https://keyshield-production.up.railway.app/auth/passkey/register-verify', 'https://keyshield-production.up.railway.app/auth/passkey/register-verify'],
+    ['https://sync.ks.aileena.xyz/auth/register', 'http://127.0.0.1:8787/auth/register'],
+  ])('preserves POST method, headers and streaming body when forwarding %s', async (url, destination) => {
+    const w = await harness(true, false, true);
+    runInContext('installHttpsHandler(testSession)', w.context);
+    const body = JSON.stringify({ vaultId: 'test-vault', attestation: { id: 'synthetic' } });
+    const request = new Request(url, { method: 'POST', credentials: 'include',
+      headers: { Authorization: 'Bearer local-test-token', 'Content-Type': 'application/json', Referer: 'https://app.ks.aileena.xyz/' }, body });
+    w.fetch.mockImplementationOnce(async (input: any, init: any) => {
+      expect(input).toBe(destination);
+      expect(init.duplex).toBe('half'); expect(init.bypassCustomProtocolHandlers).toBe(true);
+      const forwarded = new Request(input, init);
+      expect(forwarded.method).toBe('POST'); expect(forwarded.credentials).toBe('include');
+      expect([...forwarded.headers]).toEqual([...request.headers]);
+      expect(await forwarded.text()).toBe(body);
+      return Response.json({ ok: true });
+    });
+    const response = await w.protocols.get(new URL(url).protocol.slice(0, -1))!(request);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(w.fetch).toHaveBeenCalledTimes(1);
   });
   it('exposes only the v2 bridge and removes change subscriptions', () => {
     let bridge: any;

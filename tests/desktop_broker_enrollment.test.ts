@@ -15,9 +15,9 @@ describe('main-observed registration enrollment', () => {
   async function setup() {
     let clock = 1000;
     const observer = createRegistrationObserver({ apiOrigin: api, origin: ORIGIN, now: () => clock });
-    const request = (token = 'owner', origin = ORIGIN, host = api) => new Request(`${host}/auth/passkey/register-options`, {
-      headers: { Authorization: `Bearer ${token}`, Origin: origin } });
-    const observe = (token = 'owner', challenge = 'observed', accountId = 'account-A', origin = ORIGIN, host = api) => observer.observe(request(token, origin, host),
+    const request = (token = 'owner', referer = `${ORIGIN}/device-vault`, host = api) => new Request(`${host}/auth/passkey/register-options`, {
+      headers: { Authorization: `Bearer ${token}`, ...(referer ? { Referer: referer } : {}) } });
+    const observe = (token = 'owner', challenge = 'observed', accountId = 'account-A', referer = `${ORIGIN}/device-vault`, host = api) => observer.observe(request(token, referer, host),
       async () => Response.json({ challenge, user: { id: accountId }, rp: { id: RP_ID } }));
     return { observer, observe, advance: (ms: number) => { clock += ms; } };
   }
@@ -31,18 +31,28 @@ describe('main-observed registration enrollment', () => {
     await expect(store.register(softwarePasskey().registration('other'), 'other', 'account-B')).rejects.toThrow('already_pinned');
   });
 
-  it.each(['unobserved', 'expired', 'wrong challenge', 'wrong origin', 'wrong API', 'account switched', 'reissued'])('refuses %s enrollment', async (mode) => {
+  it.each(['unobserved', 'expired', 'wrong challenge', 'wrong referer', 'malformed referer', 'wrong API', 'account switched', 'reissued'])('refuses %s enrollment', async (mode) => {
     const w = await setup(); const signer = softwarePasskey();
-    if (mode !== 'unobserved') await w.observe('owner', 'observed', 'account-A', mode === 'wrong origin' ? 'https://wrong.invalid' : ORIGIN, mode === 'wrong API' ? 'http://127.0.0.1:9999' : api);
+    if (mode !== 'unobserved') await w.observe('owner', 'observed', 'account-A', mode === 'wrong referer' ? 'https://wrong.invalid' : mode === 'malformed referer' ? 'invalid' : ORIGIN, mode === 'wrong API' ? 'http://127.0.0.1:9999' : api);
     if (mode === 'expired') w.advance(120000);
     if (mode === 'account switched') await w.observe('other-owner', 'other', 'account-B');
     if (mode === 'reissued') await w.observe('owner', 'replacement');
     expect(() => w.observer.consume(signer.registration(mode === 'wrong challenge' ? 'renderer-selected' : 'observed'))).toThrow('unavailable');
   });
 
+  it('accepts a GET without Origin or Referer through the bound session', async () => {
+    const w = await setup(); await w.observe('owner', 'observed', 'account-A', '');
+    expect(w.observer.consume(softwarePasskey().registration('observed'))).toMatchObject({ challenge: 'observed', accountId: 'account-A' });
+  });
+
+  it('still refuses a registration assertion from the wrong origin', async () => {
+    const w = await setup(); await w.observe();
+    expect(() => w.observer.consume(softwarePasskey().registration('observed', { origin: 'https://wrong.invalid' }))).toThrow('unavailable');
+  });
+
   it('does not let failed or malformed options authorize pinning', async () => {
     const w = await setup(); await w.observe();
-    await w.observer.observe(new Request(`${api}/auth/passkey/register-options`, { headers: { Origin: ORIGIN, Authorization: 'Bearer owner' } }), async () => new Response('bad', { status: 401 }));
+    await w.observer.observe(new Request(`${api}/auth/passkey/register-options`, { headers: { Referer: ORIGIN, Authorization: 'Bearer owner' } }), async () => new Response('bad', { status: 401 }));
     expect(() => w.observer.consume(softwarePasskey().registration('observed'))).toThrow('unavailable');
   });
 
