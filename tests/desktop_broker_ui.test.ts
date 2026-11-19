@@ -33,3 +33,18 @@ it('mounts approvals in the normal vault independently of the consent prompt', (
   hooks.index = 0; window.keyshieldDesktop = undefined;
   expect(find(VaultSection(props), (node) => node.type === AgentApprovalsPanel)).toBeUndefined();
 });
+
+it.each(['owner', 'unrelated'])('clears a displayed token only when revoking its %s agent', async (which) => {
+  const agents = [{ agentId: 'A', name: 'same', revoked: false }, { agentId: 'B', name: 'same', revoked: false }];
+  const issued = { agentId: 'A', name: 'same', token: 'synthetic-local-token', brokerUrl: 'http://127.0.0.1:12345' };
+  const broker = { listAgents: vi.fn(async () => agents), listRequests: vi.fn(async () => []),
+    approvalStatus: vi.fn(async () => ({ available: false })), revokeAgent: vi.fn(async () => {}) } as any;
+  hooks.states = [agents, [], '', issued, '', false, Date.now(), false];
+  const tree = AgentApprovalsPanel({ broker });
+  find(tree, (node) => node.props?.['data-testid'] === `broker-revoke-agent-${which === 'owner' ? 'A' : 'B'}`).props.onClick();
+  await vi.waitFor(() => expect(hooks.states[5]).toBe(false));
+  hooks.index = 0;
+  const token = find(AgentApprovalsPanel({ broker }), (node) => node.props?.['data-testid'] === 'broker-issued-token');
+  if (which === 'owner') expect(token).toBeUndefined();
+  else expect(token.props.children).toBe(issued.token);
+});

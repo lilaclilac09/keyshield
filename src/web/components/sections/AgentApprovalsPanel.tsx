@@ -12,7 +12,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
   const [agents, setAgents] = useState<BrokerAgent[]>([]);
   const [requests, setRequests] = useState<BrokerRequest[]>([]);
   const [name, setName] = useState('');
-  const [issued, setIssued] = useState<{ name: string; token: string; brokerUrl: string } | null>(null);
+  const [issued, setIssued] = useState<{ agentId: string; name: string; token: string; brokerUrl: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(Date.now());
@@ -87,7 +87,10 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
           <li key={agent.agentId} data-testid={`broker-agent-${agent.agentId}`} className="flex items-center justify-between gap-2">
             <span>{agent.name} {agent.revoked ? '(revoked)' : ''}</span>
             {!agent.revoked && <button data-testid={`broker-revoke-agent-${agent.agentId}`} className={button} disabled={busy}
-              onClick={() => void act(async () => { await broker.revokeAgent(agent.agentId); setIssued(null); })}>Revoke agent</button>}
+              onClick={() => void act(async () => {
+                await broker.revokeAgent(agent.agentId);
+                setIssued((current) => current?.agentId === agent.agentId ? null : current);
+              })}>Revoke agent</button>}
           </li>
         ))}
       </ul>
