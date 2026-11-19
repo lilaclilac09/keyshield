@@ -33,6 +33,63 @@ const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
 const LIVE = process.env.KS_DESKTOP_LIVE === '1';
 const SYNC_PROXY = process.env.KS_DESKTOP_SYNC_PROXY === '1';
+const BROKER_ENABLED = process.env.KS_DESKTOP_BROKER === '1';
+let mainWindow = null;
+let broker = null;
+let brokerPort = null;
+
+function assertBrokerSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame ||
+      event.senderFrame.parent !== null) {
+    throw new Error('broker_caller_refused');
+  }
+  let origin;
+  try { origin = new URL(event.senderFrame.url).origin; } catch {}
+  if (origin !== DASHBOARD_ORIGIN) throw new Error('broker_caller_refused');
+}
+
+async function startBroker() {
+  if (!BROKER_ENABLED) return;
+  const { createBroker } = require('./broker.cjs');
+  broker = createBroker();
+  const address = await broker.listen();
+  brokerPort = address.port;
+  console.log(`KeyShield approval broker listening on 127.0.0.1:${brokerPort}`);
+  const calls = {
+    listAgents: () => broker.listAgents(),
+    registerAgent: (name) => broker.registerAgent(name),
+    revokeAgent: (agentId) => broker.revokeAgent(agentId),
+    listRequests: () => broker.listRequests(),
+    deny: (id) => broker.deny(id),
+    revokeRequest: (id) => broker.revokeRequest(id),
+    approve: (payload) => broker.approve(payload),
+  };
+  for (const [name, call] of Object.entries(calls)) {
+    ipcMain.handle(`ks-broker:${name}`, (event, payload) => {
+      assertBrokerSender(event);
+      return call(payload);
+    });
+  }
+  const seen = new Set();
+  broker.onChange(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('ks-broker:changed');
+    for (const request of broker.listRequests()) {
+      if (seen.has(request.id)) continue;
+      seen.add(request.id);
+      if (request.status !== 'pending') continue;
+      try {
+        new Notification({ title: 'Agent approval requested', body: 'Review the operation in KeyShield.' }).show();
+      } catch { /* notifications optional */ }
+      bringWindowToForeground(mainWindow);
+    }
+  });
+}
+
+app.on('before-quit', () => {
+  broker?.server.close();
+});
 
 function rendererDir() {
   if (app.isPackaged) return path.join(process.resourcesPath, 'renderer');
@@ -404,8 +461,13 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: false,
+      ...(BROKER_ENABLED && brokerPort !== null
+        ? { additionalArguments: [`--ks-desktop-broker-port=${brokerPort}`] }
+        : {}),
     },
   });
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
   win.once('ready-to-show', () => bringWindowToForeground(win));
   bringWindowToForeground(win);
@@ -491,6 +553,7 @@ if (!gotLock) {
       // left KeyShield running in the background with no window.
       blockStartup(preflight);
     }
+    await startBroker();
     const win = await createWindow();
     bringWindowToForeground(win);
     void maybeTouchId();

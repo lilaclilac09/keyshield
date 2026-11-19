@@ -165,6 +165,42 @@ export async function unlockVault(
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
 
+export async function decryptEntryForApproval(
+  prfOutput: ArrayBuffer,
+  assertion: unknown,
+  entryId: string,
+): Promise<string> {
+  const vaultId = await deriveVaultId(prfOutput);
+  const masterKey = await deriveMasterKey(prfOutput);
+  const bearer = makeBearerHolder();
+  try {
+    let exchangeRes: Response;
+    try {
+      exchangeRes = await fetch(`${SYNC_URL}/auth/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vaultId, assertion }),
+      });
+    } catch (e) {
+      throw describeNetError(e, 'exchange');
+    }
+    if (!exchangeRes.ok) {
+      const err = await exchangeRes.json().catch(() => ({}));
+      throw new Error(err.error ?? `exchange failed (${exchangeRes.status})`);
+    }
+    const { token, expiresAt } = await exchangeRes.json() as { token: string; expiresAt: number };
+    bearer.set(token, expiresAt);
+    const cipher = await makeHttpSyncBackend(SYNC_URL).pull(vaultId, () => bearer.get());
+    if (!cipher) throw new Error('entry not found');
+    const plaintext = await decryptVault(masterKey, cipher);
+    const entry = Object.hasOwn(plaintext.entries, entryId) ? plaintext.entries[entryId] : undefined;
+    if (!entry) throw new Error('entry not found');
+    return entry.apiKey;
+  } finally {
+    bearer.clear();
+  }
+}
+
 /** Get a fresh challenge from CF Worker for the unlock ceremony.
  *  Two entry points so the unlock flow can use the cached vaultId
  *  and skip the probe ceremony entirely. */

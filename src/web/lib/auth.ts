@@ -11,6 +11,7 @@ import { prfSalt } from './sync-auth';
 import {
   enrollVault,
   unlockVault,
+  decryptEntryForApproval,
   getCfChallenge,
   getCfChallengeForVaultId,
   getCachedVaultId,
@@ -941,6 +942,16 @@ export async function registerPasskey(
  * and vault (CF Worker JWT).
  */
 export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCount: number }> {
+  const { prfOutput, assertion } = await requestVaultCeremony();
+  return await unlockVault(prfOutput, assertion);
+}
+
+export async function approveWithPasskey(entryId: string): Promise<string> {
+  const { prfOutput, assertion } = await requestVaultCeremony();
+  return await decryptEntryForApproval(prfOutput, assertion, entryId);
+}
+
+async function requestVaultCeremony() {
   const trust = getPasskeyTrust();
   if (!trust) throw new Error('No passkey registered on this device');
   const { userId } = trust;
@@ -999,7 +1010,7 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
         userHandle: resp.userHandle ? _bufferToB64url(resp.userHandle) : undefined,
       },
     };
-    return await unlockVault(prfOutput, assertion);
+    return { prfOutput, assertion };
   }
 
   // Probe ceremony — only runs once per device (until cache is cleared).
@@ -1035,7 +1046,7 @@ export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCoun
     },
   };
 
-  return await unlockVault(prfOutput, assertion);
+  return { prfOutput, assertion };
 }
 
 export async function listPasskeys(): Promise<Array<{ id: string; name: string; createdAt: number }>> {
