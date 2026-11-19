@@ -732,12 +732,12 @@ export const ActivitySection: React.FC<{ onUnlock?: () => void }> = ({ onUnlock 
               <div className="flex items-center justify-between gap-2 mb-2">
                 <p className="text-[12px] text-white font-medium">One-click OpenRouter</p>
                 <span className={`text-[10px] ${orStatus?.key_configured ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>
-                  {orStatus?.key_configured ? `Connected ${orStatus.key_prefix}` : 'Key not stored'}
+                  {orStatus?.key_configured ? `${orStatus.key_source === 'device-local' ? 'Saved on this device' : 'Connected'} ${orStatus.key_prefix}` : 'No OpenRouter key available'}
                 </span>
               </div>
               <p className="text-[11px] text-[#8a96c2] mb-2">
                 Free model <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-                Not public — anyone needs their own OpenRouter key + a KeyShield session. Paste once; Connect fills `/manage/store`, demo vault, Device Vault (if unlocked), Meter, and Developer snippets.
+                Connect saves your OpenRouter key only in your unlocked device vault. Unlock or create the vault first. The key is not sent to KeyShield or configured for hosted Meter or proxy calls.
               </p>
               <div className="flex gap-2">
                 <input

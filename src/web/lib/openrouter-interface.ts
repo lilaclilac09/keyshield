@@ -7,6 +7,7 @@
  */
 import { API_BASE, apiFetch, getToken } from './auth';
 import { saveKeyOnDevice } from './device-save';
+import { getDecryptedKey } from './vault-session';
 
 export const OPENROUTER_DEMO_UPSTREAM = 'openrouter';
 export const OPENROUTER_DEMO_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
@@ -74,10 +75,21 @@ r = ks.proxy("openrouter", "${OPENROUTER_CHAT_PATH}", json=${JSON.stringify(open
 print(r.json())`;
 }
 
+function deviceOpenRouterStatus(key: string): OpenRouterStatus {
+  return {
+    upstream: OPENROUTER_DEMO_UPSTREAM, model: OPENROUTER_DEMO_MODEL,
+    chat_path: OPENROUTER_CHAT_PATH, model_url: OPENROUTER_MODEL_URL,
+    key_configured: true, key_source: 'device-local', key_prefix: maskOpenRouterKey(key),
+    public_unauthenticated_proxy: false, requires_session: true,
+    requires_openrouter_key: true, anyone_can_call: false,
+  };
+}
+
 export async function fetchOpenRouterStatus(): Promise<OpenRouterStatus> {
+  const localKey = getDecryptedKey(OPENROUTER_DEMO_UPSTREAM);
+  if (localKey) return deviceOpenRouterStatus(localKey);
   const r = await apiFetch('/demo/openrouter');
-  if (!r.ok) {
-    return {
+  const status: OpenRouterStatus = r.ok ? await r.json() : {
       upstream: OPENROUTER_DEMO_UPSTREAM,
       model: OPENROUTER_DEMO_MODEL,
       chat_path: OPENROUTER_CHAT_PATH,
@@ -90,8 +102,8 @@ export async function fetchOpenRouterStatus(): Promise<OpenRouterStatus> {
       requires_openrouter_key: true,
       anyone_can_call: false,
     };
-  }
-  return r.json();
+  const savedKey = getDecryptedKey(OPENROUTER_DEMO_UPSTREAM);
+  return savedKey ? deviceOpenRouterStatus(savedKey) : status;
 }
 
 export async function connectOpenRouter(apiKey?: string): Promise<OpenRouterStatus> {
@@ -102,13 +114,7 @@ export async function connectOpenRouter(apiKey?: string): Promise<OpenRouterStat
     }
     await saveKeyOnDevice(OPENROUTER_DEMO_UPSTREAM, key);
     window.dispatchEvent(new CustomEvent('ks-openrouter-connected'));
-    return {
-      upstream: OPENROUTER_DEMO_UPSTREAM, model: OPENROUTER_DEMO_MODEL,
-      chat_path: OPENROUTER_CHAT_PATH, model_url: OPENROUTER_MODEL_URL,
-      key_configured: true, key_source: 'device-local', key_prefix: maskOpenRouterKey(key),
-      public_unauthenticated_proxy: false, requires_session: true,
-      requires_openrouter_key: true, anyone_can_call: false,
-    };
+    return deviceOpenRouterStatus(key);
   }
   return fetchOpenRouterStatus();
 }

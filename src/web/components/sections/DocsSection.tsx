@@ -119,7 +119,7 @@ export const DocsSection: React.FC = () => {
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">OpenRouter interface (inserted)</span></div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
           Free Nemotron: <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-          Anyone can get their own key at openrouter.ai/keys — KeyShield will not proxy it without a session. Activity → Connect pastes the key into `/manage/store`, vproxy, and Meter.
+          Get your own key at openrouter.ai/keys. Activity → Connect saves it only in your unlocked device vault; unlock or create the vault first. Connect does not send the key to KeyShield or configure hosted vproxy or Meter. The examples below require an existing hosted key and a KeyShield session.
         </p>
         <div className="space-y-3">
           <CodeBlock code={openrouterCurlSnippet(getToken() ?? '<TOKEN_HERE>')} />

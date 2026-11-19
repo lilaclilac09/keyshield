@@ -18,7 +18,7 @@ import { unlockVault, lockVault, getDecryptedKey } from '../src/web/lib/vault-se
 import * as vaultSession from '../src/web/lib/vault-session';
 import * as vaultCrypto from '../src/web/lib/vault';
 import { apiFetch } from '../src/web/lib/auth';
-import { connectOpenRouter } from '../src/web/lib/openrouter-interface';
+import { connectOpenRouter, fetchOpenRouterStatus } from '../src/web/lib/openrouter-interface';
 import { detectKeyOnServer, storeDetectedKeys } from '../src/web/lib/keychain';
 import { flushPendingVaultHits } from '../src/web/lib/vault-list';
 import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED } from '../src/web/lib/device-save';
@@ -151,6 +151,29 @@ describe.each(entries)('%s device-only save', (name, save) => {
 });
 
 describe('central guards and consent', () => {
+  it('OpenRouter status refresh cannot replace a device save with stale hosted status', async () => {
+    await unlock();
+    let finish!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    const staleRefresh = fetchOpenRouterStatus();
+    await connectOpenRouter(raw);
+    finish(Response.json({ key_configured: false, key_source: 'none', key_prefix: null }));
+    const refreshed = await staleRefresh;
+    expect(refreshed).toMatchObject({ key_configured: true, key_source: 'device-local' });
+    expect(JSON.stringify(refreshed)).not.toContain(raw);
+    requests = [];
+    await expect(fetchOpenRouterStatus()).resolves.toMatchObject({ key_configured: true, key_source: 'device-local' });
+    expect(requests).toHaveLength(0);
+    sessionStorage.setItem('ks_landing', 'activity-mpp');
+    hooks.states = [];
+    let tree = render(() => ActivitySection({}));
+    findNode(tree, (node) => node.type === 'input' && String(node.props?.placeholder).includes('sk-or-')).props.onChange({ target: { value: raw } });
+    tree = render(() => ActivitySection({}));
+    await findNode(tree, (node) => node.props?.onClick?.name === 'handleConnectOpenRouter').props.onClick();
+    tree = render(() => ActivitySection({}));
+    expect(findNode(tree, (node) => node.type === 'span' && typeof node.props?.children === 'string' && node.props.children.startsWith('Saved on this device '))).toBeDefined();
+    expectPrivate();
+  });
   it('Home counts device APIs and skips both call actions without sending a key', async () => {
     const props = { home: null, walletConnected: false, onRefresh: vi.fn(), onGo: vi.fn() };
     let tree = render(() => HomeSection(props));
