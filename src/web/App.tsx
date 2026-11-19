@@ -22,7 +22,7 @@ import { VaultSection } from './components/sections/VaultSection';
 import { ZkModeCard } from './components/sections/ZkModeCard';
 import { ActivitySection } from './components/sections/ActivitySection';
 import { fetchKeychainHome, type KeychainHome } from './lib/keychain';
-import { flushPendingVaultHits, shouldRefreshVaultOnVisit, type PendingVaultHit } from './lib/vault-list';
+import { shouldRefreshVaultOnVisit } from './lib/vault-list';
 import { AgentsSection } from './components/sections/AgentsSection';
 import { EphemeralWalletsSection } from './components/sections/EphemeralWalletsSection';
 import { SharingSection } from './components/sections/SharingSection';
@@ -188,23 +188,6 @@ const MainContent: React.FC = () => {
     const t = window.setInterval(() => { refresh(); refreshHome(); }, 3000);
     return () => window.clearInterval(t);
   }, [isAuthenticated, section, refresh, refreshHome]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const onMsg = (e: MessageEvent) => {
-      if (e.source !== window || !e.data) return;
-      const pending = e.data.__ks_pending_vault as PendingVaultHit[] | undefined;
-      if (!Array.isArray(pending) || pending.length === 0) return;
-      void flushPendingVaultHits(pending).then((n) => {
-        if (n > 0) { refresh(); refreshHome(); }
-      }).catch(() => {
-        emitAppFeedback({ kind: 'error', title: 'Pending keys not saved', detail: 'Unlock or create your device vault, then retry.', source: 'save' });
-      });
-    };
-    window.addEventListener('message', onMsg);
-    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
-    return () => window.removeEventListener('message', onMsg);
-  }, [isAuthenticated, refresh, refreshHome]);
 
   const handleLogout = async () => {
     try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
