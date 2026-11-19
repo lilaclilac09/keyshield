@@ -3,6 +3,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 const owner = 'synthetic-owner-vault-guide';
 const agent = 'synthetic-agent-vault-guide';
 const providerKey = 'sk-or-v1-synthetic-vault-guide-only';
+const deviceKey = 'sk-proj-synthetic-device-vault-guide-only';
 const oldClaims = /paste or extension detect|Detect writes this list|Detect on a key page|Agents use the proxy|decrypted key is injected per-request|agent never sees the raw API key|key injected automatically|Proxy injects per-request|Key injected per-request|ks\.openai_client\(|server decrypts your key in memory|extension detects a key/i;
 const forbiddenDeviceClaims = /keyshield-proxy|\/vproxy|LOCAL_PROXY_URL|agents use/i;
 
@@ -21,7 +22,7 @@ async function openDashboard(page: Page, saved = false, offline = false) {
     if (url.origin === 'http://127.0.0.1:5173') return route.continue();
     if (request.method() !== 'GET' && request.method() !== 'OPTIONS') writes.push(url.pathname);
     if (url.pathname === '/manage/vault' && !offline) {
-      return route.fulfill({ json: { items: saved ? [{ id: 'synthetic-legacy-openai', upstream: 'openai', name: 'Synthetic saved OpenAI', masked_value: '••••fake' }] : [] } });
+      return route.fulfill({ json: { items: saved ? [{ id: 'synthetic-legacy-openai', upstream: 'openai', name: 'Synthetic saved OpenAI' }] : [] } });
     }
     return route.fulfill({ status: 503, json: { detail: 'Synthetic backend offline' } });
   });
@@ -56,7 +57,13 @@ for (const state of ['empty', 'saved', 'offline'] as const) {
     await expect(page.getByText(/keys are encrypted on this device and only ciphertext is synced/)).toBeVisible();
     await expect(page.getByText(/Legacy non-ZK \/manage\/store records are separate/)).toBeVisible();
     await checkDeviceFlow(page.locator('main'));
-    if (state === 'saved') await expect(page.getByText('Synthetic saved OpenAI', { exact: true }).first()).toBeVisible();
+    if (state === 'saved') {
+      await expect(page.getByText('Synthetic saved OpenAI', { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId('vault-saved-apis')).toContainText('Legacy proxy URL — separate from Device Vault:');
+      const legacyCard = page.locator('div.group').filter({ has: page.getByRole('heading', { name: 'Synthetic saved OpenAI', exact: true }) });
+      await expect(legacyCard).toContainText('Legacy proxy URL — separate from Device Vault');
+      await expect(legacyCard.getByTitle('Copy to clipboard', { exact: true })).toBeVisible();
+    }
     else await expect(page.getByText('Your vault is empty', { exact: true })).toBeVisible();
     if (state === 'offline') await expect(page.getByText('vault list failed (503)', { exact: true })).toBeVisible();
     await expect(page.locator('body')).not.toContainText(oldClaims);
@@ -87,6 +94,57 @@ for (const path of ['Keychain Save', 'Add Secret', 'Activity Connect'] as const)
     expect(writes).toEqual([]);
   });
 }
+
+test('populated device cards and saved-key summaries omit agent URLs while raw-key Copy works', async ({ page }) => {
+  const writes = await openDashboard(page);
+  let cipher: Record<string, unknown> | null = null;
+  await page.route('**/auth/exchange', route => route.fulfill({ json: { token: 'synthetic-sync-token', expiresAt: Date.now() + 600000 } }));
+  await page.route('**/vault/*', route => {
+    if (route.request().method() === 'PUT') {
+      cipher = route.request().postDataJSON();
+      expect(JSON.stringify(cipher)).not.toContain(deviceKey);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return cipher ? route.fulfill({ json: cipher }) : route.fulfill({ status: 404 });
+  });
+  const unlock = async () => page.evaluate(async () => {
+    const path = '/lib/vault-session.ts';
+    const { unlockVault } = await import(path);
+    await unlockVault(new Uint8Array(32).fill(7).buffer, { synthetic: true });
+  });
+  await unlock();
+  await page.getByRole('button', { name: 'Vault', exact: true }).click();
+  await page.getByPlaceholder('sk-or-…  sk-proj-…  gsk_…  helius UUID…').fill(deviceKey);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Saved 1 on this device.', { exact: true })).toBeVisible();
+  expect(cipher).not.toBeNull();
+  const summary = page.getByTestId('vault-saved-apis');
+  const card = page.locator('div.group').filter({ has: page.getByRole('heading', { name: /OpenAI/ }) });
+  const checkPopulated = async () => {
+    for (const surface of [summary, card]) {
+      await expect(surface).toContainText('Per-agent use of Device Vault keys is not available in this app.');
+      await expect(surface).not.toContainText(/use this in your agents|\/v?proxy\//i);
+      await expect(surface.getByTitle('Copy to clipboard', { exact: true })).toHaveCount(0);
+    }
+  };
+  await checkPopulated();
+  await page.evaluate(async () => {
+    const path = '/lib/vault-session.ts';
+    const { lockVault } = await import(path);
+    lockVault();
+  });
+  await unlock();
+  await page.getByRole('button', { name: 'Docs & Troubleshooting', exact: true }).click();
+  await page.getByRole('button', { name: 'Vault', exact: true }).click();
+  await checkPopulated();
+  await card.getByRole('button', { name: 'Reveal', exact: true }).click();
+  await expect(card.locator('code')).toHaveText(deviceKey);
+  await card.getByRole('button', { name: 'Copy key', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(deviceKey);
+  await card.getByRole('button', { name: 'Hide', exact: true }).click();
+  await expect(card).not.toContainText(deviceKey);
+  expect(writes).toEqual([]);
+});
 
 test('Docs disclaims packaged-app detection and automatic device-key agent access', async ({ page }) => {
   await openDashboard(page);

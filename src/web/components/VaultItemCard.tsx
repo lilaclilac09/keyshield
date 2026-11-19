@@ -110,13 +110,15 @@ export const VaultItemCard: React.FC<Props> = ({ item, onDelete, onDecrypt }) =>
             </div>
             {decryptErr && <p className="text-[11px] text-red-400 mt-1">{decryptErr}</p>}
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1"><span className="text-[10px] text-[#5e6a91] uppercase tracking-wider">Proxy URL <span className="text-[#3e4a72]">(use this in your agents)</span></span></div>
+          {item.id.startsWith('device:') ? (
+            <p className="text-[11px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app.</p>
+          ) : <div>
+            <div className="flex items-center justify-between mb-1"><span className="text-[10px] text-[#5e6a91] uppercase tracking-wider">Legacy proxy URL — separate from Device Vault</span></div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0e1631] border border-[#243365]">
               <code className="flex-1 text-[11px] font-mono text-[#a8b3d8] truncate">{item.value}</code>
               <CopyButton text={item.value} size={12} />
             </div>
-          </div>
+          </div>}
         </>
       ) : item.type === 'password' && parsed ? (
         <div><p className="text-[12px] text-emerald-400 font-mono mb-1">REVEALED · hides in {timeLeft}s</p>

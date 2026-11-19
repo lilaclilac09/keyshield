@@ -112,7 +112,9 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
                 <strong className="text-[13px] text-white">{card.title}</strong>
                 <p className="text-[11px] text-[#8a96c2]">{card.subtitle} · {card.meta}</p>
               </div>
-              <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || item.value}</code>
+              {item.id.startsWith('device:') ? (
+                <p className="text-[11px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app.</p>
+              ) : <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || `Legacy proxy URL — separate from Device Vault: ${item.value}`}</code>}
             </div>
             );
           })}
