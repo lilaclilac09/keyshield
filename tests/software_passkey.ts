@@ -25,11 +25,11 @@ export function softwarePasskey() {
   }
   return {
     id: id.toString('base64url'),
-    registration(challenge: string, options: { origin?: string; uv?: boolean } = {}) {
+    registration(challenge: string, options: { origin?: string; uv?: boolean; prf?: boolean } = {}) {
       const client = Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge, origin: options.origin ?? ORIGIN }));
       const length = Buffer.alloc(2); length.writeUInt16BE(id.length);
       const data = Buffer.concat([authData(options.uv === false ? 0x41 : 0x45, 0), Buffer.alloc(16), length, id, cose]);
-      return { id: id.toString('base64url'), rawId: id.toString('base64url'), type: 'public-key', clientExtensionResults: {},
+      return { id: id.toString('base64url'), rawId: id.toString('base64url'), type: 'public-key', clientExtensionResults: { prf: { enabled: options.prf !== false } },
         response: { clientDataJSON: client.toString('base64url'), attestationObject: Buffer.from(isoCBOR.encode(new Map([
           ['fmt', 'none'], ['attStmt', new Map()], ['authData', new Uint8Array(data)],
         ]))).toString('base64url'), transports: ['internal'] } };

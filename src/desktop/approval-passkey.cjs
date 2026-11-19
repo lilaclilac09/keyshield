@@ -13,7 +13,7 @@ function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz', co
       const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (saved.origin === origin && saved.rpId === rpId && saved.credentialId && saved.publicKey &&
           Number.isSafeInteger(saved.counter) && saved.counter >= 0 && typeof saved.accountId === 'string' && saved.accountId &&
-          saved.enrollment === 'main-confirmed-v1') pin = saved;
+          saved.enrollment === 'main-confirmed-v1' && saved.prfEnabled === true) pin = saved;
     } catch { /* invalid existing pins remain unavailable and cannot be replaced */ }
   }
   function save(next) {
@@ -35,6 +35,7 @@ function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz', co
       return serial(async () => {
         if (occupied) throw new Error('approval_passkey_already_pinned');
         if (typeof accountId !== 'string' || !accountId) throw new Error('approval_registration_unavailable');
+        if (response?.clientExtensionResults?.prf?.enabled !== true) throw new Error('approval_prf_required');
         const result = await verifyRegistrationResponse({
           response, expectedChallenge, expectedOrigin: origin, expectedRPID: rpId,
           requireUserVerification: true,
@@ -43,7 +44,7 @@ function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz', co
         const { credential } = result.registrationInfo;
         if (!await confirmEnrollment({ credentialId: credential.id }) || !isCurrent()) throw new Error('approval_confirmation_refused');
         save({ credentialId: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'),
-          counter: credential.counter, rpId, origin, accountId, enrollment: 'main-confirmed-v1' });
+          counter: credential.counter, rpId, origin, accountId, enrollment: 'main-confirmed-v1', prfEnabled: true });
       });
     },
     verify(response, expectedChallenge) {

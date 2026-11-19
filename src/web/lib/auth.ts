@@ -901,10 +901,11 @@ export async function registerPasskey(
   }
   const result = await verRes.json();
 
-  if (window.keyshieldDesktop?.broker) {
+  const ext = credential.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } };
+  if (window.keyshieldDesktop?.broker && ext?.prf?.enabled === true) {
     try {
       await window.keyshieldDesktop.broker.pinApprovalPasskey({
-        response: { ...credPayload, clientExtensionResults: {} },
+        response: { ...credPayload, clientExtensionResults: { prf: { enabled: true } } },
       });
     } catch {
       // Pin availability does not affect normal vault enrollment.
@@ -916,7 +917,6 @@ export async function registerPasskey(
   // the identity ceremony if the authenticator has no PRF (virtual
   // authenticators, some hardware keys) or the worker is unreachable —
   // Settings can show Face ID success; Device Vault enroll retries later.
-  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const prfOutput = ext?.prf?.results?.first;
   if (!prfOutput) {
     return {

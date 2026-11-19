@@ -91,18 +91,24 @@ describe('main-observed registration enrollment', () => {
     expect(markup).not.toMatch(/re-enroll|rotate|rotation/i);
   });
 
-  it('keeps normal registration working when broker pinning is unavailable', async () => {
+  it('refuses a non-PRF passkey before requesting native confirmation', async () => {
+    const confirmEnrollment = vi.fn(async () => true); const store = createApprovalPasskey({ confirmEnrollment });
+    await expect(store.register(softwarePasskey().registration('observed', { prf: false }), 'observed', 'account-A')).rejects.toThrow('approval_prf_required');
+    expect(confirmEnrollment).not.toHaveBeenCalled(); expect(store.get()).toBeNull();
+  });
+
+  it.each([true, false])('keeps normal registration working and pins only PRF-enabled credentials (%s)', async (prfEnabled) => {
     const events = new EventTarget();
     const pin = vi.fn(async () => { throw new Error('approval_registration_unavailable'); });
     vi.stubGlobal('window', { location: { hostname: 'localhost' }, keyshieldDesktop: { broker: { pinApprovalPasskey: pin } }, addEventListener: events.addEventListener.bind(events) });
     vi.stubGlobal('localStorage', { getItem: () => null });
     vi.stubGlobal('navigator', { credentials: { create: async () => ({ id: 'id', rawId: new Uint8Array([1]).buffer,
-      response: { attestationObject: new Uint8Array([2]).buffer, clientDataJSON: new Uint8Array([3]).buffer }, getClientExtensionResults: () => ({}) }) } });
+      response: { attestationObject: new Uint8Array([2]).buffer, clientDataJSON: new Uint8Array([3]).buffer }, getClientExtensionResults: () => ({ prf: { enabled: prfEnabled } }) }) } });
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('register-options')
       ? Response.json({ challenge: 'AQID', user: { id: 'BAUG' }, rp: { id: RP_ID } })
       : Response.json({ credentialId: 'id', name: 'normal passkey' })));
     const { registerPasskey } = await import('../src/web/lib/auth');
     expect(await registerPasskey('normal passkey')).toMatchObject({ credentialId: 'id', vaultEnrolled: false });
-    expect(pin).toHaveBeenCalledTimes(1);
+    expect(pin).toHaveBeenCalledTimes(prfEnabled ? 1 : 0);
   });
 });
