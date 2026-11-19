@@ -44,8 +44,8 @@ test.describe.serial('local desktop acceptance', () => {
 
   test('KS-HUM-003 login is usable without a native prompt and scrolls within the window', async () => {
     await expect(page.getByTestId('email-signup')).toBeVisible();
-    await page.getByTestId('desktop-session-token-input').scrollIntoViewIfNeeded();
-    await expect(page.getByTestId('desktop-session-token-input')).toBeInViewport();
+    await page.getByRole('button', { name: 'Use session token', exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'Use session token', exact: true })).toBeInViewport({ ratio: 1 });
     await page.screenshot({ path: path.join(shots, `after-${kind}-login-scroll.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByTestId('email-login').scrollIntoViewIfNeeded();
