@@ -11,8 +11,10 @@
 		36050BF4F22C2B61AA79402B /* Primitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B98DF0818EBDFF2855F425 /* Primitives.swift */; };
 		3879AA94EBD30036122EA1C3 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E01CD403FB7709EBE6714B54 /* VaultStore.swift */; };
 		3941AEC5B0DFBD816A29D571 /* KeyShieldUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04FE2CD938EA3DB55971700C /* KeyShieldUITests.swift */; };
+		5100558B927476C2F435C763 /* PaymentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A6FB24F515FCA099EC6736 /* PaymentsView.swift */; };
 		5BFD3C989389C7394581DC5E /* agents.json in Resources */ = {isa = PBXBuildFile; fileRef = F06746805706FE0693754777 /* agents.json */; };
 		5EBCD59E0812548284C2C860 /* policy.json in Resources */ = {isa = PBXBuildFile; fileRef = 77DF26B584A7FE5D7CBBE272 /* policy.json */; };
+		714D683B466FEF26FFFADE67 /* DemoPaymentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0384749E4528946E914DA59F /* DemoPaymentsTests.swift */; };
 		79D24146B6D0E51F8384C234 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1284D1CCEB8F01BFC59675DF /* AppModel.swift */; };
 		7AF8779185BDBD79B3885C5B /* ApprovalCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60F54FA3C8D99D1385BC63D8 /* ApprovalCenter.swift */; };
 		83ACCE0A5D93EED8727EF4D1 /* keys.json in Resources */ = {isa = PBXBuildFile; fileRef = C947F06C890E86634E30E950 /* keys.json */; };
@@ -20,6 +22,7 @@
 		98C8E5060B37D6BFC23355DD /* KeyShieldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A55159A48A89F80F568901B /* KeyShieldApp.swift */; };
 		AAEDACE2F0A6BD0CC74C4F5A /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E479D7408C6267C986310B8 /* CoreTests.swift */; };
 		C609921C6B8B34BEB9263A79 /* SecondaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */; };
+		D402178F3CD13314FBEC48A4 /* DemoPaymentsLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */; };
 		DB01641413B131364CB92795 /* auth.json in Resources */ = {isa = PBXBuildFile; fileRef = C055CB4179C8EEE97852511B /* auth.json */; };
 		DDD8FA148F31008258D7A05C /* AuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */; };
 		DE62535CD4FCCD6D1DFB5A41 /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26EC857606E2674B705AB14 /* BackupService.swift */; };
@@ -46,6 +49,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0384749E4528946E914DA59F /* DemoPaymentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPaymentsTests.swift; sourceTree = "<group>"; };
 		04FE2CD938EA3DB55971700C /* KeyShieldUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyShieldUITests.swift; sourceTree = "<group>"; };
 		0E479D7408C6267C986310B8 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		1284D1CCEB8F01BFC59675DF /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -58,10 +62,12 @@
 		77DF26B584A7FE5D7CBBE272 /* policy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = policy.json; sourceTree = "<group>"; };
 		78EDA5857FDFE2BC43FFB96C /* KeyShield.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = KeyShield.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B48DB321D9A7192F9335CC8 /* KeyShieldTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeyShieldTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		82A6FB24F515FCA099EC6736 /* PaymentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentsView.swift; sourceTree = "<group>"; };
 		899C45D46F2BBE7C20645435 /* ProviderRequestExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRequestExecutor.swift; sourceTree = "<group>"; };
 		8C1E16210FE2FDB08909D19C /* AgentSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessions.swift; sourceTree = "<group>"; };
 		9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondaryViews.swift; sourceTree = "<group>"; };
 		9D3F055BB1393D7795C12A27 /* Simulator.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Simulator.entitlements; sourceTree = "<group>"; };
+		A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPaymentsLedger.swift; sourceTree = "<group>"; };
 		AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditLog.swift; sourceTree = "<group>"; };
 		C055CB4179C8EEE97852511B /* auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = auth.json; sourceTree = "<group>"; };
 		C947F06C890E86634E30E950 /* keys.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = keys.json; sourceTree = "<group>"; };
@@ -88,6 +94,7 @@
 			children = (
 				1284D1CCEB8F01BFC59675DF /* AppModel.swift */,
 				2A55159A48A89F80F568901B /* KeyShieldApp.swift */,
+				82A6FB24F515FCA099EC6736 /* PaymentsView.swift */,
 				13611F3765F4FC81C6F6228C /* RootView.swift */,
 				9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */,
 				9D3F055BB1393D7795C12A27 /* Simulator.entitlements */,
@@ -115,6 +122,7 @@
 				AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */,
 				D26EC857606E2674B705AB14 /* BackupService.swift */,
 				638CEAB9D1196CE7061BD66B /* ClipboardService.swift */,
+				A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */,
 				E4B98DF0818EBDFF2855F425 /* Primitives.swift */,
 				899C45D46F2BBE7C20645435 /* ProviderRequestExecutor.swift */,
 				E01CD403FB7709EBE6714B54 /* VaultStore.swift */,
@@ -144,6 +152,7 @@
 			isa = PBXGroup;
 			children = (
 				0E479D7408C6267C986310B8 /* CoreTests.swift */,
+				0384749E4528946E914DA59F /* DemoPaymentsTests.swift */,
 				0257FC5388399D883B587A76 /* Fixtures */,
 			);
 			path = KeyShieldTests;
@@ -261,6 +270,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAEDACE2F0A6BD0CC74C4F5A /* CoreTests.swift in Sources */,
+				714D683B466FEF26FFFADE67 /* DemoPaymentsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -282,7 +292,9 @@
 				DDD8FA148F31008258D7A05C /* AuditLog.swift in Sources */,
 				DE62535CD4FCCD6D1DFB5A41 /* BackupService.swift in Sources */,
 				3425466B0FB2DE32704FF8E1 /* ClipboardService.swift in Sources */,
+				D402178F3CD13314FBEC48A4 /* DemoPaymentsLedger.swift in Sources */,
 				98C8E5060B37D6BFC23355DD /* KeyShieldApp.swift in Sources */,
+				5100558B927476C2F435C763 /* PaymentsView.swift in Sources */,
 				36050BF4F22C2B61AA79402B /* Primitives.swift in Sources */,
 				EE132F6B9C1B6A4C0A753B3E /* ProviderRequestExecutor.swift in Sources */,
 				962DD91376011584B24F4689 /* RootView.swift in Sources */,
