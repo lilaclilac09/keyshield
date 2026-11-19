@@ -1,4 +1,5 @@
 import XCTest
+import CoreFoundation
 
 final class KeyShieldUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -8,7 +9,9 @@ final class KeyShieldUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        #if DEBUG
         app.launchArguments = ["-UITestMode"]
+        #endif
         app.launch()
     }
     override func tearDownWithError() throws { app.terminate() }
@@ -48,12 +51,57 @@ final class KeyShieldUITests: XCTestCase {
     }
     #if !DEBUG
     func testReleaseLaunchWithTestArgumentShowsNormalOnboarding() {
+        app.terminate()
+        app.launchArguments = ["-UITestMode"]
+        app.launch()
         XCTAssertTrue(app.buttons["onboarding.create"].waitForExistence(timeout: 5))
         screenshot("Release-IgnoresUITestMode")
         tap("onboarding.create"); tap("onboarding.cancel")
         XCTAssertTrue(app.buttons["onboarding.create"].exists)
         XCTAssertFalse(app.tabBars.buttons["Home"].exists)
     }
+    #if targetEnvironment(simulator)
+    private func matchFaceID(_ screenshotName: String, awaiting element: XCUIElement) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = screenshotName; attachment.lifetime = .keepAlways; add(attachment)
+        let authenticated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            if element.exists { return true }
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                CFNotificationName(rawValue: "com.apple.BiometricKit_Sim.pearl.match" as CFString), nil, nil, true)
+            return false
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [authenticated], timeout: 15), .completed)
+    }
+    func testReleaseSignedZipPersistsVaultAndRequiresFaceID() {
+        XCTAssertTrue(app.launchArguments.isEmpty)
+        screenshot("Release-01-Onboarding")
+        create(); screenshot("Release-02-CreatedVault")
+        tab("Vault"); add(); tap("key.save")
+        XCTAssertTrue(app.buttons["vault.entry.Test OpenAI"].waitForExistence(timeout: 5))
+        screenshot("Release-03-SavedSyntheticKey")
+        XCTAssertFalse(app.debugDescription.contains(fixture))
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["lock.unlock"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.debugDescription.contains(fixture))
+        screenshot("Release-04-RelaunchedLocked")
+        tap("lock.unlock")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let permission = springboard.alerts.buttons["OK"]
+        if permission.waitForExistence(timeout: 3) { permission.tap() }
+        XCTAssertFalse(app.tabBars.buttons["Home"].exists)
+        matchFaceID("Release-05-FaceIDUnlockPrompt", awaiting: app.tabBars.buttons["Home"])
+        screenshot("Release-06-Authenticated")
+        tab("Vault"); detail(); tap("detail.reveal")
+        XCTAssertFalse(app.staticTexts["detail.secret"].exists)
+        XCTAssertFalse(app.buttons["approval.useCode"].isEnabled)
+        screenshot("Release-07-RevealApproval")
+        approveBiometric()
+        XCTAssertFalse(app.staticTexts["detail.secret"].exists)
+        matchFaceID("Release-08-FaceIDRevealPrompt", awaiting: app.staticTexts["detail.secret"])
+        XCTAssertEqual(app.staticTexts["detail.secret"].label, fixture)
+        screenshot("Release-09-ApprovedReveal")
+    }
+    #endif
     #endif
     func testOnboardingCancelThenCreateAndMainScreens() {
         tap("onboarding.create"); tap("onboarding.cancel")

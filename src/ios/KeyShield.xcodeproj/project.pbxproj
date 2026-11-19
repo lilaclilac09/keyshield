@@ -61,6 +61,7 @@
 		899C45D46F2BBE7C20645435 /* ProviderRequestExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRequestExecutor.swift; sourceTree = "<group>"; };
 		8C1E16210FE2FDB08909D19C /* AgentSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessions.swift; sourceTree = "<group>"; };
 		9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondaryViews.swift; sourceTree = "<group>"; };
+		9D3F055BB1393D7795C12A27 /* Simulator.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Simulator.entitlements; sourceTree = "<group>"; };
 		AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditLog.swift; sourceTree = "<group>"; };
 		C055CB4179C8EEE97852511B /* auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = auth.json; sourceTree = "<group>"; };
 		C947F06C890E86634E30E950 /* keys.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = keys.json; sourceTree = "<group>"; };
@@ -89,6 +90,7 @@
 				2A55159A48A89F80F568901B /* KeyShieldApp.swift */,
 				13611F3765F4FC81C6F6228C /* RootView.swift */,
 				9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */,
+				9D3F055BB1393D7795C12A27 /* Simulator.entitlements */,
 				505F344BC9DDB85F3B636170 /* VaultViews.swift */,
 				7B98A956CE5A4CA77BD26F35 /* Core */,
 			);
@@ -493,7 +495,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = KeyShield/Simulator.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Approve a displayed KeyShield operation.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -510,7 +514,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = KeyShield/Simulator.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Approve a displayed KeyShield operation.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
