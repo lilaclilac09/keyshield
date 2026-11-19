@@ -76,9 +76,7 @@ def broker(tmp_path, monkeypatch):
 
     def loopback_only(sock, address):
         if not (
-            isinstance(address, tuple)
-            and address[0] == "127.0.0.1"
-            and address[1] == allowed_port
+            isinstance(address, tuple) and address[0] == "127.0.0.1" and address[1] == allowed_port
         ):
             network_attempts.append(address)
             raise AssertionError(f"Non-mock egress forbidden: {address!r}")
@@ -104,9 +102,7 @@ def broker(tmp_path, monkeypatch):
     )
     saved = kzk.seal_item(root, "openai", FAKE_KEY, name="Deliberate synthetic save")
     assert control.post("/manage/store", headers=owner_headers, json=saved).status_code == 200
-    issued = control.post(
-        "/sessions/proxy-token", headers=owner_headers, json={"ttl_seconds": 60}
-    )
+    issued = control.post("/sessions/proxy-token", headers=owner_headers, json={"ttl_seconds": 60})
     assert issued.status_code == 200
     server_token = issued.json()["token"]
 
