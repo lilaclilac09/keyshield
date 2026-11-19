@@ -93,7 +93,7 @@ describe("passkey is not required to save", () => {
     expect(hits.every((hit) => hit.upstream === "helius")).toBe(true);
   });
 
-  it("Vault / Home save and addItem do not prompt passkey", () => {
+  it("Vault saves use explicit device-vault consent rather than silently prompting passkey", () => {
     const vault = readFileSync(resolve(root, "src/web/components/sections/VaultSection.tsx"), "utf8");
     const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
@@ -102,7 +102,9 @@ describe("passkey is not required to save", () => {
     expect(home).not.toContain("storeDetectedKey");
     expect(home).not.toContain("ensureVerified");
     expect(home).not.toContain("Verifying with passkey");
-    expect(hook).toContain("Detect + save never prompts passkey");
+    expect(hook).toContain("await saveKeyOnDevice(upstream, rawKey)");
+    expect(hook).not.toContain("apiFetch('/manage/store'");
+    expect(vault).toContain("DeviceVaultConsent");
     expect(hook).not.toMatch(/await unlock\(\)/);
   });
 });
@@ -116,8 +118,8 @@ describe("Vault page saved-key hero", () => {
     expect(src).toContain("item.name");
     expect(src).toContain("/manage/vault");
     expect(src).toContain("storeDetectedKeys");
-    expect(src).toContain("extractDetectedKeys");
-    expect(src).not.toContain("Unlock Device Vault");
+    expect(src).toContain("quickPasteError");
+    expect(src).toContain("DeviceVaultConsent");
     const hook = readFileSync(resolve(root, "src/web/hooks/useVaults.ts"), "utf8");
     expect(hook).toContain("/manage/decrypt/");
     expect(hook).toContain("Save the API key again");

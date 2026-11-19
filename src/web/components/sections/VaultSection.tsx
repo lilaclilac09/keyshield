@@ -3,7 +3,9 @@ import { Key, Plus, ShieldCheck, ArrowRight } from 'lucide-react';
 import { VaultItem } from '../../types';
 import { VaultItemCard } from '../VaultItemCard';
 import { StatCard } from '../ui/Card';
-import { callKeychain, detectUpstream, quickPasteError, storeDetectedKeys } from '../../lib/keychain';
+import { detectUpstream, quickPasteError, storeDetectedKeys } from '../../lib/keychain';
+import { DEVICE_CALL_SKIPPED, DeviceVaultRequiredError } from '../../lib/device-save';
+import { DeviceVaultConsent } from '../DeviceVaultConsent';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
 import { humanActionError } from '../../lib/human-usable';
@@ -15,11 +17,12 @@ interface Props {
   onStored?: () => void;
 }
 
-export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlockError, onStored }) => {
+export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlockError, onStored, onUnlock }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<'save' | 'save-call' | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [needsVault, setNeedsVault] = useState(false);
   const detected = detectUpstream(paste);
 
   const saveAndCall = async (alsoCall: boolean) => {
@@ -30,7 +33,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       emitAppFeedback({ kind: 'error', title: 'Cannot save', detail, source: 'save' });
       return;
     }
-    setBusy(true); setBusyAction(alsoCall ? 'save-call' : 'save'); setMsg(null);
+    setBusy(true); setBusyAction(alsoCall ? 'save-call' : 'save'); setMsg(null); setNeedsVault(false);
     emitAppFeedback({
       kind: 'busy',
       title: alsoCall ? 'Saving and calling…' : 'Saving…',
@@ -39,24 +42,23 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
     try {
       const stored = await storeDetectedKeys(paste, detected.upstream ?? undefined);
       onStored?.();
-      const first = stored[0];
-      if (alsoCall && first?.upstream) {
-        const result = await callKeychain(first.upstream);
-        const line = `Saved ${stored.length} · call ${result.latency_ms.toFixed(0)}ms · cache ${result.cache}`;
+      if (alsoCall) {
+        const line = DEVICE_CALL_SKIPPED;
         setMsg(line);
         emitAppFeedback({
-          kind: result.live ? 'success' : 'error',
-          title: result.live ? 'Saved and called' : 'Saved, call failed',
+          kind: 'success',
+          title: 'Saved on this device',
           detail: line,
           source: 'proxy',
         });
       } else {
-        const line = `Saved ${stored.length}: ${stored.map((row) => row.prefix).join(' · ')}`;
+        const line = `Saved ${stored.length} on this device.`;
         setMsg(line);
         emitAppFeedback({ kind: 'success', title: 'Saved to vault', detail: line, source: 'save' });
       }
       setPaste('');
     } catch (err) {
+      setNeedsVault(err instanceof DeviceVaultRequiredError);
       const detail = humanActionError('vault-save', err);
       setMsg(detail);
       emitAppFeedback({ kind: 'error', title: 'Save failed', detail, source: 'save' });
@@ -78,6 +80,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       </div>
       {busy && <p className="text-[12px] text-[#8a96c2]">Next step: wait for the save result before closing this window.</p>}
       {msg && <p className="text-[13px] text-[#a8b3d8]">{msg}</p>}
+      {needsVault && <DeviceVaultConsent onUnlock={onUnlock} />}
     </div>
     <div data-testid="vault-saved-apis" className="rounded-xl border border-[#243365] bg-[#0e1631] p-4 space-y-3">
       <div className="flex items-baseline justify-between gap-3">

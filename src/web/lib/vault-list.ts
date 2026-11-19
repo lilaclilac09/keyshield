@@ -4,6 +4,7 @@
  */
 
 import { catalogTags, providerMeta, vaultStoreName } from './provider-catalog';
+import { saveKeyOnDevice } from './device-save';
 
 export const VAULT_CHANGED_EVENT = 'ks-vault-changed';
 
@@ -68,7 +69,7 @@ export type PendingVaultHit = { upstream?: string; value?: string; key?: string 
 
 export function maskVaultPreview(value: string): string {
   const raw = String(value || '');
-  if (raw.length <= 18) return raw;
+  if (raw.length <= 18) return '••••';
   return `${raw.slice(0, 8)}••••${raw.slice(-4)}`;
 }
 
@@ -139,7 +140,6 @@ export function pendingHitsToFillKeys(
 }
 
 export async function flushPendingVaultHits(hits: PendingVaultHit[]): Promise<number> {
-  const { apiFetch } = await import('./auth');
   let saved = 0;
   const seen = new Set<string>();
   for (const hit of hits || []) {
@@ -149,16 +149,8 @@ export async function flushPendingVaultHits(hits: PendingVaultHit[]): Promise<nu
     const id = `${upstream}:${value}`;
     if (seen.has(id)) continue;
     seen.add(id);
-    const r = await apiFetch('/manage/store', {
-      method: 'POST',
-      body: JSON.stringify({
-        upstream,
-        apiKey: value,
-        value,
-        name: vaultStoreName({ upstream, value }),
-      }),
-    });
-    if (r.ok) saved += 1;
+    await saveKeyOnDevice(upstream, value);
+    saved += 1;
   }
   if (saved > 0) emitVaultChanged();
   if (typeof window !== 'undefined') {

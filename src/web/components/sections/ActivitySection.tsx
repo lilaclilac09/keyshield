@@ -21,6 +21,8 @@ import {
 import { PlanCatalog, type DeviceLevelCopy, type PlanSnapshot, type PlanSpec, type PlanWhy } from '../PlanCatalog';
 import { PaymentsLedger } from '../PaymentsLedger';
 import { AgentSpendTab } from './AgentSpendTab';
+import { DeviceVaultRequiredError } from '../../lib/device-save';
+import { DeviceVaultConsent } from '../DeviceVaultConsent';
 
 interface UsageEntry {
   id: number; upstream: string; key_type: string; method: string; path: string;
@@ -60,7 +62,7 @@ const upstreamColor = (u: string) => {
 const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
 const fmtCost = (c: number) => `$${c.toFixed(4)}`;
 
-export const ActivitySection: React.FC = () => {
+export const ActivitySection: React.FC<{ onUnlock?: () => void }> = ({ onUnlock }) => {
   const { publicKey, sendTransaction, connected, signMessage } = useWallet();
   const [tab, setTab] = useState<Tab>(() => (
     typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ks_landing') === 'activity-mpp'
@@ -82,6 +84,7 @@ export const ActivitySection: React.FC = () => {
   const [openAgent, setOpenAgent] = useState('');
   const [openUpstream, setOpenUpstream] = useState(OPENROUTER_DEMO_UPSTREAM);
   const [pasteKey, setPasteKey] = useState('');
+  const [needsVault, setNeedsVault] = useState(false);
   const [pasteBusy, setPasteBusy] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [orStatus, setOrStatus] = useState<OpenRouterStatus | null>(null);
@@ -353,23 +356,25 @@ export const ActivitySection: React.FC = () => {
   };
 
   const handleConnectOpenRouter = async () => {
-    setPasteBusy(true); setOpenMsg(''); setOpenOk(false);
+    setPasteBusy(true); setOpenMsg(''); setOpenOk(false); setNeedsVault(false);
     try {
       let key = pasteKey.trim();
       if (!key) key = await readOpenRouterKeyFromClipboard();
+      if (key) setPasteKey(key);
       setOpenUpstream(OPENROUTER_DEMO_UPSTREAM);
       const st = await connectOpenRouter(key || undefined);
       setOrStatus(st);
       setPasteKey('');
       setOpenOk(true);
       if (st.key_configured) {
-        setOpenMsg(`OpenRouter connected (${st.key_prefix}) → ${st.model}. Meter / vproxy / Vault reuse this key. Not a public API.`);
+        setOpenMsg('Saved on this device. The key has not been sent to KeyShield.');
       } else if (!key) {
         setOpenMsg('Model wired. Paste a sk-or- key (or copy it, then Connect) — OpenRouter still requires your key.');
       } else {
-        setOpenMsg('Key stored. Refresh if the badge does not flip.');
+        setOpenMsg('Saved on this device. The key has not been sent to KeyShield.');
       }
     } catch (e) {
+      setNeedsVault(e instanceof DeviceVaultRequiredError);
       setOpenOk(false);
       setOpenMsg(e instanceof Error ? e.message : 'Connect failed');
     } finally {
@@ -727,12 +732,12 @@ export const ActivitySection: React.FC = () => {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <p className="text-[12px] text-white font-medium">One-click OpenRouter</p>
                 <span className={`text-[10px] ${orStatus?.key_configured ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>
-                  {orStatus?.key_configured ? `Connected ${orStatus.key_prefix}` : 'Key not stored'}
+                  {orStatus?.key_configured ? `${orStatus.key_source === 'device-local' ? 'Saved on this device' : 'Connected'} ${orStatus.key_prefix}` : 'No OpenRouter key available'}
                 </span>
               </div>
               <p className="text-[11px] text-[#8a96c2] mb-2">
                 Free model <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-                Not public — anyone needs their own OpenRouter key + a KeyShield session. Paste once; Connect fills `/manage/store`, demo vault, Device Vault (if unlocked), Meter, and Developer snippets.
+                Connect saves your OpenRouter key only in your unlocked device vault. Unlock or create the vault first. The key is not sent to KeyShield or configured for hosted Meter or proxy calls.
               </p>
               <div className="flex gap-2">
                 <input
@@ -751,6 +756,7 @@ export const ActivitySection: React.FC = () => {
             </div>
             {openStep && <p className="text-[11px] text-[#8a96c2] mt-2">Step: {openStep}</p>}
             {openMsg && <p className={`text-[12px] mt-2 ${openOk ? 'text-emerald-400' : 'text-red-400'}`}>{openMsg}</p>}
+            {needsVault && <DeviceVaultConsent onUnlock={onUnlock} />}
             {demoMode && <p className="text-[10px] text-[#5e6a91] mt-2">Demo mode on — Meter falls back to synthetic hold if no key is pasted.</p>}
           </Card>
           {captureDraft && (
