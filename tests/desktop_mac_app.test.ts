@@ -323,6 +323,10 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
   it("ships an Open-KeyShield.command that clears quarantine and opens /Applications", () => {
     const cmd = read("src/desktop/Open-KeyShield.command");
     expect(cmd).toContain("xattr -cr");
+    expect(cmd).toContain('xattr -cr "$APP"');
+    expect(cmd).toContain('xattr -cr "$DEST"');
+    expect(cmd.match(/^xattr .*$/gm)).toHaveLength(2);
+    expect(cmd).not.toContain('xattr -cr "$HERE"');
     expect(cmd).toContain("/Applications/KeyShield.app");
     expect(cmd).toContain("ditto");
     // Ad-hoc signing with --deep is known to break Electron bundles, and

@@ -18,8 +18,8 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 DEST="/Applications/KeyShield.app"
-echo "Clearing quarantine on $HERE ..."
-xattr -cr "$HERE" 2>/dev/null || true
+echo "Clearing quarantine on $APP ..."
+xattr -cr "$APP" 2>/dev/null || true
 echo "Installing KeyShield to ${DEST}..."
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
