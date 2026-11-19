@@ -52,18 +52,22 @@ function assertBrokerSender(event) {
 async function startBroker() {
   if (!BROKER_ENABLED) return;
   const { createBroker } = require('./broker.cjs');
-  broker = createBroker();
+  const { createApprovalPasskey } = require('./approval-passkey.cjs');
+  const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN });
+  broker = createBroker({ mockProviderPort: process.env.KS_BROKER_MOCK_PORT, passkey });
   const address = await broker.listen();
   brokerPort = address.port;
   console.log(`KeyShield approval broker listening on 127.0.0.1:${brokerPort}`);
   const calls = {
     listAgents: () => broker.listAgents(),
-    registerAgent: (name) => broker.registerAgent(name),
+    registerAgent: (name) => ({ ...broker.registerAgent(name), brokerUrl: `http://127.0.0.1:${brokerPort}` }),
     revokeAgent: (agentId) => broker.revokeAgent(agentId),
     listRequests: () => broker.listRequests(),
     deny: (id) => broker.deny(id),
     revokeRequest: (id) => broker.revokeRequest(id),
     approve: (payload) => broker.approve(payload),
+    beginApproval: (requestId) => broker.beginApproval(requestId),
+    pinApprovalPasskey: ({ response, expectedChallenge }) => passkey.register(response, expectedChallenge),
   };
   for (const [name, call] of Object.entries(calls)) {
     ipcMain.handle(`ks-broker:${name}`, (event, payload) => {

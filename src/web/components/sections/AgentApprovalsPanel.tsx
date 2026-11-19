@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  approveBrokerRequest,
   type BrokerAgent,
   type BrokerRequest,
   type DesktopBroker,
 } from '../../lib/desktop-broker';
+import { approveRequestWithPasskey } from '../../lib/vault-session';
 
 const button = 'rounded-lg border border-[#243365] px-3 py-1.5 text-[12px] text-[#e8ecff] hover:bg-[#243365] disabled:opacity-50';
 
@@ -12,7 +12,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
   const [agents, setAgents] = useState<BrokerAgent[]>([]);
   const [requests, setRequests] = useState<BrokerRequest[]>([]);
   const [name, setName] = useState('');
-  const [issued, setIssued] = useState<{ name: string; token: string } | null>(null);
+  const [issued, setIssued] = useState<{ name: string; token: string; brokerUrl: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(Date.now());
@@ -36,22 +36,22 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
     try {
       await action();
       await refresh();
-    } catch {
-      setError('Action not completed. Approval requires a successful fresh passkey ceremony and an existing entry ID.');
+    } catch (e) {
+      setError(e instanceof Error && e.message === 'unlock the device vault once first'
+        ? e.message : 'Action not completed. Approval requires a pinned passkey, a successful fresh ceremony and an existing entry ID.');
     } finally {
       setBusy(false);
     }
   }
 
-  const url = `http://127.0.0.1:${broker.port}`;
   const pending = requests.filter((request) => request.status === 'pending');
   const outcomes = requests.filter((request) => request.status !== 'pending').slice(-10).reverse();
 
   return (
     <section data-testid="agent-approvals-panel" className="rounded-xl border border-[#243365]/60 bg-[#131c39] p-4 space-y-4">
       <div>
-        <h3 className="text-[14px] font-semibold text-[#e8ecff]">Local agent approvals</h3>
-        <p className="text-[12px] text-[#8a96c2]">{url} · Every use requires a fresh passkey. Agents and requests disappear when the app restarts.</p>
+        <h3 className="text-[14px] font-semibold text-[#e8ecff]">Mock provider (test only)</h3>
+        <p className="text-[12px] text-[#8a96c2]">Local mock broker · Every use requires a fresh passkey. Agents, requests and the encrypted snapshot disappear when the app restarts.</p>
       </div>
       {error && <p role="alert" data-testid="broker-error" className="text-[12px] text-red-300">{error}</p>}
       <form className="flex gap-2" onSubmit={(event) => {
@@ -69,6 +69,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
       {issued && (
         <div className="space-y-2 text-[12px] text-[#e8ecff]">
           <p>Token for {issued.name} — shown once. Keep it private.</p>
+          <p data-testid="broker-url">{issued.brokerUrl}</p>
           <code data-testid="broker-issued-token" className="block break-all select-all">{issued.token}</code>
           <button data-testid="broker-copy-token" className={button} onClick={() => void act(async () => {
             const text = issued.token;
@@ -97,7 +98,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
           <p>Expires in {Math.max(0, Math.ceil((request.expires_at - clock) / 1000))}s</p>
           <div className="flex gap-2 flex-wrap">
             <button data-testid={`broker-approve-${request.id}`} className={button} disabled={busy || request.expires_at <= clock}
-              onClick={() => void act(() => approveBrokerRequest(broker, request))}>Approve with passkey</button>
+              onClick={() => void act(() => approveRequestWithPasskey(request.id))}>Approve with passkey</button>
             <button data-testid={`broker-deny-${request.id}`} className={button} disabled={busy}
               onClick={() => void act(() => broker.deny(request.id))}>Deny</button>
             <button data-testid={`broker-revoke-request-${request.id}`} className={button} disabled={busy}

@@ -4,11 +4,12 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 
 const LIMIT = 4096;
-const DESCRIPTION = 'POST /v1/mock on the mock provider (harmless echo)';
+const MOCK_OPERATIONS = Object.freeze({ 'mock.echo': 'POST /v1/mock — Mock provider (test only)' });
 
 // Agents, requests and audit history are memory-only and disappear on restart.
 function createBroker({
-  providerOrigin = process.env.KS_BROKER_MOCK_PROVIDER_ORIGIN,
+  mockProviderPort,
+  passkey,
   approvalTtlMs = Number(process.env.KS_BROKER_APPROVAL_TTL_MS || 60000),
   now = Date.now,
   fetchImpl = fetch,
@@ -17,22 +18,16 @@ function createBroker({
   if (!Number.isFinite(approvalTtlMs) || approvalTtlMs <= 0) {
     throw new Error('invalid_approval_ttl');
   }
-  let origin;
-  try {
-    const url = new URL(providerOrigin);
-    if (
-      typeof providerOrigin === 'string' && /^[a-z]+:\/\/[^/?#]+\/?$/i.test(providerOrigin) &&
-      ['http:', 'https:'].includes(url.protocol) &&
-      (['127.0.0.1', 'localhost'].includes(url.hostname) || url.hostname.endsWith('.test')) &&
-      url.pathname === '/' && !url.search && !url.hash && !url.username && !url.password
-    ) origin = url.origin;
-  } catch {}
+  const port = Number(mockProviderPort);
+  const destination = Number.isInteger(port) && port > 0 && port <= 65535
+    ? `http://127.0.0.1:${port}/v1/mock` : null;
 
   const agents = new Map();
   const requests = new Map();
   const timers = new Map();
   const listeners = new Set();
   const history = [];
+  const challenges = new Map();
   const hash = (value) => crypto.createHash('sha256').update(value).digest();
   const id = () => randomBytes(16).toString('hex');
   const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -49,6 +44,7 @@ function createBroker({
   }
 
   function transition(request, status, error) {
+    challenges.delete(request.id);
     clearTimeout(timers.get(request.id));
     timers.delete(request.id);
     request.status = status;
@@ -144,7 +140,7 @@ function createBroker({
         return json(res, 400, { error: 'unknown_field' });
       }
       if (body.operation !== 'mock.echo') return json(res, 400, { error: 'unknown_operation' });
-      if (!origin) return json(res, 400, { error: 'operation_unavailable' });
+      if (!destination) return json(res, 400, { error: 'operation_unavailable' });
       if (typeof body.credential !== 'string' || !body.credential.trim()) {
         return json(res, 400, { error: 'invalid_credential' });
       }
@@ -179,17 +175,42 @@ function createBroker({
     timers.clear();
   });
 
-  async function approve({ id, agentId, credential, operation, secret }) {
-    const request = pending(id);
-    if (request.agentId !== agentId || request.credential !== credential || request.operation !== operation) {
-      throw new Error('binding_mismatch');
+  function binding(request) {
+    return { requestId: request.id, agentId: request.agentId, agentName: agents.get(request.agentId).name,
+      entryId: request.credential, operation: request.operation, destination };
+  }
+
+  function beginApproval(requestId) {
+    const pin = passkey?.get();
+    if (!pin) throw new Error('approval_passkey_not_pinned');
+    const request = pending(requestId);
+    const grant = { challenge: randomBytes(32).toString('base64url'), credentialId: pin.credentialId,
+      rpId: pin.rpId, binding: binding(request), expiresAt: Math.min(request.expires_at, now() + 60000) };
+    challenges.set(requestId, grant);
+    return copy(grant);
+  }
+
+  async function approve(payload) {
+    if (!payload || Object.keys(payload).some((key) => !['requestId', 'assertion', 'secret'].includes(key))) {
+      throw new Error('approval_binding_refused');
     }
+    const { requestId, assertion, secret } = payload;
+    if (!passkey?.get()) throw new Error('approval_passkey_not_pinned');
+    const request = pending(requestId);
+    const grant = challenges.get(requestId);
+    if (!grant || now() >= grant.expiresAt) throw new Error('approval_challenge_required');
+    if (!assertion) throw new Error('approval_assertion_required');
     if (typeof secret !== 'string' || !secret.trim()) throw new Error('secret_required');
+    try { await passkey.verify(assertion, grant.challenge); }
+    catch { throw new Error('approval_assertion_refused'); }
+    pending(requestId);
+    if (challenges.get(requestId) !== grant || now() >= grant.expiresAt ||
+        JSON.stringify(binding(request)) !== JSON.stringify(grant.binding)) throw new Error('approval_binding_refused');
     transition(request, 'executing');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetchImpl(`${origin}/v1/mock`, {
+      const response = await fetchImpl(destination, {
         method: 'POST', redirect: 'manual', signal: controller.signal,
         headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ input: 'keyshield-acceptance' }),
@@ -221,13 +242,12 @@ function createBroker({
       }
       const text = Buffer.concat(chunks).toString('utf8');
       const body = JSON.parse(text);
-      const representations = [secret, Buffer.from(secret).toString('base64'), encodeURIComponent(secret)];
-      if (representations.some((value) => text.includes(value) || JSON.stringify(body).includes(value)) ||
-          text.toLowerCase().includes(encodeURIComponent(secret).toLowerCase())) {
+      if (!response.ok || !body || Array.isArray(body) || Object.keys(body).length !== 1 ||
+          body.echo !== 'keyshield-acceptance') {
         transition(request, 'failed', 'provider_response_rejected');
         return view(request);
       }
-      request.result = { status: response.status, body };
+      request.result = { ok: true, operation: 'mock.echo' };
       transition(request, 'completed');
     } catch {
       transition(request, 'failed', 'provider_response_rejected');
@@ -278,13 +298,14 @@ function createBroker({
         expire(request);
         return copy({
           ...view(request), agentId: request.agentId, agent: agents.get(request.agentId).name,
-          description: DESCRIPTION, created_at: request.created_at, updated_at: request.updated_at,
+          description: MOCK_OPERATIONS[request.operation], created_at: request.created_at, updated_at: request.updated_at,
         });
       });
     },
     deny(requestId) { transition(pending(requestId), 'denied'); },
     revokeRequest(requestId) { transition(pending(requestId), 'revoked'); },
     approve,
+    beginApproval,
     onChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     audit() { return copy(history); },
   };

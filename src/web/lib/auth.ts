@@ -12,7 +12,6 @@ import { assertSafeRequest } from './secret-guard';
 import {
   enrollVault,
   unlockVault,
-  decryptEntryForApproval,
   getCfChallenge,
   getCfChallengeForVaultId,
   getCachedVaultId,
@@ -893,6 +892,18 @@ export async function registerPasskey(
   }
   const result = await verRes.json();
 
+  if (window.keyshieldDesktop?.broker) {
+    try {
+      await window.keyshieldDesktop.broker.pinApprovalPasskey({
+        response: { ...credPayload, clientExtensionResults: {} },
+        expectedChallenge: challengeB64url,
+      });
+    } catch {
+      window.keyshieldDesktop.notify?.({ kind: 'error', title: 'Mock approval passkey was not pinned',
+        detail: 'The existing pin is unchanged. Without a verified pin, mock approvals fail closed.' });
+    }
+  }
+
   // Identity passkey is stored on the Python control plane at this point.
   // Path A Device Vault still needs PRF + the Cloudflare worker. Do not fail
   // the identity ceremony if the authenticator has no PRF (virtual
@@ -945,16 +956,6 @@ export async function registerPasskey(
  * and vault (CF Worker JWT).
  */
 export async function requestVaultUnlock(): Promise<{ vaultId: string; entryCount: number }> {
-  const { prfOutput, assertion } = await requestVaultCeremony();
-  return await unlockVault(prfOutput, assertion);
-}
-
-export async function approveWithPasskey(entryId: string): Promise<string> {
-  const { prfOutput, assertion } = await requestVaultCeremony();
-  return await decryptEntryForApproval(prfOutput, assertion, entryId);
-}
-
-async function requestVaultCeremony() {
   const trust = getPasskeyTrust();
   if (!trust) throw new Error('No passkey registered on this device');
   const { userId } = trust;
@@ -1013,7 +1014,7 @@ async function requestVaultCeremony() {
         userHandle: resp.userHandle ? _bufferToB64url(resp.userHandle) : undefined,
       },
     };
-    return { prfOutput, assertion };
+    return await unlockVault(prfOutput, assertion);
   }
 
   // Probe ceremony — only runs once per device (until cache is cleared).
@@ -1049,7 +1050,7 @@ async function requestVaultCeremony() {
     },
   };
 
-  return { prfOutput, assertion };
+  return await unlockVault(prfOutput, assertion);
 }
 
 export async function listPasskeys(): Promise<Array<{ id: string; name: string; createdAt: number }>> {

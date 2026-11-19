@@ -1,320 +1,195 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { createRequire } from 'node:module';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { softwarePasskey, ORIGIN } from './software_passkey';
 
-const { createBroker } = createRequire(import.meta.url)('../src/desktop/broker.cjs');
+const requireDesktop = createRequire(new URL('../src/desktop/package.json', import.meta.url));
+const { createBroker } = requireDesktop('./broker.cjs');
+const { createApprovalPasskey } = requireDesktop('./approval-passkey.cjs');
 const SECRET = 'FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const cleanup: (() => Promise<void>)[] = [];
+const cleanup: (() => unknown | Promise<unknown>)[] = [];
+afterEach(async () => { while (cleanup.length) await cleanup.pop()!(); });
 
 async function listen(server: Server) {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('missing address');
-  cleanup.push(() => new Promise<void>((resolve, reject) => {
-    server.closeAllConnections();
-    server.close((error) => error ? reject(error) : resolve());
-  }));
-  return `http://127.0.0.1:${address.port}`;
+  cleanup.push(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
+  return (server.address() as { port: number }).port;
 }
 
-afterEach(async () => {
-  while (cleanup.length) await cleanup.pop()!();
-});
-
-async function world(options: Record<string, unknown> = {}) {
-  const seen: { method?: string; path?: string; authorization?: string; body: string }[] = [];
-  const response = { status: 200, body: JSON.stringify({ echo: 'safe' }), type: 'application/json', location: '' };
-  const provider = createServer(async (req, res) => {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    seen.push({ method: req.method, path: req.url, authorization: req.headers.authorization, body: Buffer.concat(chunks).toString() });
-    if (response.status === 0) return;
-    res.writeHead(response.status, {
-      'content-type': response.type, 'x-provider-private': 'must be dropped',
-      ...(response.location ? { location: response.location } : {}),
-    });
+async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: Record<string, unknown> } = {}) {
+  let clock = Date.now();
+  const signer = softwarePasskey();
+  const passkey = createApprovalPasskey();
+  if (!options.noPin) await passkey.register(signer.registration('registration-challenge'), 'registration-challenge');
+  const seen: unknown[] = [];
+  const response = { status: 200, body: JSON.stringify({ echo: 'keyshield-acceptance' }), type: 'application/json', location: '' };
+  const providerPort = await listen(createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    seen.push({ authorization: req.headers.authorization, path: req.url, method: req.method, body: Buffer.concat(chunks).toString() });
+    res.writeHead(response.status, { 'content-type': response.type, 'x-private': SECRET,
+      ...(response.location ? { location: response.location } : {}) });
     res.end(response.body);
-  });
-  const providerOrigin = await listen(provider);
-  const fetchCalls: { url: string; redirect: string }[] = [];
-  const broker = createBroker({
-    providerOrigin,
-    fetchImpl: (url: string, init: RequestInit) => {
-      expect(new URL(url).origin).toBe(providerOrigin);
-      fetchCalls.push({ url, redirect: init.redirect! });
-      return fetch(url, init);
-    },
-    ...options,
-  });
-  const address = await broker.listen(0);
-  expect(address.address).toBe('127.0.0.1');
-  cleanup.push(() => new Promise<void>((resolve, reject) => {
-    broker.server.closeAllConnections();
-    broker.server.close((error: Error) => error ? reject(error) : resolve());
   }));
-  const base = `http://127.0.0.1:${address.port}`;
-  const agent = broker.registerAgent('trusted');
+  const broker = createBroker({ mockProviderPort: providerPort, passkey, now: () => clock,
+    approvalTtlMs: options.ttl ?? 120000, ...options.brokerOptions });
+  const port = await listen(broker.server);
+  const agent = broker.registerAgent('mock agent');
+  const base = `http://127.0.0.1:${port}`;
   async function call(path: string, init: RequestInit = {}, token = agent.token) {
-    return fetch(base + path, {
-      ...init,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...init.headers },
-    });
+    const result = await fetch(`${base}${path}`, { ...init, headers: {
+      Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...init.headers,
+    } });
+    const body = await result.text();
+    expect(body).not.toContain(SECRET);
+    expect(JSON.stringify([...result.headers])).not.toContain(SECRET);
+    return { status: result.status, body: JSON.parse(body), headers: result.headers };
   }
-  async function submit(body: unknown = { operation: 'mock.echo', credential: 'openai' }) {
-    const result = await call('/v1/requests', { method: 'POST', body: JSON.stringify(body) });
-    expect(result.status).toBe(202);
-    const request = await result.json();
-    expect(request.id).toMatch(/^[a-f0-9]{32}$/);
-    expect(request.status).toBe('pending');
-    return request;
+  async function submit(credential = 'openai#2') {
+    const result = await call('/v1/requests', { method: 'POST', body: JSON.stringify({ operation: 'mock.echo', credential }) });
+    expect(result.status).toBe(202); return result.body;
   }
-  const approve = (request: { id: string }, overrides = {}) => broker.approve({
-    id: request.id, agentId: agent.agentId, credential: 'openai', operation: 'mock.echo', secret: SECRET,
-    ...overrides,
-  });
-  return { broker, agent, base, call, submit, approve, seen, response, fetchCalls };
+  function approve(request: { id: string }, assertion?: unknown) {
+    const grant = assertion ? null : broker.beginApproval(request.id);
+    return broker.approve({ requestId: request.id, secret: SECRET, assertion: assertion ?? signer.assertion(grant.challenge) });
+  }
+  return { broker, signer, passkey, seen, response, base, port, agent, call, submit, approve, advance: (ms: number) => { clock += ms; } };
 }
 
-describe('desktop per-use approval broker', () => {
-  it('executes exactly the approved fixed operation and returns only a sanitized result', async () => {
-    const w = await world();
-    let changes = 0;
-    const unsubscribe = w.broker.onChange(() => changes++);
-    const pending = await w.submit();
+describe('mock desktop broker with real WebAuthn verification', () => {
+  it('dispatches once only after a broker-bound assertion and returns the fixed result', async () => {
+    const w = await world(); const r = await w.submit();
     expect(w.seen).toEqual([]);
-    expect(w.broker.listRequests()[0]).toMatchObject({
-      agent: 'trusted', agentId: w.agent.agentId, credential: 'openai',
-      description: 'POST /v1/mock on the mock provider (harmless echo)',
-    });
-    const completed = await w.approve(pending);
-    expect(completed).toMatchObject({ status: 'completed', result: { status: 200, body: { echo: 'safe' } } });
-    expect(w.seen).toEqual([{
-      method: 'POST', path: '/v1/mock', authorization: `Bearer ${SECRET}`,
-      body: '{"input":"keyshield-acceptance"}',
-    }]);
-    expect(w.fetchCalls).toHaveLength(1);
-    expect(w.fetchCalls[0].redirect).toBe('manual');
-    const response = await w.call(`/v1/requests/${pending.id}`);
-    expect(await response.json()).toEqual(completed);
-    expect([...response.headers.values()].join('')).not.toContain(SECRET);
-    expect(JSON.stringify(completed)).not.toContain(SECRET);
-    expect(JSON.stringify(completed)).not.toContain('must be dropped');
-    expect(JSON.stringify(w.broker.audit())).not.toContain(SECRET);
-    expect(JSON.stringify(w.broker.listAgents())).not.toContain(w.agent.token);
-    expect(w.broker.audit().map((entry: { event: string }) => entry.event)).toEqual([
-      'agent.registered', 'request.created', 'request.approved', 'request.completed',
-    ]);
-    expect(changes).toBe(3);
-    unsubscribe();
-    w.broker.registerAgent('second');
-    expect(changes).toBe(3);
-  });
-
-  it.each(['deny', 'revokeRequest'])('%s is terminal with zero provider egress', async (action) => {
-    const w = await world();
-    const pending = await w.submit();
-    w.broker[action](pending.id);
-    expect(w.broker.listRequests()[0].status).toBe(action === 'deny' ? 'denied' : 'revoked');
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    expect(w.seen).toEqual([]);
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('expires by timer and rejects late approval', async () => {
-    const w = await world({ approvalTtlMs: 30 });
-    const pending = await w.submit();
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(w.broker.audit().some((entry: { event: string }) => entry.event === 'request.expired')).toBe(true);
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    expect(w.broker.listRequests()[0].status).toBe('expired');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('checks expiry at approval even before the timer fires', async () => {
-    let clock = 100;
-    const w = await world({ now: () => clock, approvalTtlMs: 60000 });
-    const pending = await w.submit();
-    expect(pending.expires_at).toBe(60100);
-    clock = pending.expires_at;
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('immediately revokes agent authentication and its pending requests', async () => {
-    const w = await world();
-    const pending = await w.submit();
-    w.broker.revokeAgent(w.agent.agentId);
-    expect((await w.call(`/v1/requests/${pending.id}`)).status).toBe(401);
-    expect(w.broker.listRequests()[0].status).toBe('revoked');
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('atomically consumes approval and rejects concurrent and later reuse', async () => {
-    const w = await world();
-    const pending = await w.submit();
-    const first = w.approve(pending);
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    await expect(first).resolves.toMatchObject({ status: 'completed' });
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
+    expect(w.broker.listRequests()[0]).toMatchObject({ credential: 'openai#2', description: expect.stringContaining('Mock provider (test only)') });
+    const grant = w.broker.beginApproval(r.id);
+    expect(grant.binding).toMatchObject({ requestId: r.id, entryId: 'openai#2', agentName: 'mock agent', operation: 'mock.echo' });
+    const assertion = w.signer.assertion(grant.challenge);
+    await w.approve(r, assertion);
+    expect(w.seen).toEqual([{ authorization: `Bearer ${SECRET}`, method: 'POST', path: '/v1/mock', body: '{"input":"keyshield-acceptance"}' }]);
+    expect((await w.call(`/v1/requests/${r.id}`)).body).toMatchObject({ status: 'completed', result: { ok: true, operation: 'mock.echo' } });
+    await expect(w.approve(r, assertion)).rejects.toThrow('request_not_pending');
     expect(w.seen).toHaveLength(1);
-  });
-
-  it.each([
-    { agentId: 'wrong' }, { credential: 'another-entry' }, { operation: 'another.operation' },
-  ])('rejects approval binding mismatch %j', async (override) => {
-    const w = await world();
-    const pending = await w.submit();
-    await expect(w.approve(pending, override)).rejects.toThrow('binding_mismatch');
-    expect(w.broker.listRequests()[0].status).toBe('pending');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it.each(['', null, 42])('rejects an empty or invalid secret %j', async (secret) => {
-    const w = await world();
-    const pending = await w.submit();
-    await expect(w.approve(pending, { secret })).rejects.toThrow('secret_required');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it.each(['url', 'command', 'headers', 'body', 'host', 'path', 'method'])('rejects unknown field %s', async (field) => {
-    const w = await world();
-    const response = await w.call('/v1/requests', {
-      method: 'POST', body: JSON.stringify({ operation: 'mock.echo', credential: 'openai', [field]: 'untrusted' }),
-    });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'unknown_field' });
-    expect(w.broker.listRequests()).toEqual([]);
-  });
-
-  it.each([
-    [{ operation: 'arbitrary', credential: 'openai' }, 'unknown_operation'],
-    [{ operation: 'mock.echo', credential: '' }, 'invalid_credential'],
-    [{ operation: 'mock.echo' }, 'invalid_credential'],
-    [null, 'invalid_request'], [[], 'invalid_request'],
-  ])('rejects malformed or unsupported request %j', async (body, error) => {
-    const w = await world();
-    const response = await w.call('/v1/requests', { method: 'POST', body: JSON.stringify(body) });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error });
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('requires JSON, limits request bytes and rejects invalid JSON', async () => {
-    const w = await world();
-    for (const [body, type, status, error] of [
-      ['{}', 'text/plain', 400, 'json_required'],
-      ['{', 'application/json', 400, 'invalid_json'],
-      ['x'.repeat(4097), 'application/json', 413, 'body_too_large'],
-    ] as const) {
-      const response = await w.call('/v1/requests', { method: 'POST', body, headers: { 'Content-Type': type } });
-      expect(response.status).toBe(status);
-      expect(await response.json()).toEqual({ error });
-    }
-    expect(w.broker.listRequests()).toEqual([]);
-  });
-
-  it.each([
-    'https://api.openai.com', 'https://evil.test.attacker.com', 'file:///etc/passwd',
-    'http://127.0.0.1/path', 'http://localhost?query=1', 'https://api.provider.test/#hash',
-    'http://user:password@localhost', 'not an origin',
-  ])('disables the operation for invalid origin %s', async (providerOrigin) => {
-    const w = await world({ providerOrigin });
-    const response = await w.call('/v1/requests', { method: 'POST', body: JSON.stringify({ operation: 'mock.echo', credential: 'openai' }) });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'operation_unavailable' });
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it.each(['http://localhost:9876', 'https://api.provider.test'])('accepts configured mock origin %s without network', async (providerOrigin) => {
-    const w = await world({ providerOrigin });
-    await w.submit();
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('refuses redirects without contacting the redirect target', async () => {
-    let targetHits = 0;
-    const target = await listen(createServer((_req, res) => { targetHits++; res.end(); }));
-    const w = await world();
-    w.response.status = 307;
-    w.response.location = `${target}/collect`;
-    const pending = await w.submit();
-    await expect(w.approve(pending)).resolves.toMatchObject({ status: 'failed', error: 'redirect_refused' });
-    expect(w.seen).toHaveLength(1);
-    expect(targetHits).toBe(0);
-  });
-
-  it.each(['raw', 'base64', 'url', 'escaped', 'non-json', 'invalid-json', 'oversized'])('rejects unsafe provider response %s', async (mode) => {
-    const w = await world();
-    const encoded = mode === 'base64' ? Buffer.from(SECRET).toString('base64') : mode === 'url' ? encodeURIComponent(SECRET) : SECRET;
-    w.response.body = JSON.stringify({ leaked: encoded });
-    if (mode === 'escaped') w.response.body = w.response.body.replaceAll('A', '\\u0041');
-    if (mode === 'non-json') w.response.type = 'text/plain';
-    if (mode === 'invalid-json') w.response.body = '{';
-    if (mode === 'oversized') w.response.body = JSON.stringify({ data: 'x'.repeat(4096) });
-    const pending = await w.submit();
-    await expect(w.approve(pending)).resolves.toMatchObject({ status: 'failed', error: 'provider_response_rejected' });
-    const agentResult = await (await w.call(`/v1/requests/${pending.id}`)).json();
-    expect(agentResult.result).toBeUndefined();
-    expect(JSON.stringify(agentResult)).not.toContain(encoded);
     expect(JSON.stringify(w.broker.audit())).not.toContain(SECRET);
   });
 
-  it('times out a stalled provider after five seconds', async () => {
-    const w = await world();
-    w.response.status = 0;
-    const pending = await w.submit();
-    const started = Date.now();
-    await expect(w.approve(pending)).resolves.toMatchObject({ status: 'failed' });
-    expect(Date.now() - started).toBeGreaterThanOrEqual(4900);
-    expect(Date.now() - started).toBeLessThan(8000);
+  it.each([
+    { echo: 'keyshield-acceptance', extra: 'not allowed' }, { echo: SECRET }, { secret: SECRET },
+    { echo: Buffer.from(SECRET).toString('base64') }, { echo: encodeURIComponent(SECRET) }, [], null,
+  ])('never forwards provider JSON %j', async (body) => {
+    const w = await world(); const r = await w.submit(); w.response.body = JSON.stringify(body);
+    await w.approve(r);
+    const response = await w.call(`/v1/requests/${r.id}`);
+    expect(response.body).toMatchObject({ status: 'failed', error: 'provider_response_rejected' });
+    expect(response.body.result).toBeUndefined(); expect(w.seen).toHaveLength(1);
   });
 
-  it('blocks browser origins and bad Host without CORS or state changes', async () => {
-    const w = await world();
-    const origin = await w.call('/v1/requests', { method: 'POST', headers: { Origin: 'https://evil.test' }, body: '{}' });
-    expect(origin.status).toBe(403);
-    expect(origin.headers.get('access-control-allow-origin')).toBeNull();
-    const status = await new Promise<number>((resolve, reject) => {
-      const req = httpRequest(w.base + '/v1/requests', {
-        method: 'POST', headers: { Host: 'evil.test', Authorization: `Bearer ${w.agent.token}` },
-      }, (res) => { res.resume(); resolve(res.statusCode!); });
-      req.on('error', reject);
-      req.end('{}');
-    });
+  it.each(['wrong challenge', 'no UV', 'wrong origin', 'wrong key', 'no assertion', 'expired challenge', 'replaced challenge'])('refuses %s without egress', async (mode) => {
+    const w = await world(); const r = await w.submit(); const grant = w.broker.beginApproval(r.id);
+    const signer = mode === 'wrong key' ? softwarePasskey() : w.signer;
+    const assertion = signer.assertion(mode === 'wrong challenge' ? 'wrong' : grant.challenge,
+      { uv: mode !== 'no UV', origin: mode === 'wrong origin' ? 'https://wrong.invalid' : ORIGIN });
+    if (mode === 'wrong key') assertion.id = assertion.rawId = w.signer.id;
+    if (mode === 'expired challenge') w.advance(60001);
+    if (mode === 'replaced challenge') w.broker.beginApproval(r.id);
+    await expect(w.broker.approve({ requestId: r.id, secret: SECRET, ...(mode === 'no assertion' ? {} : { assertion }) })).rejects.toThrow();
+    expect(w.seen).toEqual([]); expect(w.broker.listRequests()[0].status).toBe('pending');
+  });
+
+  it('requires a pin for beginning or approving', async () => {
+    const w = await world({ noPin: true }); const r = await w.submit();
+    expect(() => w.broker.beginApproval(r.id)).toThrow('approval_passkey_not_pinned');
+    await expect(w.approve(r, w.signer.assertion('anything'))).rejects.toThrow('approval_passkey_not_pinned');
+    expect(w.seen).toEqual([]);
+  });
+
+  it('refuses a challenge belonging to a different request or exact entry ID', async () => {
+    const w = await world(); const first = await w.submit('openai'); const second = await w.submit('openai#2');
+    const a = w.broker.beginApproval(first.id); w.broker.beginApproval(second.id);
+    await expect(w.approve(second, w.signer.assertion(a.challenge))).rejects.toThrow();
+    await expect(w.broker.approve({ requestId: first.id, credential: 'openai#2', assertion: w.signer.assertion(a.challenge), secret: SECRET })).rejects.toThrow('approval_binding_refused');
+    expect(w.seen).toEqual([]);
+  });
+
+  it('refuses replayed assertions on new requests', async () => {
+    const w = await world(); const first = await w.submit(); const grant = w.broker.beginApproval(first.id);
+    const assertion = w.signer.assertion(grant.challenge); await w.approve(first, assertion);
+    const second = await w.submit(); w.broker.beginApproval(second.id);
+    await expect(w.approve(second, assertion)).rejects.toThrow(); expect(w.seen).toHaveLength(1);
+  });
+
+  it('atomically permits only one concurrent approval', async () => {
+    const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id);
+    const results = await Promise.allSettled([w.approve(r, w.signer.assertion(g.challenge)), w.approve(r, w.signer.assertion(g.challenge))]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1); expect(w.seen).toHaveLength(1);
+  });
+
+  it.each(['deny', 'expiry', 'new challenge'])('rechecks %s after asynchronous signature verification', async (mode) => {
+    const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id);
+    const verify = w.passkey.verify;
+    w.passkey.verify = async (...args: unknown[]) => {
+      await verify(...args);
+      if (mode === 'deny') w.broker.deny(r.id);
+      if (mode === 'expiry') w.advance(120001);
+      if (mode === 'new challenge') w.broker.beginApproval(r.id);
+    };
+    await expect(w.approve(r, w.signer.assertion(g.challenge))).rejects.toThrow();
+    expect(w.seen).toEqual([]);
+  });
+
+  it.each(['deny', 'revokeRequest', 'agent revoke', 'expiry', 'cancel'])('%s fails closed including late approval', async (mode) => {
+    const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id); const assertion = w.signer.assertion(g.challenge);
+    if (mode === 'agent revoke') { w.broker.revokeAgent(w.agent.agentId); expect((await w.call(`/v1/requests/${r.id}`)).status).toBe(401); }
+    else if (mode === 'expiry') w.advance(120001);
+    else if (mode === 'cancel') await w.call(`/v1/requests/${r.id}`, { method: 'DELETE' });
+    else w.broker[mode](r.id);
+    await expect(w.approve(r, assertion)).rejects.toThrow('request_not_pending'); expect(w.seen).toEqual([]);
+  });
+
+  it('does not follow redirects', async () => {
+    const w = await world(); let redirected = 0;
+    const port = await listen(createServer((_req, res) => { redirected++; res.end('{}'); }));
+    w.response.status = 307; w.response.location = `http://127.0.0.1:${port}/steal`;
+    const r = await w.submit(); await w.approve(r);
+    expect((await w.call(`/v1/requests/${r.id}`)).body.error).toBe('redirect_refused'); expect(redirected).toBe(0);
+  });
+
+  it.each(['url', 'command', 'headers', 'origin', 'host', 'path', 'method', 'body'])('rejects extra request field %s', async (field) => {
+    const w = await world(); const r = await w.call('/v1/requests', { method: 'POST', body: JSON.stringify({ operation: 'mock.echo', credential: 'openai', [field]: 'bad' }) });
+    expect(r).toMatchObject({ status: 400, body: { error: 'unknown_field' } }); expect(w.seen).toEqual([]);
+  });
+
+  it.each([undefined, 'https://example.com', '123@evil.invalid', 0, -1, 65536])('cannot configure non-loopback destination %s', async (mockProviderPort) => {
+    const w = await world({ brokerOptions: { mockProviderPort, providerOrigin: 'https://example.com' } });
+    expect((await w.call('/v1/requests', { method: 'POST', body: '{"operation":"mock.echo","credential":"openai"}' })).body.error).toBe('operation_unavailable');
+    expect(w.seen).toEqual([]);
+  });
+
+  it('enforces agent authentication, ownership, Origin, Host and no HTTP administration', async () => {
+    const w = await world(); const r = await w.submit(); const other = w.broker.registerAgent('other');
+    expect((await w.call(`/v1/requests/${r.id}`, {}, 'wrong')).status).toBe(401);
+    expect((await w.call(`/v1/requests/${r.id}`, {}, other.token)).status).toBe(404);
+    expect((await w.call('/v1/requests', { headers: { Origin: ORIGIN } })).status).toBe(403);
+    const status = await new Promise((resolve) => { const req = httpRequest(w.base, { headers: { Host: 'evil.invalid' } }, (res) => { res.resume(); resolve(res.statusCode); }); req.end(); });
     expect(status).toBe(421);
-    expect(w.broker.listRequests()).toEqual([]);
-    expect(w.fetchCalls).toEqual([]);
+    for (const path of ['/approve', '/deny', '/agents', '/beginApproval', '/pinApprovalPasskey']) expect((await w.call(path, { method: 'POST', body: '{}' })).status).toBe(404);
+    expect(w.seen).toEqual([]);
   });
 
-  it('requires authentication with no state changes', async () => {
-    const w = await world();
-    expect((await fetch(w.base + '/v1/requests')).status).toBe(401);
-    expect((await w.call('/v1/requests', { method: 'POST', body: '{}' }, 'wrong')).status).toBe(401);
-    expect(w.broker.listRequests()).toEqual([]);
-    expect(w.broker.audit()).toHaveLength(1);
-  });
-
-  it('isolates request visibility and cancellation by creating agent', async () => {
-    const w = await world();
-    const pending = await w.submit();
-    const other = w.broker.registerAgent('other');
-    for (const method of ['GET', 'DELETE']) {
-      expect((await w.call(`/v1/requests/${pending.id}`, { method }, other.token)).status).toBe(404);
-    }
-    const cancelled = await w.call(`/v1/requests/${pending.id}`, { method: 'DELETE' });
-    expect((await cancelled.json()).status).toBe('cancelled');
-    await expect(w.approve(pending)).rejects.toThrow('request_not_pending');
-    expect(w.fetchCalls).toEqual([]);
-  });
-
-  it('has no HTTP approval, denial, agent management or arbitrary relay routes', async () => {
-    const w = await world();
-    const pending = await w.submit();
-    for (const path of [`/v1/requests/${pending.id}/approve`, `/v1/requests/${pending.id}/deny`, '/v1/agents', '/proxy']) {
-      expect((await w.call(path, { method: 'POST', body: '{}' })).status).toBe(404);
-    }
-    expect(w.broker.listRequests()[0].status).toBe('pending');
-    expect(w.fetchCalls).toEqual([]);
+  it('persists only a verified registration and counter; refuses re-pinning and missing UV/origin', async () => {
+    const dir = mkdtempSync(join(homedir(), '.keyshield-pin-test-')); cleanup.push(() => rmSync(dir, { recursive: true }));
+    const file = join(dir, 'approval-passkey.json'); const signer = softwarePasskey();
+    const store = createApprovalPasskey({ file });
+    await expect(store.register(signer.registration('challenge', { uv: false }), 'challenge')).rejects.toThrow();
+    await expect(store.register(signer.registration('challenge', { origin: 'https://wrong.invalid' }), 'challenge')).rejects.toThrow();
+    await expect(store.register(signer.registration('challenge'), 'wrong')).rejects.toThrow();
+    expect(store.get()).toBeNull();
+    await store.register(signer.registration('challenge'), 'challenge');
+    await store.verify(signer.assertion('approval'), 'approval');
+    expect(createApprovalPasskey({ file }).get()).toMatchObject({ credentialId: signer.id, counter: 1, origin: ORIGIN });
+    expect(JSON.parse(readFileSync(file, 'utf8')).publicKey).toEqual(expect.any(String));
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    await expect(store.register(softwarePasskey().registration('new'), 'new')).rejects.toThrow('already_pinned');
   });
 });

@@ -20,8 +20,10 @@ import {
   encryptVault,
   type VaultEntry,
   type VaultPlaintext,
+  type VaultCipher,
 } from './vault';
-import { makeBearerHolder, type BearerHolder } from './sync-auth';
+import { makeBearerHolder, prfSalt, type BearerHolder } from './sync-auth';
+import { unb64u, b64u } from './zk';
 import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
 import { PROD_SYNC_URL, usePublicControlPlaneFallback } from './host-deploy';
 
@@ -88,6 +90,14 @@ interface SessionState {
 }
 
 let _state: SessionState | null = null;
+let approvalSnapshot: { vaultId: string; cipher: VaultCipher } | null = null;
+
+function retainApprovalSnapshot(vaultId: string, cipher: VaultCipher | null): void {
+  if (typeof window === 'undefined' || !window.keyshieldDesktop?.broker) return;
+  approvalSnapshot = cipher ? { vaultId, cipher: {
+    version: cipher.version, iv: cipher.iv, ciphertext: cipher.ciphertext, updatedAt: cipher.updatedAt,
+  } } : null;
+}
 
 export function isVaultUnlocked(): boolean {
   return _state !== null;
@@ -159,46 +169,55 @@ export async function unlockVault(
 
   const cipher = await sync.pull(vaultId, () => bearer.get());
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
+  retainApprovalSnapshot(vaultId, cipher);
 
   _state = { vaultId, masterKey, bearer, sync, plaintext };
   setCachedVaultId(vaultId);
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
 
-export async function decryptEntryForApproval(
+async function decryptEntryForApproval(
   prfOutput: ArrayBuffer,
-  assertion: unknown,
   entryId: string,
 ): Promise<string> {
+  if (!approvalSnapshot) throw new Error('unlock the device vault once first');
+  const snapshot = approvalSnapshot;
   const vaultId = await deriveVaultId(prfOutput);
+  if (snapshot.vaultId !== vaultId) throw new Error('entry not found');
   const masterKey = await deriveMasterKey(prfOutput);
-  const bearer = makeBearerHolder();
-  try {
-    let exchangeRes: Response;
-    try {
-      exchangeRes = await fetch(`${SYNC_URL}/auth/exchange`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vaultId, assertion }),
-      });
-    } catch (e) {
-      throw describeNetError(e, 'exchange');
-    }
-    if (!exchangeRes.ok) {
-      const err = await exchangeRes.json().catch(() => ({}));
-      throw new Error(err.error ?? `exchange failed (${exchangeRes.status})`);
-    }
-    const { token, expiresAt } = await exchangeRes.json() as { token: string; expiresAt: number };
-    bearer.set(token, expiresAt);
-    const cipher = await makeHttpSyncBackend(SYNC_URL).pull(vaultId, () => bearer.get());
-    if (!cipher) throw new Error('entry not found');
-    const plaintext = await decryptVault(masterKey, cipher);
-    const entry = Object.hasOwn(plaintext.entries, entryId) ? plaintext.entries[entryId] : undefined;
-    if (!entry) throw new Error('entry not found');
-    return entry.apiKey;
-  } finally {
-    bearer.clear();
-  }
+  const plaintext = await decryptVault(masterKey, snapshot.cipher);
+  const entry = Object.hasOwn(plaintext.entries, entryId) ? plaintext.entries[entryId] : undefined;
+  if (!entry) throw new Error('entry not found');
+  return entry.apiKey;
+}
+
+export async function approveRequestWithPasskey(requestId: string): Promise<void> {
+  const broker = window.keyshieldDesktop?.broker;
+  if (!broker) throw new Error('mock broker unavailable');
+  if (!approvalSnapshot) throw new Error('unlock the device vault once first');
+  const approval = await broker.beginApproval(requestId);
+  if (approval.binding.requestId !== requestId) throw new Error('approval binding mismatch');
+  const credential = await navigator.credentials.get({ publicKey: {
+    challenge: unb64u(approval.challenge).buffer,
+    rpId: approval.rpId,
+    allowCredentials: [{ type: 'public-key', id: unb64u(approval.credentialId).buffer }],
+    userVerification: 'required',
+    extensions: { prf: { eval: { first: await prfSalt() } } } as AuthenticationExtensionsClientInputs,
+  } }) as PublicKeyCredential | null;
+  if (!credential) throw new Error('Passkey ceremony cancelled');
+  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const prfOutput = ext.prf?.results?.first;
+  if (!prfOutput) throw new Error('Passkey did not return PRF');
+  const response = credential.response as AuthenticatorAssertionResponse;
+  const encode = (value: ArrayBuffer) => b64u(new Uint8Array(value));
+  const assertion = {
+    id: credential.id, rawId: encode(credential.rawId), type: credential.type,
+    clientExtensionResults: {},
+    response: { authenticatorData: encode(response.authenticatorData), clientDataJSON: encode(response.clientDataJSON),
+      signature: encode(response.signature), userHandle: response.userHandle ? encode(response.userHandle) : undefined },
+  };
+  const secret = await decryptEntryForApproval(prfOutput, approval.binding.entryId);
+  await broker.approve({ requestId, assertion, secret });
 }
 
 /** Get a fresh challenge from CF Worker for the unlock ceremony.
@@ -296,6 +315,7 @@ async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
     throw new Error('vault conflict — another device wrote first; reload to refresh');
   }
   _state.plaintext = next;
+  retainApprovalSnapshot(_state.vaultId, payload);
 }
 
 export class VaultLockedError extends Error {

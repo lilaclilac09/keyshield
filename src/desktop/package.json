@@ -11,6 +11,9 @@
     "pack": "node scripts/pack-mac.cjs",
     "dmg": "node scripts/pack-mac.cjs"
   },
+  "dependencies": {
+    "@simplewebauthn/server": "^11.0.0"
+  },
   "devDependencies": {
     "@electron/packager": "^18.3.6",
     "electron": "33.4.11"
