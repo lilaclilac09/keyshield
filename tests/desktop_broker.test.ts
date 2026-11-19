@@ -119,6 +119,16 @@ describe('mock desktop broker with real WebAuthn verification', () => {
     await expect(w.approve(second, assertion)).rejects.toThrow(); expect(w.seen).toHaveLength(1);
   });
 
+  it('refuses replay of a valid zero-signCount platform-style assertion without relying on the counter', async () => {
+    const w = await world(); const r = await w.submit(); const grant = w.broker.beginApproval(r.id);
+    const assertion = w.signer.assertion(grant.challenge, { counter: 0 });
+    await w.approve(r, assertion);
+    expect(w.passkey.get().counter).toBe(0);
+    await expect(w.approve(r, assertion)).rejects.toThrow('request_not_pending');
+    expect(w.seen).toHaveLength(1);
+    expect((await w.call(`/v1/requests/${r.id}`)).body.status).toBe('completed');
+  });
+
   it('atomically permits only one concurrent approval', async () => {
     const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id);
     const results = await Promise.allSettled([w.approve(r, w.signer.assertion(g.challenge)), w.approve(r, w.signer.assertion(g.challenge))]);

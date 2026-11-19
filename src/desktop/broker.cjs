@@ -203,8 +203,10 @@ function createBroker({
     if (typeof secret !== 'string' || !secret.trim()) throw new Error('secret_required');
     try { await passkey.verify(assertion, grant.challenge); }
     catch { throw new Error('approval_assertion_refused'); }
+    const currentGrant = challenges.get(requestId);
+    challenges.delete(requestId);
     pending(requestId);
-    if (challenges.get(requestId) !== grant || now() >= grant.expiresAt ||
+    if (currentGrant !== grant || now() >= grant.expiresAt ||
         JSON.stringify(binding(request)) !== JSON.stringify(grant.binding)) throw new Error('approval_binding_refused');
     transition(request, 'executing');
     const controller = new AbortController();
