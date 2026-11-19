@@ -147,6 +147,7 @@ function createBroker({
       catch (error) {
         return json(res, error.message === 'body_too_large' ? 413 : 400, { error: error.message });
       }
+      if (authenticate(req) !== agent || agent.revoked) return json(res, 401, { error: 'unauthorized' });
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         return json(res, 400, { error: 'invalid_request' });
       }

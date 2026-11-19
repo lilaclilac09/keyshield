@@ -65,6 +65,23 @@ async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: R
 }
 
 describe('mock desktop broker with real WebAuthn verification', () => {
+  it('refuses an agent revoked while its request body is still arriving', async () => {
+    const w = await world();
+    const started = new Promise<void>((resolve) => w.broker.server.once('request', () => resolve()));
+    let client: ReturnType<typeof httpRequest>;
+    const response = new Promise<number>((resolve, reject) => {
+      client = httpRequest(`${w.base}/v1/requests`, { method: 'POST', headers: {
+        Authorization: `Bearer ${w.agent.token}`, 'Content-Type': 'application/json' } }, (res) => {
+        res.resume(); res.on('end', () => resolve(res.statusCode!));
+      });
+      client.on('error', reject); client.flushHeaders();
+    });
+    await started; w.broker.revokeAgent(w.agent.agentId);
+    client!.end(JSON.stringify({ operation: 'mock.echo', credential: 'openai#2' }));
+    expect(await response).toBe(401); expect(w.broker.listRequests()).toEqual([]);
+    expect(w.broker.audit().some((event: any) => event.event === 'request.created')).toBe(false);
+    expect(w.seen).toEqual([]);
+  });
   it('dispatches once only after a broker-bound assertion and returns the fixed result', async () => {
     const w = await world(); const r = await w.submit();
     expect(w.seen).toEqual([]);
