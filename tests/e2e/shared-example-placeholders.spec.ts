@@ -58,6 +58,8 @@ test('Developer examples only use proxy scope and never offer plaintext key stor
   });
   await page.goto('/?local=1');
   await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Inject token into snippets' })).toHaveCount(0);
+  await expect(page.getByText('Examples use placeholders. Set credentials only in your own environment.', { exact: true })).toBeVisible();
   const checkExamples = async () => {
     const examples = page.locator('pre');
     await expect(examples).toHaveCount(12);
