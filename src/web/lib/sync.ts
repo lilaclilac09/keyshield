@@ -27,6 +27,13 @@ export class SyncAuthError extends Error {
   }
 }
 
+export class SyncHttpError extends Error {
+  constructor(public readonly status: number, statusText: string) {
+    super(`sync push failed: ${status} ${statusText}`);
+    this.name = 'SyncHttpError';
+  }
+}
+
 export interface SyncBackend {
   /** GET /vault/:id. Returns null on 404. Throws SyncAuthError on 401. */
   pull(
@@ -100,7 +107,7 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
       if (res.status === 409) return 'conflict';
       if (res.status === 401) throw new SyncAuthError();
       if (!res.ok) {
-        throw new Error(`sync push failed: ${res.status} ${res.statusText}`);
+        throw new SyncHttpError(res.status, res.statusText);
       }
       return 'ok';
     },

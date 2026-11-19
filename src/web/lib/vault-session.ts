@@ -24,7 +24,7 @@ import {
   type VaultPlaintext,
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
-import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
+import { makeHttpSyncBackend, SyncAuthError, SyncHttpError, type SyncBackend } from './sync';
 import { PROD_SYNC_URL, usePublicControlPlaneFallback } from './host-deploy';
 
 export const SYNC_URL: string = (() => {
@@ -257,9 +257,14 @@ async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'dele
   let result;
   try {
     result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
-  } catch {
-    reportVaultSyncChange(operation, false);
-    throw new VaultSyncChangeError(operation);
+  } catch (err) {
+    const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
+      ? 'expired'
+      : err instanceof SyncHttpError
+        ? err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
+        : 'unreachable';
+    reportVaultSyncChange(operation, false, reason);
+    throw new VaultSyncChangeError(operation, reason);
   }
   if (result === 'conflict') {
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.

@@ -5,10 +5,13 @@ const exception = 'SYNTHETIC_PRIVATE_SYNC_EXCEPTION';
 const saveUnavailable = 'Key NOT saved because vault sync could not be reached. Press Save again once vault sync is back.';
 const deleteUnavailable = 'Entry NOT deleted and is still in the vault. Delete again after vault sync returns.';
 
-for (const failure of ['503', 'network', 'conflict'] as const) {
+for (const failure of ['503', 'network', 'conflict', '401', '403', '413', '400'] as const) {
   test(`manual save/delete recovery during ${failure} sync outage without retries or leaks`, async ({ page }) => {
-    const saveError = failure === 'conflict' ? 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.' : saveUnavailable;
-    const deleteError = failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.' : deleteUnavailable;
+    const rejection = failure === '401' || failure === '403'
+      ? 'vault sync session expired. Lock and unlock the vault, then try again.'
+      : failure === '413' ? 'the vault is too large to sync.' : failure === '400' ? 'vault sync rejected the change.' : null;
+    const saveError = rejection ? `Key NOT saved: ${rejection}` : failure === 'conflict' ? 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.' : saveUnavailable;
+    const deleteError = rejection ? `Entry NOT deleted: ${rejection}` : failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.' : deleteUnavailable;
     let down = true;
     let puts = 0;
     let polls = 0;
@@ -35,7 +38,7 @@ for (const failure of ['503', 'network', 'conflict'] as const) {
         const body = request.postDataJSON();
         expect(Object.keys(body).sort()).toEqual(['ciphertext', 'iv', 'updatedAt', 'version']);
         expect(JSON.stringify(body)).not.toContain(key);
-        if (down) return failure === 'network' ? route.abort('failed') : route.fulfill({ status: failure === 'conflict' ? 409 : 503, json: { detail: `${exception} ${key}` } });
+        if (down) return failure === 'network' ? route.abort('failed') : route.fulfill({ status: failure === 'conflict' ? 409 : Number(failure), json: { detail: `${exception} ${key}` } });
         bodies.push(body);
         cipher = body;
         return route.fulfill({ json: { ok: true } });
@@ -59,7 +62,7 @@ for (const failure of ['503', 'network', 'conflict'] as const) {
         return copy.textContent || '';
       });
       expect(nonDraftText).not.toContain(key);
-      if (failure === 'conflict') {
+      if (failure === 'conflict' || rejection) {
         expect(nonDraftText).not.toContain(saveUnavailable);
         expect(nonDraftText).not.toContain(deleteUnavailable);
       }
