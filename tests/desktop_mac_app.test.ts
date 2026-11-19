@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -179,13 +179,13 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(build).toContain("assets");
   });
 
-  it("pack script preserves helper symlinks, uses Electron 33 checks, and ships Open-KeyShield.command", () => {
+  it("pack script preserves runtime symlinks and ships only plain install notes", () => {
     const pack = read("src/desktop/scripts/pack-mac.cjs");
     expect(pack).toContain("stageAppBundle");
     expect(pack).toContain("verbatimSymlinks: true");
     expect(pack).toContain("verifyMacBundleRuntime");
     expect(pack).toContain("runtime-preflight.cjs");
-    expect(pack).toContain("Open-KeyShield.command");
+    expect(pack).not.toContain("Open-KeyShield.command");
     expect(pack).toContain("OPEN-ME.txt");
     expect(pack).toContain("skip dmg on");
     expect(pack).not.toContain("Helper.app/Contents/Frameworks/Electron Framework.framework/Resources/icudtl.dat");
@@ -320,22 +320,27 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(docsSection).toContain("human-usable-ui-standards.md");
   });
 
-  it("ships an Open-KeyShield.command that clears quarantine and opens /Applications", () => {
-    const cmd = read("src/desktop/Open-KeyShield.command");
-    expect(cmd).toContain("xattr -cr");
-    expect(cmd).toContain('xattr -cr "$APP"');
-    expect(cmd).toContain('xattr -cr "$DEST"');
-    expect(cmd.match(/^xattr .*$/gm)).toHaveLength(2);
-    expect(cmd).not.toContain('xattr -cr "$HERE"');
-    expect(cmd).toContain("/Applications/KeyShield.app");
-    expect(cmd).toContain("ditto");
-    // Ad-hoc signing with --deep is known to break Electron bundles, and
-    // it is unnecessary once quarantine is cleared.
-    expect(cmd).not.toContain("codesign --sign - --force --deep");
-    expect(cmd).toContain("open \"$DEST\"");
-    expect(read("src/desktop/OPEN-ME.txt")).toContain("Open-KeyShield.command");
-    expect(read("src/desktop/OPEN-ME.txt")).toContain("RIGHT-CLICK");
+  it("stages a DMG without executable install helpers or security override advice", () => {
+    const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
+    const source = makeElectron33Fixture(tempDir());
+    const staging = tempDir();
+    writeFileSync(join(staging, "Open-KeyShield.command"), "stale helper");
+    const buildInfo = join(tempDir(), "BUILD-INFO.txt");
+    writeFileSync(buildInfo, "synthetic build");
+    stageDmgContents(source, staging, buildInfo);
+    expect(readdirSync(staging).sort()).toEqual(["Applications", "BUILD-INFO.txt", "KeyShield.app", "OPEN-ME.txt"]);
+    expect(preflight.inspectMacBundle(join(staging, "KeyShield.app")).ok).toBe(true);
+    expect(readFileSync(join(staging, "OPEN-ME.txt"), "utf8")).toContain("Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.");
+    expect(existsSync(resolve(root, "src/desktop/Open-KeyShield.command"))).toBe(false);
+    for (const file of ["main.cjs", "OPEN-ME.txt", "README.md", "scripts/pack-mac.cjs"]) {
+      expect(read(`src/desktop/${file}`)).not.toMatch(/xattr|spctl|--no-quarantine|right[- ]click.{0,40}open|open anyway|disabl.{0,40}gatekeeper/i);
+    }
     expect(read("src/desktop/boot.html")).toContain("Retry the app");
     expect(read("src/desktop/boot.html")).toContain("Copy diagnostics");
+  });
+
+  it("refuses to stage a missing app instead of providing an install helper fallback", () => {
+    const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
+    expect(() => stageDmgContents(join(tempDir(), "missing.app"), tempDir(), "missing-build-info")).toThrow();
   });
 });

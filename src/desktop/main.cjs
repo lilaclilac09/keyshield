@@ -95,8 +95,8 @@ function blockStartup(report, reason) {
   ].filter(Boolean).join('\n');
   const message = [
     'KeyShield hit a launch problem. A window should still open.',
-    'If macOS refused to open the app, run Open-KeyShield.command from the zip,',
-    'or: xattr -cr /Applications/KeyShield.app && open /Applications/KeyShield.app',
+    'This local synthetic test build is not Developer ID signed or notarized.',
+    'macOS Gatekeeper protections are left intact.',
     '',
     details,
   ].join('\n');

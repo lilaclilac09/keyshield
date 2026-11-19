@@ -28,7 +28,6 @@ set.
 | `boot.html` | Diagnostics screen shown when the dashboard cannot open |
 | `scripts/build-renderer.cjs` | Builds `src/web` and verifies the output is complete |
 | `scripts/pack-mac.cjs` | Packs `KeyShield.app` (+ zip, and a DMG on macOS) |
-| `Open-KeyShield.command` | Installs the unsigned app and clears quarantine |
 | `OPEN-ME.txt` | Install instructions shipped in the zip |
 
 ## Build (on a Mac)
@@ -41,8 +40,8 @@ npm run pack        # builds the renderer, packs arm64 + x64, writes release/
 
 Output lands in `release/`:
 
-- `KeyShield-mac-arm64.zip` / `KeyShield-mac-x64.zip` — the installable app
-  plus `Open-KeyShield.command`, `OPEN-ME.txt`, `BUILD-INFO.txt`
+- `KeyShield-mac-arm64.zip` / `KeyShield-mac-x64.zip` — the app
+  plus `OPEN-ME.txt`, `BUILD-INFO.txt`
 - `KeyShield.dmg` — macOS only; drag the app to `/Applications`
 - `BUILD-INFO.txt` — Electron version, git commit, date, renderer asset
   count, preflight report for the build you just made
@@ -76,17 +75,13 @@ script in this folder.
 
 ## Install
 
-1. Unzip the zip for your Mac.
-2. **Right-click** `Open-KeyShield.command` → Open. (A plain double-click
-   is refused for scripts from a downloaded zip; right-click shows the
-   Open button.) The script clears quarantine, copies the app to
-   `/Applications`, and opens it.
-3. If that is blocked: `xattr -cr /Applications/KeyShield.app && open /Applications/KeyShield.app`
+Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.
 
-The app is unsigned (no Developer ID, no notarization). Once quarantine
-is cleared it launches without any signing — the installer deliberately
-does not ad-hoc sign with `--deep`, which is known to break Electron
-bundles.
+Mount the DMG, or extract the zip for your Mac, and copy `KeyShield.app` to
+`/Applications` using Finder. macOS may refuse to launch this local build.
+The package does not modify system security settings or provide a launch
+override. Tester distribution requires a Developer ID signed and notarized
+build.
 
 ## How launch works
 

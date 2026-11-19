@@ -128,14 +128,19 @@ function makeIcns() {
   }
 }
 
-function copyOpenHelpers(destDir) {
-  const commandSrc = path.join(desktopDir, 'Open-KeyShield.command');
+function copyInstallNotes(destDir) {
   const readmeSrc = path.join(desktopDir, 'OPEN-ME.txt');
-  const commandDest = path.join(destDir, 'Open-KeyShield.command');
   const readmeDest = path.join(destDir, 'OPEN-ME.txt');
-  fs.copyFileSync(commandSrc, commandDest);
-  fs.chmodSync(commandDest, 0o755);
   fs.copyFileSync(readmeSrc, readmeDest);
+}
+
+function stageDmgContents(sourceApp, staging, buildInfo) {
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(staging, { recursive: true });
+  stageAppBundle(sourceApp, path.join(staging, 'KeyShield.app'));
+  copyInstallNotes(staging);
+  fs.copyFileSync(buildInfo, path.join(staging, 'BUILD-INFO.txt'));
+  fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
 }
 
 function stageAppBundle(sourceApp, destApp) {
@@ -211,7 +216,7 @@ function zipApp(appDir, zipPath) {
   if (process.platform === 'darwin') {
     run('ditto', ['-c', '-k', '--sequesterRsrc', appDir, zipPath]);
   } else {
-    run('zip', ['-r', '-y', zipPath, 'KeyShield.app', 'Open-KeyShield.command', 'OPEN-ME.txt', 'BUILD-INFO.txt'], { cwd: appDir });
+    run('zip', ['-r', '-y', zipPath, 'KeyShield.app', 'OPEN-ME.txt', 'BUILD-INFO.txt'], { cwd: appDir });
   }
 }
 
@@ -276,7 +281,7 @@ async function main() {
       if (file.startsWith('/scripts')) return true;
       if (file === '/e2e' || file.startsWith('/e2e/')) return true;
       if (file === '/renderer' || file.startsWith('/renderer/')) return true;
-      if (file === '/Open-KeyShield.command' || file === '/OPEN-ME.txt') return true;
+      if (file === '/OPEN-ME.txt') return true;
       return false;
     },
     appCopyright: 'KeyShield',
@@ -299,7 +304,7 @@ async function main() {
       continue;
     }
     reports.push([arch, checkBundle(appPath, arch)]);
-    copyOpenHelpers(appDir);
+    copyInstallNotes(appDir);
     const zipName = `KeyShield-mac-${arch}.zip`;
     const zipPath = path.join(releaseDir, zipName);
     // BUILD-INFO.txt is written below; copy it into the app dir first so
@@ -321,16 +326,7 @@ async function main() {
     fs.rmSync(dmgPath, { force: true });
     fs.rmSync(`${dmgPath}.build-info.json`, { force: true });
     const staging = path.join(releaseDir, 'dmg-root');
-    fs.rmSync(staging, { recursive: true, force: true });
-    fs.mkdirSync(staging, { recursive: true });
-    stageAppBundle(preferred.appPath, path.join(staging, 'KeyShield.app'));
-    copyOpenHelpers(staging);
-    fs.copyFileSync(buildInfo, path.join(staging, 'BUILD-INFO.txt'));
-    try {
-      fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
-    } catch {
-      /* ignore */
-    }
+    stageDmgContents(preferred.appPath, staging, buildInfo);
 
     if (process.platform === 'darwin') {
       execFileSync('hdiutil', [
@@ -346,10 +342,8 @@ async function main() {
       console.log('dmg', dmgPath);
     } else {
       // Do not write KeyShield.dmg on Linux. A genisoimage ISO named .dmg
-      // is not a launchable Mac app (and ISO mangles helper names if you
-      // pack the raw .app). Ship the zip + Open-KeyShield.command instead.
+      // is not a launchable Mac app. Ship the zip instead.
       console.log('skip dmg on', process.platform, '— use', preferred.zipPath);
-      console.log('Unzip KeyShield-mac-arm64.zip, then right-click Open-KeyShield.command → Open');
     }
   }
 
@@ -363,4 +357,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo };
+module.exports = { writeBuildInfo, stageDmgContents };
