@@ -9,6 +9,7 @@ import { DeviceVaultConsent } from '../DeviceVaultConsent';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
 import { humanActionError } from '../../lib/human-usable';
+import { AgentApprovalsPanel } from './AgentApprovalsPanel';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -70,6 +71,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
 
   return (
   <div className="space-y-6">
+    {window.keyshieldDesktop?.broker && <AgentApprovalsPanel broker={window.keyshieldDesktop.broker} />}
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste or extension detect</p>
       <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
