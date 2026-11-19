@@ -39,16 +39,17 @@ function withRendererSource(root, ref, build) {
 
 function validatePinShape(pin) {
   const sha = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
-  if (!pin || pin.schemaVersion !== 1 || !pin.inputs || !Object.values(pin.inputs).length || !Object.values(pin.inputs).every(sha) || !Array.isArray(pin.merges)) throw new Error('Invalid renderer pin');
-  for (const node of [pin, ...pin.merges]) {
-    if (!sha(node.commit) || !sha(node.tree) || !Array.isArray(node.parents) || node.parents.length < 2 || !node.parents.every(sha)) throw new Error('Invalid renderer pin merge');
+  if (!pin || pin.schemaVersion !== 1 || !pin.inputs || !Object.values(pin.inputs).length || !Object.values(pin.inputs).every(sha) || !Array.isArray(pin.merges) || (pin.chain !== undefined && !Array.isArray(pin.chain))) throw new Error('Invalid renderer pin');
+  for (const node of [pin, ...pin.merges, ...(pin.chain || [])]) {
+    if (!node || !sha(node.commit) || !sha(node.tree) || !Array.isArray(node.parents) || node.parents.length < 1 || !node.parents.every(sha)) throw new Error('Invalid renderer pin merge');
   }
+  if (pin.merges.some((node) => node.parents.length < 2) || (pin.chain || []).some((node) => node.parents.length !== 1)) throw new Error('Invalid renderer pin merge');
 }
 
 function verifyRendererPin(root, pin) {
   validatePinShape(pin);
-  const nodes = new Map([pin, ...pin.merges].map((node) => [node.commit, node]));
-  if (nodes.size !== pin.merges.length + 1) throw new Error('Duplicate renderer pin merge');
+  const nodes = new Map([pin, ...pin.merges, ...(pin.chain || [])].map((node) => [node.commit, node]));
+  if (nodes.size !== pin.merges.length + (pin.chain || []).length + 1) throw new Error('Duplicate renderer pin merge');
   const visited = new Set();
   const leaves = [];
   const visit = (commit) => {
@@ -62,7 +63,7 @@ function verifyRendererPin(root, pin) {
     node.parents.forEach(visit);
   };
   visit(pin.commit);
-  if (visited.size !== nodes.size || JSON.stringify(leaves.sort()) !== JSON.stringify(Object.values(pin.inputs).sort())) throw new Error('Renderer pin inputs mismatch');
+  if (visited.size !== nodes.size || JSON.stringify(leaves.sort()) !== JSON.stringify(Object.values(pin.inputs).filter((input) => !visited.has(input)).sort())) throw new Error('Renderer pin inputs mismatch');
   return pin.commit;
 }
 

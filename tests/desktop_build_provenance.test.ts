@@ -81,6 +81,57 @@ describe('desktop / renderer build provenance', () => {
     expect(() => verifyRendererPin(root, { ...pin, merges: [{ ...first, tree: '0'.repeat(40) }] })).toThrow('tree mismatch');
   });
 
+  function linearPin() {
+    const merge = integrationPin();
+    const chain = [];
+    for (const revision of ['one', 'two']) {
+      const parent = git('rev-parse', 'HEAD');
+      writeFileSync(join(root, 'src/web/entry.js'), `linear revision ${revision}`);
+      git('add', 'src/web/entry.js');
+      git('commit', '-qm', `linear revision ${revision}`);
+      chain.push({ commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), parents: [parent] });
+    }
+    const final = chain.pop()!;
+    return { ...final, schemaVersion: 1, inputs: { ...merge.inputs, final: final.commit }, chain, merges: [merge] };
+  }
+
+  it('fetches an exact linear chain with final and ancestor inputs and the original merge closure', () => {
+    const pin = linearPin();
+    git('remote', 'add', 'origin', root);
+    expect(fetchPinnedRenderer(root, pin)).toBe(pin.commit);
+    expect(verifyRendererPin(root, { ...pin, inputs: { ...pin.inputs, ancestor: pin.chain[0].commit } })).toBe(pin.commit);
+    expect(() => verifyRendererPin(root, { ...pin, inputs: {} })).toThrow('Invalid renderer pin');
+    expect(() => verifyRendererPin(root, { ...pin, chain: [] })).toThrow('inputs mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, merges: [] })).toThrow('inputs mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, inputs: { final: pin.commit } })).toThrow('inputs mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, tree: '0'.repeat(40) })).toThrow('tree mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, parents: [rendererCommit] })).toThrow('parents mismatch');
+    for (const field of ['chain', 'merges'] as const) {
+      expect(() => verifyRendererPin(root, { ...pin, [field]: pin[field].map(node => ({ ...node, tree: '0'.repeat(40) })) })).toThrow('tree mismatch');
+      expect(() => verifyRendererPin(root, { ...pin, [field]: pin[field].map(node => ({ ...node, parents: [...node.parents].reverse().map(() => rendererCommit) })) })).toThrow('parents mismatch');
+    }
+  });
+
+  it('rejects non-ancestor inputs, disconnected or duplicate chain nodes and malformed chains', () => {
+    const pin = linearPin();
+    writeFileSync(join(root, 'src/web/entry.js'), 'future revision');
+    git('add', 'src/web/entry.js');
+    git('commit', '-qm', 'future revision');
+    expect(() => verifyRendererPin(root, { ...pin, inputs: { ...pin.inputs, future: git('rev-parse', 'HEAD') } })).toThrow('inputs mismatch');
+    git('switch', '-qc', 'unrelated', rendererCommit);
+    writeFileSync(join(root, 'src/web/entry.js'), 'unrelated revision');
+    git('add', 'src/web/entry.js');
+    git('commit', '-qm', 'unrelated revision');
+    const unrelated = { commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), parents: [rendererCommit] };
+    expect(() => verifyRendererPin(root, { ...pin, inputs: { ...pin.inputs, unrelated: unrelated.commit } })).toThrow('inputs mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, chain: [...pin.chain, unrelated] })).toThrow('inputs mismatch');
+    expect(() => verifyRendererPin(root, { ...pin, chain: [...pin.chain, pin.chain[0]] })).toThrow('Duplicate');
+    for (const chain of [null, {}, [null], [{ ...pin.chain[0], parents: [] }], [pin.merges[0]]]) {
+      expect(() => verifyRendererPin(root, { ...pin, chain })).toThrow('Invalid renderer pin');
+    }
+    expect(() => verifyRendererPin(root, { ...pin, merges: [...pin.merges, pin.chain[0]] })).toThrow('Invalid renderer pin');
+  });
+
   it('records full distinct revisions and builds the selected renderer in an isolated worktree', () => {
     const desktop = sourceRevision(root, 'src/desktop');
     const renderer = withRendererSource(root, rendererCommit, (source: string, dist: string) => {
