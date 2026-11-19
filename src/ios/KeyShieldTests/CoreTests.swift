@@ -268,6 +268,35 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try sessions.validate(session, method: "POST", url: url))
         XCTAssertEqual(try service.restore(backup, passphrase: "audit failure backup"), .restored)
     }
+    func testRecoveryArchiveFailurePreservesMissingKeyAndCanBeRetried() throws {
+        let id = try entry(), session = try token(id)
+        let logURL = directory.appendingPathComponent("audit.jsonl")
+        let log = AuditLog(clock: clock, url: logURL, key: { try self.vault.vaultKey() })
+        let backup = try BackupService(vault: vault, audit: log).export(passphrase: "archive failure backup")
+        let vaultURL = directory.appendingPathComponent("vault.json")
+        let oldVault = try Data(contentsOf: vaultURL), oldAudit = try Data(contentsOf: logURL)
+        var failArchive = true
+        let recoveryLog = AuditLog(clock: clock, url: logURL, archiveFile: { source, destination in
+            if failArchive { throw ShieldError.storage }
+            try FileManager.default.moveItem(at: source, to: destination)
+        }, key: { try self.vault.vaultKey() })
+        let service = BackupService(vault: vault, audit: recoveryLog)
+        keys.key = nil
+        XCTAssertThrowsError(try service.restore(backup, passphrase: "archive failure backup"))
+        XCTAssertNil(keys.key)
+        XCTAssertEqual(try Data(contentsOf: vaultURL), oldVault)
+        XCTAssertEqual(try Data(contentsOf: logURL), oldAudit)
+        XCTAssertNoThrow(try sessions.validate(session, method: "POST", url: url))
+        failArchive = false
+        XCTAssertEqual(try service.restore(backup, passphrase: "archive failure backup"), .restored)
+        XCTAssertNotNil(keys.key)
+        XCTAssertEqual(try vault.list().map(\.id), [id])
+        XCTAssertEqual(try recoveryLog.events().map(\.action), [.restore])
+        XCTAssertThrowsError(try sessions.validate(session, method: "POST", url: url))
+        let archives = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("audit.jsonl.unreadable-") }
+        XCTAssertEqual(archives.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(archives.first)), oldAudit)
+    }
     func testRestoreRecoversMigratedVaultWithoutDeviceKey() throws {
         let id = try entry(), originalKey = try XCTUnwrap(keys.key)
         let log = AuditLog(clock: clock, url: directory.appendingPathComponent("audit.jsonl"), key: { try self.vault.vaultKey() })

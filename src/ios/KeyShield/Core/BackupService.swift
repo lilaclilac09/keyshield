@@ -41,8 +41,8 @@ final class BackupService {
             return StoredEntry(metadata: entry.metadata, ciphertext: try Cipher.seal(entry.value, key: key))
         }
         if existingKey == nil {
-            try vault.keyStore.save(key)
             try audit.archiveUnreadableLog()
+            try vault.keyStore.save(key)
         }
         try vault.commit(records)
         vault.sessions.revokeAll()

@@ -17,8 +17,11 @@ final class AuditLog {
     private let clock: Clock
     private let key: () throws -> Data
     private let url: URL
-    init(clock: Clock = SystemClock(), url: URL, key: @escaping () throws -> Data) {
-        self.clock = clock; self.url = url; self.key = key
+    private let archiveFile: (URL, URL) throws -> Void
+    init(clock: Clock = SystemClock(), url: URL,
+         archiveFile: @escaping (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) },
+         key: @escaping () throws -> Data) {
+        self.clock = clock; self.url = url; self.key = key; self.archiveFile = archiveFile
     }
     func append(actor: AuditEvent.Actor, action: AuditEvent.Action, keyId: UUID? = nil, outcome: AuditEvent.Outcome, correlationId: UUID = UUID()) throws {
         do {
@@ -39,7 +42,7 @@ final class AuditLog {
     func archiveUnreadableLog() throws {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         let archive = url.appendingPathExtension("unreadable-" + UUID().uuidString)
-        do { try FileManager.default.moveItem(at: url, to: archive) }
+        do { try archiveFile(url, archive) }
         catch { throw ShieldError.audit }
     }
 }
