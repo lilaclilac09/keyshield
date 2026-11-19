@@ -25,10 +25,22 @@ describe('main-observed registration enrollment', () => {
   it('pins a real registration against the independently observed challenge and account', async () => {
     const w = await setup(); const signer = softwarePasskey(); await w.observe();
     const registration = signer.registration('observed'); const binding = w.observer.consume(registration);
-    const store = createApprovalPasskey(); await store.register(registration, binding.challenge, binding.accountId);
+    const confirmEnrollment = vi.fn(async () => true);
+    const store = createApprovalPasskey({ confirmEnrollment }); await store.register(registration, binding.challenge, binding.accountId);
+    expect(confirmEnrollment).toHaveBeenCalledWith({ credentialId: signer.id });
     expect(store.get()).toMatchObject({ credentialId: signer.id, accountId: 'account-A' });
     expect(() => w.observer.consume(registration)).toThrow('unavailable');
     await expect(store.register(softwarePasskey().registration('other'), 'other', 'account-B')).rejects.toThrow('already_pinned');
+  });
+
+  it.each(['absent', 'cancelled', 'failed'])('does not pin when main confirmation is %s', async (mode) => {
+    const signer = softwarePasskey();
+    const confirmEnrollment = mode === 'absent' ? undefined : vi.fn(async () => {
+      if (mode === 'failed') throw new Error('confirmation failed'); return false;
+    });
+    const store = createApprovalPasskey({ confirmEnrollment });
+    await expect(store.register(signer.registration('observed'), 'observed', 'account-A')).rejects.toThrow();
+    expect(store.get()).toBeNull();
   });
 
   it.each(['unobserved', 'expired', 'wrong challenge', 'wrong referer', 'malformed referer', 'wrong API', 'account switched', 'reissued'])('refuses %s enrollment', async (mode) => {

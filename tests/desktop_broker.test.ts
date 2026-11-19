@@ -23,7 +23,7 @@ async function listen(server: Server) {
 async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: Record<string, unknown> } = {}) {
   let clock = Date.now();
   const signer = softwarePasskey();
-  const passkey = createApprovalPasskey();
+  const passkey = createApprovalPasskey({ confirmEnrollment: async () => true });
   if (!options.noPin) await passkey.register(signer.registration('registration-challenge'), 'registration-challenge', 'account-A');
   const seen: unknown[] = [];
   const response = { status: 200, body: JSON.stringify({ echo: 'keyshield-acceptance' }), type: 'application/json', location: '' };
@@ -242,7 +242,7 @@ describe('mock desktop broker with real WebAuthn verification', () => {
   it('persists only a verified registration and counter; refuses re-pinning and missing UV/origin', async () => {
     const dir = mkdtempSync(join(homedir(), '.keyshield-pin-test-')); cleanup.push(() => rmSync(dir, { recursive: true }));
     const file = join(dir, 'approval-passkey.json'); const signer = softwarePasskey();
-    const store = createApprovalPasskey({ file });
+    const store = createApprovalPasskey({ file, confirmEnrollment: async () => true });
     await expect(store.register(signer.registration('challenge', { uv: false }), 'challenge', 'account-A')).rejects.toThrow();
     await expect(store.register(signer.registration('challenge', { origin: 'https://wrong.invalid' }), 'challenge', 'account-A')).rejects.toThrow();
     await expect(store.register(signer.registration('challenge'), 'wrong', 'account-A')).rejects.toThrow();
@@ -258,7 +258,7 @@ describe('mock desktop broker with real WebAuthn verification', () => {
   it('does not trust or replace an older pin without observed-enrollment provenance', async () => {
     const dir = mkdtempSync(join(homedir(), '.keyshield-pin-test-')); cleanup.push(() => rmSync(dir, { recursive: true }));
     const file = join(dir, 'approval-passkey.json'); const signer = softwarePasskey();
-    const old = createApprovalPasskey({ file }); await old.register(signer.registration('challenge'), 'challenge', 'account-A');
+    const old = createApprovalPasskey({ file, confirmEnrollment: async () => true }); await old.register(signer.registration('challenge'), 'challenge', 'account-A');
     const record = JSON.parse(readFileSync(file, 'utf8')); delete record.enrollment; delete record.accountId;
     const legacy = JSON.stringify(record); writeFileSync(file, legacy);
     const loaded = createApprovalPasskey({ file }); expect(loaded.get()).toBeNull();

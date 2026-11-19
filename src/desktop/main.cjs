@@ -50,11 +50,27 @@ function assertBrokerSender(event) {
   if (origin !== DASHBOARD_ORIGIN) throw new Error('broker_caller_refused');
 }
 
+async function confirmApprovalPasskey({ credentialId }) {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return false;
+  const result = await dialog.showMessageBox(win, {
+    type: 'question', message: 'Use this passkey for agent approvals on this device?',
+    detail: `Credential ID: ${credentialId}`, buttons: ['Cancel', 'Use passkey'],
+    defaultId: 0, cancelId: 0, noLink: true,
+  });
+  if (result.response !== 1 || mainWindow !== win || win.isDestroyed()) return false;
+  if (typeof systemPreferences.canPromptTouchID === 'function' && systemPreferences.canPromptTouchID()) {
+    await systemPreferences.promptTouchID('enable agent approvals on this device');
+  }
+  return mainWindow === win && !win.isDestroyed();
+}
+
 async function startBroker() {
   if (!BROKER_ENABLED || app.isPackaged) return;
   const { createBroker } = require('./broker.cjs');
   const { createApprovalPasskey } = require('./approval-passkey.cjs');
-  const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN });
+  const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN,
+    confirmEnrollment: confirmApprovalPasskey });
   const { createRegistrationObserver } = require('./registration-observer.cjs');
   registrationObserver = createRegistrationObserver({
     apiOrigin: new URL(process.env.KS_DESKTOP_API_URL || PROD_API).origin, origin: DASHBOARD_ORIGIN,

@@ -10,6 +10,9 @@ const preload = readFileSync('src/desktop/preload.cjs', 'utf8');
 async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   const handlers = new Map<string, Function>();
   const passkey = { register: vi.fn(), get: vi.fn(() => null) };
+  const nativeDialog = { showMessageBox: vi.fn(async () => ({ response: 1 })) };
+  const preferences = { canPromptTouchID: vi.fn(() => true), promptTouchID: vi.fn(async () => {}) };
+  let pinOptions: any;
   let changed = () => {};
   const broker = Object.fromEntries(['listAgents', 'registerAgent', 'revokeAgent', 'listRequests', 'deny', 'revokeRequest', 'beginApproval', 'approve', 'invalidateApprovals'].map((name) => [name, vi.fn()]));
   broker.listen = vi.fn(async () => ({ port: 12345 }));
@@ -21,9 +24,9 @@ async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   const ses = { fetch, protocol: { handle: (scheme: string, cb: Function) => protocols.set(scheme, cb) } };
   const context = createContext({ URL, console: { log: vi.fn() }, process: { env: { ...(enabled ? { KS_DESKTOP_BROKER: '1' } : {}), ...(syncProxy ? { KS_DESKTOP_SYNC_PROXY: '1' } : {}) }, platform: 'test' },
     __dirname: '/unused', require: (name: string) => {
-      if (name === 'electron') return { app, net: { fetch }, ipcMain: { handle: (name: string, cb: Function) => handlers.set(name, cb), on: vi.fn() } };
+      if (name === 'electron') return { app, dialog: nativeDialog, systemPreferences: preferences, net: { fetch }, ipcMain: { handle: (name: string, cb: Function) => handlers.set(name, cb), on: vi.fn() } };
       if (name === './broker.cjs') return { createBroker: () => broker };
-      if (name === './approval-passkey.cjs') return { createApprovalPasskey: () => passkey };
+      if (name === './approval-passkey.cjs') return { createApprovalPasskey: (options: any) => { pinOptions = options; return passkey; } };
       if (name === './runtime-preflight.cjs') return {};
       return requireDesktop(name);
     } });
@@ -34,10 +37,25 @@ async function harness(enabled = true, isPackaged = false, syncProxy = false) {
   const win = { isDestroyed: () => false, webContents: wc };
   (context as any).testWindow = win; runInContext('mainWindow = testWindow', context);
   (context as any).testSession = ses;
-  return { handlers, broker, frame, wc, context, passkey, changed, fetch, protocols };
+  return { handlers, broker, frame, wc, context, passkey, changed, fetch, protocols, nativeDialog, preferences, pinOptions, win };
 }
 
 describe('broker IPC main-frame boundary', () => {
+  it.each(['accepted', 'cancelled', 'dialog failed', 'Touch ID failed', 'Touch ID unavailable'])('uses main-owned native enrollment confirmation: %s', async (mode) => {
+    const w = await harness();
+    if (mode === 'cancelled') w.nativeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    if (mode === 'dialog failed') w.nativeDialog.showMessageBox.mockRejectedValueOnce(new Error('native dialog failed'));
+    if (mode === 'Touch ID failed') w.preferences.promptTouchID.mockRejectedValueOnce(new Error('Touch ID cancelled'));
+    if (mode === 'Touch ID unavailable') w.preferences.canPromptTouchID.mockReturnValue(false);
+    const confirmation = w.pinOptions.confirmEnrollment({ credentialId: 'credential-under-review' });
+    if (mode.endsWith('failed')) await expect(confirmation).rejects.toThrow();
+    else expect(await confirmation).toBe(mode !== 'cancelled');
+    expect(w.nativeDialog.showMessageBox).toHaveBeenCalledWith(w.win, expect.objectContaining({
+      message: 'Use this passkey for agent approvals on this device?', detail: 'Credential ID: credential-under-review',
+      buttons: ['Cancel', 'Use passkey'], defaultId: 0, cancelId: 0 }));
+    if (mode === 'cancelled' || mode === 'dialog failed' || mode === 'Touch ID unavailable') expect(w.preferences.promptTouchID).not.toHaveBeenCalled();
+    else expect(w.preferences.promptTouchID).toHaveBeenCalledOnce();
+  });
   it('refuses mock startup in a packaged Electron app', async () => {
     const w = await harness(true, true);
     expect([...w.handlers.keys()].filter((key) => key.startsWith('ks-broker:'))).toEqual([]);

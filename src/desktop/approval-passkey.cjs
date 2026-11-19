@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const { verifyRegistrationResponse, verifyAuthenticationResponse } = require('@simplewebauthn/server');
 
-function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz' } = {}) {
+function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz', confirmEnrollment = async () => false } = {}) {
   const rpId = new URL(origin).hostname;
   let pin = null;
   let occupied = Boolean(file && fs.existsSync(file));
@@ -13,7 +13,7 @@ function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz' } =
       const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (saved.origin === origin && saved.rpId === rpId && saved.credentialId && saved.publicKey &&
           Number.isSafeInteger(saved.counter) && saved.counter >= 0 && typeof saved.accountId === 'string' && saved.accountId &&
-          saved.enrollment === 'main-observed-v1') pin = saved;
+          saved.enrollment === 'main-confirmed-v1') pin = saved;
     } catch { /* invalid existing pins remain unavailable and cannot be replaced */ }
   }
   function save(next) {
@@ -41,8 +41,9 @@ function createApprovalPasskey({ file, origin = 'https://app.ks.aileena.xyz' } =
         });
         if (!result.verified || !result.registrationInfo || !isCurrent()) throw new Error('approval_registration_refused');
         const { credential } = result.registrationInfo;
+        if (!await confirmEnrollment({ credentialId: credential.id }) || !isCurrent()) throw new Error('approval_confirmation_refused');
         save({ credentialId: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'),
-          counter: credential.counter, rpId, origin, accountId, enrollment: 'main-observed-v1' });
+          counter: credential.counter, rpId, origin, accountId, enrollment: 'main-confirmed-v1' });
       });
     },
     verify(response, expectedChallenge) {
