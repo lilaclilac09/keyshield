@@ -1,5 +1,6 @@
 import XCTest
 import CoreFoundation
+import UIKit
 
 final class KeyShieldUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -101,6 +102,63 @@ final class KeyShieldUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["detail.secret"].label, fixture)
         screenshot("Release-09-ApprovedReveal")
     }
+    #if SIMULATOR_APPROVAL_DEMO
+    func testSimulatorDemoRequiresFreshFaceIDAndSendsNoReceiptOnDeny() {
+        XCTAssertTrue(app.launchArguments.isEmpty)
+        create()
+        let clipboardChangeCount = UIPasteboard.general.changeCount
+        let receipt = app.descendants(matching: .any)["approvalDemo.receipt"].firstMatch
+        let request = app.buttons["approvalDemo.request"]
+        tab("Agents")
+        XCTAssertFalse(request.exists)
+        screenshot("Demo-01-OptIn")
+        tap("approvalDemo.enable")
+        tab("Vault")
+        XCTAssertTrue(app.buttons["vault.entry.Simulator approval fixture"].exists)
+        tab("Agents")
+
+        for attempt in 1...2 {
+            tap("approvalDemo.request")
+            XCTAssertTrue(app.navigationBars["Approve operation"].exists)
+            XCTAssertTrue(app.descendants(matching: .any)["approvalDemo.requester"].firstMatch.exists)
+            XCTAssertTrue(app.descendants(matching: .any)["approvalDemo.entry"].firstMatch.exists)
+            for text in ["KeyShield Demo Agent", "Simulator approval fixture", "Run one mock operation", "POST", "/v1/mock"] {
+                let label = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text))
+                XCTAssertTrue(label.firstMatch.exists, "Consent is missing \(text)")
+            }
+            XCTAssertEqual(app.staticTexts["approval.host"].label, "api.provider.test")
+            XCTAssertFalse(app.buttons["approval.useCode"].isEnabled)
+            XCTAssertFalse(receipt.exists)
+            screenshot("Demo-0\(attempt * 3 - 1)-Request")
+            approveBiometric()
+            let permission = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["OK"]
+            if attempt == 1, permission.waitForExistence(timeout: 3) { permission.tap() }
+            XCTAssertFalse(receipt.waitForExistence(timeout: 1))
+            matchFaceID("Demo-0\(attempt * 3)-SystemFaceID", awaiting: receipt)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Agent receipt: Approved")).firstMatch.exists)
+            screenshot("Demo-0\(attempt * 3 + 1)-Approved")
+        }
+
+        tap("approvalDemo.request")
+        XCTAssertFalse(receipt.exists)
+        tap("approval.deny")
+        XCTAssertTrue(app.staticTexts["approvalDemo.denied"].waitForExistence(timeout: 5))
+        XCTAssertFalse(receipt.exists)
+        XCTAssertEqual(UIPasteboard.general.changeCount, clipboardChangeCount)
+        screenshot("Demo-08-Denied")
+        tap("approvalDemo.disable")
+        XCTAssertFalse(request.exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["No active sessions"].exists)
+    }
+    #else
+    func testStandardReleaseDoesNotOfferSimulatorDemo() {
+        create()
+        tab("Agents")
+        XCTAssertFalse(app.buttons["approvalDemo.enable"].exists)
+        XCTAssertFalse(app.buttons["approvalDemo.request"].exists)
+    }
+    #endif
     #endif
     #endif
     func testOnboardingCancelThenCreateAndMainScreens() {
