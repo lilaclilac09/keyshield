@@ -42,6 +42,7 @@ Output lands in `release/`:
   count, preflight report for the build you just made
 - `KeyShield.dmg.build-info.json` — full desktop/renderer commit and tree
   SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
+  (renderer parent SHAs identify revisions included in integration merges)
 
 To build the renderer from a different immutable revision without switching
 the desktop checkout:
@@ -151,9 +152,16 @@ list the key with **every** audited save encrypted, while a fresh, locked email
 session must visibly refuse the save and leave the real backend empty. They
 fail (without `test.fail`) against a plaintext-first renderer. They print only
 request shapes and backend item counts, not values. The unlocked fixture uses
-a synthetic PRF credential and an in-page mock for passkey options and the sync
-worker's challenge/exchange/blob transport; it invokes the real UI unlock and
-client crypto. Python `/zk/enable`, saves, and list requests are not mocked.
+a synthetic PRF credential, in-page passkey-options fixture, and loopback HTTP
+sync-worker fixture; it invokes the real UI unlock and client crypto. Encrypted
+PUTs reach the local worker fixture over real HTTP and appear in the desktop
+audit. Python `/zk/enable`, list, and agent-token requests are not mocked.
+Device-only saves must receive a 2xx from the loopback worker and appear as
+device-vault cards; legacy server save routes are audited too. Tests also cover
+same-provider keys, explicit reveal without diagnostic leakage, and placeholder
+Developer snippets after minting a real local agent token. DNS resolution of
+external hosts is disabled during Electron tests; bundled dashboard assets are
+still served through the desktop's local protocol handler.
 These tests do not verify authenticator/worker authentication, and
 ciphertext-shaped fields alone are not proof of encryption.
 

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const http = require('node:http');
 const { samples } = require('./keys.json');
 
 const desktop = path.resolve(__dirname, '..');
@@ -20,7 +21,7 @@ async function launch(label, overrides = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const app = await electron.launch({
     ...(process.env.KS_E2E_APP ? { executablePath: process.env.KS_E2E_APP } : { executablePath: require('electron') }),
-    args: [...(process.env.KS_E2E_APP ? [] : [path.join(desktop, 'main.cjs')]), `--user-data-dir=${dir}/profile`],
+    args: [...(process.env.KS_E2E_APP ? [] : [path.join(desktop, 'main.cjs')]), `--user-data-dir=${dir}/profile`, '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1'],
     env: {
       ...process.env,
       KS_DESKTOP_FORCE_PACKAGED: '1',
@@ -53,8 +54,34 @@ async function signup(page) {
   return account;
 }
 
-async function unlockWithSyntheticPasskey(page) {
-  await page.evaluate(({ api }) => {
+async function unlockWithSyntheticPasskey(page, app) {
+  const blobs = new Map();
+  const worker = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS');
+    res.setHeader('Content-Type', 'application/json');
+    if (req.method === 'OPTIONS') return res.end();
+    if (req.url === '/auth/challenge') return res.end(JSON.stringify({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB' }));
+    if (req.url === '/auth/exchange') return res.end(JSON.stringify({ token: 'FAKE-e2e-sync-token', expiresAt: Date.now() + 3600000 }));
+    if (req.url.startsWith('/vault/')) {
+      if (req.method === 'PUT') {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        blobs.set(req.url, Buffer.concat(chunks).toString('utf8'));
+        return res.end('{}');
+      }
+      const blob = blobs.get(req.url);
+      res.statusCode = blob ? 200 : 404;
+      return res.end(blob || '{}');
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => worker.listen(0, '127.0.0.1', resolve));
+  app.on('close', () => worker.close());
+  const syncOrigin = `http://127.0.0.1:${worker.address().port}`;
+  await page.evaluate(({ api, syncOrigin }) => {
     localStorage.setItem('ks_passkey_user', 'FAKE-e2e-passkey-identity');
     const prf = crypto.getRandomValues(new Uint8Array(32)).buffer;
     const bytes = new Uint8Array(32).fill(1).buffer;
@@ -70,12 +97,10 @@ async function unlockWithSyntheticPasskey(page) {
       if (url.origin === new URL(api).origin && url.pathname === '/auth/passkey/auth-options') {
         return json({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB', allowCredentials: [] });
       }
-      if (url.pathname === '/auth/challenge') return json({ challenge: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB' });
-      if (url.pathname === '/auth/exchange') return json({ token: 'FAKE-e2e-sync-token', expiresAt: Date.now() + 3600000 });
-      if (url.pathname.startsWith('/vault/')) return json({}, (options?.method || 'GET') === 'GET' ? 404 : 200);
+      if (['/auth/challenge', '/auth/exchange'].includes(url.pathname) || url.pathname.startsWith('/vault/')) return originalFetch(`${syncOrigin}${url.pathname}`, options);
       return originalFetch(input, options);
     };
-  }, { api });
+  }, { api, syncOrigin });
   const card = page.getByTestId('zk-mode-card');
   await card.getByRole('button', { name: 'Unlock with passkey', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Turn on ZK mode', exact: true })).toBeVisible();
@@ -83,10 +108,23 @@ async function unlockWithSyntheticPasskey(page) {
   await expect(card.getByRole('button', { name: 'Show unlock code for keyshield-proxy', exact: true })).toBeVisible();
 }
 
-async function prepareSecret(page, label) {
+async function prepareSecret(page, label, value = samples.find((row) => row.id === 'aws_secret').value) {
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByPlaceholder('e.g. Production API key', { exact: true }).fill(label);
-  await page.getByTestId('new-secret-api-key').fill(samples.find((row) => row.id === 'aws_secret').value);
+  await page.getByTestId('new-secret-api-key').fill(value);
+  await page.locator('form select').first().selectOption('openai');
+}
+
+async function saveSecret(page, value, heading = 'OpenAI') {
+  await prepareSecret(page, `FAKE desktop ${Date.now()}`, value);
+  const saved = page.waitForResponse((r) => ['POST', 'PUT'].includes(r.request().method())
+    && (['/manage/store', '/zk/store'].includes(new URL(r.url()).pathname) || new URL(r.url()).pathname.startsWith('/vault/')) && r.ok());
+  await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
+  const response = await saved;
+  expect(response.ok()).toBe(true);
+  await expect(page.getByTestId('new-secret-api-key')).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+  return response.status();
 }
 
 test.describe.serial('local desktop acceptance', () => {
@@ -159,21 +197,74 @@ test('KS-SEC-001 KS-SEC-002 unlocked vault saves a FAKE key with ciphertext on E
   const { app, page, dir } = await launch('unlocked-save');
   try {
     await signup(page);
-    await unlockWithSyntheticPasskey(page);
-    const label = `FAKE desktop unlocked ${Date.now()}`;
-    await prepareSecret(page, label);
-    const saved = page.waitForResponse((r) => r.request().method() === 'POST'
-      && ['/manage/store', '/zk/store'].includes(new URL(r.url()).pathname) && r.ok());
-    await page.getByRole('button', { name: 'Save Secret', exact: true }).click();
-    const response = await saved;
-    expect(response.ok()).toBe(true);
-    await expect(page.getByTestId('vault-saved-apis')).toContainText(label);
-    console.log('UNLOCKED_SAVE_RESULT', JSON.stringify({ status: response.status(), vaultListContainsKey: true }));
+    await unlockWithSyntheticPasskey(page, app);
+    const status = await saveSecret(page, samples.find((row) => row.id === 'aws_secret').value);
+    console.log('UNLOCKED_SAVE_RESULT', JSON.stringify({ status, vaultListContainsKey: true }));
     const shapes = saveRequests(dir);
     console.log('UNLOCKED_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
     expect(shapes.length, 'At least one save request must be audited').toBeGreaterThan(0);
     expect.soft(shapes.filter((row) => row.plaintextFieldPresent), 'Plaintext observed in unlocked vault save').toEqual([]);
     expect(shapes.every((row) => row.hasCiphertextEnvelope && !row.plaintextFieldPresent), 'EVERY save request must contain ciphertext and no plaintext').toBe(true);
+  } finally { await app.close(); }
+});
+
+test('KS-HUM-002 KS-SEC-001 KS-SEC-002 two same-provider FAKE keys save separately without plaintext', async () => {
+  const { app, page, dir } = await launch('same-provider');
+  try {
+    await signup(page);
+    await unlockWithSyntheticPasskey(page, app);
+    const first = samples.find((row) => row.id === 'openai').value;
+    await saveSecret(page, first);
+    await saveSecret(page, `${first.slice(0, -1)}B`, 'OpenAI#2');
+    await expect(page.getByRole('heading', { name: 'OpenAI', exact: true })).toBeVisible();
+    const shapes = saveRequests(dir);
+    console.log('SAME_PROVIDER_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
+    expect(shapes.length).toBeGreaterThanOrEqual(2);
+    expect(shapes.every((row) => row.hasCiphertextEnvelope && !row.plaintextFieldPresent)).toBe(true);
+  } finally { await app.close(); }
+});
+
+test('KS-USE-002 KS-SEC-002 explicit reveal alone exposes a FAKE value, never logs or audit', async () => {
+  const { app, page, dir } = await launch('reveal');
+  try {
+    await signup(page);
+    await unlockWithSyntheticPasskey(page, app);
+    const value = samples.find((row) => row.id === 'openai').value;
+    const extracted = value.split('::')[1];
+    await saveSecret(page, value);
+    await expect(page.locator('body')).not.toContainText(extracted);
+    await page.getByTitle('Reveal', { exact: true }).click();
+    await expect(page.getByText(extracted, { exact: true })).toBeVisible();
+    await page.getByTitle('Hide', { exact: true }).click();
+    await expect(page.locator('body')).not.toContainText(extracted);
+    const diagnostics = await page.evaluate(() => window.keyshieldDesktop.getDiagnostics());
+    for (const output of [diagnostics.summary, fs.readFileSync(path.join(dir, 'launch.log'), 'utf8'), fs.readFileSync(path.join(dir, 'requests.jsonl'), 'utf8')]) {
+      expect(output).not.toContain(value);
+      expect(output).not.toContain(extracted);
+    }
+  } finally { await app.close(); }
+});
+
+test('KS-AGT-001 KS-SEC-002 Developer CLI and REST examples retain placeholders after token creation', async () => {
+  const { app, page } = await launch('developer-placeholders');
+  try {
+    const account = await signup(page);
+    await page.getByRole('button', { name: 'Developer', exact: true }).click();
+    const minted = page.waitForResponse((r) => new URL(r.url()).pathname === '/sessions/proxy-token' && r.request().method() === 'POST');
+    await page.getByTestId('mint-agent-token').click();
+    const response = await minted;
+    expect(response.ok()).toBe(true);
+    const { token } = await response.json();
+    expect(typeof token).toBe('string');
+    await expect(page.getByText('Agent token', { exact: true })).toBeVisible();
+    const snippets = await page.locator('pre').allTextContents();
+    expect(snippets.length).toBeGreaterThan(10);
+    expect(snippets.join('\n')).not.toContain(token);
+    expect(snippets.join('\n')).not.toContain(account.token);
+    expect(snippets.some((text) => text.includes('bash keyshield-cli.sh login <wallet-address> <passphrase>'))).toBe(true);
+    const authenticated = snippets.filter((text) => /Bearer|KeyShield\(token=/.test(text));
+    expect(authenticated.length).toBeGreaterThan(5);
+    for (const text of authenticated) expect(text).toContain('<YOUR_AGENT_TOKEN>');
   } finally { await app.close(); }
 });
 

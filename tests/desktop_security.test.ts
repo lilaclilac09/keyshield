@@ -126,6 +126,12 @@ describe('opt-in request audit — KS-SEC-002', () => {
     expect(requestShape(request('{"cipher":"opaque","iv":"nonce","nested":{"rawKey":"FAKE"}}')).plaintextFieldPresent).toBe(true);
     for (const body of ['', 'not JSON', 'null']) expect(requestShape(request(body)).bodyFieldNames).toEqual([]);
   });
+  it('keeps save route prefixes while redacting secret-like path segments', () => {
+    const shape = requestShape({ ...request('{}'), url: `http://127.0.0.1:8787/vault/${'a'.repeat(64)}?token=hidden` });
+    expect(shape.route).toBe('/vault/[redacted]');
+    expect(JSON.stringify(shape)).not.toContain('a'.repeat(64));
+    expect(JSON.stringify(shape)).not.toContain('hidden');
+  });
   it('is off by default and always releases requests even on a write error', () => {
     const onBeforeRequest = vi.fn();
     const ses = { webRequest: { onBeforeRequest } };

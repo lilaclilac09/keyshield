@@ -24,7 +24,7 @@ function requestShape(details) {
   visit(parsed);
   return {
     method: /^[A-Z]+$/.test(details.method) ? details.method : 'UNKNOWN',
-    route: redact(url.pathname),
+    route: url.pathname.split('/').map(redact).join('/'),
     bodyFieldNames: parsed && !Array.isArray(parsed) && typeof parsed === 'object' ? Object.keys(parsed).map(redact).sort() : [],
     hasCiphertextEnvelope,
     plaintextFieldPresent,

@@ -50,6 +50,9 @@ describe('desktop / renderer build provenance', () => {
       return sourceRevision(source, 'src/web');
     });
     expect(desktop).toMatchObject({ commit: desktopCommit, dirty: false });
+    expect(desktop.parents).toEqual([rendererCommit]);
+    expect(renderer.parents).toEqual([]);
+    expect(renderer.commitTree).toBe(git('rev-parse', `${rendererCommit}^{tree}`));
     expect(renderer).toMatchObject({ commit: rendererCommit, dirty: false });
     expect(renderer.commit).toHaveLength(40);
     expect(renderer.tree).toBe(git('rev-parse', `${rendererCommit}:src/web`));

@@ -13,6 +13,8 @@ function git(root, args) {
 function sourceRevision(root, directory) {
   return {
     commit: git(root, ['rev-parse', 'HEAD']),
+    commitTree: git(root, ['rev-parse', 'HEAD^{tree}']),
+    parents: git(root, ['show', '-s', '--format=%P', 'HEAD']).split(' ').filter(Boolean),
     tree: git(root, ['rev-parse', `HEAD:${directory}`]),
     dirty: Boolean(git(root, ['status', '--porcelain', '--untracked-files=all', '--', directory, `:(exclude)${directory}/dist`])),
     repositoryDirty: Boolean(git(root, ['status', '--porcelain', '--untracked-files=all'])),

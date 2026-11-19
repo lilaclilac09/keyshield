@@ -184,6 +184,8 @@ function writeBuildInfo(reports, rendererAssets, sources, dmgSha256, dest = path
     `desktop dirty: ${sources.desktop.dirty}`,
     `desktop repository dirty: ${sources.desktop.repositoryDirty}`,
     `renderer commit: ${sources.renderer.commit}`,
+    `renderer parents: ${sources.renderer.parents.join(' ') || 'none'}`,
+    `renderer commit tree: ${sources.renderer.commitTree}`,
     `renderer tree: ${sources.renderer.tree}`,
     `renderer dirty: ${sources.renderer.dirty}`,
     `renderer repository dirty: ${sources.renderer.repositoryDirty}`,
