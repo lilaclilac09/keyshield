@@ -16,10 +16,12 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  const [available, setAvailable] = useState(false);
   const refresh = useCallback(async () => {
     const [nextAgents, nextRequests] = await Promise.all([broker.listAgents(), broker.listRequests()]);
     setAgents(nextAgents);
     setRequests(nextRequests);
+    setAvailable((await broker.approvalStatus()).available);
   }, [broker]);
 
   useEffect(() => {
@@ -52,6 +54,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
       <div>
         <h3 className="text-[14px] font-semibold text-[#e8ecff]">Mock provider (test only)</h3>
         <p className="text-[12px] text-[#8a96c2]">Local mock broker · Every use requires a fresh passkey. Agents, requests and the encrypted snapshot disappear when the app restarts.</p>
+        {!available && <p data-testid="broker-unavailable" className="text-[12px] text-[#8a96c2]">Broker approval is unavailable on this device.</p>}
       </div>
       {error && <p role="alert" data-testid="broker-error" className="text-[12px] text-red-300">{error}</p>}
       <form className="flex gap-2" onSubmit={(event) => {
@@ -97,7 +100,7 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
           <p>{request.description}</p>
           <p>Expires in {Math.max(0, Math.ceil((request.expires_at - clock) / 1000))}s</p>
           <div className="flex gap-2 flex-wrap">
-            <button data-testid={`broker-approve-${request.id}`} className={button} disabled={busy || request.expires_at <= clock}
+            <button data-testid={`broker-approve-${request.id}`} className={button} disabled={!available || busy || request.expires_at <= clock}
               onClick={() => void act(() => approveRequestWithPasskey(request.id))}>Approve with passkey</button>
             <button data-testid={`broker-deny-${request.id}`} className={button} disabled={busy}
               onClick={() => void act(() => broker.deny(request.id))}>Deny</button>

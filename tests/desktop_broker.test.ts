@@ -1,9 +1,9 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { softwarePasskey, ORIGIN } from './software_passkey';
 
 const requireDesktop = createRequire(new URL('../src/desktop/package.json', import.meta.url));
@@ -11,7 +11,8 @@ const { createBroker } = requireDesktop('./broker.cjs');
 const { createApprovalPasskey } = requireDesktop('./approval-passkey.cjs');
 const SECRET = 'FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const cleanup: (() => unknown | Promise<unknown>)[] = [];
-afterEach(async () => { while (cleanup.length) await cleanup.pop()!(); });
+beforeEach(() => { vi.stubEnv('KS_DESKTOP_BROKER', '1'); });
+afterEach(async () => { while (cleanup.length) await cleanup.pop()!(); vi.unstubAllEnvs(); });
 
 async function listen(server: Server) {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -23,19 +24,24 @@ async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: R
   let clock = Date.now();
   const signer = softwarePasskey();
   const passkey = createApprovalPasskey();
-  if (!options.noPin) await passkey.register(signer.registration('registration-challenge'), 'registration-challenge');
+  if (!options.noPin) await passkey.register(signer.registration('registration-challenge'), 'registration-challenge', 'account-A');
   const seen: unknown[] = [];
   const response = { status: 200, body: JSON.stringify({ echo: 'keyshield-acceptance' }), type: 'application/json', location: '' };
-  const providerPort = await listen(createServer(async (req, res) => {
-    const chunks = []; for await (const chunk of req) chunks.push(chunk);
-    seen.push({ authorization: req.headers.authorization, path: req.url, method: req.method, body: Buffer.concat(chunks).toString() });
-    res.writeHead(response.status, { 'content-type': response.type, 'x-private': SECRET,
-      ...(response.location ? { location: response.location } : {}) });
-    res.end(response.body);
-  }));
-  const broker = createBroker({ mockProviderPort: providerPort, passkey, now: () => clock,
+  const broker = createBroker({ mockMode: true, isPackaged: false, passkey, now: () => clock,
+    fetchImpl: async (url: string, init: RequestInit) => {
+      expect(new URL(url).hostname).toBe('127.0.0.1');
+      await (await fetch(url, init)).body?.cancel();
+      seen.splice(0, seen.length, ...broker.mockReceivedForTests());
+      return new Response(response.body, { status: response.status, headers: { 'content-type': response.type,
+        'x-private': SECRET, ...(response.location ? { location: response.location } : {}) } });
+    },
     approvalTtlMs: options.ttl ?? 120000, ...options.brokerOptions });
-  const port = await listen(broker.server);
+  const { port } = await broker.listen(0);
+  cleanup.push(() => new Promise<void>((resolve) => { broker.server.closeAllConnections(); broker.server.close(() => resolve()); }));
+  const snapshot = (requestId: string) => ({ vaultId: 'test-vault', revision: 1,
+    entryId: broker.listRequests().find((r: any) => r.id === requestId)?.credential, metadata: { addedAt: 1 } });
+  const begin = broker.beginApproval;
+  broker.beginApproval = (payload: any) => begin(typeof payload === 'string' ? { requestId: payload, snapshot: snapshot(payload) } : payload);
   const agent = broker.registerAgent('mock agent');
   const base = `http://127.0.0.1:${port}`;
   async function call(path: string, init: RequestInit = {}, token = agent.token) {
@@ -53,7 +59,7 @@ async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: R
   }
   function approve(request: { id: string }, assertion?: unknown) {
     const grant = assertion ? null : broker.beginApproval(request.id);
-    return broker.approve({ requestId: request.id, secret: SECRET, assertion: assertion ?? signer.assertion(grant.challenge) });
+    return broker.approve({ requestId: request.id, secret: SECRET, snapshot: snapshot(request.id), assertion: assertion ?? signer.assertion(grant.challenge) });
   }
   return { broker, signer, passkey, seen, response, base, port, agent, call, submit, approve, advance: (ms: number) => { clock += ms; } };
 }
@@ -170,10 +176,39 @@ describe('mock desktop broker with real WebAuthn verification', () => {
     expect(r).toMatchObject({ status: 400, body: { error: 'unknown_field' } }); expect(w.seen).toEqual([]);
   });
 
-  it.each([undefined, 'https://example.com', '123@evil.invalid', 0, -1, 65536])('cannot configure non-loopback destination %s', async (mockProviderPort) => {
-    const w = await world({ brokerOptions: { mockProviderPort, providerOrigin: 'https://example.com' } });
-    expect((await w.call('/v1/requests', { method: 'POST', body: '{"operation":"mock.echo","credential":"openai"}' })).body.error).toBe('operation_unavailable');
-    expect(w.seen).toEqual([]);
+  it.each(['mockProviderPort', 'providerOrigin', 'port'])('rejects configuration of %s', (option) => {
+    expect(() => createBroker({ mockMode: true, isPackaged: false, [option]: 'https://example.com' })).toThrow('invalid_mock_option');
+  });
+
+  it.each(['disabled', 'packaged', 'not mock'])('refuses to start when %s', (mode) => {
+    if (mode === 'disabled') vi.stubEnv('KS_DESKTOP_BROKER', '0');
+    expect(() => createBroker({ mockMode: mode !== 'not mock', isPackaged: mode === 'packaged' })).toThrow('mock_broker_development_only');
+  });
+
+  it('rejects non-synthetic secrets without dispatch', async () => {
+    const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id);
+    await expect(w.broker.approve({ requestId: r.id, assertion: w.signer.assertion(g.challenge), secret: 'sk-real-looking-but-not-real' })).rejects.toThrow('mock_synthetic_secret_required');
+    expect(w.broker.mockReceivedForTests()).toEqual([]);
+  });
+
+  it('ignores obsolete provider environment settings and dispatches only to its owned mock', async () => {
+    vi.stubEnv('KS_BROKER_MOCK_PORT', '1'); vi.stubEnv('KS_BROKER_MOCK_PROVIDER_ORIGIN', 'https://example.com');
+    const w = await world(); const r = await w.submit(); const grant = w.broker.beginApproval(r.id);
+    expect(grant.binding.destination).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1\/mock$/);
+    expect(new URL(grant.binding.destination).port).not.toBe('1');
+    await w.approve(r, w.signer.assertion(grant.challenge)); expect(w.broker.mockReceivedForTests()).toHaveLength(1);
+  });
+
+  it.each(['invalidate', 'revision', 'metadata', 'entry ID', 'vault'])('refuses stale approval after %s changes', async (mode) => {
+    const w = await world(); const r = await w.submit(); const g = w.broker.beginApproval(r.id);
+    const snapshot = structuredClone(g.binding.snapshot);
+    if (mode === 'invalidate') w.broker.invalidateApprovals();
+    if (mode === 'revision') snapshot.revision++;
+    if (mode === 'metadata') snapshot.metadata.addedAt++;
+    if (mode === 'entry ID') snapshot.entryId = 'openai';
+    if (mode === 'vault') snapshot.vaultId = 'another-vault';
+    await expect(w.broker.approve({ requestId: r.id, assertion: w.signer.assertion(g.challenge), secret: SECRET, snapshot })).rejects.toThrow();
+    expect(w.broker.mockReceivedForTests()).toEqual([]);
   });
 
   it('enforces agent authentication, ownership, Origin, Host and no HTTP administration', async () => {
@@ -191,15 +226,27 @@ describe('mock desktop broker with real WebAuthn verification', () => {
     const dir = mkdtempSync(join(homedir(), '.keyshield-pin-test-')); cleanup.push(() => rmSync(dir, { recursive: true }));
     const file = join(dir, 'approval-passkey.json'); const signer = softwarePasskey();
     const store = createApprovalPasskey({ file });
-    await expect(store.register(signer.registration('challenge', { uv: false }), 'challenge')).rejects.toThrow();
-    await expect(store.register(signer.registration('challenge', { origin: 'https://wrong.invalid' }), 'challenge')).rejects.toThrow();
-    await expect(store.register(signer.registration('challenge'), 'wrong')).rejects.toThrow();
+    await expect(store.register(signer.registration('challenge', { uv: false }), 'challenge', 'account-A')).rejects.toThrow();
+    await expect(store.register(signer.registration('challenge', { origin: 'https://wrong.invalid' }), 'challenge', 'account-A')).rejects.toThrow();
+    await expect(store.register(signer.registration('challenge'), 'wrong', 'account-A')).rejects.toThrow();
     expect(store.get()).toBeNull();
-    await store.register(signer.registration('challenge'), 'challenge');
+    await store.register(signer.registration('challenge'), 'challenge', 'account-A');
     await store.verify(signer.assertion('approval'), 'approval');
     expect(createApprovalPasskey({ file }).get()).toMatchObject({ credentialId: signer.id, counter: 1, origin: ORIGIN });
     expect(JSON.parse(readFileSync(file, 'utf8')).publicKey).toEqual(expect.any(String));
     expect(statSync(file).mode & 0o777).toBe(0o600);
     await expect(store.register(softwarePasskey().registration('new'), 'new')).rejects.toThrow('already_pinned');
+  });
+
+  it('does not trust or replace an older pin without observed-enrollment provenance', async () => {
+    const dir = mkdtempSync(join(homedir(), '.keyshield-pin-test-')); cleanup.push(() => rmSync(dir, { recursive: true }));
+    const file = join(dir, 'approval-passkey.json'); const signer = softwarePasskey();
+    const old = createApprovalPasskey({ file }); await old.register(signer.registration('challenge'), 'challenge', 'account-A');
+    const record = JSON.parse(readFileSync(file, 'utf8')); delete record.enrollment; delete record.accountId;
+    const legacy = JSON.stringify(record); writeFileSync(file, legacy);
+    const loaded = createApprovalPasskey({ file }); expect(loaded.get()).toBeNull();
+    await expect(loaded.register(signer.registration('new'), 'new', 'account-A')).rejects.toThrow('already_pinned');
+    await expect(loaded.verify(signer.assertion('approval'), 'approval')).rejects.toThrow('not_pinned');
+    expect(readFileSync(file, 'utf8')).toBe(legacy);
   });
 });

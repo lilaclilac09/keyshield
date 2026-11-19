@@ -8,19 +8,32 @@ const MOCK_OPERATIONS = Object.freeze({ 'mock.echo': 'POST /v1/mock — Mock pro
 
 // Agents, requests and audit history are memory-only and disappear on restart.
 function createBroker({
-  mockProviderPort,
+  mockMode = false,
+  isPackaged = true,
   passkey,
   approvalTtlMs = Number(process.env.KS_BROKER_APPROVAL_TTL_MS || 60000),
   now = Date.now,
   fetchImpl = fetch,
   randomBytes = crypto.randomBytes,
+  ...unsupported
 } = {}) {
+  if (!mockMode || isPackaged || process.env.KS_DESKTOP_BROKER !== '1') throw new Error('mock_broker_development_only');
+  if (Object.keys(unsupported).length) throw new Error('invalid_mock_option');
+  if (fetchImpl !== fetch && process.env.NODE_ENV !== 'test') throw new Error('invalid_mock_option');
   if (!Number.isFinite(approvalTtlMs) || approvalTtlMs <= 0) {
     throw new Error('invalid_approval_ttl');
   }
-  const port = Number(mockProviderPort);
-  const destination = Number.isInteger(port) && port > 0 && port <= 65535
-    ? `http://127.0.0.1:${port}/v1/mock` : null;
+  let destination = null;
+  const mockReceived = [];
+  const mockProvider = http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/v1/mock') { res.writeHead(404); res.end(); return; }
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    mockReceived.push({ authorization: req.headers.authorization, method: req.method, path: req.url,
+      body: Buffer.concat(chunks).toString() });
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"echo":"keyshield-acceptance"}');
+  });
 
   const agents = new Map();
   const requests = new Map();
@@ -28,6 +41,7 @@ function createBroker({
   const listeners = new Set();
   const history = [];
   const challenges = new Map();
+  let approvalGeneration = 0;
   const hash = (value) => crypto.createHash('sha256').update(value).digest();
   const id = () => randomBytes(16).toString('hex');
   const copy = (value) => JSON.parse(JSON.stringify(value));
@@ -171,6 +185,7 @@ function createBroker({
     return json(res, 404, { error: 'not_found' });
   });
   server.on('close', () => {
+    mockProvider.close();
     for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
   });
@@ -180,34 +195,44 @@ function createBroker({
       entryId: request.credential, operation: request.operation, destination };
   }
 
-  function beginApproval(requestId) {
+  function beginApproval({ requestId, snapshot }) {
     const pin = passkey?.get();
     if (!pin) throw new Error('approval_passkey_not_pinned');
     const request = pending(requestId);
+    if (!snapshot || typeof snapshot.vaultId !== 'string' || !Number.isFinite(snapshot.revision) ||
+        snapshot.entryId !== request.credential || !snapshot.metadata || !Number.isFinite(snapshot.metadata.addedAt) ||
+        Object.keys(snapshot).some((key) => !['vaultId', 'revision', 'entryId', 'metadata'].includes(key)) ||
+        Object.entries(snapshot.metadata).some(([key, value]) => !(key === 'addedAt' || /label|expir|^(?:name|displayName)$/i.test(key)) ||
+          !(value === null || typeof value === 'string' || typeof value === 'number'))) {
+      throw new Error('approval_snapshot_required');
+    }
     const grant = { challenge: randomBytes(32).toString('base64url'), credentialId: pin.credentialId,
-      rpId: pin.rpId, binding: binding(request), expiresAt: Math.min(request.expires_at, now() + 60000) };
+      rpId: pin.rpId, binding: { ...binding(request), snapshot: copy(snapshot) },
+      generation: approvalGeneration, expiresAt: Math.min(request.expires_at, now() + 60000) };
     challenges.set(requestId, grant);
     return copy(grant);
   }
 
   async function approve(payload) {
-    if (!payload || Object.keys(payload).some((key) => !['requestId', 'assertion', 'secret'].includes(key))) {
+    if (!payload || Object.keys(payload).some((key) => !['requestId', 'assertion', 'secret', 'snapshot'].includes(key))) {
       throw new Error('approval_binding_refused');
     }
-    const { requestId, assertion, secret } = payload;
+    const { requestId, assertion, secret, snapshot } = payload;
     if (!passkey?.get()) throw new Error('approval_passkey_not_pinned');
     const request = pending(requestId);
     const grant = challenges.get(requestId);
     if (!grant || now() >= grant.expiresAt) throw new Error('approval_challenge_required');
     if (!assertion) throw new Error('approval_assertion_required');
     if (typeof secret !== 'string' || !secret.trim()) throw new Error('secret_required');
+    if (!secret.startsWith('FAKE_KEYSHIELD_NOT_A_KEY::')) throw new Error('mock_synthetic_secret_required');
     try { await passkey.verify(assertion, grant.challenge); }
     catch { throw new Error('approval_assertion_refused'); }
     const currentGrant = challenges.get(requestId);
     challenges.delete(requestId);
     pending(requestId);
-    if (currentGrant !== grant || now() >= grant.expiresAt ||
-        JSON.stringify(binding(request)) !== JSON.stringify(grant.binding)) throw new Error('approval_binding_refused');
+    if (currentGrant !== grant || now() >= grant.expiresAt || grant.generation !== approvalGeneration ||
+        JSON.stringify(snapshot) !== JSON.stringify(grant.binding.snapshot) ||
+        JSON.stringify({ ...binding(request), snapshot: grant.binding.snapshot }) !== JSON.stringify(grant.binding)) throw new Error('approval_binding_refused');
     transition(request, 'executing');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -261,9 +286,14 @@ function createBroker({
 
   return {
     server,
-    listen(port = Number(process.env.KS_BROKER_PORT || 8790)) {
+    async listen(port = Number(process.env.KS_BROKER_PORT || 8790)) {
+      await new Promise((resolve, reject) => {
+        mockProvider.once('error', reject);
+        mockProvider.listen(0, '127.0.0.1', () => { mockProvider.removeListener('error', reject); resolve(); });
+      });
+      destination = `http://127.0.0.1:${mockProvider.address().port}/v1/mock`;
       return new Promise((resolve, reject) => {
-        server.once('error', reject);
+        server.once('error', (error) => { mockProvider.close(); reject(error); });
         server.listen(port, '127.0.0.1', () => {
           server.removeListener('error', reject);
           resolve(server.address());
@@ -308,6 +338,8 @@ function createBroker({
     revokeRequest(requestId) { transition(pending(requestId), 'revoked'); },
     approve,
     beginApproval,
+    invalidateApprovals() { approvalGeneration++; challenges.clear(); },
+    ...(process.env.NODE_ENV === 'test' ? { mockReceivedForTests: () => copy(mockReceived) } : {}),
     onChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     audit() { return copy(history); },
   };

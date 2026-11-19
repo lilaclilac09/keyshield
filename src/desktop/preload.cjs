@@ -9,10 +9,12 @@ const brokerBridge = brokerPortArg ? {
     registerAgent: (name) => ipcRenderer.invoke('ks-broker:registerAgent', name),
     revokeAgent: (agentId) => ipcRenderer.invoke('ks-broker:revokeAgent', agentId),
     listRequests: () => ipcRenderer.invoke('ks-broker:listRequests'),
+    approvalStatus: () => ipcRenderer.invoke('ks-broker:approvalStatus'),
     deny: (id) => ipcRenderer.invoke('ks-broker:deny', id),
     revokeRequest: (id) => ipcRenderer.invoke('ks-broker:revokeRequest', id),
     approve: (payload) => ipcRenderer.invoke('ks-broker:approve', payload),
-    beginApproval: (requestId) => ipcRenderer.invoke('ks-broker:beginApproval', requestId),
+    beginApproval: (payload) => ipcRenderer.invoke('ks-broker:beginApproval', payload),
+    invalidateApprovals: () => ipcRenderer.invoke('ks-broker:invalidateApprovals'),
     pinApprovalPasskey: (payload) => ipcRenderer.invoke('ks-broker:pinApprovalPasskey', payload),
     onChanged: (cb) => {
       const listener = () => cb();

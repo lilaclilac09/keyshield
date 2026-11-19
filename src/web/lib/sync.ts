@@ -67,7 +67,16 @@ function vaultUrl(syncUrl: string, vaultId: string): string {
 }
 
 export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
-  return {
+  function changed() {
+    if (typeof window !== 'undefined' && window.keyshieldDesktop?.broker) window.dispatchEvent(new Event('ks-vault-sync-error'));
+  }
+  function guard<A extends unknown[], R>(call: (...args: A) => Promise<R>) {
+    return async (...args: A): Promise<R> => {
+      try { const result = await call(...args); if (result === 'conflict') changed(); return result; }
+      catch (e) { changed(); throw e; }
+    };
+  }
+  const backend: SyncBackend = {
     async pull(vaultId, getToken) {
       const res = await fetch(vaultUrl(syncUrl, vaultId), {
         method: 'GET',
@@ -82,6 +91,9 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
         throw new Error(`sync pull failed: ${res.status} ${res.statusText}`);
       }
       const json = (await res.json()) as VaultCipher;
+      if (typeof window !== 'undefined' && window.keyshieldDesktop?.broker) {
+        window.dispatchEvent(new CustomEvent('ks-vault-cipher-pulled', { detail: { vaultId, revision: json.updatedAt } }));
+      }
       return json;
     },
 
@@ -117,6 +129,8 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
           `sync remove failed: ${res.status} ${res.statusText}`,
         );
       }
+      changed();
     },
   };
+  return { pull: guard(backend.pull), push: guard(backend.push), remove: guard(backend.remove) };
 }

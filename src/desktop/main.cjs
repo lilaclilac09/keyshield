@@ -37,6 +37,7 @@ const BROKER_ENABLED = process.env.KS_DESKTOP_BROKER === '1';
 let mainWindow = null;
 let broker = null;
 let brokerPort = null;
+let registrationObserver = null;
 
 function assertBrokerSender(event) {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
@@ -50,11 +51,15 @@ function assertBrokerSender(event) {
 }
 
 async function startBroker() {
-  if (!BROKER_ENABLED) return;
+  if (!BROKER_ENABLED || app.isPackaged) return;
   const { createBroker } = require('./broker.cjs');
   const { createApprovalPasskey } = require('./approval-passkey.cjs');
   const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN });
-  broker = createBroker({ mockProviderPort: process.env.KS_BROKER_MOCK_PORT, passkey });
+  const { createRegistrationObserver } = require('./registration-observer.cjs');
+  registrationObserver = createRegistrationObserver({
+    apiOrigin: new URL(process.env.KS_DESKTOP_API_URL || PROD_API).origin, origin: DASHBOARD_ORIGIN,
+  });
+  broker = createBroker({ mockMode: true, isPackaged: app.isPackaged, passkey });
   const address = await broker.listen();
   brokerPort = address.port;
   console.log(`KeyShield approval broker listening on 127.0.0.1:${brokerPort}`);
@@ -63,11 +68,18 @@ async function startBroker() {
     registerAgent: (name) => ({ ...broker.registerAgent(name), brokerUrl: `http://127.0.0.1:${brokerPort}` }),
     revokeAgent: (agentId) => broker.revokeAgent(agentId),
     listRequests: () => broker.listRequests(),
+    approvalStatus: () => ({ available: Boolean(passkey.get()) }),
     deny: (id) => broker.deny(id),
     revokeRequest: (id) => broker.revokeRequest(id),
     approve: (payload) => broker.approve(payload),
     beginApproval: (requestId) => broker.beginApproval(requestId),
-    pinApprovalPasskey: ({ response, expectedChallenge }) => passkey.register(response, expectedChallenge),
+    invalidateApprovals: () => { broker.invalidateApprovals(); registrationObserver.invalidate(); },
+    pinApprovalPasskey: async ({ response }) => {
+      if (passkey.get()) throw new Error('approval_passkey_already_pinned');
+      const observed = registrationObserver.consume(response);
+      await passkey.register(response, observed.challenge, observed.accountId, observed.isCurrent);
+      mainWindow.webContents.send('ks-broker:changed');
+    },
   };
   for (const [name, call] of Object.entries(calls)) {
     ipcMain.handle(`ks-broker:${name}`, (event, payload) => {
@@ -157,11 +169,11 @@ function serveRenderer(requestUrl) {
 }
 
 function installHttpsHandler(ses) {
-  if (!useBundle() && !SYNC_PROXY) return false;
+  if (!useBundle() && !SYNC_PROXY && !registrationObserver) return false;
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
   // — that replaces Chromium's standard https handler and can prevent the window
   // from ever loading.
-  ses.protocol.handle('https', (request) => {
+  const handle = (request) => {
     let url;
     try {
       url = new URL(request.url);
@@ -175,8 +187,11 @@ function installHttpsHandler(ses) {
       const local = `${LOCAL_SYNC}${url.pathname}${url.search}`;
       return net.fetch(local, { bypassCustomProtocolHandlers: true });
     }
-    return net.fetch(request, { bypassCustomProtocolHandlers: true });
-  });
+    const forward = (req) => net.fetch(req, { bypassCustomProtocolHandlers: true });
+    return registrationObserver ? registrationObserver.observe(request, forward) : forward(request);
+  };
+  ses.protocol.handle('https', handle);
+  if (registrationObserver) ses.protocol.handle('http', handle);
   return true;
 }
 
