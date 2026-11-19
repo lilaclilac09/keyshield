@@ -65,6 +65,33 @@ async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: R
 }
 
 describe('mock desktop broker with real WebAuthn verification', () => {
+  it.each([
+    ['GET', '/v1/mock', undefined, 404], ['POST', '/elsewhere', '{}', 404],
+    ['POST', '/v1/mock', '', 400], ['POST', '/v1/mock', '{"input":"other"}', 400],
+    ['POST', '/v1/mock', 'x'.repeat(4097), 413],
+  ])('rejects unexpected mock traffic %s %s', async (method, path, body, status) => {
+    const w = await world(); const request = await w.submit();
+    const destination = new URL(w.broker.beginApproval(request.id).binding.destination); destination.pathname = path as string;
+    const response = await fetch(destination, { method: method as string, body: body as string | undefined });
+    expect(response.status).toBe(status); await response.body?.cancel();
+    expect(w.broker.mockReceivedForTests()).toEqual([]);
+  });
+
+  it('bounds mock records to the last twenty requests, accessible only in tests', async () => {
+    const w = await world(); const request = await w.submit();
+    const destination = w.broker.beginApproval(request.id).binding.destination;
+    for (let i = 0; i < 25; i++) {
+      const response = await fetch(destination, { method: 'POST', headers: { Authorization: `Bearer ${SECRET}-${i}` }, body: '{"input":"keyshield-acceptance"}' });
+      expect(response.status).toBe(200); await response.body?.cancel();
+    }
+    const received = w.broker.mockReceivedForTests(); expect(received).toHaveLength(20);
+    expect(received[0].authorization).toBe(`Bearer ${SECRET}-5`);
+    expect(received[19].authorization).toBe(`Bearer ${SECRET}-24`);
+    expect(JSON.stringify(w.broker.audit())).not.toContain(SECRET);
+    vi.stubEnv('NODE_ENV', 'production');
+    const production = createBroker({ mockMode: true, isPackaged: false });
+    expect(production.mockReceivedForTests).toBeUndefined();
+  });
   it('refuses an agent revoked while its request body is still arriving', async () => {
     const w = await world();
     const started = new Promise<void>((resolve) => w.broker.server.once('request', () => resolve()));

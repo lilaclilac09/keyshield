@@ -4,6 +4,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 
 const LIMIT = 4096;
+const MOCK_BODY = '{"input":"keyshield-acceptance"}';
 const MOCK_OPERATIONS = Object.freeze({ 'mock.echo': 'POST /v1/mock — Mock provider (test only)' });
 
 // Agents, requests and audit history are memory-only and disappear on restart.
@@ -24,13 +25,17 @@ function createBroker({
     throw new Error('invalid_approval_ttl');
   }
   let destination = null;
-  const mockReceived = [];
+  const mockReceived = process.env.NODE_ENV === 'test' ? [] : null;
   const mockProvider = http.createServer(async (req, res) => {
     if (req.method !== 'POST' || req.url !== '/v1/mock') { res.writeHead(404); res.end(); return; }
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    mockReceived.push({ authorization: req.headers.authorization, method: req.method, path: req.url,
-      body: Buffer.concat(chunks).toString() });
+    let body;
+    try { body = await readBody(req); }
+    catch (error) { return json(res, error.message === 'body_too_large' ? 413 : 400, { error: error.message }); }
+    if (body !== MOCK_BODY) return json(res, 400, { error: 'invalid_mock_body' });
+    if (mockReceived) {
+      mockReceived.push({ authorization: req.headers.authorization, method: req.method, path: req.url, body });
+      if (mockReceived.length > 20) mockReceived.shift();
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end('{"echo":"keyshield-acceptance"}');
   });
@@ -116,6 +121,11 @@ function createBroker({
     if (!(req.headers['content-type'] || '').toLowerCase().match(/^application\/json(?:\s*;|$)/)) {
       throw new Error('json_required');
     }
+    const body = await readBody(req);
+    try { return JSON.parse(body); } catch { throw new Error('invalid_json'); }
+  }
+
+  function readBody(req) {
     return new Promise((resolve, reject) => {
       let length = 0;
       const chunks = [];
@@ -127,8 +137,7 @@ function createBroker({
       req.on('error', () => reject(new Error('invalid_json')));
       req.on('end', () => {
         if (length > LIMIT) return;
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-        catch { reject(new Error('invalid_json')); }
+        resolve(Buffer.concat(chunks).toString('utf8'));
       });
     });
   }
@@ -241,7 +250,7 @@ function createBroker({
       const response = await fetchImpl(destination, {
         method: 'POST', redirect: 'manual', signal: controller.signal,
         headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: 'keyshield-acceptance' }),
+        body: MOCK_BODY,
       });
       if (response.status >= 300 && response.status < 400) {
         await response.body?.cancel();
@@ -340,7 +349,7 @@ function createBroker({
     approve,
     beginApproval,
     invalidateApprovals() { approvalGeneration++; challenges.clear(); },
-    ...(process.env.NODE_ENV === 'test' ? { mockReceivedForTests: () => copy(mockReceived) } : {}),
+    ...(mockReceived ? { mockReceivedForTests: () => copy(mockReceived) } : {}),
     onChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     audit() { return copy(history); },
   };
