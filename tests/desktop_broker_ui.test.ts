@@ -48,3 +48,14 @@ it.each(['owner', 'unrelated'])('clears a displayed token only when revoking its
   if (which === 'owner') expect(token).toBeUndefined();
   else expect(token.props.children).toBe(issued.token);
 });
+
+it('shows a late decision on an old request first among the latest ten outcomes', () => {
+  const requests = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, status: 'denied', updated_at: i + 1, created_at: i + 1 }));
+  requests[0].updated_at = 100;
+  hooks.states = [[], requests, '', null, '', false, Date.now(), false];
+  const tree = AgentApprovalsPanel({ broker: {} as any });
+  const outcomes = find(tree, (node) => node.props?.['data-testid'] === 'broker-outcomes').props.children;
+  expect(outcomes).toHaveLength(10);
+  expect(outcomes[0].key).toBe('r0');
+  expect(outcomes[1].key).toBe('r11');
+});

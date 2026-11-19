@@ -47,7 +47,8 @@ export function AgentApprovalsPanel({ broker }: { broker: DesktopBroker }) {
   }
 
   const pending = requests.filter((request) => request.status === 'pending');
-  const outcomes = requests.filter((request) => request.status !== 'pending').slice(-10).reverse();
+  const outcomes = requests.filter((request) => request.status !== 'pending')
+    .sort((a, b) => b.updated_at - a.updated_at || b.created_at - a.created_at).slice(0, 10);
 
   return (
     <section data-testid="agent-approvals-panel" className="rounded-xl border border-[#243365]/60 bg-[#131c39] p-4 space-y-4">
