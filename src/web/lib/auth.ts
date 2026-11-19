@@ -899,7 +899,6 @@ export async function registerPasskey(
     throw new Error((err as { detail: string }).detail ?? 'Registration failed');
   }
   const result = await verRes.json();
-  setPasskeyTrust(opts.user.name, '');
 
   const ext = credential.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } };
   if (window.keyshieldDesktop?.broker && ext?.prf?.enabled === true) {
@@ -911,6 +910,7 @@ export async function registerPasskey(
       // Pin availability does not affect normal vault enrollment.
     }
   }
+  setPasskeyTrust(opts.user.name, '');
 
   // Identity passkey is stored on the Python control plane at this point.
   // Path A Device Vault still needs PRF + the Cloudflare worker. Do not fail
