@@ -68,21 +68,22 @@ function serverRowToVault(row: {
 }
 
 function entryToVault(entry: VaultEntry): VaultItem {
-  const type = inferType(entry.upstream);
+  const upstream = entry.upstream.replace(/#\d+$/, '');
+  const type = inferType(upstream);
   if (type === 'api_key') {
-    const meta = providerMeta(entry.upstream);
+    const meta = providerMeta(upstream);
     return {
       id: entry.upstream,
-      name: meta.name,
+      name: `${meta.name}${entry.upstream.slice(upstream.length)}`,
       type: 'api_key',
-      value: `${API_BASE}/proxy/${entry.upstream}/`,
+      value: `${API_BASE}/proxy/${upstream}/`,
       domain: meta.domain,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
-      tags: catalogTags(entry.upstream, ['VAULT']),
+      tags: catalogTags(upstream, ['VAULT']),
       family: meta.family,
       product: meta.product,
-      upstream: entry.upstream,
+      upstream,
     };
   }
   return {

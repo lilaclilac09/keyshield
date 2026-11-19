@@ -208,10 +208,24 @@ export function getDecryptedKey(upstream: string): string | null {
   return _state?.plaintext.entries[upstream]?.apiKey ?? null;
 }
 
+let pendingAddition: Promise<void> = Promise.resolve();
+
 export async function addEntry(upstream: string, apiKey: string): Promise<void> {
-  await mutate((p) => {
-    p.entries[upstream] = { upstream, apiKey, addedAt: Date.now() };
+  const session = _state;
+  const addition = pendingAddition.catch(() => {}).then(async () => {
+    if (!session || _state !== session) throw new VaultLockedError();
+    const entries = session.plaintext.entries;
+    if (Object.entries(entries).some(([id, entry]) =>
+      (id === upstream || (id.startsWith(`${upstream}#`) && /^\d+$/.test(id.slice(upstream.length + 1)))) && entry.apiKey === apiKey,
+    )) return;
+    let id = upstream;
+    for (let suffix = 2; entries[id]; suffix++) id = `${upstream}#${suffix}`;
+    await mutate((p) => {
+      p.entries[id] = { upstream: id, apiKey, addedAt: Date.now() };
+    });
   });
+  pendingAddition = addition;
+  await addition;
 }
 
 export async function removeEntry(upstream: string): Promise<void> {

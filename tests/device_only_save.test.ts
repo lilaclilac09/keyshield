@@ -150,6 +150,28 @@ describe.each(entries)('%s device-only save', (name, save) => {
 });
 
 describe('central guards and consent', () => {
+  it('preserves multiple pasted and later keys per provider, while identical values are no-ops', async () => {
+    await unlock();
+    const first = '11111111-1111-4111-8111-111111111111';
+    const second = '22222222-2222-4222-8222-222222222222';
+    const third = '33333333-3333-4333-8333-333333333333';
+    await storeDetectedKeys(`${first}\n${second}`);
+    await Promise.all([storeDetectedKeys(third), storeDetectedKeys(third)]);
+    const pushes = requests.length;
+    await storeDetectedKeys(second);
+    expect(requests).toHaveLength(pushes);
+    expect(vaultSession.listEntries().map(({ upstream }) => upstream)).toEqual(['helius', 'helius#2', 'helius#3']);
+    expect(getDecryptedKey('helius')).toBe(first);
+    expect(getDecryptedKey('helius#2')).toBe(second);
+    expect(getDecryptedKey('helius#3')).toBe(third);
+    const vault = render(() => useVaults('', ''));
+    vault.refresh();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(3));
+    expect(hooks.states[0].map(({ id, upstream }: any) => [id, upstream])).toEqual([
+      ['helius', 'helius'], ['helius#2', 'helius'], ['helius#3', 'helius'],
+    ]);
+    for (const secret of [first, second, third]) expectPrivate(secret);
+  });
   it.each([
     ['body', '/synthetic', (secret: string) => ({ method: 'POST', body: JSON.stringify({ value: secret }) })],
     ['URL', `/synthetic?value=${encodeURIComponent(raw)}`, (_secret: string) => ({})],
