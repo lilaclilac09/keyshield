@@ -73,7 +73,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste a key</p>
       <p className="text-[12px] text-[#8a96c2]">Dashboard saves require an unlocked Device Vault: keys are encrypted on this device and only ciphertext is synced. They are not saved locally in plaintext. Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault.</p>
-      <p className="text-[12px] text-[#8a96c2]">Device-encrypted keys need a local keyshield-proxy configured before agents can use /vproxy. Saving here does not automatically give agents access. Agent approval is an opt-in mock and is not available in the packaged app.</p>
+      <p className="text-[12px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app. Saving here does not give agents access. Approval exists only as an opt-in development mock, not in the packaged app.</p>
       <p className="text-[12px] text-[#8a96c2]">Legacy non-ZK /manage/store records are separate: they contain backend-readable plaintext, local to this device only if the backend runs here. Dashboard saves do not use that path.</p>
       <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
@@ -155,10 +155,10 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
                 <ArrowRight size={11} className="text-[#3e4a72]" />
                 <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Ciphertext-only sync</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
-                <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Local proxy setup required</span>
+                <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Per-agent use unavailable</span>
               </div>
               <p className="text-[10px] text-[#5e6a91] mt-2">
-                Hosted /vproxy cannot decrypt Device Vault keys. Storage and agent access are separate steps.
+                Saving Device Vault keys does not enable per-agent use in this app.
               </p>
             </div>
           </>

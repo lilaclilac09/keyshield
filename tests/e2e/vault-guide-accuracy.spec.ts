@@ -1,10 +1,10 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const owner = 'synthetic-owner-vault-guide';
 const agent = 'synthetic-agent-vault-guide';
 const providerKey = 'sk-or-v1-synthetic-vault-guide-only';
-const command = ["curl '<LOCAL_PROXY_URL>/vproxy/openai/v1/models' \\", "  -H 'Authorization: Bearer <YOUR_AGENT_TOKEN>'"].join('\n');
 const oldClaims = /paste or extension detect|Detect writes this list|Detect on a key page|Agents use the proxy|decrypted key is injected per-request|agent never sees the raw API key|key injected automatically|Proxy injects per-request|Key injected per-request|ks\.openai_client\(|server decrypts your key in memory|extension detects a key/i;
+const forbiddenDeviceClaims = /keyshield-proxy|\/vproxy|LOCAL_PROXY_URL|agents use/i;
 
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
@@ -29,25 +29,23 @@ async function openDashboard(page: Page, saved = false, offline = false) {
   return writes;
 }
 
+async function checkDeviceFlow(flow: Locator) {
+  await expect(flow).toContainText('Per-agent use of Device Vault keys is not available in this app.');
+  await expect(flow).toContainText(/Approval exists only as an opt-in\s+development mock, not in the packaged app\./);
+  await expect(flow).not.toContainText(forbiddenDeviceClaims);
+  await expect(flow.locator('pre')).toHaveCount(0);
+}
+
 async function checkGuide(page: Page) {
   await page.getByRole('button', { name: 'Unlock or create device vault', exact: true }).click();
   await expect(page.getByText('How to use Device Vault', { exact: true })).toBeVisible();
-  await expect(page.getByText('Configure a local proxy for agents', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Device-encrypted keys need a local keyshield-proxy; the hosted \/vproxy cannot decrypt them/)).toBeVisible();
+  await expect(page.getByText('Per-agent use is unavailable', { exact: true })).toBeVisible();
   await expect(page.getByText(/only the ciphertext is synced to storage/)).toBeVisible();
-  await expect(page.locator('body')).toContainText('Agent approval is an opt-in mock and is not available in the packaged app.');
+  const consent = page.getByRole('alert').filter({ has: page.getByRole('button', { name: 'Unlock or create device vault', exact: true }) });
+  await checkDeviceFlow(consent);
+  await expect(consent.getByRole('button', { name: 'Copy', exact: true })).toHaveCount(0);
   await expect(page.locator('body')).toContainText('The Safari extension saves to its own separate vault.');
   await expect(page.locator('body')).not.toContainText(oldClaims);
-  const example = page.locator('pre').filter({ hasText: '<LOCAL_PROXY_URL>/vproxy/' });
-  await expect(example).toHaveCount(1);
-  await expect(example).toHaveText(command);
-  await example.locator('..').getByRole('button', { name: 'Copy', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(command);
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain('<YOUR_AGENT_TOKEN>');
-  expect(copied).toContain('<LOCAL_PROXY_URL>');
-  for (const secret of [owner, agent, providerKey]) expect(copied).not.toContain(secret);
-  expect(copied).not.toMatch(/\/manage\/|X-Upstream-API-Key|YOUR_SESSION_TOKEN|keyshield_sdk/);
 }
 
 for (const state of ['empty', 'saved', 'offline'] as const) {
@@ -57,7 +55,7 @@ for (const state of ['empty', 'saved', 'offline'] as const) {
     await expect(page.getByText('Keychain — paste a key', { exact: true })).toBeVisible();
     await expect(page.getByText(/keys are encrypted on this device and only ciphertext is synced/)).toBeVisible();
     await expect(page.getByText(/Legacy non-ZK \/manage\/store records are separate/)).toBeVisible();
-    await expect(page.getByText(/Device-encrypted keys need a local keyshield-proxy configured/)).toBeVisible();
+    await checkDeviceFlow(page.locator('main'));
     if (state === 'saved') await expect(page.getByText('Synthetic saved OpenAI', { exact: true }).first()).toBeVisible();
     else await expect(page.getByText('Your vault is empty', { exact: true })).toBeVisible();
     if (state === 'offline') await expect(page.getByText('vault list failed (503)', { exact: true })).toBeVisible();
@@ -66,7 +64,7 @@ for (const state of ['empty', 'saved', 'offline'] as const) {
 }
 
 for (const path of ['Keychain Save', 'Add Secret', 'Activity Connect'] as const) {
-  test(`DeviceVaultConsent reveals accurate guide and placeholder-only Copy via ${path}`, async ({ page }) => {
+  test(`DeviceVaultConsent disclaims per-agent use without proxy commands via ${path}`, async ({ page }) => {
     const writes = await openDashboard(page);
     if (path === 'Activity Connect') {
       await page.getByRole('button', { name: 'Payments', exact: true }).click();
@@ -96,6 +94,22 @@ test('Docs disclaims packaged-app detection and automatic device-key agent acces
   await expect(page.getByText(/Extension detection is not available in the packaged app/)).toBeVisible();
   await expect(page.getByText(/The Safari extension saves to its own separate vault/)).toBeVisible();
   await expect(page.getByText(/Save \+ Call skips the call for device-encrypted keys/)).toBeVisible();
-  await expect(page.getByText(/Hosted \/vproxy cannot decrypt device-encrypted keys/)).toBeVisible();
+  for (const title of ['API keychain', 'Device Vault limitations']) {
+    await checkDeviceFlow(page.getByText(title, { exact: true }).locator('..').locator('..'));
+  }
+  for (const title of ['Legacy OpenRouter proxy examples — separate from Device Vault', 'Legacy proxy example — separate from Device Vault']) {
+    const legacy = page.getByText(title, { exact: true }).locator('..').locator('..');
+    await expect(legacy).toContainText('separately sealed keys plus a server share, not dashboard Device Vault keys, and has no per-use approval');
+  }
+  const examples = page.locator('pre').filter({ hasText: 'Bearer <YOUR_AGENT_TOKEN>' });
+  await expect(examples).toHaveCount(3);
+  for (const example of await examples.all()) {
+    const text = (await example.textContent())!;
+    expect(text).toContain('<YOUR_AGENT_TOKEN>');
+    expect(text).not.toContain('LOCAL_PROXY_URL');
+    for (const secret of [owner, agent, providerKey]) expect(text).not.toContain(secret);
+    await example.locator('..').getByRole('button', { name: 'Copy', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text);
+  }
   await expect(page.locator('body')).not.toContainText(oldClaims);
 });

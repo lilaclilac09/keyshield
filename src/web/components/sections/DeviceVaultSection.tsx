@@ -33,7 +33,6 @@ import {
 } from '../../lib/vault-session';
 import { saveKeyOnDevice } from '../../lib/device-save';
 import type { VaultEntry } from '../../lib/vault';
-import { CodeBlock } from '../ui/CodeBlock';
 import { ZkModeCard } from './ZkModeCard';
 
 // ── Getting-started tutorial (collapsible, dismissible) ──────────────
@@ -139,18 +138,13 @@ const GettingStartedGuide: React.FC = () => {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <Cpu size={13} className="text-emerald-400" />
-                <span className="text-[13px] text-white font-medium">Configure a local proxy for agents</span>
+                <span className="text-[13px] text-white font-medium">Per-agent use is unavailable</span>
               </div>
               <p className="text-[12px] text-[#8a96c2] mt-1 leading-relaxed">
-                Device-encrypted keys need a local keyshield-proxy; the hosted /vproxy cannot decrypt them.
-                Saving a key does not automatically give agents access. Configure the local proxy first,
-                then give the agent only a proxy-only token for /vproxy.
-                Agent approval is an opt-in mock and is not available in the packaged app.
+                Per-agent use of Device Vault keys is not available in this app.
+                Saving a key does not give agents access. Approval exists only as an opt-in
+                development mock, not in the packaged app.
               </p>
-              <div className="mt-2">
-                <CodeBlock code={`curl '<LOCAL_PROXY_URL>/vproxy/openai/v1/models' \\
-  -H 'Authorization: Bearer <YOUR_AGENT_TOKEN>'`} />
-              </div>
             </div>
           </div>
 
@@ -163,7 +157,7 @@ const GettingStartedGuide: React.FC = () => {
               <ArrowRight size={11} className="text-[#3e4a72]" />
               <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Ciphertext to sync storage</span>
               <ArrowRight size={11} className="text-[#3e4a72]" />
-              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Local proxy setup is separate</span>
+              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Per-agent use unavailable</span>
             </div>
             <p className="text-center text-[10px] text-[#5e6a91] mt-2">
               Device Vault sync receives ciphertext only, not plaintext keys. This is not local plaintext storage.
@@ -737,8 +731,8 @@ export const DeviceVaultSection: React.FC = () => {
           <p className="text-[14px] text-[#e8ecff] font-medium">Vault unlocked &mdash; no encrypted keys yet</p>
           <p className="text-[12px] text-[#8a96c2] mt-1 mb-5 leading-relaxed max-w-md">
             Add an API key to encrypt it on this device and sync ciphertext only.
-            Agent access is separate and needs a configured local keyshield-proxy;
-            the hosted proxy cannot decrypt these keys.
+            Per-agent use of Device Vault keys is not available in this app.
+            Approval exists only as an opt-in development mock, not in the packaged app.
           </p>
           <button
             onClick={() => setShowAdd(true)}
