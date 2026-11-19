@@ -156,7 +156,7 @@ export function quickPasteError(raw: string): string | null {
   return 'Unrecognized key format. Paste the full key (e.g. sk-ant-api03-…, sk-or-v1-…, a Helius UUID).';
 }
 
-export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
+export function frameworkSnippets(upstream: string, token = '<YOUR_AGENT_TOKEN>', apiBase = API_BASE): Record<string, string> {
   const up = upstream || 'openrouter';
   const path = up === 'helius' ? '' : up === 'openai' ? 'v1/models' : up === 'openrouter' ? 'api/v1/chat/completions' : 'v1/models';
   const slotBody = '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}';
@@ -171,12 +171,13 @@ export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiB
         `curl -sS ${apiBase}/vproxy/${up}/${path} \\`,
         `  -H "Authorization: Bearer ${token}"`,
       ].join('\n');
-  const pythonArg = up === 'helius' ? `json=${slotBody}` : 'method="GET"';
   const python = [
-    'from keyshield_sdk import KeyShield',
-    `ks = KeyShield(token="${token}")`,
-    '# key stays in the vault — SDK only holds the session',
-    `r = ks.proxy("${up}", "${path}", ${pythonArg})`,
+    'import requests',
+    `r = requests.${up === 'helius' ? 'post' : 'get'}(`,
+    `    "${apiBase}/vproxy/${up}/${path}",`,
+    `    headers={"Authorization": "Bearer ${token}"},`,
+    ...(up === 'helius' ? [`    json=${slotBody},`] : []),
+    ')',
     'print(r.status_code, r.headers.get("x-ks-cache"))',
   ].join('\n');
   const jsLines = [

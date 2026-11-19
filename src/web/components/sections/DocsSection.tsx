@@ -9,6 +9,7 @@ import { VERSION, BUILD_DATE, REPO_URL } from '../../lib/version';
 import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, openrouterCurlSnippet, openrouterPythonSnippet } from '../../lib/openrouter-interface';
 import { TroubleshootingSection } from './TroubleshootingSection';
 import { copyWithFeedback } from '../../lib/app-feedback';
+import { frameworkSnippets } from '../../lib/keychain';
 
 const CHAPTERS = [
   { id: 'docs-ch-1', label: '1 · Quickstart' },
@@ -119,7 +120,7 @@ export const DocsSection: React.FC = () => {
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">OpenRouter interface (inserted)</span></div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
           Free Nemotron: <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-          Anyone can get their own key at openrouter.ai/keys — KeyShield will not proxy it without a session. Activity → Connect pastes the key into `/manage/store`, vproxy, and Meter.
+          Store your provider key in the Vault UI. Give agents only a proxy-only token. These examples call /vproxy; device-encrypted keys require your local keyshield-proxy because the hosted proxy cannot decrypt them.
         </p>
         <div className="space-y-3">
           <CodeBlock code={openrouterCurlSnippet('<YOUR_AGENT_TOKEN>')} />
@@ -171,7 +172,7 @@ export const DocsSection: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">1</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Generate a keypair</div><p className="text-[12px] text-[#8a96c2] mt-0.5">In the Agents tab, click Generate, or run:</p><CodeBlock code={`from keyshield_sdk import AgentKeyShield\ncreds = AgentKeyShield.generate_keypair()\nprint(creds)\n# {"private_key_hex": "abcd...", "pubkey_b58": "9WzDX..."}`} /></div></div>
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">2</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Register the pubkey</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Agents tab → paste pubkey + name → Register.</p></div></div>
-        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">3</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Agent self-authenticates</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Drop into your bot. Picks up env vars automatically:</p><CodeBlock code={`agent = AgentKeyShield()    # reads KS_OWNER_WALLET, KS_AGENT_KEY, KS_VAULT_PASS\nclient = agent.openai_client()  # auto-authenticates\nresp = client.chat.completions.create(\n    model="gpt-4o-mini",\n    messages=[{"role": "user", "content": "analyze SOL price"}],\n)`} /></div></div>
+        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">3</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Agent calls the proxy</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Create a proxy-only token in Developer. Keep provider keys in the Vault UI:</p><CodeBlock code={frameworkSnippets('openai').python} /></div></div>
       </div>
 
       {/* Billing */}

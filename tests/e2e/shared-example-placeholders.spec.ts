@@ -22,6 +22,10 @@ async function checkExample(page: Page, text: string) {
   expect(text).toContain(placeholder);
   expect(text).not.toContain(owner);
   expect(text).not.toContain(agent);
+  expect(text).toContain('/vproxy/');
+  expect(text).not.toContain('/manage/');
+  expect(text).not.toContain('<YOUR_SESSION_TOKEN>');
+  expect(text).not.toMatch(/ks\.store\(|KS_VAULT_PASS|sk-proj-|sk-or-v1-/);
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text);
 }
 
@@ -29,8 +33,8 @@ test('Docs examples display and natively copy placeholders, not the owner creden
   await seedSession(page, owner);
   await page.goto('/?local=1');
   await page.getByRole('button', { name: 'Docs & Troubleshooting', exact: true }).click();
-  const examples = page.locator('pre').filter({ hasText: /Authorization: Bearer|KeyShield\(token=/ });
-  await expect(examples).toHaveCount(2);
+  const examples = page.locator('pre').filter({ hasText: /Bearer <YOUR_AGENT_TOKEN>/ });
+  await expect(examples).toHaveCount(3);
   for (const example of await examples.all()) {
     const text = (await example.textContent())!;
     await example.locator('..').getByRole('button', { name: 'Copy', exact: true }).click();
@@ -41,6 +45,35 @@ test('Docs examples display and natively copy placeholders, not the owner creden
     expect(text).not.toContain(owner);
     expect(text).not.toContain(agent);
   }
+});
+
+test('Developer examples only use proxy scope and never offer plaintext key storage', async ({ page }) => {
+  await seedSession(page, owner);
+  let attempts = 0;
+  await page.route('**/sessions/proxy-token', route => {
+    expect(route.request().headers().authorization).toBe(`Bearer ${owner}`);
+    attempts++;
+    return route.fulfill({ status: attempts === 1 ? 500 : 200,
+      json: attempts === 1 ? { detail: 'Synthetic mint failure' } : { token: agent } });
+  });
+  await page.goto('/?local=1');
+  await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  const checkExamples = async () => {
+    const examples = page.locator('pre');
+    await expect(examples).toHaveCount(12);
+    for (const example of await examples.all()) {
+      const text = (await example.textContent())!;
+      await example.locator('..').getByRole('button', { name: /^(Copy|Copied)$/ }).click();
+      await checkExample(page, text);
+    }
+  };
+  await checkExamples();
+  await page.getByTestId('mint-agent-token').click();
+  await expect(page.getByText('Synthetic mint failure', { exact: true })).toBeVisible();
+  await page.getByTestId('mint-agent-token').click();
+  await expect(page.getByText('Agent token', { exact: true })).toBeVisible();
+  await checkExamples();
+  expect(attempts).toBe(2);
 });
 
 test('Agent session copies a placeholder command while dedicated credential controls retain the token', async ({ page }) => {

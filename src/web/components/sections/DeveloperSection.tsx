@@ -63,30 +63,29 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
         {agentErr && <p className="mt-2 text-[11px] text-red-400">{agentErr}</p>}
       </Card>
 
-      <Card title="CLI — keyshield-cli.sh" headerRight={<a href={`${API_BASE}/static/keyshield-cli.sh`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download →</a>}>
+      <p className="text-[12px] text-[#a8b3d8]">Store provider keys in the Vault UI. Agents receive only proxy-only tokens, never owner credentials or provider keys. Device-encrypted keys need your local keyshield-proxy; the hosted /vproxy cannot decrypt them.</p>
+
+      <Card title="Proxy requests">
         <div className="space-y-3">
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Login & Store</p><CodeBlock code={`bash keyshield-cli.sh login <wallet-address> <passphrase>\nbash keyshield-cli.sh store openai sk-proj-your-openai-key`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy a request</p><CodeBlock code={`curl -sS ${API_BASE}/proxy/openai/v1/models \\\n  -H "Authorization: Bearer ${t}"`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">REST — store & list</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openai","apiKey":"sk-proj-your-key"}'`} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy a request</p><CodeBlock code={`curl -sS ${API_BASE}/vproxy/openai/v1/models \\\n  -H "Authorization: Bearer <YOUR_AGENT_TOKEN>"`} /></div>
         </div>
       </Card>
 
       <Card title="OpenRouter interface" description={`Inserted from src/web/lib/openrouter-interface.ts + src/backend/proxy/openrouter_interface.py. Model ${OPENROUTER_DEMO_MODEL}.`}>
         <p className="text-[11px] text-[#8a96c2] mb-3">
-          {orStatus?.key_configured ? `Key stored (${orStatus.key_prefix}) via Activity → Connect.` : 'Paste a key once in Activity → Connect. Not a public API.'}
+          {orStatus?.key_configured ? `Key configured (${orStatus.key_prefix}).` : 'Configure your provider key in the Vault UI. Not a public API.'}
           {' '}
           <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">Model page</a>
         </p>
         <div className="space-y-3">
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Auto-fill store</p><CodeBlock code={`curl -sS -X POST ${API_BASE}/manage/store \\\n  -H "Authorization: Bearer ${t}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"upstream":"openrouter","apiKey":"sk-or-v1-paste-here"}'`} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy {OPENROUTER_CHAT_PATH}</p><CodeBlock code={openrouterCurlSnippet(t)} /></div>
-          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Python interface</p><CodeBlock code={openrouterPythonSnippet(t)} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Proxy {OPENROUTER_CHAT_PATH}</p><CodeBlock code={openrouterCurlSnippet()} /></div>
+          <div><p className="text-[11px] text-[#8a96c2] uppercase tracking-wider mb-1">Python interface</p><CodeBlock code={openrouterPythonSnippet()} /></div>
         </div>
       </Card>
 
-      <Card title="Every stored API → curl / Python / JS" description="Same session token. Raw keys stay in the vault. Point the SDK base_url at /vproxy/{upstream}.">
+      <Card title="Every stored API → curl / Python / JS" description="Proxy-only agent token. Configure keys in the Vault UI; these examples only call /vproxy/{upstream}.">
         {(vaultUpstreams.length ? vaultUpstreams : ['openrouter', 'openai', 'helius']).map((up) => {
-          const snippets = frameworkSnippets(up, t);
+          const snippets = frameworkSnippets(up);
           return (
             <div key={up} className="mb-4 last:mb-0">
               <p className="text-[12px] font-semibold text-white uppercase tracking-wider mb-2">{up}</p>
@@ -98,10 +97,6 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
             </div>
           );
         })}
-      </Card>
-
-      <Card title="Python SDK" headerRight={<a href={`${API_BASE}/static/keyshield_sdk.py`} download className="text-[11px] text-[#8a96c2] hover:text-white">Download →</a>}>
-        <CodeBlock code={`from keyshield_sdk import KeyShield\nks = KeyShield(token="${t}")\n\n# Store a key\nks.store("anthropic", "sk-ant-your-key")\n\n# Call Anthropic through the zero-trust proxy\nimport anthropic\nclient = anthropic.Anthropic(\n    base_url=ks.proxy_url("anthropic"),\n    api_key="placeholder",\n)\nmsg = client.messages.create(\n    model="claude-opus-4-5",\n    max_tokens=256,\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(msg.content[0].text)`} />
       </Card>
 
       <Card title="Endpoint Reference">
@@ -116,14 +111,13 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
             { m: 'GET', p: '/auth/wallet-challenge', d: 'Get one-time signing challenge' },
             { m: 'POST', p: '/auth/wallet-login', d: 'Submit signature + passphrase \u2192 token' },
             { m: 'POST', p: '/auth/logout', d: 'Revoke current session' },
-            { m: 'GET', p: '/manage/vault', d: 'List stored upstream keys' },
-            { m: 'POST', p: '/manage/store', d: 'Encrypt & store an API key' },
-            { m: 'GET', p: '/manage/decrypt/{id}', d: 'Decrypt a stored key (local shim)' },
-            { m: 'DELETE', p: '/manage/vault/{id}', d: 'Delete a stored key' },
+            { m: 'GET', p: '/manage/vault', d: 'Legacy owner-only: list stored upstream keys' },
+            { m: 'GET', p: '/manage/decrypt/{id}', d: 'Legacy owner-only: decrypt a stored key (local shim)' },
+            { m: 'DELETE', p: '/manage/vault/{id}', d: 'Legacy owner-only: delete a stored key' },
             { m: 'GET', p: '/billing/sol-quote', d: 'Pyth SOL quote for Phantom top-up' },
             { m: 'POST', p: '/billing/topup-solana', d: 'Credit after on-chain SOL transfer' },
             { m: 'GET', p: '/mpp/streams/{id}/usage', d: 'Per-stream usage artifacts' },
-            { m: 'POST', p: '/proxy/{upstream}/{path}', d: 'Zero-trust API proxy' },
+            { m: 'POST', p: '/proxy/{upstream}/{path}', d: 'Stateless proxy: accepts agent/owner; requires a client-supplied upstream key or platform key' },
             { m: 'POST', p: '/sessions/proxy-token', d: 'Mint a proxy-only agent token (owner session)' },
             { m: 'GET', p: '/agents/list', d: 'List registered agents' },
             { m: 'POST', p: '/agents/register', d: 'Register an ed25519 pubkey' },
@@ -132,7 +126,6 @@ export const DeveloperSection: React.FC<{ vaultUpstreams?: string[] }> = ({ vaul
             { m: 'GET', p: '/keychain/home', d: 'Wallet SOL/USDC + stored APIs + connection' },
             { m: 'GET', p: '/keychain/rpc-cache', d: 'Helius TTL table — getSlot 2s lowest' },
             { m: 'POST', p: '/keychain/detect', d: 'Classify a pasted key (prefix only)' },
-            { m: 'POST', p: '/keychain/store', d: 'Detect + store without echoing the secret' },
             { m: 'POST', p: '/keychain/call', d: 'One-click probe via stored vault key' },
           ].map(({ m, p, d }) => (
             <div key={`${m}-${p}`} className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.02] transition-colors">

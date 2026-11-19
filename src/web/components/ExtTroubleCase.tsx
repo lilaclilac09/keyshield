@@ -31,6 +31,7 @@ export const ExtTroubleCase: React.FC = () => (
       <p className="text-[13px] text-[#e8ecff] leading-relaxed" data-testid="ext-trouble-symptom">
         {LEFTOVER_121_CASE.symptom}
       </p>
+      <p className="text-[12px] text-amber-200">Legacy / owner-only extension repair. These scripts restore an old extension using your signed-in owner session; they are not agent commands or the device-encrypted Vault storage workflow.</p>
 
       <div>
         <p className="text-[12px] font-semibold text-white mb-1">
