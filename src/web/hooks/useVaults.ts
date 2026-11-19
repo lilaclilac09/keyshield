@@ -225,7 +225,13 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
       if (isVaultUnlocked()) {
-        await addEntry(upstream, rawKey);
+        try {
+          await addEntry(upstream, rawKey);
+        } catch {
+          throw new Error('Device vault save failed. Unlock the vault and retry.');
+        }
+        refresh();
+        return;
       }
       const stored = await apiFetch('/manage/store', {
         method: 'POST',

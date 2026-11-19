@@ -228,7 +228,17 @@ async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
   };
   fn(next);
   const cipher = await encryptVault(_state.masterKey, next);
-  const result = await _state.sync.push(_state.vaultId, cipher, () => _state!.bearer.get());
+  const payload = {
+    version: cipher.version,
+    iv: cipher.iv,
+    ciphertext: cipher.ciphertext,
+    updatedAt: cipher.updatedAt,
+  };
+  const outgoing = JSON.stringify(payload);
+  if (Object.values(next.entries).some(({ apiKey }) => apiKey && outgoing.includes(JSON.stringify(apiKey).slice(1, -1)))) {
+    throw new Error('Refusing unsafe vault sync payload');
+  }
+  const result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
   if (result === 'conflict') {
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
     // Why: full conflict-merge UX is out of scope for hackathon; the CAS still

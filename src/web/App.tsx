@@ -247,7 +247,7 @@ const MainContent: React.FC = () => {
       <AddKeyModal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setPrefilledData(undefined); }} onSave={async (data) => {
         try {
           await addItem(data);
-          emitAppFeedback({ kind: 'success', title: 'Saved to vault', detail: data.name || data.upstream, source: 'save' });
+          emitAppFeedback({ kind: 'success', title: 'Saved to vault', source: 'save' });
           refreshHome();
         } catch (err) {
           emitAppFeedback({
