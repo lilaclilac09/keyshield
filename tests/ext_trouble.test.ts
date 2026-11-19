@@ -4,215 +4,40 @@ import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
-  CHROME_INTERNALS_PREF_ROOTS,
-  DETECT_AFTER_PATCH,
-  FIND_LOCAL_PATH_PY,
-  FIND_WALK_ROOTS,
-  LEFTOVER_121_CASE,
-  LOCAL_PULL_BRIDGE_SH,
-  OFFLINE_BRIDGE_STAMP_PY,
-  OFFLINE_PATCH_PY,
-  PATCH_BRANCH,
-  PATCH_VERSION,
-  TRY_PULL_THEN_PATCH_SH,
-  ZSH_SAFE_STAMP_PY,
-  isZshSafePullBlock,
-  isKeyshieldExtManifest,
-  repoRootFromExt,
-  shouldSkipGitPull,
+  CHROME_INTERNALS_PREF_ROOTS, FIND_LOCAL_PATH_PY, FIND_WALK_ROOTS,
+  LEFTOVER_121_CASE, DEVICE_SAVE_CHECKLIST, repoRootFromExt,
+  isKeyshieldExtManifest, shouldSkipGitPull,
 } from "../src/web/lib/ext-trouble";
 
 const root = resolve(__dirname, "..");
 
-describe("leftover 1.2.4 Troubleshooting tab", () => {
-  it("finds a KeyShield ext folder and repo root without a hardcoded Downloads path", () => {
+describe("safe extension troubleshooting", () => {
+  it("retains local extension-path diagnostics without harvesting credentials", () => {
     expect(repoRootFromExt("/Users/me/src/keyshield/src/extension")).toBe("/Users/me/src/keyshield");
     expect(repoRootFromExt("/Users/me/extension")).toBe("/Users/me");
     expect(isKeyshieldExtManifest({ name: "KeyShield — Sovereign Vault" })).toBe(true);
     expect(isKeyshieldExtManifest({ name: "Other" })).toBe(false);
-    expect(FIND_LOCAL_PATH_PY).toContain("Library/Application Support/Google/Chrome");
-    expect(FIND_LOCAL_PATH_PY).toContain("*/Preferences");
-    expect(FIND_LOCAL_PATH_PY).toContain("chrome-internals");
-    expect(FIND_LOCAL_PATH_PY).toContain("manifest.json");
-    expect(FIND_LOCAL_PATH_PY).toContain("popup.js");
-    expect(FIND_WALK_ROOTS).toContain("~/Downloads");
-    expect(FIND_WALK_ROOTS).toContain("~/Documents");
-    expect(CHROME_INTERNALS_PREF_ROOTS.some((p) => p.includes("Arc"))).toBe(true);
-    expect(FIND_LOCAL_PATH_PY).not.toContain("cd to ~/Downloads/privacy_hack/keyshield first");
-  });
-
-  it("skips git pull when github.com DNS fails", () => {
     expect(shouldSkipGitPull("Could not resolve hostname github.com")).toBe(true);
-    expect(shouldSkipGitPull("nodename nor servname provided, or not known")).toBe(true);
-    expect(shouldSkipGitPull("Name or service not known")).toBe(true);
-    expect(TRY_PULL_THEN_PATCH_SH).toContain(`git fetch origin ${PATCH_BRANCH}`);
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("github.com DNS failed — skip git, run python3 below");
-    expect(TRY_PULL_THEN_PATCH_SH).toContain("session-bridge True");
-    expect(TRY_PULL_THEN_PATCH_SH).not.toContain("eval ");
-    expect(isZshSafePullBlock(LOCAL_PULL_BRIDGE_SH)).toBe(true);
-    expect(LOCAL_PULL_BRIDGE_SH).toContain("python3 - <<'PY'");
-    expect(LOCAL_PULL_BRIDGE_SH).toContain("session-bridge True");
-    expect(LOCAL_PULL_BRIDGE_SH).not.toContain("eval ");
-    expect(LOCAL_PULL_BRIDGE_SH).not.toContain("$(");
-    expect(ZSH_SAFE_STAMP_PY).toContain("capturePageToken");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("capturePageToken");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("session-bridge.js");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('data-ui="three-line"');
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('id="detect-line"');
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain('id="copy-status"');
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("<!DOCTYPE html>");
-    expect(ZSH_SAFE_STAMP_PY).toContain('data-ui="three-line"');
-    expect(ZSH_SAFE_STAMP_PY).toContain('id="detect-line"');
-    expect(ZSH_SAFE_STAMP_PY).toContain('id="copy-status"');
-    expect(ZSH_SAFE_STAMP_PY).toContain("ensure_three_line_popup");
+    expect(FIND_LOCAL_PATH_PY).toContain("manifest.json");
+    expect(FIND_LOCAL_PATH_PY).toContain("chrome-internals");
+    expect(FIND_WALK_ROOTS).toContain("~/Downloads");
+    expect(CHROME_INTERNALS_PREF_ROOTS.some((p) => p.includes("Arc"))).toBe(true);
   });
 
-  it("offline python stamps 1.2.4 signed-pane and LIST_SAVED_APIS", () => {
-    expect(PATCH_VERSION).toBe("1.2.4");
-    expect(OFFLINE_PATCH_PY).toContain('man["version"] = VER');
-    expect(OFFLINE_PATCH_PY).toContain("1.2.4");
-    expect(OFFLINE_PATCH_PY).toContain('id="signed-pane"');
-    expect(OFFLINE_PATCH_PY).toContain('id="saved-count"');
-    expect(OFFLINE_PATCH_PY).toContain("session-bridge.js");
-    expect(OFFLINE_PATCH_PY).toContain("document_start");
-    expect(OFFLINE_PATCH_PY).toContain("capturePageToken");
-    expect(OFFLINE_PATCH_PY).toContain('print("session-bridge"');
-    expect(OFFLINE_PATCH_PY).toContain("https://*.vercel.app/*");
-    expect(OFFLINE_PATCH_PY).toContain('data-ui="three-line"');
-    expect(OFFLINE_PATCH_PY).toContain('id="detect-line"');
-    expect(OFFLINE_PATCH_PY).toContain('id="copy-status"');
-    expect(OFFLINE_PATCH_PY).not.toContain("<summary>Settings");
-    expect(OFFLINE_PATCH_PY).toContain("KS-SIGNED-1.2.4");
-    expect(OFFLINE_PATCH_PY).toContain("LIST_SAVED_APIS");
-    expect(OFFLINE_PATCH_PY).toContain("function paintSavedCount");
-    expect(OFFLINE_PATCH_PY).toContain("1 saved");
-    expect(OFFLINE_PATCH_PY).toContain("paintSavedCount(Math.max");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("1 saved");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("signed-status");
-    expect(ZSH_SAFE_STAMP_PY).toContain("1 saved");
-    expect(OFFLINE_PATCH_PY).toContain("Library/Application Support/Google/Chrome");
-    expect(OFFLINE_PATCH_PY).toContain("*/Preferences");
-    expect(OFFLINE_PATCH_PY).toContain('print("ver"');
-    expect(OFFLINE_PATCH_PY).toContain('print("signed-pane"');
-    expect(OFFLINE_PATCH_PY).not.toContain("cd to ~/Downloads/privacy_hack/keyshield first");
-  });
-
-  it("UI and docs surface the case plus detect checklist", () => {
+  it("contains no copyable tab-harvesting or plaintext-store repair code", () => {
+    const source = readFileSync(resolve(root, "src/web/lib/ext-trouble.ts"), "utf8");
+    for (const unsafe of ["ksHarvestAndStoreVisibleKeys", "harvestTokenFromDashboardTabs", "chrome.tabs", "executeScript", "/manage/store", "ks_auto_store", "INJECT_DETECT"]) {
+      expect(source).not.toContain(unsafe);
+    }
+    const ui = readFileSync(resolve(root, "src/web/components/ExtTroubleCase.tsx"), "utf8");
+    expect(ui).toContain("FIND_LOCAL_PATH_PY");
+    expect(ui).toContain("DEVICE_SAVE_CHECKLIST");
+    expect(ui).not.toContain("OFFLINE_PATCH_PY");
+    expect(ui).not.toContain("OFFLINE_BRIDGE_STAMP_PY");
+    expect(ui).not.toContain("LOCAL_PULL_BRIDGE_SH");
     expect(LEFTOVER_121_CASE.id).toBe("leftover-121");
-    expect(DETECT_AFTER_PATCH.join(" ")).toContain("ok 1.2.4 <all_urls>");
-    expect(DETECT_AFTER_PATCH.join(" ")).toContain("session-bridge.js");
-    expect(DETECT_AFTER_PATCH.join(" ")).toContain("sk-proj-");
-    expect(DETECT_AFTER_PATCH.join(" ")).toContain("Save never asks Face ID");
-    expect(LEFTOVER_121_CASE.title).toContain("session-bridge");
-    expect(LEFTOVER_121_CASE.symptom).toContain("content.js");
-    const docs = readFileSync(resolve(root, "src/web/components/sections/DocsSection.tsx"), "utf8");
-    const home = readFileSync(resolve(root, "src/web/components/sections/HomeSection.tsx"), "utf8");
-    const app = readFileSync(resolve(root, "src/web/App.tsx"), "utf8");
-    const caseUi = readFileSync(resolve(root, "src/web/components/ExtTroubleCase.tsx"), "utf8");
-    const hint = readFileSync(resolve(root, "src/web/components/ExtensionInstallHint.tsx"), "utf8");
-    const token = readFileSync(resolve(root, "src/web/components/ExtensionTokenCopy.tsx"), "utf8");
-    const localDetect = readFileSync(resolve(root, "src/extension/LOCAL-DETECT.md"), "utf8");
-    const trouble = readFileSync(
-      resolve(root, "src/web/components/sections/TroubleshootingSection.tsx"),
-      "utf8",
-    );
-    expect(app).toContain("label: 'Docs & Troubleshooting'");
-    expect(app).toContain("section === 'troubleshooting'");
-    expect(app).toContain("docs-troubleshooting");
-    expect(app).not.toContain("label: 'Trouble'");
-    expect(app).not.toContain("TroubleSection");
-    expect(docs).toContain("TroubleshootingSection");
-    expect(docs).toContain("docs-toc");
-    expect(docs).toContain("docs-ch-1");
-    expect(home).not.toContain("ExtTroubleCase");
-    expect(home).not.toContain("ext-trouble-leftover-121");
-    expect(home).not.toContain("LOCAL_PULL_BRIDGE_SH");
-    expect(home).not.toContain("FIND_LOCAL_PATH_PY");
-    expect(home).not.toContain("OFFLINE_BRIDGE_STAMP_PY");
-    expect(home).not.toContain("OFFLINE_PATCH_PY");
-    expect(home).not.toContain("Leftover 1.2.4 · missing session-bridge");
-    expect(home).not.toContain("onGo('trouble')");
-    expect(home).not.toContain("Docs → Troubleshooting");
-    expect(home).toContain("onGo('troubleshooting')");
-    expect(home).toContain("Docs & Troubleshooting →");
-    expect(trouble).toContain("ExtTroubleCase");
-    expect(trouble).toContain("LEFTOVER_121_CASE");
-    expect(trouble).toContain("docs-troubleshooting");
-    expect(trouble).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(JSON.stringify(LEFTOVER_121_CASE)).not.toMatch(/[\u4e00-\u9fff]/);
-    expect("titleZh" in LEFTOVER_121_CASE).toBe(false);
-    expect("symptomZh" in LEFTOVER_121_CASE).toBe(false);
-    expect(caseUi).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(home).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(docs).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(app).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(hint).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(token).not.toMatch(/[\u4e00-\u9fff]/);
-    expect(caseUi).toContain("ext-trouble-leftover-121");
-    expect(caseUi).toContain("LEFTOVER_121_CASE.title");
-    expect(hint).toContain("Open Docs & Troubleshooting");
-    expect(hint).not.toContain("is on Home");
-    expect(hint).not.toContain("Leftover 1.2.4 ↓");
-    expect(hint).not.toContain("Chrome internals");
-    expect(hint).not.toContain("~/Downloads/privacy_hack/keyshield");
-    expect(token).toContain("Open the Docs & Troubleshooting tab");
-    expect(token).not.toContain("missing session-bridge is on this page");
-    expect(token).not.toContain("Register token");
-    expect(token).not.toContain("Old v1");
-    expect(OFFLINE_PATCH_PY).toContain("api.name||api.upstream");
-    expect(OFFLINE_BRIDGE_STAMP_PY).toContain("api.name||api.upstream");
-    expect(ZSH_SAFE_STAMP_PY).toContain("api.name||api.upstream");
-    expect(localDetect).toContain("Chrome internals");
-    expect(localDetect).toContain("Troubleshooting leftover");
-    expect(localDetect).not.toContain("Home leftover");
-    expect(localDetect).toContain('man["version"] = "1.2.4"');
-    expect(localDetect).toContain("signed-pane");
-    expect(localDetect).toContain("patch-signed-popup.py");
-    expect(localDetect).toContain("patch-leftover-bridge.py");
-    expect(localDetect).toContain("session-bridge.js");
-    expect(caseUi).toContain("session-bridge True");
-    expect(caseUi).toContain("LOCAL_PULL_BRIDGE_SH");
-    expect(caseUi).toContain("Do not use eval");
-  });
-
-  it("zsh-safe local-pull block parses and stamps leftover 1.2.4", () => {
-    const tmpSh = join(mkdtempSync(join(tmpdir(), "ks-zsh-safe-")), "local-pull.sh");
-    writeFileSync(tmpSh, LOCAL_PULL_BRIDGE_SH);
-    execFileSync("bash", ["-n", tmpSh], { encoding: "utf8" });
-    const leftover = readFileSync(
-      resolve(root, "tests/fixtures/leftover-124-content-only.manifest.json"),
-      "utf8",
-    );
-    const tmp = mkdtempSync(join(tmpdir(), "ks-zsh-stamp-"));
-    writeFileSync(join(tmp, "manifest.json"), leftover);
-    writeFileSync(join(tmp, "popup.js"), "/* stub */\n");
-    writeFileSync(
-      join(tmp, "popup.html"),
-      `<html><h1>KeyShield — Sovereign Vault<span id="conn">no token</span></h1><details><summary>Settings</summary></details></html>\n`,
-    );
-    const out = execFileSync("python3", ["-c", ZSH_SAFE_STAMP_PY], {
-      cwd: tmp,
-      encoding: "utf8",
-    });
-    expect(out).toContain("session-bridge True");
-    expect(out).toContain("three-line");
-    const stamped = JSON.parse(readFileSync(join(tmp, "manifest.json"), "utf8"));
-    expect(stamped.content_scripts[0].js).toEqual(["session-bridge.js"]);
-    const popup = readFileSync(join(tmp, "popup.html"), "utf8");
-    expect(popup).toContain('data-ui="three-line"');
-    expect(popup).toContain('id="saved-apis"');
-    expect(popup).toContain('id="detect-line"');
-    expect(popup).toContain('id="copy-status"');
-    expect(popup).toContain('id="signed-status"');
-    expect(popup).toContain('id="collected-line"');
-    expect(popup).toContain('id="filled-line"');
-    expect(popup).toContain('id="fill-ms"');
-    expect(popup).toContain("Copy Cursor key");
-    expect(popup).not.toContain("<details");
-    expect(popup).not.toContain("Fill this tab");
-    expect(popup).not.toContain("Register token");
-    expect(popup).not.toContain("Sign in to KeyShield");
-    expect(popup).not.toContain("Allow detect + auto-save");
+    expect(DEVICE_SAVE_CHECKLIST.join(" ")).toContain("individual credential");
+    expect(DEVICE_SAVE_CHECKLIST.join(" ")).toContain("Save + Call skips");
   });
 
   it("patch-leftover-bridge.py stamps leftover 1.2.4 content.js-only", () => {

@@ -4,15 +4,12 @@ import { Card } from './ui/Card';
 import { CodeBlock } from './ui/CodeBlock';
 import { Badge } from './ui/Badge';
 import {
-  DETECT_AFTER_PATCH,
+  DEVICE_SAVE_CHECKLIST,
   FIND_LOCAL_PATH_PY,
   LEFTOVER_121_CASE,
-  LOCAL_PULL_BRIDGE_SH,
-  OFFLINE_BRIDGE_STAMP_PY,
-  OFFLINE_PATCH_PY,
 } from '../lib/ext-trouble';
 
-/** Leftover 1.2.4 + session-bridge stamp trunks. Lives at the bottom of Docs & Troubleshooting. */
+/** Local extension diagnostics in Docs & Troubleshooting. */
 export const ExtTroubleCase: React.FC = () => (
   <Card variant="bordered" className="border-amber-900/50">
     <div id="ext-trouble-leftover-121" data-testid="ext-trouble-leftover-121" className="space-y-4">
@@ -34,18 +31,12 @@ export const ExtTroubleCase: React.FC = () => (
 
       <div>
         <p className="text-[12px] font-semibold text-white mb-1">
-          1. Local stamp — paste this only. Do not use eval.
+          Save credentials explicitly in your device vault
         </p>
         <p className="text-[11px] text-[#8a96c2] mb-2 leading-relaxed">
-          zsh parse error near <code className="text-white">)</code> means you wrapped python in{' '}
-          <code className="text-white">eval "$(…)"</code>, or pasted a comment like{' '}
-          <code className="text-white">1) find … (Chrome …)</code>. Paste only the block below.
-          Terminal must print <code className="text-white">ver 1.2.4</code> and{' '}
-          <code className="text-white">session-bridge True</code>. This also rewrites{' '}
-          <code className="text-white">popup.html</code> to three lines: Sign in, Allow detect,
-          then after login <code className="text-white">N saved</code> + keys. No Settings / token box.
+          Automatic repair scripts are no longer offered. Enter each individual credential
+          yourself in the dashboard Vault. The diagnostic below only locates your local extension folder.
         </p>
-        <CodeBlock code={LOCAL_PULL_BRIDGE_SH} />
       </div>
 
       <details open>
@@ -57,42 +48,10 @@ export const ExtTroubleCase: React.FC = () => (
         </div>
       </details>
 
-      <details open>
-        <summary className="text-[12px] font-semibold text-white cursor-pointer">
-          Optional git fetch. Skip if github.com DNS fails.
-        </summary>
-        <div className="mt-2">
-          <CodeBlock
-            code={`git fetch origin cursor/cursor-api-autofill-b48a || echo skip-git
-git checkout cursor/cursor-api-autofill-b48a || echo skip-git
-git pull origin cursor/cursor-api-autofill-b48a || echo skip-git
-`}
-          />
-        </div>
-      </details>
-
-      <details open>
-        <summary className="text-[12px] font-semibold text-white cursor-pointer">
-          3. Pull failed — session-bridge stamp only (python, not HTML)
-        </summary>
-        <div className="mt-2">
-          <CodeBlock code={`python3 - <<'PY'\n${OFFLINE_BRIDGE_STAMP_PY.trimEnd()}\nPY\n`} />
-        </div>
-      </details>
-
-      <details open>
-        <summary className="text-[12px] font-semibold text-white cursor-pointer">
-          4. Full signed-pane fallback (python, do not paste as HTML)
-        </summary>
-        <div className="mt-2">
-          <CodeBlock code={`python3 - <<'PY'\n${OFFLINE_PATCH_PY.trimEnd()}\nPY\n`} />
-        </div>
-      </details>
-
       <div>
-        <p className="text-[12px] font-semibold text-white mb-2">Then detect</p>
+        <p className="text-[12px] font-semibold text-white mb-2">Device-only save checklist</p>
         <ol className="space-y-1.5 list-decimal list-inside text-[12px] text-[#e8ecff]">
-          {DETECT_AFTER_PATCH.map((step) => (
+          {DEVICE_SAVE_CHECKLIST.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
