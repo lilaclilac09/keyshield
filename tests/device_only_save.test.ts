@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
+import { readFileSync } from 'node:fs';
 
 const hooks = vi.hoisted(() => ({ states: [] as any[], index: 0 }));
 vi.mock('react', async (importOriginal) => ({
@@ -20,8 +22,7 @@ import * as vaultCrypto from '../src/web/lib/vault';
 import { apiFetch } from '../src/web/lib/auth';
 import { connectOpenRouter, fetchOpenRouterStatus } from '../src/web/lib/openrouter-interface';
 import { detectKeyOnServer, storeDetectedKeys } from '../src/web/lib/keychain';
-import { flushPendingVaultHits } from '../src/web/lib/vault-list';
-import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED } from '../src/web/lib/device-save';
+import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED, saveKeyOnDevice } from '../src/web/lib/device-save';
 import { registerSavingSecret } from '../src/web/lib/secret-guard';
 import { emitAppFeedback } from '../src/web/lib/app-feedback';
 import { humanActionError } from '../src/web/lib/human-usable';
@@ -114,7 +115,6 @@ const entries = [
   ['quick paste Save', () => quickSave(false)],
   ['quick paste Save + Call', () => quickSave(true)],
   ['OpenRouter Connect', () => connectOpenRouter(raw)],
-  ['pending-hit flush', () => flushPendingVaultHits([{ upstream: 'openrouter', value: raw }])],
 ] as const;
 
 describe.each(entries)('%s device-only save', (name, save) => {
@@ -128,7 +128,6 @@ describe.each(entries)('%s device-only save', (name, save) => {
   it('locked: requires consent/unlock, makes zero requests and persists nothing', async () => {
     await expect(save()).rejects.toBeInstanceOf(DeviceVaultRequiredError);
     expect(requests).toHaveLength(0); expect(storageWrites).toHaveLength(0);
-    expect(messages).not.toContainEqual({ __ks_pending_vault_cleared: true });
     expectPrivate();
   });
   it.each(['addEntry', 'sync network', 'encryption', 'unsafe ciphertext'] as const)('%s failure: fails closed with secret-free error and console output', async (failure) => {
@@ -144,13 +143,115 @@ describe.each(entries)('%s device-only save', (name, save) => {
     if (failure === 'unsafe ciphertext') vi.spyOn(vaultCrypto, 'encryptVault').mockResolvedValue({ version: 1, iv: 'iv', ciphertext: raw, updatedAt: 1 });
     await expect(save()).rejects.toThrow('Device vault save failed. Unlock the vault and retry.');
     expect(getDecryptedKey('openrouter')).toBeNull();
-    expect(messages).not.toContainEqual({ __ks_pending_vault_cleared: true });
     expectPrivate();
     if (failure !== 'sync network') expect(requests).toHaveLength(0);
   });
 });
 
 describe('central guards and consent', () => {
+  it.each([false, true])('ignores ambient pending messages and stored hits (unlocked=%s) without saving or requesting', async (unlocked) => {
+    if (unlocked) await unlock();
+    const queued = JSON.stringify([{ upstream: 'openrouter', value: raw }]);
+    localStorage.setItem('ks_pending_vault', queued);
+    sessionStorage.setItem('ks_pending_vault', queued);
+    localStorage.setItem('ks_auto_store', 'true');
+    const target = new EventTarget();
+    Object.assign(window, {
+      addEventListener: target.addEventListener.bind(target),
+      removeEventListener: target.removeEventListener.bind(target),
+      dispatchEvent: target.dispatchEvent.bind(target),
+    });
+    vi.stubGlobal('document', new EventTarget());
+    const cleanups: Array<undefined | void | (() => void)> = [];
+    const originalEffect = vi.mocked(useEffect).getMockImplementation();
+    vi.mocked(useEffect).mockImplementation((effect) => { cleanups.push(effect()); });
+    const addition = vi.spyOn(vaultSession, 'addEntry');
+    try {
+      render(() => useVaults('', ''));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      requests = []; storageWrites = []; messages = [];
+      const event = Object.assign(new Event('message'), { source: window, data: { __ks_pending_vault: JSON.parse(queued) } });
+      window.dispatchEvent(event);
+      window.dispatchEvent(Object.assign(new Event('storage'), { key: 'ks_pending_vault', newValue: queued }));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(addition).not.toHaveBeenCalled();
+      expect(requests).toHaveLength(0);
+      expect(storageWrites).toHaveLength(0);
+      expect(messages).toHaveLength(0);
+      expect(localStorage.getItem('ks_pending_vault')).toBe(queued);
+      expect(sessionStorage.getItem('ks_pending_vault')).toBe(queued);
+      expect(unlocked ? vaultSession.listEntries() : []).toEqual([]);
+      for (const file of ['../src/web/App.tsx', '../src/web/hooks/useVaults.ts', '../src/web/lib/vault-list.ts']) {
+        const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+        expect(source).not.toMatch(/__ks_pending|ks_pending_vault|ks_auto_store|flushPendingVaultHits|previewPendingVaultHits/);
+      }
+      expectPrivate();
+    } finally {
+      for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup();
+      vi.mocked(useEffect).mockImplementation(originalEffect || (() => {}));
+    }
+  });
+  it('decrypts, lists and reveals legacy encrypted entries without rewriting them on read', async () => {
+    const key = await vaultCrypto.deriveMasterKey(new Uint8Array(32).fill(7).buffer);
+    const legacy = { entries: { openai: { upstream: 'openai', apiKey: raw, addedAt: 123 } }, updatedAt: 123 };
+    const cipher = await vaultCrypto.encryptVault(key, legacy);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ token: 'synthetic-token', expiresAt: Date.now() + 600000 }))
+      .mockResolvedValueOnce(Response.json(cipher));
+    await unlock();
+    expect(vaultSession.listEntries()).toEqual([legacy.entries.openai]);
+    const vault = render(() => useVaults('', ''));
+    vault.refresh();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(1));
+    expect(hooks.states[0][0]).toMatchObject({ id: 'device:openai', upstream: 'openai', name: 'OpenAI' });
+    await expect(vault.decryptItem('device:openai')).resolves.toBe(raw);
+    expect(requests.some(({ body }) => body.includes('ciphertext'))).toBe(false);
+    expect(vaultSession.listEntries()).toEqual([legacy.entries.openai]);
+    await vault.deleteItem('device:openai');
+    expect(vaultSession.listEntries()).toEqual([]);
+    expectPrivate();
+  });
+  it('round-trips modal and quick-paste labels and expiry in ciphertext and renders device expiry warnings', async () => {
+    await unlock();
+    const expiry = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const vault = render(() => useVaults('', ''));
+    await vault.addItem({ upstream: 'openai', rawKey: raw, name: 'My development key', expiryDate: expiry, domain: 'openai.com' });
+    const first = '11111111-1111-4111-8111-111111111111';
+    const second = '22222222-2222-4222-8222-222222222222';
+    await storeDetectedKeys(`Panthermaze\n${first}\n${expiry}\nHeronplanet\n${second}\n2030-12-31`);
+    const key = await vaultCrypto.deriveMasterKey(new Uint8Array(32).fill(7).buffer);
+    const payload = JSON.parse(requests.filter(({ body }) => body.includes('ciphertext')).at(-1)!.body);
+    const decrypted = await vaultCrypto.decryptVault(key, payload);
+    expect(decrypted.entries.openai).toMatchObject({ name: 'My development key', expiresAt: expiry, domain: 'openai.com' });
+    expect(decrypted.entries.helius).toMatchObject({ apiKey: first, name: 'Panthermaze', expiresAt: expiry });
+    expect(decrypted.entries['helius#2']).toMatchObject({ apiKey: second, name: 'Heronplanet', expiresAt: '2030-12-31' });
+    vault.refresh();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(3));
+    const items = hooks.states[0];
+    expect(items[0]).toMatchObject({ name: 'My development key', expiryDate: expiry, domain: 'openai.com' });
+    expect(items[1]).toMatchObject({ name: 'Panthermaze', expiryDate: expiry });
+    expect(items[2]).toMatchObject({ name: 'Heronplanet', expiryDate: '2030-12-31' });
+    hooks.states = [];
+    const tree = render(() => VaultSection({ ...vaultProps, items, total: 3 }));
+    const visible = JSON.stringify(findNode(tree, (node) => node.props?.['data-testid'] === 'vault-saved-apis'));
+    expect(visible).toContain('Panthermaze');
+    expect(visible).toContain('Heronplanet');
+    expect(visible).toContain('soon');
+    for (const secret of [raw, first, second]) expectPrivate(secret);
+  });
+  it('masks raw or escaped credential labels and drops secret-bearing metadata fields before encryption', async () => {
+    await unlock();
+    await saveKeyOnDevice('openai', raw, { name: `label ${JSON.stringify(raw).replace(/s/g, '\\u0073')}`, domain: raw, expiresAt: raw });
+    const entry = vaultSession.listEntries()[0];
+    expect(entry.name).toBe(`${raw.slice(0, 6)}…${raw.slice(-4)}`);
+    expect(entry.domain).toBeUndefined();
+    expect(entry.expiresAt).toBeUndefined();
+    expect(JSON.stringify({ ...entry, apiKey: undefined })).not.toContain(raw);
+    const release = registerSavingSecret(raw);
+    try { await expect(apiFetch('/synthetic', { body: JSON.stringify({ metadata: { name: raw } }) })).rejects.toThrow('Refusing request'); }
+    finally { release(); }
+    expectPrivate();
+  });
   it('OpenRouter status refresh cannot replace a device save with stale hosted status', async () => {
     await unlock();
     let finish!: (response: Response) => void;
@@ -291,12 +392,11 @@ describe('central guards and consent', () => {
     await vault.deleteItem('old-record');
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/manage\/vault\/old-record$/), expect.objectContaining({ method: 'DELETE' }));
   });
-  it('empty input sends nothing; pending hits clear only after a successful local save', async () => {
+  it('empty input sends nothing', async () => {
     await unlock();
     await expect(render(() => useVaults('', '')).addItem({ rawKey: '' })).rejects.toThrow('Paste the API key');
     expect(requests).toHaveLength(0);
-    await flushPendingVaultHits([{ upstream: 'openrouter', value: raw }]);
-    expect(messages).toContainEqual({ __ks_pending_vault_cleared: true }); expectPrivate();
+    expectPrivate();
   });
   it('quick paste retains the value and exposes an unlock/create action after a locked save', async () => {
     await quickSave(false).catch(() => {});

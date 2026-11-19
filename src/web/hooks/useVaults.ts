@@ -14,9 +14,7 @@ import type { VaultEntry } from '../lib/vault';
 import {
   isVaultListPayload,
   parseVaultListPayload,
-  previewPendingVaultHits,
   VAULT_CHANGED_EVENT,
-  type PendingVaultHit,
 } from '../lib/vault-list';
 import { revealZkItem } from '../lib/zk';
 import { saveKeyOnDevice } from '../lib/device-save';
@@ -75,10 +73,11 @@ function entryToVault(entry: VaultEntry): VaultItem {
     const meta = providerMeta(upstream);
     return {
       id: `device:${entry.upstream}`,
-      name: `${meta.name}${entry.upstream.slice(upstream.length)}`,
+      name: entry.name || `${meta.name}${entry.upstream.slice(upstream.length)}`,
       type: 'api_key',
       value: `${API_BASE}/proxy/${upstream}/`,
-      domain: meta.domain,
+      domain: entry.domain || meta.domain,
+      expiryDate: entry.expiresAt,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
       tags: catalogTags(upstream, ['VAULT']),
@@ -89,18 +88,19 @@ function entryToVault(entry: VaultEntry): VaultItem {
   }
   return {
     id: `device:${entry.upstream}`,
-    name: userSecretLabel(entry.upstream),
+    name: entry.name || userSecretLabel(entry.upstream),
     type,
     value: '••••••',
     createdAt: entry.addedAt,
     lastUsedAt: entry.addedAt,
     tags: [type.replace('_', ' ')],
+    domain: entry.domain,
+    expiryDate: entry.expiresAt,
   };
 }
 
 export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
-  const [pendingHits, setPendingHits] = useState<PendingVaultHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
@@ -186,42 +186,29 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== window || !e.data) return;
-      if (Array.isArray(e.data.__ks_pending_vault)) {
-        setPendingHits(e.data.__ks_pending_vault as PendingVaultHit[]);
-      }
-      if (e.data.__ks_pending_vault_cleared) setPendingHits([]);
       if (e.data.__ks_vault_changed) refresh();
     };
     window.addEventListener('message', onMsg);
-    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
     return () => window.removeEventListener('message', onMsg);
   }, [refresh]);
 
-  const mergedItems = useMemo(() => {
-    if (!pendingHits.length) return vaultItems;
-    const pendingItems = previewPendingVaultHits(pendingHits).map(serverRowToVault);
-    const seen = new Set(vaultItems.map((item) => `${item.name}:${item.value}`));
-    const extra = pendingItems.filter((item) => !seen.has(`${item.name}:${item.value}`));
-    return extra.length ? vaultItems.concat(extra) : vaultItems;
-  }, [vaultItems, pendingHits]);
-
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    if (!q) return mergedItems;
-    return mergedItems.filter(
+    if (!q) return vaultItems;
+    return vaultItems.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.domain?.toLowerCase().includes(q) ||
         item.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [mergedItems, searchQuery]);
+  }, [vaultItems, searchQuery]);
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
-      await saveKeyOnDevice(upstream, rawKey);
+      await saveKeyOnDevice(upstream, rawKey, { name: data.name, expiresAt: data.expiryDate || undefined, domain: data.domain });
       refresh();
     },
     [refresh],
@@ -273,7 +260,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   return {
     items: filteredItems,
-    allItems: mergedItems,
+    allItems: vaultItems,
     loading,
     error,
     unlocked,

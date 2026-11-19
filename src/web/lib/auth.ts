@@ -667,8 +667,7 @@ export function setPasskeyTrust(userId: string, passphrase: string): void {
 }
 
 export function getPasskeyTrust(): { userId: string; passphrase: string } | null {
-  const u = resolvePasskeyUserId({
-    passkeyUser: localStorage.getItem(PASSKEY_USER),
+  const u = localStorage.getItem(PASSKEY_USER)?.trim() || resolvePasskeyUserId({
     wallet: localStorage.getItem(WALLET_KEY),
   });
   if (!u) return null;
@@ -900,6 +899,7 @@ export async function registerPasskey(
     throw new Error((err as { detail: string }).detail ?? 'Registration failed');
   }
   const result = await verRes.json();
+  setPasskeyTrust(opts.user.name, '');
 
   const ext = credential.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } };
   if (window.keyshieldDesktop?.broker && ext?.prf?.enabled === true) {

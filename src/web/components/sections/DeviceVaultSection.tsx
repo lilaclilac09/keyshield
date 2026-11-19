@@ -583,8 +583,6 @@ export const DeviceVaultSection: React.FC = () => {
     setErr('');
     try {
       await registerPasskey('Device Vault');
-      const addr = getWalletAddress();
-      if (addr) setPasskeyTrust(addr, '');
       refresh();
       setPhaseMsg('Unlocking…');
       await requestVaultUnlock();

@@ -27,7 +27,13 @@ const INFO_VAULT_ID = new TextEncoder().encode('ks-vault-id-v1');
 // re-derived deterministically on any device.
 const HKDF_SALT = new Uint8Array(0);
 
-export interface VaultEntry {
+export interface VaultEntryMetadata {
+  name?: string;
+  expiresAt?: string;
+  domain?: string;
+}
+
+export interface VaultEntry extends VaultEntryMetadata {
   upstream: string;
   apiKey: string;
   addedAt: number;
