@@ -165,7 +165,7 @@ function createBroker({
       }
       if (body.operation !== 'mock.echo') return json(res, 400, { error: 'unknown_operation' });
       if (!destination) return json(res, 400, { error: 'operation_unavailable' });
-      if (typeof body.credential !== 'string' || !body.credential.trim()) {
+      if (typeof body.credential !== 'string' || !body.credential.trim() || body.credential.startsWith('device:')) {
         return json(res, 400, { error: 'invalid_credential' });
       }
       const created = now();
@@ -212,15 +212,24 @@ function createBroker({
     if (!snapshot || typeof snapshot.vaultId !== 'string' || !Number.isFinite(snapshot.revision) ||
         snapshot.entryId !== request.credential || !snapshot.metadata || !Number.isFinite(snapshot.metadata.addedAt) ||
         Object.keys(snapshot).some((key) => !['vaultId', 'revision', 'entryId', 'metadata'].includes(key)) ||
-        Object.entries(snapshot.metadata).some(([key, value]) => !(key === 'addedAt' || /label|expir|^(?:name|displayName)$/i.test(key)) ||
+        snapshot.entryId.startsWith('device:') ||
+        Object.entries(snapshot.metadata).some(([key, value]) => !(key === 'addedAt' || key === 'domain' || /label|expir|^(?:name|displayName)$/i.test(key)) ||
           !(value === null || typeof value === 'string' || typeof value === 'number'))) {
       throw new Error('approval_snapshot_required');
     }
+    assertEntryActive(snapshot);
     const grant = { challenge: randomBytes(32).toString('base64url'), credentialId: pin.credentialId,
       rpId: pin.rpId, binding: { ...binding(request), snapshot: copy(snapshot) },
       generation: approvalGeneration, expiresAt: Math.min(request.expires_at, now() + 60000) };
     challenges.set(requestId, grant);
     return copy(grant);
+  }
+
+  function assertEntryActive(snapshot) {
+    const value = snapshot.metadata.expiresAt;
+    if (value === undefined || value === '') return;
+    const expiry = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
+    if (!Number.isFinite(expiry) || expiry <= now()) throw new Error('approval_entry_expired');
   }
 
   async function approve(payload) {
@@ -231,6 +240,7 @@ function createBroker({
     if (!passkey?.get()) throw new Error('approval_passkey_not_pinned');
     const request = pending(requestId);
     const grant = challenges.get(requestId);
+    if (grant) assertEntryActive(grant.binding.snapshot);
     if (!grant || now() >= grant.expiresAt) throw new Error('approval_challenge_required');
     if (!assertion) throw new Error('approval_assertion_required');
     if (typeof secret !== 'string' || !secret.trim()) throw new Error('secret_required');
@@ -240,6 +250,7 @@ function createBroker({
     const currentGrant = challenges.get(requestId);
     challenges.delete(requestId);
     pending(requestId);
+    assertEntryActive(grant.binding.snapshot);
     if (currentGrant !== grant || now() >= grant.expiresAt || grant.generation !== approvalGeneration ||
         JSON.stringify(snapshot) !== JSON.stringify(grant.binding.snapshot) ||
         JSON.stringify({ ...binding(request), snapshot: grant.binding.snapshot }) !== JSON.stringify(grant.binding)) throw new Error('approval_binding_refused');

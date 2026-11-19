@@ -127,7 +127,7 @@ if (typeof window !== 'undefined') {
 function retainApprovalSnapshot(vaultId: string, cipher: VaultCipher | null, plaintext: VaultPlaintext): void {
   if (typeof window === 'undefined' || !window.keyshieldDesktop?.broker) return;
   const entries = Object.fromEntries(Object.entries(plaintext.entries).map(([id, entry]) => [id,
-    Object.fromEntries(Object.entries(entry).filter(([key, value]) => (key === 'addedAt' || /label|expir|^(?:name|displayName)$/i.test(key)) &&
+    Object.fromEntries(Object.entries(entry).filter(([key, value]) => (key === 'addedAt' || key === 'domain' || /label|expir|^(?:name|displayName)$/i.test(key)) &&
       (value === null || typeof value === 'string' || typeof value === 'number')).map(([key, value]) =>
       [key, typeof value === 'string' && entry.apiKey ? value.split(entry.apiKey).join('[REDACTED]') : value])),
   ]));
@@ -229,6 +229,7 @@ async function decryptEntryForApproval(
   prfOutput: ArrayBuffer,
   entryId: string,
 ): Promise<string> {
+  if (entryId.startsWith('device:')) throw new Error('entry not found');
   if (!approvalSnapshot) throw new Error('unlock the device vault once first');
   const snapshot = approvalSnapshot;
   const vaultId = await deriveVaultId(prfOutput);
@@ -237,7 +238,15 @@ async function decryptEntryForApproval(
   const plaintext = await decryptVault(masterKey, snapshot.cipher);
   const entry = Object.hasOwn(plaintext.entries, entryId) ? plaintext.entries[entryId] : undefined;
   if (!entry) throw new Error('entry not found');
+  assertApprovalEntryActive({ expiresAt: entry.expiresAt });
   return entry.apiKey;
+}
+
+function assertApprovalEntryActive(metadata: Record<string, unknown>): void {
+  const value = metadata.expiresAt;
+  if (value === undefined || value === '') return;
+  const expiry = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
+  if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error('entry expired');
 }
 
 export async function approveRequestWithPasskey(requestId: string): Promise<void> {
@@ -249,9 +258,10 @@ export async function approveRequestWithPasskey(requestId: string): Promise<void
   const epoch = approvalEpoch;
   const snapshot = approvalSnapshot;
   const request = (await broker.listRequests()).find((item) => item.id === requestId);
-  if (!request || !Object.hasOwn(snapshotEntries, request.credential)) throw new Error('entry not found');
+  if (!request || request.credential.startsWith('device:') || !Object.hasOwn(snapshotEntries, request.credential)) throw new Error('entry not found');
   const descriptor = { vaultId: snapshot.vaultId, revision: snapshot.cipher.updatedAt,
     entryId: request.credential, metadata: snapshotEntries[request.credential] };
+  assertApprovalEntryActive(descriptor.metadata);
   const approval = await broker.beginApproval({ requestId, snapshot: descriptor });
   if (approval.binding.requestId !== requestId) throw new Error('approval binding mismatch');
   if (JSON.stringify(approval.binding.snapshot) !== JSON.stringify(descriptor)) throw new Error('approval binding mismatch');

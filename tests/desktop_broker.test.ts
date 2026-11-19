@@ -61,10 +61,62 @@ async function world(options: { noPin?: boolean; ttl?: number; brokerOptions?: R
     const grant = assertion ? null : broker.beginApproval(request.id);
     return broker.approve({ requestId: request.id, secret: SECRET, snapshot: snapshot(request.id), assertion: assertion ?? signer.assertion(grant.challenge) });
   }
-  return { broker, signer, passkey, seen, response, base, port, agent, call, submit, approve, advance: (ms: number) => { clock += ms; } };
+  return { broker, signer, passkey, seen, response, base, port, agent, call, submit, approve, now: () => clock, advance: (ms: number) => { clock += ms; } };
 }
 
 describe('mock desktop broker with real WebAuthn verification', () => {
+  it('rejects UI-only device entry IDs at the agent boundary', async () => {
+    const w = await world();
+    expect((await w.call('/v1/requests', { method: 'POST', body: JSON.stringify({ operation: 'mock.echo', credential: 'device:openai#2' }) })).status).toBe(400);
+    expect(w.broker.listRequests()).toEqual([]); expect(w.seen).toEqual([]);
+  });
+
+  it.each(['absent', 'empty', 'future'])('approves bound name and domain with %s expiry', async (expiry) => {
+    const w = await world(); const request = await w.submit();
+    const snapshot = { vaultId: 'test-vault', revision: 1, entryId: 'openai#2', metadata: {
+      addedAt: 1, name: 'My key', domain: 'openai.com',
+      ...(expiry === 'absent' ? {} : { expiresAt: expiry === 'empty' ? '' : new Date(w.now() + 60000).toISOString() }) } };
+    const grant = w.broker.beginApproval({ requestId: request.id, snapshot });
+    await w.broker.approve({ requestId: request.id, assertion: w.signer.assertion(grant.challenge), secret: SECRET, snapshot });
+    expect(w.seen).toHaveLength(1);
+    expect((await w.call(`/v1/requests/${request.id}`)).body.result).toEqual({ ok: true, operation: 'mock.echo' });
+  });
+
+  it.each([null, 'not-a-date'])('rejects malformed expiry %s without provider egress', async (expiresAt) => {
+    const w = await world(); const request = await w.submit();
+    expect(() => w.broker.beginApproval({ requestId: request.id, snapshot: {
+      vaultId: 'test-vault', revision: 1, entryId: 'openai#2', metadata: { addedAt: 1, expiresAt } } })).toThrow('approval_entry_expired');
+    expect(w.seen).toEqual([]);
+  });
+
+  it.each(['name', 'expiresAt', 'domain'])('binds encrypted entry %s and refuses a changed value with zero egress', async (field) => {
+    const w = await world(); const request = await w.submit();
+    const snapshot = { vaultId: 'test-vault', revision: 1, entryId: 'openai#2', metadata: {
+      addedAt: 1, name: 'First key', expiresAt: new Date(w.now() + 60000).toISOString(), domain: 'openai.com' } };
+    const grant = w.broker.beginApproval({ requestId: request.id, snapshot });
+    expect(grant.binding.snapshot.metadata).toEqual(snapshot.metadata);
+    const value = field === 'expiresAt' ? new Date(w.now() + 120000).toISOString() : 'changed';
+    await expect(w.broker.approve({ requestId: request.id, assertion: w.signer.assertion(grant.challenge), secret: SECRET,
+      snapshot: { ...snapshot, metadata: { ...snapshot.metadata, [field]: value } } })).rejects.toThrow('approval_binding_refused');
+    expect(w.seen).toEqual([]);
+  });
+
+  it.each(['before challenge', 'during ceremony', 'during verification'])('refuses an entry expiring %s, including the exact expiry instant', async (when) => {
+    const w = await world(); const request = await w.submit();
+    const snapshot = { vaultId: 'test-vault', revision: 1, entryId: 'openai#2', metadata: {
+      addedAt: 1, expiresAt: new Date(w.now() + (when === 'before challenge' ? 0 : 1000)).toISOString() } };
+    if (when === 'before challenge') expect(() => w.broker.beginApproval({ requestId: request.id, snapshot })).toThrow('approval_entry_expired');
+    else {
+      const grant = w.broker.beginApproval({ requestId: request.id, snapshot });
+      if (when === 'during ceremony') w.advance(1000);
+      else {
+        const verify = w.passkey.verify;
+        vi.spyOn(w.passkey, 'verify').mockImplementation(async (...args) => { await verify(...args); w.advance(1000); });
+      }
+      await expect(w.broker.approve({ requestId: request.id, assertion: w.signer.assertion(grant.challenge), secret: SECRET, snapshot })).rejects.toThrow('approval_entry_expired');
+    }
+    expect(w.seen).toEqual([]);
+  });
   it.each([
     ['GET', '/v1/mock', undefined, 404], ['POST', '/elsewhere', '{}', 404],
     ['POST', '/v1/mock', '', 400], ['POST', '/v1/mock', '{"input":"other"}', 400],

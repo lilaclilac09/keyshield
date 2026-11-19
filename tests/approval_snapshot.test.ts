@@ -28,11 +28,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-async function seeded(entryFields: Record<string, unknown> = {}) {
+async function seeded(entryFields: Record<string, unknown> = {}, extraEntries: Record<string, any> = {}) {
   const crypto = await import('../src/web/lib/vault');
   const cipher = await crypto.encryptVault(await crypto.deriveMasterKey(prf), {
     entries: { openai: { upstream: 'openai', apiKey: '', addedAt: 1 },
-      'openai#2': { upstream: 'openai', apiKey: SECRET, addedAt: 2, ...entryFields } }, updatedAt: 2,
+      'openai#2': { upstream: 'openai', apiKey: SECRET, addedAt: 2, ...entryFields }, ...extraEntries }, updatedAt: 2,
   });
   network.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/auth/exchange')) return Response.json({ token: 'test-bearer', expiresAt: Date.now() + 600000 });
@@ -107,7 +107,7 @@ describe('private approval decrypt through broker-bound ceremony', () => {
     expect(network).not.toHaveBeenCalled();
   });
 
-  it.each(['mutate', 'remove', 'new pull revision', 'reused ID metadata', 'label metadata', 'expiry metadata', 'different vault', 'account switch', 'sync error', 'conflict'])('invalidates outstanding approval on %s', async (mode) => {
+  it.each(['mutate', 'remove', 'new pull revision', 'reused ID metadata', 'label metadata', 'name metadata', 'expiry metadata', 'domain metadata', 'different vault', 'account switch', 'sync error', 'conflict'])('invalidates outstanding approval on %s', async (mode) => {
     const { session, crypto, cipher } = await seeded();
     await session.unlockVault(prf, {});
     let finish: (credential: any) => void = () => {};
@@ -130,11 +130,12 @@ describe('private approval decrypt through broker-bound ceremony', () => {
       network.mockResolvedValueOnce(new Response(null, { status: 409 }));
       await expect(session.addEntry('other-entry', SECRET)).rejects.toThrow('vault conflict');
     }
-    if (['new pull revision', 'reused ID metadata', 'label metadata', 'expiry metadata', 'different vault'].includes(mode)) {
+    if (['new pull revision', 'reused ID metadata', 'label metadata', 'name metadata', 'expiry metadata', 'domain metadata', 'different vault'].includes(mode)) {
       const nextPrf = mode === 'different vault' ? new Uint8Array(32).fill(8).buffer : prf;
       const updated = await crypto.encryptVault(await crypto.deriveMasterKey(nextPrf), {
         entries: { 'openai#2': { upstream: 'openai', apiKey: SECRET, addedAt: mode === 'reused ID metadata' ? 99 : 2,
-          ...(mode === 'label metadata' ? { label: 'new label' } : {}), ...(mode === 'expiry metadata' ? { expiresAt: 123456 } : {}) } },
+          ...(mode === 'label metadata' ? { label: 'new label' } : {}), ...(mode === 'name metadata' ? { name: 'new name' } : {}),
+          ...(mode === 'domain metadata' ? { domain: 'openai.com' } : {}), ...(mode === 'expiry metadata' ? { expiresAt: '2099-01-01' } : {}) } },
         updatedAt: mode === 'new pull revision' ? 3 : cipher.updatedAt,
       });
       network.mockImplementation(async (url: string) => url.endsWith('/auth/exchange')
@@ -156,10 +157,44 @@ describe('private approval decrypt through broker-bound ceremony', () => {
   });
 
   it('binds label and expiry metadata without forwarding keys embedded in labels', async () => {
-    const { session } = await seeded({ label: `label-${SECRET}`, expiresAt: 123456 });
+    const { session } = await seeded({ label: `label-${SECRET}`, expiresAt: '2099-01-01' });
     await session.approveRequestWithPasskey('r');
     const descriptor = broker.beginApproval.mock.calls[0][0].snapshot;
-    expect(descriptor.metadata).toEqual({ addedAt: 2, label: 'label-[REDACTED]', expiresAt: 123456 });
+    expect(descriptor.metadata).toEqual({ addedAt: 2, label: 'label-[REDACTED]', expiresAt: '2099-01-01' });
     expect(JSON.stringify(descriptor)).not.toContain(SECRET);
+  });
+
+  it('retains name, expiry and domain from the additive encrypted addEntry metadata', async () => {
+    const { session } = await seeded(); await session.unlockVault(prf, {});
+    await session.addEntry('anthropic', SECRET, { name: 'My key', expiresAt: '2099-01-01', domain: 'anthropic.com' });
+    session.lockVault(); network.mockClear();
+    broker.listRequests.mockResolvedValue([{ id: 'r', credential: 'anthropic' }]);
+    await session.approveRequestWithPasskey('r');
+    expect(broker.beginApproval.mock.calls[0][0].snapshot.metadata).toEqual({
+      addedAt: expect.any(Number), name: 'My key', expiresAt: '2099-01-01', domain: 'anthropic.com' });
+    expect(network).not.toHaveBeenCalled(); expect(session.isVaultUnlocked()).toBe(false);
+  });
+
+  it.each(['requested ID', 'decrypt ID'])('refuses device: aliases in the %s even if present in ciphertext', async (where) => {
+    const { session, crypto } = await seeded({}, { 'device:openai#2': { upstream: 'openai', apiKey: SECRET, addedAt: 1 } });
+    const decrypt = vi.spyOn(crypto, 'decryptVault');
+    if (where === 'requested ID') broker.listRequests.mockResolvedValue([{ id: 'r', credential: 'device:openai#2' }]);
+    else broker.beginApproval.mockImplementation(async ({ requestId, snapshot }) => ({ challenge: 'AQID', credentialId: 'BAUG', rpId: 'app.ks.aileena.xyz',
+      binding: { requestId, entryId: 'device:openai#2', snapshot } }));
+    await expect(session.approveRequestWithPasskey('r')).rejects.toThrow('entry not found');
+    expect(decrypt).not.toHaveBeenCalled(); expect(broker.approve).not.toHaveBeenCalled(); expect(network).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(where === 'requested ID' ? 0 : 1);
+  });
+
+  it.each(['before ceremony', 'during ceremony'])('refuses an expired entry %s without dispatch', async (when) => {
+    const expiry = Date.now() + 10000;
+    const { session } = await seeded({ expiresAt: new Date(expiry).toISOString() });
+    if (when === 'before ceremony') vi.spyOn(Date, 'now').mockReturnValue(expiry);
+    else {
+      const credential = await get(); get.mockClear();
+      get.mockImplementationOnce(async () => { vi.spyOn(Date, 'now').mockReturnValue(expiry); return credential; });
+    }
+    await expect(session.approveRequestWithPasskey('r')).rejects.toThrow('entry expired');
+    expect(broker.approve).not.toHaveBeenCalled(); expect(network).not.toHaveBeenCalled();
   });
 });
