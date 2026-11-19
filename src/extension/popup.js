@@ -1,4 +1,4 @@
-import { permissionFor } from './lib/policy.js';
+import { originPattern, permissionFor } from './lib/policy.js';
 
 const $ = (id) => document.getElementById(id);
 let selected = null;
@@ -20,7 +20,7 @@ function clearPending() {
 }
 function showPending(pending) {
   selected = pending;
-  selectedGrant = { origins: [`${pending.origin}/*`] };
+  selectedGrant = { origins: [originPattern(pending.origin)] };
   pendingUpdate = null;
   $('preview').textContent = pending.preview;
   $('origin').textContent = pending.origin;

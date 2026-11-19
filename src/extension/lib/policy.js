@@ -6,12 +6,17 @@ export const PROVIDER_ORIGINS = Object.freeze([
   'https://console.aws.amazon.com',
 ]);
 
+export function originPattern(origin) {
+  const { protocol, hostname } = new URL(origin);
+  return `${protocol}//${hostname}/*`;
+}
+
 export function permissionFor(url, origins = PROVIDER_ORIGINS) {
   try {
     const parsed = new URL(url);
     if (!origins.includes(parsed.origin) || parsed.username || parsed.password) return null;
     if (parsed.origin === 'https://github.com' && !/^\/settings(?:\/|$)/.test(parsed.pathname)) return null;
-    return `${parsed.origin}/*`;
+    return originPattern(parsed.origin);
   } catch {
     return null;
   }

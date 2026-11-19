@@ -3,7 +3,7 @@ import { webcrypto } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { LocalVault, audit } from '../src/extension/lib/vault.js';
 import { recognizeValue } from '../src/extension/lib/recognize.js';
-import { permissionFor, requireProvider } from '../src/extension/lib/policy.js';
+import { originPattern, permissionFor, requireProvider } from '../src/extension/lib/policy.js';
 
 const { samples } = JSON.parse(readFileSync('tests/fixtures/extension-acceptance/keys.json', 'utf8'));
 const patterns = samples.map((sample) => ({ provider: sample.provider, source: sample.regex }));
@@ -32,8 +32,8 @@ async function background({ allowed = true, data = {} as Record<string, any> } =
   };
   const source = readFileSync('src/extension/background.js', 'utf8').replace(/^import[^\n]+\n/gm, '');
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-  const api = await new AsyncFunction('chrome', 'LocalVault', 'audit', 'PROVIDER_ORIGINS', 'permissionFor', 'requireProvider', 'PATTERNS', 'recognizeValue', 'crypto', `${source}\nreturn { handle, handleSelection, menuOptions, state: () => pending, lock: () => vault.lock() };`)(
-    chrome, LocalVault, audit, [origin], (url) => permissionFor(url, [origin]), (url, permissions) => requireProvider(url, permissions, [origin]), patterns, (value) => recognizeValue(value, patterns), webcrypto,
+  const api = await new AsyncFunction('chrome', 'LocalVault', 'audit', 'PROVIDER_ORIGINS', 'originPattern', 'permissionFor', 'requireProvider', 'PATTERNS', 'recognizeValue', 'crypto', `${source}\nreturn { handle, handleSelection, menuOptions, state: () => pending, lock: () => vault.lock() };`)(
+    chrome, LocalVault, audit, [origin], originPattern, (url) => permissionFor(url, [origin]), (url, permissions) => requireProvider(url, permissions, [origin]), patterns, (value) => recognizeValue(value, patterns), webcrypto,
   );
   return { ...api, tab, data, grant: () => { allowed = true; }, injections: () => injections, close: () => removed(42), receive: (...args) => receive(...args) };
 }

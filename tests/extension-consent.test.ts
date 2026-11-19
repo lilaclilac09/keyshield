@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { webcrypto } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { recognizeValue, PATTERNS } from '../src/extension/lib/recognize.js';
-import { PROVIDER_ORIGINS, permissionFor, requireProvider } from '../src/extension/lib/policy.js';
+import { PROVIDER_ORIGINS, originPattern, permissionFor, requireProvider } from '../src/extension/lib/policy.js';
 import { LocalVault, ITERATIONS, audit } from '../src/extension/lib/vault.js';
 
 const directory = 'tests/fixtures/extension-acceptance/';
@@ -46,6 +46,20 @@ describe('single-value recognition (synthetic adapter)', () => {
 });
 
 describe('provider policy', () => {
+  it('drops non-default ports from permissions but preserves exact-origin policy and binding', async () => {
+    const boundOrigin = 'https://localhost:8443';
+    const grants: any[] = [];
+    const permissions = { async contains(grant) { grants.push(grant); return true; } };
+    expect(originPattern(boundOrigin)).toBe('https://localhost/*');
+    expect(permissionFor(`${boundOrigin}/keys`, [boundOrigin])).toBe('https://localhost/*');
+    await expect(requireProvider(`${boundOrigin}/keys`, permissions, [boundOrigin])).resolves.toBe(boundOrigin);
+    expect(grants).toEqual([{ origins: ['https://localhost/*'] }]);
+    for (const other of ['https://localhost', 'https://localhost:9443', 'http://localhost:8443']) {
+      expect(permissionFor(other, [boundOrigin])).toBeNull();
+      await expect(requireProvider(other, permissions, [boundOrigin])).rejects.toThrow('not a supported provider page');
+    }
+    expect(grants).toHaveLength(1);
+  });
   it('requires exact approved HTTPS origins and permission', async () => {
     expect(permissionFor('https://evil.test')).toBeNull();
     expect(permissionFor('https://platform.openai.com.evil.test')).toBeNull();
@@ -61,7 +75,8 @@ describe('provider policy', () => {
 
 describe('popup permission consent', () => {
   const clicks = [['add', '/popup.html'], ['save', '/popup.html'], ['confirm', '/popup.html'], ['fill', '/popup.html'], ['save', '/confirm.html'], ['confirm', '/confirm.html']];
-  it.each(clicks.flatMap(([button, pathname]) => [false, true].map((accepted) => ({ button, pathname, accepted }))))('$pathname $button requests permission synchronously before any other API (accepted=$accepted)', async ({ button, pathname, accepted }) => {
+  const cases = clicks.flatMap(([button, pathname]) => [false, true].flatMap((accepted) => ['https://platform.openai.com', 'https://localhost:8443'].map((tabOrigin) => ({ button, pathname, accepted, tabOrigin }))));
+  it.each(cases)('$pathname $button at $tabOrigin requests permission synchronously before any other API (accepted=$accepted)', async ({ button, pathname, accepted, tabOrigin }) => {
     const handlers = new Map<string, () => Promise<void>>();
     const nodes = new Map<string, any>();
     const document = { getElementById(id: string) {
@@ -73,7 +88,7 @@ describe('popup permission consent', () => {
     const calls: string[] = [];
     let inGesture = false;
     let allow = true;
-    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: 'https://platform.openai.com', providers: ['openai'], permissionNeeded: true };
+    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: tabOrigin, providers: ['openai'], permissionNeeded: true };
     const chrome = {
       runtime: { async sendMessage(message) {
         calls.push(message.type); messages.push(message.type);
@@ -81,7 +96,7 @@ describe('popup permission consent', () => {
         if (message.type === 'SAVE') return { ok: true, duplicate: true };
         return { ok: true, entries: [] };
       } },
-      tabs: { async query() { calls.push('query'); return [{ url: pathname === '/confirm.html' ? 'chrome-extension://unit/confirm.html' : 'https://platform.openai.com/api-keys' }]; } },
+      tabs: { async query() { calls.push('query'); return [{ url: pathname === '/confirm.html' ? 'chrome-extension://unit/confirm.html' : `${tabOrigin}/api-keys` }]; } },
       permissions: {
         async contains() { calls.push('contains'); return false; },
         request(grant) {
@@ -93,10 +108,11 @@ describe('popup permission consent', () => {
     };
     const source = readFileSync('src/extension/popup.js', 'utf8').replace(/^import[^\n]+\n/, '');
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-    await new AsyncFunction('permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(permissionFor, document, chrome, { addEventListener() {} }, { pathname }, function () {});
+    await new AsyncFunction('originPattern', 'permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(originPattern, (url) => permissionFor(url, [tabOrigin]), document, chrome, { addEventListener() {} }, { pathname }, function () {});
     expect(grants).toEqual([]);
     expect(messages).toEqual(['PENDING', 'LIST']);
-    expect(nodes.get('status').textContent).toBe('Permission needed for https://platform.openai.com');
+    expect(nodes.get('status').textContent).toBe(`Permission needed for ${tabOrigin}`);
+    expect(nodes.get('origin').textContent).toBe(tabOrigin);
     if (button === 'confirm') {
       inGesture = true;
       await handlers.get('save')!();
@@ -109,7 +125,7 @@ describe('popup permission consent', () => {
     const clicked = handlers.get(button)!();
     expect(calls[0]).toBe('request');
     await clicked;
-    expect(grants).toEqual([{ origins: ['https://platform.openai.com/*'] }]);
+    expect(grants).toEqual([{ origins: [originPattern(tabOrigin)] }]);
     const messageType = button === 'add' ? 'ADD' : button === 'fill' ? 'FILL' : 'SAVE';
     expect(messages.includes(messageType)).toBe(accepted);
     expect(calls).not.toContain('query');

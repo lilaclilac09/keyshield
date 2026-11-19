@@ -1,5 +1,5 @@
 import './browser-api.js';
-import { PROVIDER_ORIGINS, permissionFor, requireProvider } from './lib/policy.js';
+import { PROVIDER_ORIGINS, originPattern, permissionFor, requireProvider } from './lib/policy.js';
 import { PATTERNS, recognizeValue } from './lib/recognize.js';
 import { LocalVault, audit } from './lib/vault.js';
 
@@ -7,8 +7,11 @@ const vault = new LocalVault(chrome.storage.local);
 const providers = [...new Set(PATTERNS.map((pattern) => pattern.provider))];
 const menuOptions = {
   id: 'save-selection', title: 'Save selection to KeyShield', contexts: ['selection'],
-  documentUrlPatterns: PROVIDER_ORIGINS.flatMap((origin) => origin === 'https://github.com'
-    ? [`${origin}/settings`, `${origin}/settings/*`] : [`${origin}/*`]),
+  documentUrlPatterns: PROVIDER_ORIGINS.flatMap((origin) => {
+    const pattern = originPattern(origin);
+    return origin === 'https://github.com'
+      ? [pattern.replace('/*', '/settings'), pattern.replace('/*', '/settings/*')] : [pattern];
+  }),
 };
 let pending = null;
 let serial = (async () => {
