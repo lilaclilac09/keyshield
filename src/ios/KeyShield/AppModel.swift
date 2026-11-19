@@ -231,11 +231,12 @@ final class AppModel: ObservableObject {
         let url = vault.location.directory.appendingPathComponent("KeyShield-backup.ksbackup")
         try Cipher.write(data, to: url); backupURL = url; refresh()
     }
-    func restore(_ url: URL, passphrase: String) throws {
+    func restore(_ url: URL, passphrase: String) throws -> RestoreResult {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        try backup.restore(Data(contentsOf: url), passphrase: passphrase)
+        let result = try backup.restore(Data(contentsOf: url), passphrase: passphrase)
         revealed.removeAll(); revealExpiry.removeAll(); revokeAll(); refresh()
+        return result
     }
     func exportActivity() {
         perform {

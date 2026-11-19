@@ -148,7 +148,10 @@ struct BackupView: View {
                         if mode == .export { try model.exportBackup(passphrase: passphrase); message = "Encrypted backup ready to share." }
                         else {
                             guard let selectedURL else { return }
-                            try model.restore(selectedURL, passphrase: passphrase); message = "Vault restored successfully. Agent sessions were revoked."
+                            let result = try model.restore(selectedURL, passphrase: passphrase)
+                            message = result == .restored
+                                ? "Vault restored successfully. Agent sessions were revoked."
+                                : "Vault restored and agent sessions revoked, but the activity event could not be recorded."
                         }
                         succeeded = true; passphrase = ""
                     } catch {

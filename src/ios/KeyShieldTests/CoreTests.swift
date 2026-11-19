@@ -253,6 +253,21 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try sessions.validate(token, method: "POST", url: url))
         try service.restore(empty, passphrase: "synthetic passphrase"); XCTAssertTrue(try vault.list().isEmpty)
     }
+    func testRestoreAuditFailureReportsCommittedStateWithoutThrowing() throws {
+        let id = try entry()
+        let service = BackupService(vault: vault, audit: audit)
+        let backup = try service.export(passphrase: "audit failure backup")
+        try vault.rotate(id, value: second)
+        let session = try token(id)
+        let brokenAudit = AuditLog(url: directory.appendingPathComponent("vault.json/child"), key: { try self.vault.vaultKey() })
+        let result = try BackupService(vault: vault, audit: brokenAudit).restore(backup, passphrase: "audit failure backup")
+        XCTAssertEqual(result, .restoredWithoutAudit)
+        XCTAssertEqual(try vault.list().first?.version, 1)
+        let operation = Operation(kind: .reveal, keyId: id)
+        XCTAssertEqual(try vault.withSecret(id, authorization: grant(operation), operation: operation) { $0 }, value)
+        XCTAssertThrowsError(try sessions.validate(session, method: "POST", url: url))
+        XCTAssertEqual(try service.restore(backup, passphrase: "audit failure backup"), .restored)
+    }
     func testRestoreRecoversMigratedVaultWithoutDeviceKey() throws {
         let id = try entry(), originalKey = try XCTUnwrap(keys.key)
         let log = AuditLog(clock: clock, url: directory.appendingPathComponent("audit.jsonl"), key: { try self.vault.vaultKey() })

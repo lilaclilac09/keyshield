@@ -1,6 +1,8 @@
 import Foundation
 import CommonCrypto
 
+enum RestoreResult { case restored, restoredWithoutAudit }
+
 final class BackupService {
     private struct Envelope: Codable { let salt: Data; let ciphertext: Data }
     private struct Entry: Codable { let metadata: VaultEntry; let value: Data }
@@ -26,7 +28,8 @@ final class BackupService {
         try audit.append(actor: .human, action: .backup, outcome: .success)
         return result
     }
-    func restore(_ data: Data, passphrase: String) throws {
+    @discardableResult
+    func restore(_ data: Data, passphrase: String) throws -> RestoreResult {
         try vault.lock.requireUnlocked()
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
         let entries = try JSONDecoder().decode([Entry].self, from: Cipher.open(envelope.ciphertext, key: derive(passphrase, salt: envelope.salt)))
@@ -43,6 +46,8 @@ final class BackupService {
         }
         try vault.commit(records)
         vault.sessions.revokeAll()
-        try audit.append(actor: .human, action: .restore, outcome: .success)
+        do { try audit.append(actor: .human, action: .restore, outcome: .success) }
+        catch { return .restoredWithoutAudit }
+        return .restored
     }
 }
