@@ -1,6 +1,7 @@
 import { addEntry, isVaultUnlocked } from './vault-session';
 import { containsSavingSecret, registerSavingSecret } from './secret-guard';
 import type { VaultEntryMetadata } from './vault';
+import { VaultSyncChangeError } from './vault-sync-status';
 
 export const DEVICE_VAULT_REQUIRED = 'Keys are saved only on this device. Unlock or create your device vault to save.';
 export const DEVICE_CALL_SKIPPED = "Saved on this device. Call skipped — device-local keys aren't sent to KeyShield.";
@@ -26,7 +27,7 @@ export async function saveKeyOnDevice(upstream: string, rawKey: string, metadata
     }
     await addEntry(upstream, rawKey, safeMetadata);
   } catch (err) {
-    if (err instanceof DeviceVaultRequiredError) throw err;
+    if (err instanceof DeviceVaultRequiredError || err instanceof VaultSyncChangeError) throw err;
     throw new Error('Device vault save failed. Unlock the vault and retry.');
   } finally {
     release();

@@ -12,6 +12,7 @@
  */
 
 import { setZkRootFromPrf, clearZkRoot } from './zk';
+import { reportVaultSyncChange, VaultSyncChangeError } from './vault-sync-status';
 import {
   decryptVault,
   deriveMasterKey,
@@ -23,7 +24,7 @@ import {
   type VaultPlaintext,
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
-import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
+import { makeHttpSyncBackend, SyncAuthError, SyncHttpError, type SyncBackend } from './sync';
 import { PROD_SYNC_URL, usePublicControlPlaneFallback } from './host-deploy';
 
 export const SYNC_URL: string = (() => {
@@ -230,12 +231,13 @@ export async function addEntry(upstream: string, apiKey: string, metadata: Vault
 }
 
 export async function removeEntry(upstream: string): Promise<void> {
+  if (_state && !Object.hasOwn(_state.plaintext.entries, upstream)) return;
   await mutate((p) => {
     delete p.entries[upstream];
-  });
+  }, 'delete');
 }
 
-async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
+async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete' = 'save'): Promise<void> {
   if (!_state) throw new Error('vault locked');
   const next: VaultPlaintext = {
     entries: { ..._state.plaintext.entries },
@@ -253,14 +255,27 @@ async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
   if (Object.values(next.entries).some(({ apiKey }) => apiKey && outgoing.includes(JSON.stringify(apiKey).slice(1, -1)))) {
     throw new Error('Refusing unsafe vault sync payload');
   }
-  const result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  let result;
+  try {
+    result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  } catch (err) {
+    const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
+      ? 'expired'
+      : err instanceof SyncHttpError
+        ? err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
+        : 'unreachable';
+    reportVaultSyncChange(operation, false, reason);
+    throw new VaultSyncChangeError(operation, reason);
+  }
   if (result === 'conflict') {
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
     // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
     // protects against silent overwrite (we threw, caller can retry).
-    throw new Error('vault conflict — another device wrote first; reload to refresh');
+    reportVaultSyncChange(operation, false, 'conflict');
+    throw new VaultSyncChangeError(operation, 'conflict');
   }
   _state.plaintext = next;
+  reportVaultSyncChange(operation, true);
 }
 
 export class VaultLockedError extends Error {

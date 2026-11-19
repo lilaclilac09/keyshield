@@ -9,6 +9,7 @@ import { DeviceVaultConsent } from '../DeviceVaultConsent';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
 import { humanActionError } from '../../lib/human-usable';
+import { VaultSyncChangeError } from '../../lib/vault-sync-status';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -59,6 +60,10 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       setPaste('');
     } catch (err) {
       setNeedsVault(err instanceof DeviceVaultRequiredError);
+      if (err instanceof VaultSyncChangeError) {
+        emitAppFeedback({ kind: 'error', title: 'Save failed', source: 'save' });
+        return;
+      }
       const detail = humanActionError('vault-save', err);
       setMsg(detail);
       emitAppFeedback({ kind: 'error', title: 'Save failed', detail, source: 'save' });
