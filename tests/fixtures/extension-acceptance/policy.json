@@ -1,7 +1,8 @@
 {
   "synthetic_only": true,
   "allowed_capture_origins": [
-    "https://dashboard.provider.test"
+    "https://dashboard.provider.test",
+    "https://dashboard.second-provider.test"
   ],
   "approved_provider_origin": "https://api.provider.test",
   "untrusted_origin": "https://evil.test",
