@@ -8,7 +8,7 @@ const destination = resolve(process.argv[2] || 'dist/extension');
 if (destination === source || source.startsWith(`${destination}/`) || destination.startsWith(`${source}/lib`)) throw new Error('Choose a separate output directory');
 await mkdir(destination, { recursive: true });
 await rm(resolve(destination, 'lib'), { recursive: true, force: true });
-for (const file of ['background.js', 'browser-api.js', 'popup.js', 'popup.html', 'confirm.html', 'lib']) {
+for (const file of ['background.js', 'browser-api.js', 'popup.js', 'popup.html', 'confirm.html', 'popup.css', 'assets', 'lib']) {
   await cp(resolve(source, file), resolve(destination, file), { recursive: true });
 }
 const manifest = JSON.parse(await readFile(resolve(source, 'manifest.json'), 'utf8'));

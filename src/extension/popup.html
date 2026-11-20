@@ -1,41 +1,55 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KeyShield device vault</title>
-<style>
-body { font: 14px system-ui; width: 350px; padding: 16px; color: #172435; background: #f6f8fb; }
-h1 { font-size: 22px; margin: 0 0 8px; }
-button, input, select { box-sizing: border-box; padding: 9px; margin: 5px 0; width: 100%; }
-button { cursor: pointer; }
-label { display: block; margin-top: 8px; }
-#status { min-height: 36px; overflow-wrap: anywhere; }
-[hidden] { display: none !important; }
-</style>
-<h1>KeyShield</h1>
-<p>Device-local. Nothing saved until you choose Save.</p>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header class="brand">
+<img class="brand-mark" src="assets/logo.svg" alt="" width="42" height="42">
+<div><h1>KeyShield</h1><p class="eyebrow">Extension vault</p></div>
+</header>
+<p class="intro">Device-local. Nothing saved until you choose Save.</p>
+<section class="card" aria-label="Device vault">
+<h2>Device vault</h2>
 <label>Vault passphrase (12+ characters)<input id="passphrase" type="password" autocomplete="off"></label>
-<button id="unlock">Create / unlock vault</button>
+<div class="button-row">
+<button id="unlock" class="primary">Create / unlock vault</button>
 <button id="lock">Lock vault</button>
+</div>
+<div class="idle-row">
 <label>Idle lock (seconds)<input id="idle" type="number" value="60" min="1" max="3600"></label>
-<button id="set-idle">Set idle lock</button>
-<hr>
-<section id="add-form">
-<label>Paste or type one key<input id="key-value" type="password" autocomplete="off"></label>
-<button id="add">Add key</button>
+<button id="set-idle" class="secondary">Set idle lock</button>
+</div>
 </section>
-<section id="confirmation" hidden>
+<section id="add-form" class="card">
+<h2>Add a key</h2>
+<label>Paste or type one key<input id="key-value" type="password" autocomplete="off"></label>
+<button id="add" class="secondary">Add key</button>
+</section>
+<section id="confirmation" class="card" hidden>
+<h2>Review before saving</h2>
 <p id="preview"></p>
-<p id="origin"></p>
+<p class="storage-note">Will save to: <strong>this device only</strong> (encrypted extension vault — not the dashboard/Device Vault)</p>
+<p class="binding">Can fill on: <span id="origin"></span></p>
 <label>Provider<select id="provider"></select></label>
 <label>Label<input id="label" maxlength="100"></label>
-<button id="save">Save</button>
+<button id="save" class="primary">Save</button>
 <button id="confirm" hidden>Already saved — Update label?</button>
 <button id="cancel">Cancel</button>
 </section>
-<hr>
+<section class="card" aria-label="Saved keys">
+<h2>Saved keys</h2>
 <label>Saved keys<select id="entries"></select></label>
-<button id="fill">Fill into this page</button>
-<p id="status" role="status"></p>
+<ul id="entry-list" class="saved-keys" aria-label="Saved key storage and origins"></ul>
+<p id="fill-availability" class="availability"></p>
+<button id="fill" class="primary" aria-describedby="fill-availability">Fill into this page</button>
+</section>
+<p id="status" class="status" role="status"></p>
+<p class="footer">Encrypted on this device · never synced to the dashboard</p>
 <script src="browser-api.js"></script>
 <script type="module" src="popup.js"></script>
+</body>
 </html>
