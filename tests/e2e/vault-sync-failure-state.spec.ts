@@ -73,8 +73,8 @@ for (const failure of ['503', 'network', 'conflict', '401', '403', '413', '400']
     const rejection = failure === '401' || failure === '403'
       ? 'vault sync session expired. Lock and unlock the vault, then try again.'
       : failure === '413' ? 'the vault is too large to sync.' : failure === '400' ? 'vault sync rejected the change.' : null;
-    const saveError = rejection ? `Key NOT saved: ${rejection}` : failure === 'conflict' ? 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.' : saveUnavailable;
-    const deleteError = rejection ? `Entry NOT deleted: ${rejection}` : failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.' : deleteUnavailable;
+    const saveError = rejection ? `Key NOT saved: ${rejection}` : failure === 'conflict' ? 'Key NOT saved: the vault changed in another tab/device. Reload and unlock to refresh.' : saveUnavailable;
+    const deleteError = rejection ? `Entry NOT deleted: ${rejection}` : failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed in another tab/device. Reload and unlock to refresh.' : deleteUnavailable;
     let down = true;
     let puts = 0;
     let polls = 0;

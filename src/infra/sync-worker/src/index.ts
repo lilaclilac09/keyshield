@@ -86,7 +86,7 @@ app.use(
       'https://app.keyshield.dev',
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Vault-Base-Revision'],
     credentials: true,
     maxAge: 600,
   }),
@@ -205,8 +205,8 @@ app.put('/vault/:id', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'invalid cipher shape', issues: parsed.error.issues }, 400);
   }
-  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data);
-  if (!ok) return c.json({ error: 'stale write — pull and retry' }, 409);
+  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data, c.req.header('X-Vault-Base-Revision'));
+  if (!ok) return c.json({ error: 'vault changed in another tab/device — reload and unlock to refresh' }, 409);
   return c.json({ ok: true });
 });
 

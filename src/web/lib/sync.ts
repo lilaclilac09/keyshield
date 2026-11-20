@@ -9,8 +9,7 @@
  *
  * Conflict handling is intentionally split: this module surfaces a
  * 409 as `'conflict'` and otherwise hands the cipher back unchanged.
- * The pull → merge → push retry loop lives in the caller, where it
- * has access to the unwrapped vault state.
+ * The caller surfaces conflicts without automatically retrying or merging.
  */
 import type { VaultCipher } from './vault';
 import { assertSafeRequest } from './secret-guard';
@@ -43,13 +42,14 @@ export interface SyncBackend {
 
   /**
    * PUT /vault/:id. Returns 'ok' on 200 and 'conflict' on 409 — the
-   * caller is expected to pull, merge, and retry. Throws
+   * caller must refresh its session before retrying a conflict. Throws
    * SyncAuthError on 401.
    */
   push(
     vaultId: string,
     cipher: VaultCipher,
     getToken: () => string | null,
+    baseRevision: number | null,
   ): Promise<'ok' | 'conflict'>;
 
   /** DELETE /vault/:id. Throws SyncAuthError on 401. */
@@ -104,13 +104,14 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
       return json;
     },
 
-    async push(vaultId, cipher, getToken) {
+    async push(vaultId, cipher, getToken, baseRevision) {
       const url = vaultUrl(syncUrl, vaultId);
       const options = {
         method: 'PUT',
         headers: {
           ...authHeaders(getToken),
           'Content-Type': 'application/json',
+          'X-Vault-Base-Revision': baseRevision === null ? 'none' : String(baseRevision),
         },
         body: JSON.stringify(cipher),
       };

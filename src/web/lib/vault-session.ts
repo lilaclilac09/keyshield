@@ -89,6 +89,7 @@ interface SessionState {
   bearer: BearerHolder;
   sync: SyncBackend;
   plaintext: VaultPlaintext;
+  baseRevision: number | null;
 }
 
 let _state: SessionState | null = null;
@@ -221,7 +222,7 @@ async function unlockVaultSession(prfOutput: ArrayBuffer, assertion: unknown) {
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
   retainApprovalSnapshot(vaultId, cipher, plaintext);
 
-  _state = { vaultId, masterKey, bearer, sync, plaintext };
+  _state = { vaultId, masterKey, bearer, sync, plaintext, baseRevision: cipher?.updatedAt ?? null };
   setCachedVaultId(vaultId);
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
@@ -373,12 +374,14 @@ async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'dele
 
 async function mutateSession(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete'): Promise<void> {
   if (!_state) throw new Error('vault locked');
+  const session = _state;
+  const baseRevision = session.baseRevision;
   const next: VaultPlaintext = {
-    entries: { ..._state.plaintext.entries },
-    updatedAt: Date.now(),
+    entries: { ...session.plaintext.entries },
+    updatedAt: Math.max(Date.now(), (baseRevision ?? -1) + 1),
   };
   fn(next);
-  const cipher = await encryptVault(_state.masterKey, next);
+  const cipher = await encryptVault(session.masterKey, next);
   const payload = {
     version: cipher.version,
     iv: cipher.iv,
@@ -391,7 +394,7 @@ async function mutateSession(fn: (p: VaultPlaintext) => void, operation: 'save' 
   }
   let result;
   try {
-    result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+    result = await session.sync.push(session.vaultId, payload, () => session.bearer.get(), baseRevision);
   } catch (err) {
     const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
       ? 'expired'
@@ -402,14 +405,13 @@ async function mutateSession(fn: (p: VaultPlaintext) => void, operation: 'save' 
     throw new VaultSyncChangeError(operation, reason);
   }
   if (result === 'conflict') {
-    // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
-    // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
-    // protects against silent overwrite (we threw, caller can retry).
     reportVaultSyncChange(operation, false, 'conflict');
     throw new VaultSyncChangeError(operation, 'conflict');
   }
-  _state.plaintext = next;
-  retainApprovalSnapshot(_state.vaultId, payload, next);
+  if (_state !== session) throw new VaultLockedError();
+  session.plaintext = next;
+  session.baseRevision = payload.updatedAt;
+  retainApprovalSnapshot(session.vaultId, payload, next);
   reportVaultSyncChange(operation, true);
 }
 

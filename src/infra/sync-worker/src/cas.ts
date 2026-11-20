@@ -1,11 +1,8 @@
 /**
  * Compare-and-set logic for vault writes.
  *
- * The contract: a PUT /vault/:id only succeeds if the incoming
- * `updatedAt` is strictly greater than what's already stored. This
- * gives us optimistic concurrency without a database — two devices
- * editing the same vault at the same wall-clock millisecond will see
- * one push fail with 409, prompting a pull-merge-retry on the client.
+ * Revision-aware clients must build on the stored revision and win
+ * an atomic conditional R2 write. Legacy clients retain timestamp ordering.
  *
  * The vault payload itself is opaque to us — we only inspect the
  * `updatedAt` field for ordering. Everything else is end-to-end
@@ -58,30 +55,33 @@ export async function readVaultWithEtag(
 }
 
 /**
- * Try to write `cipher` for `vaultId`. Returns true on success, false
- * if the existing stored cipher's updatedAt is >= cipher.updatedAt.
- *
- * Note: R2 doesn't have native CAS. The race window between
- * read-then-write is small — milliseconds — but two concurrent writes
- * to the same vault could in principle both succeed. The on-chain
- * `updatedAt` ordering still gives us last-write-wins, just not strict
- * linearizability. For Path A this is acceptable: any "loss" still
- * leaves the user with a consistent ciphertext that the next pull
- * will reflect.
+ * Returns false on a revision mismatch or a lost conditional-write race.
+ * An absent base revision preserves the legacy timestamp-only rule.
  */
 export async function writeVault(
   bucket: R2Bucket,
   vaultId: string,
   cipher: VaultCipher,
+  baseRevision?: string,
 ): Promise<boolean> {
-  const existing = await readVault(bucket, vaultId);
+  const { cipher: existing, etag } = await readVaultWithEtag(bucket, vaultId);
+  if (baseRevision !== undefined) {
+    if (baseRevision === 'none') {
+      if (etag !== null) return false;
+    } else if (!/^(0|[1-9]\d*)$/.test(baseRevision) || !existing || existing.updatedAt !== Number(baseRevision)) {
+      return false;
+    }
+  }
   if (existing && existing.updatedAt >= cipher.updatedAt) {
     return false;
   }
-  await bucket.put(vaultId, JSON.stringify(cipher), {
+  const written = await bucket.put(vaultId, JSON.stringify(cipher), {
     httpMetadata: { contentType: 'application/json' },
+    ...(baseRevision === undefined ? {} : {
+      onlyIf: etag === null ? { etagDoesNotMatch: '*' } : { etagMatches: etag },
+    }),
   });
-  return true;
+  return baseRevision === undefined || written !== null;
 }
 
 export async function deleteVault(

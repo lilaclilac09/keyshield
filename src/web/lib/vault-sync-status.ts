@@ -1,7 +1,7 @@
 export const SAVE_SYNC_FAILED = 'Key NOT saved because vault sync could not be reached. Press Save again once vault sync is back.';
 export const DELETE_SYNC_FAILED = 'Entry NOT deleted and is still in the vault. Delete again after vault sync returns.';
-export const SAVE_SYNC_CONFLICT = 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.';
-export const DELETE_SYNC_CONFLICT = 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.';
+export const SAVE_SYNC_CONFLICT = 'Key NOT saved: the vault changed in another tab/device. Reload and unlock to refresh.';
+export const DELETE_SYNC_CONFLICT = 'Entry NOT deleted and is still in the vault: the vault changed in another tab/device. Reload and unlock to refresh.';
 
 type FailureReason = 'unreachable' | 'conflict' | 'expired' | 'too-large' | 'rejected';
 
