@@ -26,6 +26,9 @@ set.
 | `request-audit.cjs` | Opt-in, value-free HTTP(S) request shape audit |
 | `runtime-preflight.cjs` | Checks a packaged `.app` for its Chromium runtime files |
 | `boot.html` | Diagnostics screen shown when the dashboard cannot open |
+| `loading.html` | Local navy shield screen shown before the dashboard loads |
+| `assets/dmg-background.png` | Finder installer artwork (editable source: adjacent SVG) |
+| `assets/app-icon.png` | Transparent 1024px shield master (adjacent SVG); sips + iconutil generate all Mac sizes |
 | `scripts/build-renderer.cjs` | Builds `src/web` and verifies the output is complete |
 | `scripts/pack-mac.cjs` | Packs `KeyShield.app` (+ zip, and a DMG on macOS) |
 | `OPEN-ME.txt` | Install instructions shipped in the zip |
@@ -48,6 +51,16 @@ Output lands in `release/`:
 - `KeyShield.dmg.build-info.json` — full desktop/renderer commit and tree
   SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
   (renderer parent SHAs identify revisions included in integration merges)
+
+Set `KS_DESKTOP_RELEASE_DIR=/absolute/new/output` to keep earlier artifacts intact.
+The Mac pack step requires a logged-in Finder session with AppleScript automation
+available. It creates a writable HFS+ image, records the background, window bounds
+and icon positions in Finder, detaches it, then converts it to compressed UDZO.
+Missing Finder metadata fails the build instead of silently shipping an unstyled
+image. The hidden `.background/installer.png` and `.DS_Store` are presentation
+data, not install helpers. BUILD-INFO and OPEN-ME remain visible below the app.
+The SVG uses the shared login shield geometry and app.ks palette; the committed
+720×560 PNG needs no image-generation dependency at packaging time.
 
 To build with another reviewed integration pin without switching the desktop
 checkout:
@@ -73,6 +86,145 @@ its own final checksum without changing that checksum.
 `.dmg` is not a launchable Mac app). `npm run verify` syntax-checks every
 script in this folder.
 
+## Mac App Store / TestFlight build
+
+On macOS run `npm run pack:mas`. This reuses the DMG renderer pin,
+provenance, icon, resources and preflight, but downloads Electron's **MAS**
+runtime and builds a universal arm64+x64 app under `release/mas/`.
+Without signing inputs it ad-hoc signs the sandboxed app, labels BUILD-INFO
+**Local synthetic MAS sandbox check — not App Store signed**, and skips pkg.
+`npm run pack` remains the existing unsigned DMG/zip path.
+
+For a distribution pkg, supply all of:
+
+- `KS_MAS_APP_IDENTITY`: installed `Apple Distribution: …` signing identity.
+- `KS_MAS_INSTALLER_IDENTITY`: installed `3rd Party Mac Developer Installer: …`
+  or `Mac Installer Distribution: …` identity.
+- `KS_MAS_PROVISIONING_PROFILE`: path to the distribution `.provisionprofile`,
+  embedded by osx-sign; it must authorize `xyz.aileena.keyshield`.
+- `KS_MAS_TEAM_ID`: ten-character Apple team id matching that profile.
+- `KS_MAS_BUILD_NUMBER`: numeric bundle version, increased for every upload.
+- `KS_MAS_NON_EXEMPT_ENCRYPTION`: exactly `true` or `false`. This is the
+  owner's legal encryption declaration; signing/pkg refuses to guess it.
+
+Then `npm run pack:mas` signs using `@electron/osx-sign` and creates
+`release/mas/KeyShield-mas.pkg` with `productbuild`. No upload is performed;
+the owner must review encryption/export compliance, signing and App Store
+Connect setup before uploading via Apple's tools for TestFlight. No testers
+or public links are created. Real signing/upload cannot be validated without
+the owner's identities, profile and App Store Connect access.
+
+Sandbox audit: the shell spawns no external processes and opens no local
+listening sockets; `renderer-server.cjs` reads bundled files through Electron's
+HTTPS handler. Only outbound network access is entitled. There is no broker
+runtime in this desktop checkout; packaging excludes scripts/e2e and asserts
+that broker/approval/mock files are absent. MAS disables live/local sync and
+external renderer overrides, request-audit file writes, and log path overrides.
+Logs use Electron's container-aware logs directory, normally
+`~/Library/Containers/xyz.aileena.keyshield/Data/Library/Logs/KeyShield/`.
+Reveal-log uses Finder for that owned log; external HTTPS links use Launch
+Services. No file-access, server or keychain-group entitlements are requested.
+Electron's Mach-port rendezvous needs an application group: the bundle id for
+local ad-hoc checks, or `TEAMID.xyz.aileena.keyshield` when signing (authorize it
+in the distribution profile). MAS skips Electron's unsupported single-instance
+lock API. Helpers inherit the sandbox; no login helper is installed.
+
+### Synthetic-only beta boundary (not a functional private beta yet)
+
+#### Required fixture renderer contract
+
+`pack:mas` builds the pinned renderer with
+`VITE_KEYSHIELD_RENDERER_PROFILE=mas-fixture`. The renderer owner must bake
+`__KEYSHIELD_RENDERER_PROFILE__` and emit a dist-root `renderer-profile.json`
+containing `{"profile":"mas-fixture","commit":"<full pinned SHA>"}`.
+Ordinary renderer builds use `standard`; the DMG path does not select or
+validate the MAS profile. The current #154 pin is intentionally rejected:
+it does not implement this contract. A tested fixture renderer and verified
+replacement pin are required before another MAS app can be produced.
+
+Before packaging and again inside the bundle, the MAS gate requires that
+marker and matching commit, and scans every renderer file (including maps)
+for `keyshield-production.up.railway.app`, `sync.ks.aileena.xyz`,
+`app.ks.aileena.xyz`, `accounts.google.com`, `unpkg.com`,
+`fonts.googleapis.com`, and broker/approval bridge identifiers. Symlinked
+assets are refused. `BUILD-INFO.txt` records the renderer profile, commit,
+and SHA-256 of the exact marker bytes. This supplements, not replaces,
+the existing exact commit/tree/parent/input-closure provenance verification.
+String scans are a regression gate, not proof against encoded/dynamic URLs
+or an assertion that credential forms are absent.
+
+Runtime contract for the renderer owner: fixture mode must refuse to mount
+unless `window.keyshieldDesktop?.syntheticOnly === true`. The shell exposes
+that frozen boolean and requires the fixture profile at MAS packaging time;
+the permanent network block remains in force. Fixture mode must use a
+dedicated entry graph that omits auth/token/Google forms, ordinary backend
+clients, external fonts/CDNs and broker code. Auto-enter only the bundled
+synthetic identity. Expose one immutable fixture: label `Demo key`, value
+`FAKE_KEYSHIELD_NOT_A_KEY::demo`; reject every other value at every save/import
+entry, not merely values missing the prefix. No free-text credential input.
+
+Persist fixture ciphertext in a versioned localStorage or IndexedDB namespace
+in the existing `persist:keyshield` partition. Do not reuse ordinary auth or
+vault keys. Derive the fixture encryption key from a bundled, explicitly
+public fixture seed with a fixture-specific HKDF context. Lock clears the
+in-memory key/plaintext; a fixed “Unlock demo” action re-derives it and
+revalidates that the decrypted state contains only the one fixture. No
+WebAuthn, passphrase prompt, production endpoint or relay is needed. This
+is a demonstration of lock/reopen mechanics, not security for real secrets.
+The installed proof must cover fresh launch, fixture save, lock/unlock and
+quit/reopen with no broker or external traffic, and reject tampered state.
+
+Every MAS build embeds a read-only `Resources/beta-policy.json`. MAS runtime
+**or presence** of this file enables the boundary, even if its JSON is invalid
+or says false. There is no environment or CLI opt-out. Both the default session
+and every newly created session cancel HTTP(S)/WS(S) requests except GET/HEAD
+to the exact bundled dashboard origin, which is answered from disk without a
+network fallback. Main-process `net.fetch`, `net.request` and global `fetch`
+are guarded too. External navigation, popups and `shell.openExternal` are
+disabled; the live-dashboard/API-health menu items are omitted. Block logs
+contain only `host … blocked`, never paths, queries, bodies or input values.
+
+No synthetic authentication/sync responder is shipped. The pinned renderer
+needs `/auth/signup` or `/auth/login`, WebAuthn passkey options/verification,
+authenticator PRF output, sync `/auth/register`, `/auth/challenge`,
+`/auth/exchange`, and GET/PUT `/vault/:id`. Safely simulating that whole flow
+would require a substantial mock and authenticator fixtures, not a small
+in-process responder. All these network calls are blocked, so a fresh beta
+cannot sign in, enroll/unlock Device Vault, or complete a save. A manually
+entered synthetic session token can expose the UI but does not unlock a vault.
+
+The preload exposes `keyshieldDesktop.syntheticOnly` for future renderer
+integration; this pinned renderer does **not** consume it. The shell cannot
+inspect plaintext inside encrypted vault payloads and cannot prevent typing
+a realistic-looking key into renderer memory. Before this can be described
+as accepting only synthetic keys, the renderer owner must reject values not
+starting with `FAKE_KEYSHIELD_NOT_A_KEY::` in `saveKeyOnDevice` before encryption
+and all other key-import/save entry points, and provide a dedicated synthetic
+auth/PRF flow. Do not enter real credentials. No successful synthetic save or
+real-key rejection is claimed by this build. The existing Playwright Electron
+harness also needs inspector/DevTools listeners denied by these unchanged
+sandbox entitlements; do not grant server access just for tests.
+
+Local experiment (2026-11-20 UTC): rebased on the branded DMG shell
+`ad98300ece8386149352d4c55e22497f39540694`, with its unmodified renderer pin
+`9170938d0f3ab2f1d75b449513344c0a182b8963`. Fresh-container launch displayed
+the bundled sign-in page; email sign-in and sign-up with a `.test` identity
+failed at the network boundary. Entering a deliberately fake session token
+exposed the Vault UI without authenticating or unlocking it. Clicking Save
+with `FAKE_KEYSHIELD_NOT_A_KEY::demo` produced “Unrecognized key format”; a
+realistic but fake `sk-proj-…` value was recognized, then rejected because the
+Device Vault was locked. Neither saved a key. This is **not** a synthetic-key
+prefix enforcement result. The renderer still requires the guard described
+above. Evidence is stored outside the repo in `~/mas-evidence/final-*`:
+screenshots, container logs, process/socket snapshots and packet captures.
+Process-filtered captures recorded no packets; a simultaneous system-wide
+DNS/TCP-SYN capture provides an independent cross-check. These observations
+cover the exercised paths, not a proof about every possible future renderer
+or Chromium network feature.
+The MAS options reuse the shell's `createPackagerIgnore()`, including its
+resolved custom release-directory exclusion; the packaged archive was also
+checked for nested release/output artifacts.
+
 ## Install
 
 Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.
@@ -85,7 +237,8 @@ build.
 
 ## How launch works
 
-1. The pack script builds the `src/web` dashboard and bundles it as
+1. After preflight succeeds, the shell displays its local navy loading screen.
+   The pack script builds the `src/web` dashboard and bundles it as
    `Contents/Resources/renderer/`. The app loads that copy through a
    session-only https intercept for `app.ks.aileena.xyz`, so the window
    works offline. Packaged builds never fall back to hosted dashboard content;
