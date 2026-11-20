@@ -129,6 +129,39 @@ local ad-hoc checks, or `TEAMID.xyz.aileena.keyshield` when signing (authorize i
 in the distribution profile). MAS skips Electron's unsupported single-instance
 lock API. Helpers inherit the sandbox; no login helper is installed.
 
+### Synthetic-only beta boundary (not a functional private beta yet)
+
+Every MAS build embeds a read-only `Resources/beta-policy.json`. MAS runtime
+**or presence** of this file enables the boundary, even if its JSON is invalid
+or says false. There is no environment or CLI opt-out. Both the default session
+and every newly created session cancel HTTP(S)/WS(S) requests except GET/HEAD
+to the exact bundled dashboard origin, which is answered from disk without a
+network fallback. Main-process `net.fetch`, `net.request` and global `fetch`
+are guarded too. External navigation, popups and `shell.openExternal` are
+disabled; the live-dashboard/API-health menu items are omitted. Block logs
+contain only `host … blocked`, never paths, queries, bodies or input values.
+
+No synthetic authentication/sync responder is shipped. The pinned renderer
+needs `/auth/signup` or `/auth/login`, WebAuthn passkey options/verification,
+authenticator PRF output, sync `/auth/register`, `/auth/challenge`,
+`/auth/exchange`, and GET/PUT `/vault/:id`. Safely simulating that whole flow
+would require a substantial mock and authenticator fixtures, not a small
+in-process responder. All these network calls are blocked, so a fresh beta
+cannot sign in, enroll/unlock Device Vault, or complete a save. A manually
+entered synthetic session token can expose the UI but does not unlock a vault.
+
+The preload exposes `keyshieldDesktop.syntheticOnly` for future renderer
+integration; this pinned renderer does **not** consume it. The shell cannot
+inspect plaintext inside encrypted vault payloads and cannot prevent typing
+a realistic-looking key into renderer memory. Before this can be described
+as accepting only synthetic keys, the renderer owner must reject values not
+starting with `FAKE_KEYSHIELD_NOT_A_KEY::` in `saveKeyOnDevice` before encryption
+and all other key-import/save entry points, and provide a dedicated synthetic
+auth/PRF flow. Do not enter real credentials. No successful synthetic save or
+real-key rejection is claimed by this build. The existing Playwright Electron
+harness also needs inspector/DevTools listeners denied by these unchanged
+sandbox entitlements; do not grant server access just for tests.
+
 ## Install
 
 Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.

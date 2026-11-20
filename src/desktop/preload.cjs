@@ -1,12 +1,14 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
+const syntheticOnly = process.mas || process.argv.includes('--ks-synthetic-only');
 
 contextBridge.exposeInMainWorld('keyshieldDesktop', {
   isDesktop: true,
   platform: process.platform,
-  apiBase: String(process.env.KS_DESKTOP_API_URL || '').trim(),
-  live: process.env.KS_DESKTOP_LIVE === '1',
+  syntheticOnly: Boolean(syntheticOnly),
+  apiBase: syntheticOnly ? '' : String(process.env.KS_DESKTOP_API_URL || '').trim(),
+  live: !syntheticOnly && process.env.KS_DESKTOP_LIVE === '1',
   promptTouchID: (reason) => ipcRenderer.invoke('ks-touch-id', reason || 'Unlock KeyShield'),
   notify: (payload) => ipcRenderer.send('ks-feedback', payload || {}),
   focusMainWindow: () => ipcRenderer.send('ks-focus-main'),

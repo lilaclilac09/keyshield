@@ -56,6 +56,7 @@ async function main() {
     arch: 'universal',
     buildVersion: process.env.KS_MAS_BUILD_NUMBER || '1',
     out: output,
+    extraResource: [...options.extraResource, path.join(desktop, 'build', 'beta-policy.json')],
     extendInfo: {
       ...options.extendInfo,
       LSMinimumSystemVersion: '12.0',
@@ -65,6 +66,10 @@ async function main() {
     },
   });
   const app = path.join(apps[0], 'KeyShield.app');
+  const policy = path.join(app, 'Contents', 'Resources', 'beta-policy.json');
+  if (JSON.parse(fs.readFileSync(policy, 'utf8')).syntheticOnly !== true) throw new Error('MAS synthetic beta policy missing');
+  fs.chmodSync(policy, 0o444);
+  console.log('MAS baked synthetic-only policy assertion: PASS');
   assertBrokerExcluded(app);
   const report = checkBundle(app, 'mas-universal');
   let entitlements = fs.readFileSync(path.join(desktop, 'build', 'entitlements.mas.plist'), 'utf8');

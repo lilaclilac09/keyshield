@@ -43,9 +43,18 @@ const { createDiagnostics } = require('./diagnostics.cjs');
 const { redact } = require('./redaction.js');
 const { installRequestAudit } = require('./request-audit.cjs');
 const { validateRenderer, startupFailure, authorizeTouchId, runtimePreflightDetail } = require('./startup-policy.cjs');
+const { syntheticOnly, bundledRequest, createBetaBoundary } = require('./beta-policy.cjs');
+
+const SYNTHETIC_ONLY = syntheticOnly();
 
 const diagnostics = createDiagnostics();
 diagnostics.log('KeyShield desktop starting');
+const betaBoundary = SYNTHETIC_ONLY ? createBetaBoundary({ rendererRoot: rendererDir, log: diagnostics.log }) : null;
+if (betaBoundary) {
+  betaBoundary.installMainNetwork(net);
+  app.on('session-created', (ses) => betaBoundary.installSession(ses));
+  shell.openExternal = async (url) => { betaBoundary.blocked(url); };
+}
 
 const DASHBOARD_HOST = 'app.ks.aileena.xyz';
 const DASHBOARD_ORIGIN = `https://${DASHBOARD_HOST}`;
@@ -53,12 +62,12 @@ const PROD_API = 'https://keyshield-production.up.railway.app';
 const SYNC_HOST = 'sync.ks.aileena.xyz';
 const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
-const LIVE = !process.mas && process.env.KS_DESKTOP_LIVE === '1';
-const SYNC_PROXY = !process.mas && process.env.KS_DESKTOP_SYNC_PROXY === '1';
+const LIVE = !SYNTHETIC_ONLY && process.env.KS_DESKTOP_LIVE === '1';
+const SYNC_PROXY = !SYNTHETIC_ONLY && process.env.KS_DESKTOP_SYNC_PROXY === '1';
 const PACKAGED = app.isPackaged || process.env.KS_DESKTOP_FORCE_PACKAGED === '1';
 
 function rendererDir() {
-  if (!process.mas && process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
+  if (!SYNTHETIC_ONLY && process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
   if (app.isPackaged) return path.join(process.resourcesPath, 'renderer');
   return path.join(__dirname, 'renderer');
 }
@@ -104,6 +113,7 @@ function blockStartup(report, reason) {
 }
 
 function installHttpsHandler(ses) {
+  if (betaBoundary) { betaBoundary.installSession(ses); return true; }
   if (process.env.KS_DESKTOP_FORCE_INTERCEPT_FAILURE === '1') throw new Error('forced HTTPS handler failure');
   if (!useBundle() && !SYNC_PROXY) return false;
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
@@ -328,14 +338,14 @@ function buildMenu(win) {
     {
       role: 'help',
       submenu: [
-        {
+        ...(!SYNTHETIC_ONLY ? [{
           label: 'Open live dashboard',
           click: () => { void shell.openExternal(DASHBOARD_ORIGIN); },
         },
         {
           label: 'API health (Railway)',
           click: () => { void shell.openExternal(`${PROD_API}/health`); },
-        },
+        }] : []),
         {
           label: 'Reveal launch log',
           click: () => { shell.showItemInFolder(diagnostics.logPath); },
@@ -442,7 +452,7 @@ async function loadDashboard(win) {
 
 async function createWindow() {
   const ses = session.fromPartition('persist:keyshield');
-  installRequestAudit(ses, process.mas ? undefined : process.env.KS_DESKTOP_REQUEST_AUDIT);
+  installRequestAudit(ses, SYNTHETIC_ONLY ? undefined : process.env.KS_DESKTOP_REQUEST_AUDIT);
   let failure = startupFailure({
     packaged: PACKAGED,
     preflight: packagedRuntimePreflight(),
@@ -451,7 +461,7 @@ async function createWindow() {
   });
   if (!failure) {
     try {
-      if (ses.protocol.isProtocolHandled && await ses.protocol.isProtocolHandled('https')) ses.protocol.unhandle('https');
+      if (!SYNTHETIC_ONLY && ses.protocol.isProtocolHandled && await ses.protocol.isProtocolHandled('https')) ses.protocol.unhandle('https');
       installHttpsHandler(ses);
     } catch (err) {
       diagnostics.log(`https handler skipped: ${err instanceof Error ? err.message : String(err)}`);
@@ -491,6 +501,7 @@ async function createWindow() {
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: SYNTHETIC_ONLY ? ['--ks-synthetic-only'] : [],
       session: ses,
       sandbox: true,
       contextIsolation: true,
@@ -503,12 +514,22 @@ async function createWindow() {
   bringWindowToForeground(win);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (betaBoundary) { betaBoundary.blocked(url); return { action: 'deny' }; }
     if (url.startsWith(DASHBOARD_ORIGIN) || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
       return { action: 'allow' };
     }
     void shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  if (betaBoundary) {
+    win.webContents.on('will-navigate', (event, url) => {
+      if (!bundledRequest(url)) { event.preventDefault(); betaBoundary.blocked(url); }
+    });
+    win.webContents.on('will-redirect', (event, url) => {
+      if (!bundledRequest(url)) { event.preventDefault(); betaBoundary.blocked(url); }
+    });
+  }
 
   win.webContents.on('did-finish-load', () => {
     if (process.platform !== 'darwin') return;
@@ -637,6 +658,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    if (betaBoundary) betaBoundary.installSession(session.defaultSession);
     const preflight = packagedRuntimePreflight();
     if (!preflight.skipped) {
       diagnostics.log(`preflight ok=${preflight.ok} ${runtimePreflightDetail(preflight)}`);
