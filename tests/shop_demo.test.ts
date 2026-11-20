@@ -95,8 +95,8 @@ describe("shop demo helpers", () => {
     const home = readFileSync(resolve(__dirname, "../src/web/components/sections/HomeSection.tsx"), "utf8");
     expect(home).toContain("home-metrics-strip");
     expect(home).toContain("rpc-first-ms");
-    expect(home).toContain("1 · RPC");
-    expect(home).toContain("2 · API call");
+    expect(home).toContain("RPC performance");
+    expect(home).toContain("API activity");
     expect(home).toContain("home-saved-apis");
     expect(home).toContain("home-consumption");
     expect(home).toContain("home-subscription");
@@ -106,7 +106,7 @@ describe("shop demo helpers", () => {
     expect(home).not.toContain("PurchasesPanel");
     expect(home).not.toContain("SHOP_PROOF_SETTLE_CU");
     expect(home).not.toContain("key-paste");
-    expect(home).not.toContain("ExtensionInstallHint");
+    expect(home).toContain('ExtensionInstallHint variant="home"');
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     const payments = readFileSync(resolve(__dirname, "../src/web/components/PaymentsLedger.tsx"), "utf8");
     expect(payments).toContain("shop-proof-strip");

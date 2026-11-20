@@ -53,7 +53,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode; group: 'focus' |
 ];
 
 const SECTION_CONFIG: Record<Section, { title: string; subtitle: string }> = {
-  home: { title: 'Home', subtitle: 'RPC, API timings, subscription, one-click buy or call' },
+  home: { title: 'Home', subtitle: 'Your vault, saved APIs and account overview' },
   vault: { title: 'Vault Management', subtitle: 'Saved keys — hidden until you reveal' },
   activity: { title: 'Payments', subtitle: 'Portal, rail, explorer, receipt — grouped by wallet and human or agent' },
   agents: { title: 'Agent Registry', subtitle: 'ed25519 agent identities and embedded wallets' },
