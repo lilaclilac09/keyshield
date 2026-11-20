@@ -27,7 +27,7 @@ import {
   X, Check, Trash2, ChevronDown, ChevronUp, Fingerprint, ArrowRight, Cpu,
 } from 'lucide-react';
 
-import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
+import { apiFetch, proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
 import {
   isVaultUnlocked, lockVault, listEntries, removeEntry,
 } from '../../lib/vault-session';
@@ -543,12 +543,30 @@ type Phase = 'idle' | 'busy';
 export const DeviceVaultSection: React.FC = () => {
   const [trust, setTrust]       = useState(() => getPasskeyTrust());
   const [unlocked, setUnlocked] = useState<boolean>(() => isVaultUnlocked());
+  const [unenrolledUser, setUnenrolledUser] = useState<string | null>(null);
   const [entries, setEntries]   = useState<VaultEntry[]>(() => (isVaultUnlocked() ? listEntries() : []));
   const [extKeys, setExtKeys]   = useState<ShimEntry[]>([]);
   const [phase, setPhase]       = useState<Phase>('idle');
   const [phaseMsg, setPhaseMsg] = useState('');
   const [err, setErr]           = useState('');
   const [showAdd, setShowAdd]   = useState(false);
+  const trustedUser = trust?.userId;
+  const token = getToken();
+  const needsEnrollment = !trustedUser || trustedUser === unenrolledUser;
+
+  useEffect(() => {
+    setUnenrolledUser(null);
+    if (!trustedUser || unlocked || !token) return;
+    let current = true;
+    void apiFetch('/auth/passkey/list').then(async (response) => {
+      if (!response.ok) return;
+      const { credentials } = await response.json();
+      if (current && Array.isArray(credentials) && credentials.length === 0) {
+        setUnenrolledUser(trustedUser);
+      }
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [trustedUser, unlocked, token]);
 
   const refresh = useCallback(() => {
     setUnlocked(isVaultUnlocked());
@@ -574,6 +592,7 @@ export const DeviceVaultSection: React.FC = () => {
     setErr('');
     try {
       await registerPasskey('Device Vault');
+      setUnenrolledUser(null);
       refresh();
       setPhaseMsg('Unlocking…');
       await requestVaultUnlock();
@@ -678,7 +697,7 @@ export const DeviceVaultSection: React.FC = () => {
       )}
 
       {/* State 1 — not registered */}
-      {!trust && !unlocked && (
+      {needsEnrollment && !unlocked && (
         <div className="rounded-xl border border-dashed border-[#243365]/60 py-16 flex flex-col items-center text-center px-6">
           <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
             <KeyRound size={20} className="text-white" strokeWidth={1.75} />
@@ -701,7 +720,7 @@ export const DeviceVaultSection: React.FC = () => {
       )}
 
       {/* State 2 — registered + locked */}
-      {trust && !unlocked && (
+      {!needsEnrollment && !unlocked && (
         <div className="rounded-xl border border-[#243365]/50 py-12 flex flex-col items-center text-center px-6 bg-[#131c39]">
           <div className="w-12 h-12 rounded-xl bg-[#0e1631] border border-[#243365]/50 flex items-center justify-center mb-4">
             <Lock size={18} className="text-[#a8b3d8]" strokeWidth={1.75} />

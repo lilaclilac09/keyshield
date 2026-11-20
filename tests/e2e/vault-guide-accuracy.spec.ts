@@ -95,6 +95,31 @@ for (const path of ['Keychain Save', 'Add Secret', 'Activity Connect'] as const)
   });
 }
 
+for (const enrollment of ['none', 'registered', 'unavailable'] as const) {
+  test(`Device Vault save flow handles wallet passkey enrollment status: ${enrollment}`, async ({ page }) => {
+    const writes = await openDashboard(page);
+    await page.route('**/auth/passkey/list', route => enrollment === 'unavailable'
+      ? route.fulfill({ status: 503, json: { error: 'Synthetic backend offline' } })
+      : route.fulfill({ json: { credentials: enrollment === 'none' ? [] : [{ id: 'synthetic-passkey' }] } }));
+    await page.getByRole('button', { name: 'Vault', exact: true }).click();
+    await page.getByPlaceholder('sk-or-…  sk-proj-…  gsk_…  helius UUID…').fill(providerKey);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    const status = page.waitForResponse('**/auth/passkey/list');
+    await page.getByRole('button', { name: 'Unlock or create device vault', exact: true }).click();
+    await status;
+    const enroll = page.getByRole('button', { name: 'Enroll passkey', exact: true });
+    const unlock = page.getByRole('button', { name: 'Unlock vault', exact: true });
+    if (enrollment === 'none') {
+      await expect(enroll).toBeVisible();
+      await expect(unlock).toHaveCount(0);
+    } else {
+      await expect(unlock).toBeVisible();
+      await expect(enroll).toHaveCount(0);
+    }
+    expect(writes).toEqual([]);
+  });
+}
+
 test('populated device cards and saved-key summaries omit agent URLs while raw-key Copy works', async ({ page }) => {
   const writes = await openDashboard(page);
   let cipher: Record<string, unknown> | null = null;
