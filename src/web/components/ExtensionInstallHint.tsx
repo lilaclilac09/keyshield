@@ -38,7 +38,7 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             Chrome extension <span className="text-[#93b4ff] font-medium">(preferred)</span>
           </p>
           <p className={`${compact ? 'text-[12px] mt-1' : 'text-[14px] mt-1.5'} text-[#a8b3d8] leading-relaxed`}>
-            Auto-detects API keys on OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Groq, Helius pages and offers Save to vault. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
+            The extension saves a key only when you select it or enter it manually. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
           </p>
           <p className={`${compact ? 'text-[12px] mt-2' : 'text-[14px] mt-2'} text-[#e8ecff] leading-relaxed`}>
             Load unpacked <strong className="text-white">v1.2.5 · latest</strong> from <code className="text-white">src/extension</code>.
