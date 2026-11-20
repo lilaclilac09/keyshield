@@ -226,6 +226,24 @@ function zipApp(appDir, zipPath) {
   }
 }
 
+function createPackagerIgnore(output = releaseDir) {
+  const relative = path.relative(desktopDir, path.resolve(output));
+  if (!relative) throw new Error('Release directory must not be the desktop source root');
+  const releaseRoot = `/${relative.split(path.sep).join('/')}`;
+  return (file) => {
+    if (!file) return false;
+    if (file === releaseRoot || file.startsWith(`${releaseRoot}/`)) return true;
+    if (file === '/out' || file.startsWith('/out/')) return true;
+    if (file === '/release' || file.startsWith('/release/')) return true;
+    if (file.startsWith('/scripts')) return true;
+    if (file === '/assets' || file.startsWith('/assets/')) return true;
+    if (file === '/e2e' || file.startsWith('/e2e/')) return true;
+    if (file === '/renderer' || file.startsWith('/renderer/')) return true;
+    if (file === '/OPEN-ME.txt') return true;
+    return false;
+  };
+}
+
 async function main() {
   const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
   if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
@@ -281,17 +299,7 @@ async function main() {
     icon: icns || iconPng,
     darwinDarkModeSupport: true,
     osxSign: false,
-    ignore: (file) => {
-      if (!file) return false;
-      if (file === '/out' || file.startsWith('/out/')) return true;
-      if (file === '/release' || file.startsWith('/release/')) return true;
-      if (file.startsWith('/scripts')) return true;
-      if (file === '/assets' || file.startsWith('/assets/')) return true;
-      if (file === '/e2e' || file.startsWith('/e2e/')) return true;
-      if (file === '/renderer' || file.startsWith('/renderer/')) return true;
-      if (file === '/OPEN-ME.txt') return true;
-      return false;
-    },
+    ignore: createPackagerIgnore(),
     appCopyright: 'KeyShield',
     extendInfo: {
       NSFaceIDUsageDescription: 'Unlock KeyShield with Touch ID.',
@@ -358,4 +366,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, createPackagerIgnore };

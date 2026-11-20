@@ -320,6 +320,31 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(docsSection).toContain("human-usable-ui-standards.md");
   });
 
+  it("excludes a resolved custom release directory and its staged artifacts, not similarly named siblings", () => {
+    const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    const ignore = createPackagerIgnore(resolve(root, "src/desktop/builds/../builds/tester"));
+    for (const file of ["/builds/tester", "/builds/tester/KeyShield.dmg", "/builds/tester/KeyShield.zip", "/builds/tester/dmg-root/KeyShield.app/Contents/Info.plist", "/out/app", "/release/old.dmg"]) {
+      expect(ignore(file), file).toBe(true);
+    }
+    for (const file of ["", "/main.cjs", "/package.json", "/builds/tester-not-output/config.json", "/builds/other/config.json"]) {
+      expect(ignore(file), file).toBe(false);
+    }
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("ignore: createPackagerIgnore()");
+  });
+
+  it("keeps source files when the release directory is outside the desktop source tree", () => {
+    const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    const ignore = createPackagerIgnore(resolve(root, "src/desktop-other/releases"));
+    expect(ignore("")).toBe(false);
+    expect(ignore("/main.cjs")).toBe(false);
+    expect(ignore("/release/KeyShield.dmg")).toBe(true);
+  });
+
+  it("rejects the desktop source root as the release directory", () => {
+    const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    expect(() => createPackagerIgnore(resolve(root, "src/desktop"))).toThrow("Release directory must not be the desktop source root");
+  });
+
   it("stages a DMG without executable install helpers or security override advice", () => {
     const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
     const source = makeElectron33Fixture(tempDir());
