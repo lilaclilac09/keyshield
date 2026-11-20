@@ -1,6 +1,34 @@
-import { test, expect, installHarness, samples, negatives, origin, page, popup, openPopup, unlock, add, save, stored, state, selection } from './harness';
+import { test, expect, installHarness, samples, negatives, origin, secondOrigin, page, popup, worker, networkRequests, openPopup, unlock, add, save, stored, state, selection } from './harness';
 
 installHarness();
+
+test('KS-USE-002 another approved origin cannot fill a key bound to the first origin', async () => {
+  await openPopup();
+  await unlock();
+  await add();
+  await save();
+  await popup.close();
+  expect((await state()).menuOptions.documentUrlPatterns).toContain(`${secondOrigin}/*`);
+  expect(await worker.evaluate((url) => chrome.permissions.contains({ origins: [`${url}/*`] }), secondOrigin)).toBe(true);
+  await page.goto(`${secondOrigin}/input.html`);
+  await page.locator('input').fill('');
+  await page.locator('input').focus();
+  await openPopup();
+  await expect(popup.locator('#entries option')).toHaveCount(1);
+  await popup.locator('#fill').click();
+  await expect(popup.locator('#status')).toHaveText('Fill refused: this key belongs to another origin');
+  await expect(page.locator('input')).toHaveValue('');
+  await popup.close();
+  await page.goto(`${origin}/input.html`);
+  await page.locator('input').fill('');
+  await page.locator('input').focus();
+  await openPopup();
+  await popup.locator('#fill').click();
+  await expect(popup.locator('#status')).toContainText('Filled focused input');
+  await expect(page.locator('input')).toHaveValue(samples[0].value);
+  expect((await stored()).auditLog.map((entry) => entry.action)).toEqual(['saved', 'filled']);
+  expect(JSON.stringify(networkRequests)).not.toContain('FAKE_KEYSHIELD_NOT_A_KEY::');
+});
 
 test('KS-EXT-001 selection of one value offers confirm; other page values never read', async () => {
   await page.goto(`${origin}/code-block.html`);

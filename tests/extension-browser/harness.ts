@@ -8,6 +8,9 @@ const root = resolve(__dirname, '../..');
 const fixtures = resolve(root, 'tests/fixtures/extension-acceptance');
 const { samples, negatives } = JSON.parse(readFileSync(resolve(fixtures, 'keys.json'), 'utf8'));
 const origin = 'https://dashboard.provider.test';
+const { allowed_capture_origins: approvedOrigins } = JSON.parse(readFileSync(resolve(fixtures, 'policy.json'), 'utf8'));
+const secondOrigin = approvedOrigins[1];
+const mockHosts = [...approvedOrigins.map((url: string) => new URL(url).hostname), 'evil.test', 'dashboard.vault.test'];
 const passphrase = 'synthetic local passphrase';
 let server: Server;
 let requests: { method: string; url: string; body: string }[] = [];
@@ -30,19 +33,20 @@ export function installHarness() {
     build = resolve(output, 'extension');
     execFileSync('node', ['src/extension/build.mjs', build], { cwd: root });
     const policy = resolve(build, 'lib/policy.js');
-    writeFileSync(policy, readFileSync(policy, 'utf8').replace('Object.freeze([', "Object.freeze(['https://dashboard.provider.test',"));
+    writeFileSync(policy, readFileSync(policy, 'utf8').replace('Object.freeze([', `Object.freeze([${approvedOrigins.map((url: string) => JSON.stringify(url)).join(',')},`));
     const recognizer = resolve(build, 'lib/recognize.js');
     writeFileSync(recognizer, readFileSync(recognizer, 'utf8').replace(/export const PATTERNS = Object.freeze\([\s\S]*?\n\]\);/, `export const PATTERNS = Object.freeze(${JSON.stringify(samples.map((sample) => ({ provider: sample.provider, source: sample.regex })))});`));
     const background = resolve(build, 'background.js');
     writeFileSync(background, `${readFileSync(background, 'utf8')}\nglobalThis.__test = { select: handleSelection, state: () => ({ pending, entries: vault.entries, menuOptions }) };\n`);
     const manifestPath = resolve(build, 'manifest.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    manifest.optional_host_permissions.push(`${origin}/*`);
+    const mockPermissions = approvedOrigins.map((url: string) => `${url}/*`);
+    manifest.optional_host_permissions.push(...mockPermissions);
     writeFileSync(manifestPath, JSON.stringify(manifest));
     grantedBuild = resolve(output, 'extension-granted');
     rmSync(grantedBuild, { recursive: true, force: true });
     cpSync(build, grantedBuild, { recursive: true });
-    writeFileSync(resolve(grantedBuild, 'manifest.json'), JSON.stringify({ ...manifest, host_permissions: [`${origin}/*`] }));
+    writeFileSync(resolve(grantedBuild, 'manifest.json'), JSON.stringify({ ...manifest, host_permissions: mockPermissions }));
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-keyout', resolve(output, 'key.pem'), '-out', resolve(output, 'cert.pem'), '-subj', '/CN=dashboard.provider.test'], { stdio: 'ignore' });
     server = createServer({ key: readFileSync(resolve(output, 'key.pem')), cert: readFileSync(resolve(output, 'cert.pem')) }, (req, res) => {
       let body = '';
@@ -66,11 +70,11 @@ export function installHarness() {
     const extension = info.title.startsWith('KS-EXT-004') ? build : grantedBuild;
     context = await chromium.launchPersistentContext(profile, {
       channel: 'chromium', headless: process.env.KEYSHIELD_TUTORIAL_RECORD !== '1', ignoreHTTPSErrors: true,
-      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--no-proxy-server', '--ignore-certificate-errors', `--host-resolver-rules=MAP dashboard.provider.test 127.0.0.1:${port}, MAP evil.test 127.0.0.1:${port}, MAP dashboard.vault.test 127.0.0.1:${port}`],
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--no-proxy-server', '--ignore-certificate-errors', `--host-resolver-rules=${mockHosts.map((host: string) => `MAP ${host} 127.0.0.1:${port}`).join(', ')}`],
     });
     networkRequests = [];
     context.on('request', (request) => networkRequests.push({ url: request.url(), method: request.method(), body: request.postData() || '', headers: request.headers() }));
-    await context.route(/^https?:\/\//, (route) => ['dashboard.provider.test', 'evil.test', 'dashboard.vault.test'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
+    await context.route(/^https?:\/\//, (route) => mockHosts.includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
     worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     page = context.pages()[0];
     await page.goto(`${origin}/input.html`);
@@ -130,4 +134,4 @@ async function selection(selector: string, value?: string) {
   return response;
 }
 
-export { test, expect, samples, negatives, origin, passphrase, page, popup, worker, context, output, networkRequests, openPopup, unlock, add, save, stored, state, selection };
+export { test, expect, samples, negatives, origin, secondOrigin, passphrase, page, popup, worker, context, output, networkRequests, openPopup, unlock, add, save, stored, state, selection };

@@ -9,12 +9,14 @@ Use a dedicated disposable Chromium profile, never your everyday browser profile
 - **Synthetic values:** every fixture key starts with `FAKE_KEYSHIELD_NOT_A_KEY::`.
   Keep the entire marker. These are not production-valid credentials.
 - **Local test origins:** `https://dashboard.provider.test`, `https://evil.test`,
-  and `https://dashboard.vault.test` are mapped by this browser's resolver rules
+  `https://dashboard.second-provider.test`, and `https://dashboard.vault.test`
+  are mapped by this browser's resolver rules
   to an ephemeral loopback HTTPS server. They are not external services. The
   self-signed certificate is accepted only in this disposable test browser.
 - **Local test policy:** the harness copies runtime files into an ignored, unique
   `dist/extension-acceptance/run-*/` directory and adds the provider `.test` origin
-  and synthetic recognizer there. It pregrants that origin in the test manifest;
+  and synthetic recognizer there, plus a second approved mock provider origin
+  `https://dashboard.second-provider.test`. It pregrants both in the test manifest;
   this does **not** test native optional-permission prompt acceptance. Production
   policy/recognition and manifests are not modified. Production rejects fixtures.
 - **Context-menu hook:** automation makes a real selection, then invokes the exact
@@ -106,7 +108,7 @@ before continuing through steps 4–6.
 Check preview `••••AAAA`, provider `openai`, and bound origin
 `https://dashboard.provider.test`. Set label `Tutorial synthetic key` and click
 **Save** explicitly. A normal production flow may request optional site permission;
-this local rehearsal pregrants only its mock provider origin. The test verifies
+this local rehearsal pregrants only its two mock provider origins. The test verifies
 an encrypted extension record, no marker in persistent extension storage, and
 unchanged localStorage/IndexedDB on both mock page origins. Plaintext necessarily
 exists in the selected input and in the unlocked worker; it is not persisted there.
@@ -127,6 +129,12 @@ Close the popup, visit `https://evil.test/input.html`, clear/focus its input, an
 reopen the popup. Click Fill. Expect `not a supported provider page` and an empty
 input. Full exact origins, including ports, remain bound even though browser
 permission match patterns omit ports.
+
+The same key is also refused on another approved site: with the vault unlocked,
+visit `https://dashboard.second-provider.test/input.html`, clear/focus its input,
+and use the normal popup's Fill button. Expect `Fill refused: this key belongs to
+another origin` and an empty input, despite that mock site's granted permission
+(covered by KS-USE-002).
 
 ### 7. Lock the extension vault
 
