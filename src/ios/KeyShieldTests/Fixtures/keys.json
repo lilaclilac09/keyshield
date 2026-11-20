@@ -1,0 +1,89 @@
+{
+  "warning": "Synthetic marked envelopes, not production-valid credentials. Marker is part of the entire value and MUST NOT be stripped or sent to real services. Provider-like shapes deliberately are not conformance claims; checksums are not computed. Use mock detection adapter recognizing declared regexes; real-provider recognition requires separately approved sandbox tests.",
+  "samples": [
+    {
+      "id": "openai",
+      "provider": "openai",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-[A-Za-z0-9]{32}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "id": "anthropic",
+      "provider": "anthropic",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::sk-ant-api03-[A-Za-z0-9_-]{32}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk-ant-api03-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    },
+    {
+      "id": "stripe_test",
+      "provider": "stripe_test",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::sk_test_[A-Za-z0-9]{24}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk_test_CCCCCCCCCCCCCCCCCCCCCCCC"
+    },
+    {
+      "id": "stripe_live_like",
+      "provider": "stripe_live_like",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::sk_live_[A-Za-z0-9]{24}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk_live_DDDDDDDDDDDDDDDDDDDDDDDD"
+    },
+    {
+      "id": "github",
+      "provider": "github",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::ghp_[A-Za-z0-9]{36}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::ghp_EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+    },
+    {
+      "id": "aws_access",
+      "provider": "aws_access",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::AKIA[A-Z0-9]{16}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::AKIAFFFFFFFFFFFFFFFF"
+    },
+    {
+      "id": "aws_secret",
+      "provider": "aws_secret",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::[A-Za-z0-9/+=]{40}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+    },
+    {
+      "id": "solana",
+      "provider": "solana",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::[1-9A-HJ-NP-Za-km-z]{88}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+    },
+    {
+      "id": "bearer",
+      "provider": "bearer",
+      "regex": "^FAKE_KEYSHIELD_NOT_A_KEY::Bearer [A-Za-z0-9_-]{32}$",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::Bearer JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ"
+    }
+  ],
+  "aws_pair": {
+    "access_key_id": "aws_access",
+    "secret_access_key": "aws_secret"
+  },
+  "negatives": [
+    {
+      "id": "hash",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "uuid",
+      "value": "123e4567-e89b-12d3-a456-426614174000"
+    },
+    {
+      "id": "placeholder",
+      "value": "YOUR_API_KEY_HERE"
+    },
+    {
+      "id": "truncated",
+      "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-abc"
+    },
+    {
+      "id": "identifier",
+      "value": "customer_1234567890"
+    },
+    {
+      "id": "public_base58",
+      "value": "11111111111111111111111111111111"
+    }
+  ]
+}
