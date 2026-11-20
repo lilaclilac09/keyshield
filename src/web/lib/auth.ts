@@ -18,6 +18,7 @@ import {
   clearCachedVaultId,
   lockVault,
   getDecryptedKey,
+  invalidateApprovalSnapshot,
 } from './vault-session';
 import { clearExtensionVaultKey, syncExtensionVaultKey } from './vault-key';
 import {
@@ -111,6 +112,7 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string): void {
+  if (getToken() !== token) invalidateApprovalSnapshot();
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(SESSION_SCOPE_KEY, readTokenScope(token));
   pushTokenToExtension(token);
@@ -150,6 +152,7 @@ export function getAuthMethod(): AuthMethod | null {
 }
 
 export function clearAuth(): void {
+  invalidateApprovalSnapshot();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(WALLET_KEY);
   localStorage.removeItem(SESSION_SCOPE_KEY);
@@ -169,6 +172,7 @@ export function getWalletAddress(): string | null {
 }
 
 export function setWalletAddress(addr: string, opts?: { seedPasskey?: boolean }): void {
+  if (getWalletAddress() !== addr) invalidateApprovalSnapshot();
   localStorage.setItem(WALLET_KEY, addr);
   // Seed Face ID id for wallets / passkey ids only — never a Gmail address.
   const seed = opts?.seedPasskey ?? !isEmailAccountId(addr);
@@ -657,6 +661,7 @@ export async function fetchAgentChallenge(): Promise<{ challenge: string; nonce:
 /** Mark this device as passkey-trusted. userId is non-secret → localStorage.
  *  passphrase is secret → sessionStorage (cleared on tab close, never persisted). */
 export function setPasskeyTrust(userId: string, passphrase: string): void {
+  if (localStorage.getItem(PASSKEY_USER) !== userId) invalidateApprovalSnapshot();
   localStorage.setItem(PASSKEY_USER, userId);
   sessionStorage.setItem(PASSKEY_PP, passphrase);
 }
@@ -677,12 +682,14 @@ export function getPasskeyTrust(): { userId: string; passphrase: string } | null
   // p may be null (sessionStorage cleared on tab close) or '' (empty passphrase).
   // Return trust as long as userId is known — passphrase defaults to empty string.
   if (!localStorage.getItem(PASSKEY_USER)) {
+    invalidateApprovalSnapshot();
     localStorage.setItem(PASSKEY_USER, u);
   }
   return { userId: u, passphrase: p ?? '' };
 }
 
 export function clearPasskeyTrust(): void {
+  invalidateApprovalSnapshot();
   localStorage.removeItem(PASSKEY_USER);
   localStorage.removeItem(PASSKEY_PP);
   sessionStorage.removeItem(PASSKEY_PP);
@@ -697,6 +704,7 @@ export async function passkeyLogin(): Promise<{ token: string; userId: string }>
     });
   if (!userId) throw new Error('No passkey registered on this device');
   const passphrase = trust?.passphrase ?? sessionStorage.getItem(PASSKEY_PP) ?? '';
+  if (localStorage.getItem(PASSKEY_USER) !== userId) invalidateApprovalSnapshot();
   localStorage.setItem(PASSKEY_USER, userId);
 
   let optsRes: Response;
@@ -818,6 +826,7 @@ export async function passkeySignup(name = 'Passkey'): Promise<{ token: string; 
     throw new Error(readApiErrorMessage(err, 'Passkey signup failed'));
   }
   const out = await verRes.json();
+  if (localStorage.getItem(PASSKEY_USER) !== out.userId) invalidateApprovalSnapshot();
   localStorage.setItem(PASSKEY_USER, out.userId);
   return { token: out.token, userId: out.userId };
 }
@@ -890,6 +899,17 @@ export async function registerPasskey(
     throw new Error((err as { detail: string }).detail ?? 'Registration failed');
   }
   const result = await verRes.json();
+
+  const ext = credential.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } };
+  if (window.keyshieldDesktop?.broker && ext?.prf?.enabled === true) {
+    try {
+      await window.keyshieldDesktop.broker.pinApprovalPasskey({
+        response: { ...credPayload, clientExtensionResults: { prf: { enabled: true } } },
+      });
+    } catch {
+      // Pin availability does not affect normal vault enrollment.
+    }
+  }
   setPasskeyTrust(opts.user.name, '');
 
   // Identity passkey is stored on the Python control plane at this point.
@@ -897,7 +917,6 @@ export async function registerPasskey(
   // the identity ceremony if the authenticator has no PRF (virtual
   // authenticators, some hardware keys) or the worker is unreachable —
   // Settings can show Face ID success; Device Vault enroll retries later.
-  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
   const prfOutput = ext?.prf?.results?.first;
   if (!prfOutput) {
     return {

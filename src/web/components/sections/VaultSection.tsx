@@ -10,6 +10,7 @@ import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
 import { humanActionError } from '../../lib/human-usable';
 import { VaultSyncChangeError } from '../../lib/vault-sync-status';
+import { AgentApprovalsPanel } from './AgentApprovalsPanel';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -75,6 +76,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
 
   return (
   <div className="space-y-6">
+    {window.keyshieldDesktop?.broker && <AgentApprovalsPanel broker={window.keyshieldDesktop.broker} />}
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste a key</p>
       <p className="text-[12px] text-[#8a96c2]">Dashboard saves require an unlocked Device Vault: keys are encrypted on this device and only ciphertext is synced. They are not saved locally in plaintext. Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault.</p>

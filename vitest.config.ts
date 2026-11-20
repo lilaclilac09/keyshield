@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: { dedupe: ['@solana/wallet-adapter-react'] },
   test: {
     include: [
       "tests/adversarial_audit.ts",

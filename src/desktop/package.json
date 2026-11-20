@@ -1,4 +1,7 @@
 {
+  "dependencies": {
+    "@simplewebauthn/server": "^11.0.0"
+  },
   "description": "KeyShield — your API iCloud Keychain (Mac app)",
   "devDependencies": {
     "@playwright/test": "^1.54.1",
