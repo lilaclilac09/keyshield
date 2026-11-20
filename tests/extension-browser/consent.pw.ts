@@ -15,8 +15,13 @@ test('KS-USE-002 another approved origin cannot fill a key bound to the first or
   await page.locator('input').focus();
   await openPopup();
   await expect(popup.locator('#entries option')).toHaveCount(1);
+  await expect(popup.locator('#entry-list .badge')).toHaveText('This device only');
+  await expect(popup.locator('#entry-list .saved-key-origin')).toHaveText(`Fill only on ${origin}`);
+  await expect(popup.locator('#entry-list .unavailable')).toHaveText('Not available on this site');
+  await expect(popup.locator('#fill-availability')).toHaveText(`Not available on this site. Fill only on ${origin}`);
   await popup.locator('#fill').click();
   await expect(popup.locator('#status')).toHaveText('Fill refused: this key belongs to another origin');
+  await expect(popup.locator('#status')).toHaveClass('status status--error');
   await expect(page.locator('input')).toHaveValue('');
   await popup.close();
   await page.goto(`${origin}/input.html`);
@@ -57,6 +62,10 @@ test('KS-EXT-002 explicit save from input and env selection; unlocked vault requ
   await save();
   expect((await state()).entries.map((entry) => entry.value)).toEqual([samples[0].value, samples[5].value]);
   expect(JSON.stringify(await stored())).not.toContain('FAKE_KEYSHIELD');
+  await popup.close();
+  await openPopup();
+  await expect(popup.locator('#entry-list .badge')).toHaveText(['This device only', 'This device only']);
+  await expect(popup.locator('#entry-list .saved-key-origin')).toHaveText([`Fill only on ${origin}`, `Fill only on ${origin}`]);
 });
 test('KS-EXT-003 masked selection rejected; revealed value accepted', async () => {
   await page.goto(`${origin}/reveal.html`);
