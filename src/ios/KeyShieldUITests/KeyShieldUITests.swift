@@ -304,6 +304,18 @@ final class KeyShieldUITests: XCTestCase {
         tap("key.cancel")
         XCTAssertEqual(app.buttons.matching(identifier: "vault.entry.Test OpenAI").count, 1)
     }
+    func testAmbiguousDuplicateOffersNoReplace() {
+        savedKey()
+        add(rotated, label: "Other key"); tap("key.save")
+        XCTAssertTrue(app.buttons["vault.entry.Other key"].waitForExistence(timeout: 5))
+        add(rotated); tap("key.save")
+        XCTAssertTrue(app.buttons["Keep both"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Replace"].exists)
+        app.buttons.matching(NSPredicate(format: "label == 'Cancel'")).firstMatch.tap()
+        tap("key.cancel")
+        XCTAssertTrue(app.buttons["vault.entry.Test OpenAI"].exists)
+        XCTAssertTrue(app.buttons["vault.entry.Other key"].exists)
+    }
     func testNegativeNotRecognizedAndSaveDisabled() {
         create(); tab("Vault"); add("YOUR_API_KEY_HERE")
         XCTAssertTrue(app.staticTexts["Format not recognized"].exists)

@@ -29,6 +29,7 @@ struct SimulatorApprovalDemo {
         switch try vault.save(label: entryLabel, value: fixture) {
         case let .saved(saved): id = saved
         case let .duplicate(existing): id = existing
+        case .ambiguousDuplicate: throw ShieldError.duplicate
         }
         guard try vault.list().contains(where: {
             $0.id == id && $0.label == entryLabel && $0.fingerprint == fingerprint

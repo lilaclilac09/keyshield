@@ -11,8 +11,8 @@ struct VaultEntry: Codable, Equatable {
     var fingerprint: String
 }
 struct StoredEntry: Codable { var metadata: VaultEntry; var ciphertext: Data }
-enum DuplicateResolution { case reject, replace, keepBoth }
-enum SaveResult: Equatable { case saved(UUID), duplicate(UUID) }
+enum DuplicateResolution: Equatable { case reject, replace, keepBoth }
+enum SaveResult: Equatable { case saved(UUID), duplicate(UUID), ambiguousDuplicate }
 
 final class VaultStore {
     let clock: Clock
@@ -57,9 +57,16 @@ final class VaultStore {
         guard value.hasPrefix("FAKE_KEYSHIELD_NOT_A_KEY::"), let detection = KeyDetector().detect(value), !label.isEmpty else { throw ShieldError.invalid }
         var entries = try records()
         let key = try vaultKey()
-        let duplicate = try entries.firstIndex {
-            if $0.metadata.label == label { return true }
-            return try Cipher.open($0.ciphertext, key: key) == Data(value.utf8)
+        let plaintext = Data(value.utf8)
+        var duplicate: Int?
+        if resolution != .keepBoth {
+            for index in entries.indices {
+                let entry = entries[index]
+                if try entry.metadata.label == label || Cipher.open(entry.ciphertext, key: key) == plaintext {
+                    if duplicate != nil { return .ambiguousDuplicate }
+                    duplicate = index
+                }
+            }
         }
         if let index = duplicate {
             switch resolution {
@@ -71,14 +78,14 @@ final class VaultStore {
                 entries[index].metadata.version += 1
                 entries[index].metadata.updatedAt = clock.now
                 entries[index].metadata.fingerprint = fingerprint(value)
-                entries[index].ciphertext = try Cipher.seal(Data(value.utf8), key: key)
+                entries[index].ciphertext = try Cipher.seal(plaintext, key: key)
                 try commit(entries); sessions.revokeAll(keyId: id); try audit(.rotate, id: id)
                 return .saved(id)
             case .keepBoth: break
             }
         }
         let entry = VaultEntry(id: UUID(), label: label, provider: detection.provider, version: 1, createdAt: clock.now, updatedAt: clock.now, fingerprint: fingerprint(value))
-        entries.append(StoredEntry(metadata: entry, ciphertext: try Cipher.seal(Data(value.utf8), key: key)))
+        entries.append(StoredEntry(metadata: entry, ciphertext: try Cipher.seal(plaintext, key: key)))
         try commit(entries)
         try audit(.save, id: entry.id)
         return .saved(entry.id)

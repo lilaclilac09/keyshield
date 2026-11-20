@@ -37,6 +37,7 @@ struct KeyEditorView: View {
     @State private var label = ""
     @State private var value = ""
     @State private var conflict = false
+    @State private var replacementLabel: String?
     @State private var failure: String?
     private var detection: KeyDetector.Detection? { KeyDetector().detect(value) }
     private var valid: Bool { detection != nil && value.hasPrefix("FAKE_KEYSHIELD_NOT_A_KEY::") && (rotating != nil || !label.trimmingCharacters(in: .whitespaces).isEmpty) }
@@ -60,10 +61,18 @@ struct KeyEditorView: View {
             }.navigationTitle(rotating == nil ? "Add key" : "Rotate key")
                 .toolbar { KeyboardToolbar(); ToolbarItem(placement: .cancellationAction) { Button("Cancel") { value = ""; dismiss() }.accessibilityIdentifier("key.cancel") } }
                 .confirmationDialog("Key already exists", isPresented: $conflict, titleVisibility: .visible) {
-                    Button("Replace", role: .destructive) { save(.replace) }.accessibilityIdentifier("conflict.replace")
+                    if replacementLabel != nil {
+                        Button("Replace", role: .destructive) { save(.replace) }.accessibilityIdentifier("conflict.replace")
+                    }
                     Button("Keep both") { save(.keepBoth) }.accessibilityIdentifier("conflict.keepBoth")
                     Button("Cancel", role: .cancel) {}.accessibilityIdentifier("conflict.cancel")
-                } message: { Text("A key with this label or value is already saved. Choose how to resolve the conflict.") }
+                } message: {
+                    if let replacementLabel {
+                        Text("Replace the saved key “\(replacementLabel)” or keep both entries.")
+                    } else {
+                        Text("This label or value matches multiple saved keys. Keep the existing keys and add a new entry, or cancel.")
+                    }
+                }
         }.interactiveDismissDisabled(false)
             .onChange(of: value) { _, _ in model.touch() }
             .onDisappear { value = "" }
@@ -71,7 +80,19 @@ struct KeyEditorView: View {
     private func save(_ resolution: DuplicateResolution) {
         do {
             if let rotating { try model.rotate(rotating, value: value) }
-            else if case .duplicate = try model.save(label: label.trimmingCharacters(in: .whitespaces), value: value, resolution: resolution) { conflict = true; return }
+            else {
+                switch try model.save(label: label.trimmingCharacters(in: .whitespaces), value: value, resolution: resolution) {
+                case .saved: break
+                case let .duplicate(id):
+                    replacementLabel = model.entries.first(where: { $0.id == id })?.label
+                    conflict = true
+                    return
+                case .ambiguousDuplicate:
+                    replacementLabel = nil
+                    conflict = true
+                    return
+                }
+            }
             value = ""; dismiss()
         } catch { failure = "Could not save this key. Check the synthetic format and vault access." }
     }

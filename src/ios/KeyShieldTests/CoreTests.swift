@@ -118,6 +118,19 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(try vault.list().count, 2)
         try vault.rotate(id, value: value); XCTAssertEqual(try vault.list().first?.version, 3)
     }
+    func testReplacePreservesSeparateLabelAndValueMatches() throws {
+        try vault.createVault()
+        guard case let .saved(labelMatch) = try vault.save(label: "Label match", value: value),
+              case let .saved(valueMatch) = try vault.save(label: "Value match", value: second) else {
+            return XCTFail("Expected two distinct entries")
+        }
+        let before = try vault.list()
+        XCTAssertEqual(before.map(\.id), [labelMatch, valueMatch])
+        XCTAssertEqual(try vault.save(label: "Label match", value: second), .ambiguousDuplicate)
+        XCTAssertEqual(try vault.save(label: "Label match", value: second, resolution: .replace), .ambiguousDuplicate)
+        XCTAssertEqual(try vault.save(label: "Value match", value: value, resolution: .replace), .ambiguousDuplicate)
+        XCTAssertEqual(try vault.list(), before)
+    }
     func testSyntheticOnlyStorageAndEmptyErrors() throws {
         try vault.createVault()
         XCTAssertThrowsError(try vault.save(label: "x", value: "sk-proj-" + String(repeating: "A", count: 32)))
