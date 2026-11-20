@@ -95,10 +95,14 @@ sys.exit(int(os.environ.get("FAKE_EXPORT_STATUS" if "-exportArchive" in args els
         self.assertEqual(export["options"]["destination"], "upload")
         self.assertEqual(export["options"]["signingStyle"], "automatic")
         self.assertTrue(export["options"]["testFlightInternalTestingOnly"])
+        self.assertNotIn("ITSAppUsesNonExemptEncryption", export["options"])
         self.assertFalse(Path(export["options_path"]).exists())
         template = self.script.parent.parent / "ExportOptions-TestFlight.plist"
         with template.open("rb") as source:
             self.assertEqual(plistlib.load(source)["teamID"], "YOUR_TEAM_ID")
+        info = self.script.parent.parent / "KeyShield" / "Info.plist"
+        with info.open("rb") as source:
+            self.assertNotIn("ITSAppUsesNonExemptEncryption", plistlib.load(source))
 
     def test_archive_failure_prevents_export(self):
         self.env.update(TEAM_ID="ABCDE12345", FAKE_ARCHIVE_STATUS="65")

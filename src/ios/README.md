@@ -63,12 +63,13 @@ validation or TestFlight-delivery claims follow from an unsigned archive or
 Simulator test. Verify device-owner authentication and persistence on the intended
 iPhone after signing, using disposable synthetic data only.
 
-`Info.plist` declares `ITSAppUsesNonExemptEncryption=NO`: this build uses standard
-CryptoKit/system cryptography (including AES-GCM) for local data, not proprietary
-cryptography, qualifying for the standard-encryption exemption. The owner must
-still review Apple's export-compliance questions and applicable country rules
-before upload, and reassess this declaration if cryptography changes. Face ID,
-launch screen, and iPhone/iPad orientations are explicit. No
+`ITSAppUsesNonExemptEncryption` is intentionally **unset**. The archive/export
+helper does not supply an answer: the account holder must answer App Store
+Connect's encryption questionnaire. See [EXPORT_COMPLIANCE.md](EXPORT_COMPLIANCE.md)
+for the CryptoKit, CommonCrypto, Security and LocalAuthentication inventory,
+Apple's guidance, and the classification questions to confirm. Encryption for
+local data protection may still count; this project makes no exemption declaration.
+Face ID, launch screen, and iPhone/iPad orientations are explicit. No
 `LSApplicationQueriesSchemes` are needed: the app does not call `canOpenURL` to
 query other apps.
 
