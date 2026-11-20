@@ -87,7 +87,7 @@ for (const method of ['selection', 'Add key']) {
       await expect(popup.locator('#preview')).toHaveText('••••AAAA');
       await expect(popup.locator('#origin')).toHaveText(origin);
       await expect(popup.locator('.binding')).toHaveText(`Can fill on: ${origin}`);
-      await expect(popup.locator('.storage-note')).toHaveText('Saved to: this device only (encrypted extension vault — not the dashboard/Device Vault)');
+      await expect(popup.locator('.storage-note')).toHaveText('Will save to: this device only (encrypted extension vault — not the dashboard/Device Vault)');
       await expect(popup.locator('#provider')).toHaveValue(samples[0].provider);
       await popup.locator('#label').fill('Tutorial synthetic key');
       await save();

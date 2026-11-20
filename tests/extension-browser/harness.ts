@@ -25,7 +25,7 @@ let port: number;
 let output: string;
 let networkRequests: { url: string; method: string; body: string; headers: Record<string, string> }[] = [];
 
-export function installHarness() {
+export function installHarness({ nativeViewport = false, headless = process.env.KEYSHIELD_TUTORIAL_RECORD !== '1' } = {}) {
   test.beforeAll(async () => {
     const parent = resolve(root, 'dist/extension-acceptance');
     mkdirSync(parent, { recursive: true });
@@ -69,7 +69,8 @@ export function installHarness() {
     const profile = mkdtempSync(resolve(output, 'profile-'));
     const extension = info.title.startsWith('KS-EXT-004') ? build : grantedBuild;
     context = await chromium.launchPersistentContext(profile, {
-      channel: 'chromium', headless: process.env.KEYSHIELD_TUTORIAL_RECORD !== '1', ignoreHTTPSErrors: true,
+      channel: 'chromium', headless, ignoreHTTPSErrors: true,
+      viewport: nativeViewport ? null : undefined,
       args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, '--no-proxy-server', '--ignore-certificate-errors', `--host-resolver-rules=${mockHosts.map((host: string) => `MAP ${host} 127.0.0.1:${port}`).join(', ')}`],
     });
     networkRequests = [];
