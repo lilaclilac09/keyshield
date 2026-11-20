@@ -352,7 +352,7 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
   it("configures the Finder background, bounds, and all four visible icon positions", () => {
     const { finderPresentation } = require("../src/desktop/scripts/pack-mac.cjs");
     const script = finderPresentation();
-    for (const value of ["icon view", "not arranged", ".background/installer.png", "{120, 90, 840, 672}", "{176, 245}", "{544, 245}", "{92, 445}", "{260, 445}"]) {
+    for (const value of ["icon view", "not arranged", ".background/installer.png", "{120, 90, 840, 672}", "{176, 245}", "{544, 245}", "{92, 420}", "{260, 420}", "label position of options to bottom", "shows icon preview of options to false"]) {
       expect(script).toContain(value);
     }
     const svg = read("src/desktop/assets/dmg-background.svg");

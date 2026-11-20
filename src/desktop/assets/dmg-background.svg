@@ -11,8 +11,12 @@
     <text x="104" y="94" fill="#a8b3d8" font-size="14">Your API iCloud Keychain</text>
     <rect x="56" y="154" width="240" height="186" rx="20" fill="#131c39" stroke="#243365"/>
     <rect x="424" y="154" width="240" height="186" rx="20" fill="#131c39" stroke="#243365"/>
+    <rect x="112" y="292" width="128" height="28" rx="8" fill="#e8ecff"/>
+    <rect x="480" y="292" width="128" height="28" rx="8" fill="#e8ecff"/>
     <path d="M330 245H390M376 231L390 245L376 259" fill="none" stroke="#a8b3d8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="40" y="385" fill="#8a96c2" font-size="12">Build details and installation notes</text>
+    <text x="40" y="360" fill="#8a96c2" font-size="12">Build details and installation notes</text>
+    <rect x="28" y="467" width="128" height="28" rx="8" fill="#e8ecff"/>
+    <rect x="196" y="467" width="128" height="28" rx="8" fill="#e8ecff"/>
     <path d="M32 508H688" stroke="#243365"/>
     <text x="360" y="537" text-anchor="middle" fill="#a8b3d8" font-size="12">Local test build — unsigned, not notarized</text>
   </g>

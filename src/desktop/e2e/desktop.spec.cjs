@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const http = require('node:http');
-const { randomBytes } = require('node:crypto');
+const { randomBytes, createHash } = require('node:crypto');
 const { samples } = require('./keys.json');
 
 const desktop = path.resolve(__dirname, '..');
@@ -80,7 +80,19 @@ test('branded DMG: read-only layout and exact installed bundle', async () => {
     const pin = JSON.parse(fs.readFileSync(path.join(desktop, 'renderer-inputs.json'), 'utf8'));
     expect(fs.readFileSync(path.join(mount, 'BUILD-INFO.txt'), 'utf8')).toContain(`renderer commit: ${pin.commit}`);
     const installed = path.resolve(process.env.KS_E2E_APP, '../../..');
-    execFileSync('diff', ['-qr', path.join(mount, 'KeyShield.app'), installed]);
+    const manifest = (root) => {
+      const entries = [];
+      const walk = (relative) => {
+        const file = path.join(root, relative);
+        const stat = fs.lstatSync(file);
+        if (stat.isSymbolicLink()) entries.push([relative, 'link', fs.readlinkSync(file)]);
+        else if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) walk(path.join(relative, name));
+        else entries.push([relative, stat.mode & 0o777, createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);
+      };
+      walk('');
+      return entries;
+    };
+    expect(manifest(installed)).toEqual(manifest(path.join(mount, 'KeyShield.app')));
   } finally {
     if (mounted) execFileSync('hdiutil', ['detach', mount]);
     fs.rmdirSync(mount);
@@ -92,8 +104,7 @@ test('desktop-owned navy loading screen (held locally for visual capture)', asyn
   await expect(page.getByTestId('email-signup')).toBeVisible();
   expect(fs.readFileSync(path.join(dir, 'launch.log'), 'utf8')).toContain('local loading screen shown');
   await app.evaluate(async ({ BrowserWindow, app: electronApp }, source) => {
-    const path = require('node:path');
-    await BrowserWindow.getAllWindows()[0].loadFile(path.join(electronApp.isPackaged ? process.resourcesPath : source, 'loading.html'));
+    await BrowserWindow.getAllWindows()[0].loadFile(electronApp.isPackaged ? `${electronApp.getAppPath()}/../loading.html` : `${source}/loading.html`);
   }, desktop);
   await expect(page.getByRole('status')).toContainText('Loading KeyShield…');
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(11, 18, 38)');

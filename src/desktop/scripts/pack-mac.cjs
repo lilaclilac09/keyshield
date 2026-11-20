@@ -160,11 +160,14 @@ function finderPresentation() {
       set arrangement of options to not arranged
       set icon size of options to 88
       set text size of options to 12
+      set background color of options to {2827, 4626, 9766}
+      set shows icon preview of options to false
+      set label position of options to bottom
       set background picture of options to POSIX file (volumePath & "/.background/installer.png")
       set position of item "KeyShield.app" to {176, 245}
       set position of item "Applications" to {544, 245}
-      set position of item "BUILD-INFO.txt" to {92, 445}
-      set position of item "OPEN-ME.txt" to {260, 445}
+      set position of item "BUILD-INFO.txt" to {92, 420}
+      set position of item "OPEN-ME.txt" to {260, 420}
       update without registering applications
       close
       open
