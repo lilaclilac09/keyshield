@@ -7,6 +7,9 @@ node_modules/
 **/node_modules/
 
 # --- Build outputs -----------------------------------------------------------
+src/ios/DerivedData/
+src/ios/build/
+**/xcuserdata/
 /dist/
 /build/
 /out/
