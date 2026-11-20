@@ -45,6 +45,25 @@ describe("email + password sign-in on AuthScreen", () => {
     expect(hint + vault).not.toMatch(/auto-detect/i);
   });
 
+  it('uses the current extension passphrase flow on sign-in, Home and Docs without token handoff instructions', () => {
+    const hint = readFileSync('src/web/components/ExtensionInstallHint.tsx', 'utf8');
+    const home = readFileSync('src/web/components/sections/HomeSection.tsx', 'utf8');
+    const docs = readFileSync('src/web/components/sections/DocsSection.tsx', 'utf8');
+    const popup = readFileSync('src/extension/popup.html', 'utf8');
+    const worker = readFileSync('src/extension/background.js', 'utf8');
+    const vault = readFileSync('src/extension/lib/vault.js', 'utf8');
+    expect(popup).toContain('Create / unlock vault');
+    expect(popup).toContain('Vault passphrase (12+ characters)');
+    expect(worker).toContain('new LocalVault(chrome.storage.local)');
+    expect(vault).toContain("crypto.subtle.importKey('raw', encoder.encode(passphrase), 'PBKDF2'");
+    expect(hint).toContain('at least 12 characters');
+    expect(hint).toContain('No dashboard account, session token or sync is needed.');
+    expect(hint).toContain('Nothing is filled automatically.');
+    expect(home).toContain('ExtensionInstallHint variant="home"');
+    expect(docs).toContain('ExtensionInstallHint variant="home"');
+    expect(hint + home + docs).not.toMatch(/Copy token for extension|popup gets a session token|already logged in when a token|ExtensionTokenCopy|ok 1\.2\.5|manifest\.muse\.json/);
+  });
+
   it("documents Google OAuth env vars without requiring them to boot", () => {
     const env = readFileSync(".env.example", "utf8");
     expect(env).toContain("GOOGLE_CLIENT_ID=");

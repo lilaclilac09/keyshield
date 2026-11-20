@@ -35,7 +35,7 @@ import { AddKeyModal } from '../src/web/components/AddKeyModal';
 import { DeviceVaultConsent } from '../src/web/components/DeviceVaultConsent';
 import { makeHttpSyncBackend } from '../src/web/lib/sync';
 import { HomeSection } from '../src/web/components/sections/HomeSection';
-import { ExtensionTokenCopy } from '../src/web/components/ExtensionTokenCopy';
+import { ExtensionInstallHint } from '../src/web/components/ExtensionInstallHint';
 import { SessionsSection } from '../src/web/components/sections/SessionsSection';
 import { RevealField } from '../src/web/components/ui/RevealField';
 
@@ -350,11 +350,11 @@ describe('central guards and consent', () => {
     expect(findNode(tree, node => node.type === DeviceVaultConsent)).toBeUndefined();
     expect(requests).toHaveLength(0);
   });
-  it.each(['extension', 'sessions', 'reveal field'] as const)('%s never renders token characters or fragments until explicitly revealed', (surface) => {
+  it.each(['sessions', 'reveal field'] as const)('%s never renders token characters or fragments until explicitly revealed', (surface) => {
     const token = 'SYNTHETIC-TOKEN-PRIVATE-PREFIX-and-private-suffix-993355';
     vi.stubGlobal('window', { ...window, setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
     localStorage.setItem('ks_token', token);
-    const component = () => surface === 'extension' ? ExtensionTokenCopy({}) : surface === 'sessions' ? SessionsSection({ onLogout: vi.fn() }) : RevealField({ value: token, label: 'Session token' });
+    const component = () => surface === 'sessions' ? SessionsSection({ onLogout: vi.fn() }) : RevealField({ value: token, label: 'Session token' });
     let tree = render(component);
     for (const fragment of [token, token.slice(0, 12), token.slice(-6)]) expect(renderedText(tree)).not.toContain(fragment);
     const show = findNode(tree, node => node.type === 'button' && ['Show token', 'Reveal'].includes(renderedText(node)));
@@ -367,8 +367,16 @@ describe('central guards and consent', () => {
     expect(renderedText(tree)).not.toContain(token.slice(-6));
     expect(requests).toHaveLength(0);
   });
-  it('extension token UI renders nothing when signed out', () => {
-    expect(render(() => ExtensionTokenCopy({}))).toBeNull();
+  it.each(['auth', 'home'] as const)('extension setup on %s needs no session and never offers a token handoff', (variant) => {
+    const renderSetup = () => render(() => ExtensionInstallHint({ variant }));
+    expect(renderedText(renderSetup())).toContain('Create / unlock vault');
+    const token = 'SYNTHETIC-PRIVATE-TOKEN-NEVER-FOR-EXTENSION-993355';
+    localStorage.setItem('ks_token', token);
+    const tree = renderSetup();
+    expect(renderedText(tree)).toContain('No dashboard account, session token or sync is needed.');
+    for (const fragment of [token, token.slice(0, 12), token.slice(-6)]) expect(renderedText(tree)).not.toContain(fragment);
+    expect(findNode(tree, node => node.type === 'button' && /token/i.test(renderedText(node)))).toBeUndefined();
+    expect(requests).toHaveLength(0);
   });
   it('Home still calls existing hosted rows even when a device entry uses the same provider', async () => {
     await unlock();

@@ -22,7 +22,7 @@ import {
 } from '../../lib/purchases';
 import type { PlanSnapshot } from '../PlanCatalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
-import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
+import { ExtensionInstallHint } from '../ExtensionInstallHint';
 
 interface Props {
   home: KeychainHome | null;
@@ -438,7 +438,7 @@ export const HomeSection: React.FC<Props> = ({
 
       <details data-testid="home-extension-setup" className="rounded-2xl border border-[#243365] bg-[#0e1631] p-5">
         <summary className="cursor-pointer text-[15px] font-semibold text-white">Set up the Chrome extension</summary>
-        <div className="mt-4"><ExtensionTokenCopy /></div>
+        <div className="mt-4"><ExtensionInstallHint variant="home" onOpenDocs={() => onGo('troubleshooting')} /></div>
       </details>
 
       <button type="button" onClick={onRefresh} className="text-[14px] text-[#8a96c2] hover:text-white inline-flex items-center gap-2">

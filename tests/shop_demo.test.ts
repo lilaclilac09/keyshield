@@ -106,7 +106,7 @@ describe("shop demo helpers", () => {
     expect(home).not.toContain("PurchasesPanel");
     expect(home).not.toContain("SHOP_PROOF_SETTLE_CU");
     expect(home).not.toContain("key-paste");
-    expect(home).not.toContain("ExtensionInstallHint");
+    expect(home).toContain('ExtensionInstallHint variant="home"');
     expect(home).not.toMatch(/[\u4e00-\u9fff]/);
     const payments = readFileSync(resolve(__dirname, "../src/web/components/PaymentsLedger.tsx"), "utf8");
     expect(payments).toContain("shop-proof-strip");
