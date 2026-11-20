@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const http = require('node:http');
-const { randomBytes } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const { samples } = require('./keys.json');
 
 const desktop = path.resolve(__dirname, '..');
@@ -170,6 +170,109 @@ async function copyDeviceKey(card, app, value) {
   await card.getByTitle('Hide', { exact: true }).click();
   await expect(card).not.toContainText(value);
 }
+
+test('Mac tester onboarding: read-only DMG, prompt-free launch, synthetic PRF (not hardware passkey), loopback sync (not production worker)', async ({}, testInfo) => {
+  test.skip(process.platform !== 'darwin', 'Read-only DMG mounting requires macOS');
+  test.setTimeout(90000);
+  const dmg = path.resolve(process.env.KS_E2E_DMG || path.join(desktop, 'release', 'KeyShield.dmg'));
+  const expectedRenderer = process.env.KS_E2E_EXPECTED_RENDERER_COMMIT || require('../renderer-inputs.json').commit;
+  const expectedDesktop = process.env.KS_E2E_EXPECTED_DESKTOP_COMMIT;
+  expect(expectedRenderer).toMatch(/^[a-f0-9]{40}$/);
+  if (expectedDesktop) expect(expectedDesktop).toMatch(/^[a-f0-9]{40}$/);
+  const mount = fs.mkdtempSync(path.join(run, 'onboarding-dmg-'));
+  const manifest = (root) => {
+    const entries = [];
+    const visit = (relative) => {
+      for (const name of fs.readdirSync(path.join(root, relative)).sort()) {
+        const entry = path.join(relative, name);
+        const file = path.join(root, entry);
+        const stat = fs.lstatSync(file);
+        if (stat.isSymbolicLink()) entries.push([entry, 'link', fs.readlinkSync(file)]);
+        else if (stat.isDirectory()) visit(entry);
+        else entries.push([entry, 'file', createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);
+      }
+    };
+    visit('');
+    return entries;
+  };
+  let mounted = false;
+  let app;
+  try {
+    execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg]);
+    mounted = true;
+    expect(execFileSync('mount', { encoding: 'utf8' }).split('\n').find((line) => line.includes(` on ${mount} (`))).toContain('read-only');
+    expect(fs.readdirSync(mount).sort()).toEqual(['Applications', 'BUILD-INFO.txt', 'KeyShield.app', 'OPEN-ME.txt']);
+    expect(fs.statSync(path.join(mount, 'KeyShield.app')).isDirectory()).toBe(true);
+    expect(fs.lstatSync(path.join(mount, 'Applications')).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(path.join(mount, 'Applications'))).toBe('/Applications');
+    expect(fs.readFileSync(path.join(mount, 'OPEN-ME.txt'), 'utf8')).not.toMatch(/xattr|spctl|--no-quarantine|right.click.{0,8}open|open anyway|disabl\w* gatekeeper/i);
+    const info = fs.readFileSync(path.join(mount, 'BUILD-INFO.txt'), 'utf8');
+    const revision = (label) => info.split('\n').find((line) => line.startsWith(`${label}: `))?.slice(label.length + 2);
+    expect(revision('renderer commit')).toBe(expectedRenderer);
+    expect(revision('desktop commit')).toMatch(/^[a-f0-9]{40}$/);
+    if (expectedDesktop) expect(revision('desktop commit')).toBe(expectedDesktop);
+    const mountedApp = path.join(mount, 'KeyShield.app');
+    // BUILD-INFO lives beside the app in this DMG, not inside its bundle.
+    // Bind those revisions to the installed bytes, rather than trusting a nearby sidecar.
+    if (process.env.KS_E2E_APP) {
+      const installedApp = path.resolve(process.env.KS_E2E_APP, '..', '..', '..');
+      expect(manifest(installedApp)).toEqual(manifest(mountedApp));
+    } else {
+      expect(manifest(path.join(desktop, 'renderer'))).toEqual(manifest(path.join(mountedApp, 'Contents', 'Resources', 'renderer')));
+    }
+    console.log('ONBOARDING_REVISIONS', JSON.stringify({
+      target: kind,
+      desktop: process.env.KS_E2E_APP ? revision('desktop commit') : execFileSync('git', ['rev-parse', 'HEAD'], { cwd: desktop, encoding: 'utf8' }).trim(),
+      renderer: expectedRenderer,
+      dmgDesktop: revision('desktop commit'),
+      dmg,
+    }));
+    const session = await launch('tester-onboarding');
+    app = session.app;
+    const { page, dir } = session;
+    await expect(page.getByTestId('email-signup')).toBeVisible();
+    await page.getByTestId('email-login').fill(`onboarding-${Date.now()}@example.invalid`);
+    await expect(page.getByTestId('email-login')).toBeFocused();
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+    // Capture the whole screen: a renderer-only image would omit native prompts.
+    execFileSync('screencapture', ['-x', testInfo.outputPath('onboarding-launch-screen.png')]);
+    await signup(page);
+    expect(saveRequests(dir)).toEqual([]);
+    // Mock boundaries: synthetic PRF replaces hardware WebAuthn; the disposable
+    // loopback worker replaces production auth/sync. Encryption is real client code.
+    const fixture = await unlockWithSyntheticPasskey(page, app);
+    expect(fixture.blobs.size).toBe(0);
+    const value = samples.find((row) => row.id === 'openai').value;
+    const label = 'Synthetic first Device Vault save';
+    await saveSecret(page, value, label);
+    expect(fixture.blobs.size).toBe(1);
+    const shapes = saveRequests(dir);
+    expect(shapes).toHaveLength(1);
+    expect(shapes[0].method).toBe('PUT');
+    expect(shapes[0].route).toMatch(/^\/vault\//);
+    expect(shapes[0].bodyFieldNames).toEqual(['ciphertext', 'iv', 'updatedAt', 'version']);
+    expect(shapes[0].hasCiphertextEnvelope).toBe(true);
+    expect(shapes[0].plaintextFieldPresent).toBe(false);
+    expect(shapes[0].syntheticMarkerPresent).toBe(false);
+    console.log('ONBOARDING_SAVE_REQUEST_SHAPES', JSON.stringify(shapes));
+    for (const blob of fixture.blobs.values()) {
+      expect(blob.includes(value) || blob.includes(label)).toBe(false);
+    }
+    await page.reload();
+    await fixture.reconnect();
+    await page.getByRole('button', { name: 'Vault', exact: true }).click();
+    await expect(page.getByRole('heading', { name: label, exact: true })).toHaveCount(0);
+    await page.getByTestId('zk-mode-card').getByRole('button', { name: 'Unlock with passkey', exact: true }).click();
+    const card = page.locator('div.group').filter({ has: page.getByRole('heading', { name: label, exact: true }) });
+    await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible();
+    await card.getByTitle('Reveal', { exact: true }).click();
+    expect((await card.textContent()).includes(value.split('::')[1])).toBe(true);
+    expect(saveRequests(dir)).toEqual(shapes);
+  } finally {
+    try { if (app) await app.close(); }
+    finally { if (mounted) execFileSync('hdiutil', ['detach', mount]); }
+  }
+});
 
 test.describe.serial('local desktop acceptance', () => {
   let app, page, dir;

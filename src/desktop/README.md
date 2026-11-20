@@ -176,6 +176,41 @@ it does not include error payloads or credential values.
 These tests do not verify authenticator/worker authentication, and
 ciphertext-shaped fields alone are not proof of encryption.
 
+### Mac tester onboarding
+
+On macOS, the `Mac tester onboarding` case additionally mounts a local DMG
+read-only, checks its exact four-entry layout (no launch helper), and checks
+the renderer revision in `BUILD-INFO.txt`. That file lives at the DMG root,
+not inside the app. For an installed target, the test compares the entire
+installed bundle with the mounted app before launching. For source, it compares
+`renderer/` with the mounted renderer, so build matching assets first. Neither
+target is installed or rebuilt by the test. The source shell revision and
+verified renderer revision are printed as `ONBOARDING_REVISIONS`.
+
+Run from `src/desktop` with the local API running:
+
+```sh
+KS_E2E_DMG=/absolute/path/to/KeyShield.dmg npm run test:e2e -- --grep 'Mac tester onboarding'
+KS_E2E_DMG=/absolute/path/to/KeyShield.dmg \
+KS_E2E_APP=/Applications/KeyShield.app/Contents/MacOS/KeyShield \
+KS_E2E_EXPECTED_RENDERER_COMMIT=<full-reviewed-renderer-sha> \
+KS_E2E_EXPECTED_DESKTOP_COMMIT=<full-reviewed-desktop-sha> \
+npm run test:e2e -- --grep 'Mac tester onboarding'
+```
+
+`KS_E2E_DMG` defaults to `release/KeyShield.dmg`. The expected renderer defaults
+to `renderer-inputs.json`; override it when the installed local tester uses a
+different reviewed pin. The optional expected desktop commit checks the DMG's
+shell revision (the installed bundle must always match that DMG byte-for-byte).
+The case signs up a disposable synthetic account, saves its first FAKE key,
+checks the ciphertext-only audit, then reloads and explicitly unlocks to restore
+the key. Synthetic PRF replaces hardware passkey authentication and a disposable
+loopback fixture replaces production sync; client encryption is not mocked.
+It saves a whole-screen launch image in the Playwright results directory for
+native-prompt review. A successful direct Electron launch of an existing local
+copy does not establish Finder/Gatekeeper launch eligibility; no security
+settings are changed by this test.
+
 `KS_DESKTOP_REQUEST_AUDIT=/existing/directory/requests.jsonl` opts into a
 mode-0600 HTTP(S) JSONL audit (off by default). Records contain only method,
 redacted route path and field names, plus ciphertext/plaintext/FAKE-presence
