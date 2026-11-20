@@ -1,30 +1,26 @@
 /**
- * useVaults — SQLite `/manage/*` vault.
- *
- * Detect + save POST `/manage/store` with the API key. List GET
- * `/manage/vault` (masked). Reveal GET `/manage/decrypt/{id}`. No
- * passkey / Device Vault unlock on this path.
+ * Device-local saves alongside existing hosted `/manage/*` records.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { VaultItem, inferType } from '../types';
 import { isAuthenticated, requestVaultUnlock, API_BASE, apiFetch } from '../lib/auth';
 import {
-  addEntry,
   removeEntry,
   listEntries,
   isVaultUnlocked,
+  getDecryptedKey,
 } from '../lib/vault-session';
 import type { VaultEntry } from '../lib/vault';
 import {
   isVaultListPayload,
   parseVaultListPayload,
-  previewPendingVaultHits,
   VAULT_CHANGED_EVENT,
-  type PendingVaultHit,
 } from '../lib/vault-list';
-import { revealZkItem, storeZkItem } from '../lib/zk';
+import { revealZkItem } from '../lib/zk';
+import { saveKeyOnDevice } from '../lib/device-save';
+import { VaultSyncChangeError } from '../lib/vault-sync-status';
 import { emitAppFeedback } from '../lib/app-feedback';
-import { catalogTags, formatExpiry, providerMeta, vaultStoreName } from '../lib/provider-catalog';
+import { catalogTags, formatExpiry, providerMeta } from '../lib/provider-catalog';
 
 function userSecretLabel(slug: string): string {
   const idx = slug.indexOf('__');
@@ -72,37 +68,40 @@ function serverRowToVault(row: {
 }
 
 function entryToVault(entry: VaultEntry): VaultItem {
-  const type = inferType(entry.upstream);
+  const upstream = entry.upstream.replace(/#\d+$/, '');
+  const type = inferType(upstream);
   if (type === 'api_key') {
-    const meta = providerMeta(entry.upstream);
+    const meta = providerMeta(upstream);
     return {
-      id: entry.upstream,
-      name: meta.name,
+      id: `device:${entry.upstream}`,
+      name: entry.name || `${meta.name}${entry.upstream.slice(upstream.length)}`,
       type: 'api_key',
-      value: `${API_BASE}/proxy/${entry.upstream}/`,
-      domain: meta.domain,
+      value: `${API_BASE}/proxy/${upstream}/`,
+      domain: entry.domain || meta.domain,
+      expiryDate: entry.expiresAt,
       createdAt: entry.addedAt,
       lastUsedAt: entry.addedAt,
-      tags: catalogTags(entry.upstream, ['VAULT']),
+      tags: catalogTags(upstream, ['VAULT']),
       family: meta.family,
       product: meta.product,
-      upstream: entry.upstream,
+      upstream,
     };
   }
   return {
-    id: entry.upstream,
-    name: userSecretLabel(entry.upstream),
+    id: `device:${entry.upstream}`,
+    name: entry.name || userSecretLabel(entry.upstream),
     type,
     value: '••••••',
     createdAt: entry.addedAt,
     lastUsedAt: entry.addedAt,
     tags: [type.replace('_', ' ')],
+    domain: entry.domain,
+    expiryDate: entry.expiresAt,
   };
 }
 
 export const useVaults = (searchQuery: string, _activeFilter: string) => {
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
-  const [pendingHits, setPendingHits] = useState<PendingVaultHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState<boolean>(isVaultUnlocked());
@@ -188,64 +187,29 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== window || !e.data) return;
-      if (Array.isArray(e.data.__ks_pending_vault)) {
-        setPendingHits(e.data.__ks_pending_vault as PendingVaultHit[]);
-      }
-      if (e.data.__ks_pending_vault_cleared) setPendingHits([]);
       if (e.data.__ks_vault_changed) refresh();
     };
     window.addEventListener('message', onMsg);
-    try { window.postMessage({ __ks_ext_request_pending_vault: true }, window.location.origin); } catch { /* noop */ }
     return () => window.removeEventListener('message', onMsg);
   }, [refresh]);
 
-  const mergedItems = useMemo(() => {
-    if (!pendingHits.length) return vaultItems;
-    const pendingItems = previewPendingVaultHits(pendingHits).map(serverRowToVault);
-    const seen = new Set(vaultItems.map((item) => `${item.name}:${item.value}`));
-    const extra = pendingItems.filter((item) => !seen.has(`${item.name}:${item.value}`));
-    return extra.length ? vaultItems.concat(extra) : vaultItems;
-  }, [vaultItems, pendingHits]);
-
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    if (!q) return mergedItems;
-    return mergedItems.filter(
+    if (!q) return vaultItems;
+    return vaultItems.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.domain?.toLowerCase().includes(q) ||
         item.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [mergedItems, searchQuery]);
+  }, [vaultItems, searchQuery]);
 
   const addItem = useCallback(
     async (data: Partial<VaultItem> & { upstream?: string; rawKey?: string }) => {
-      // Detect + save never prompts passkey. Reveal is GET /manage/decrypt.
       const upstream = (data.upstream ?? data.domain?.replace(/\.(com|ai|dev|org)$/, '') ?? 'custom').toLowerCase();
       const rawKey = data.rawKey ?? data.value ?? '';
       if (!rawKey) throw new Error('Paste the API key');
-      if (isVaultUnlocked()) {
-        await addEntry(upstream, rawKey);
-      }
-      const stored = await apiFetch('/manage/store', {
-        method: 'POST',
-        body: JSON.stringify({
-          upstream,
-          apiKey: rawKey,
-          value: rawKey,
-          name: vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }),
-        }),
-      });
-      if (!stored.ok) {
-        const err = (await stored.json().catch(() => ({ detail: 'store failed' }))) as { detail?: string; error?: string };
-        if (stored.status === 409 && err.error === 'zk_mode') {
-          // ZK mode on: plaintext is refused, so encrypt here and save ciphertext.
-          await storeZkItem(upstream, rawKey, vaultStoreName({ upstream, value: rawKey, name: data.name, host: data.domain }));
-          refresh();
-          return;
-        }
-        throw new Error(err.detail ?? 'store failed');
-      }
+      await saveKeyOnDevice(upstream, rawKey, { name: data.name, expiresAt: data.expiryDate || undefined, domain: data.domain });
       refresh();
     },
     [refresh],
@@ -253,6 +217,16 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   const deleteItem = useCallback(
     async (id: string) => {
+      if (id.startsWith('device:')) {
+        try {
+          await removeEntry(id.slice('device:'.length));
+        } catch (err) {
+          if (err instanceof VaultSyncChangeError) return;
+          throw err;
+        }
+        refresh();
+        return;
+      }
       setVaultItems((prev) => prev.filter((i) => i.id !== id));
       try {
         if (isVaultUnlocked()) await removeEntry(id);
@@ -270,6 +244,11 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
   );
 
   const decryptItem = useCallback(async (id: string): Promise<string> => {
+    if (id.startsWith('device:')) {
+      const value = getDecryptedKey(id.slice('device:'.length));
+      if (value === null) throw new Error('Unlock your device vault or save the key again.');
+      return value;
+    }
     const r = await apiFetch(`/manage/decrypt/${encodeURIComponent(id)}`);
     if (r.status === 409) {
       const body = (await r.clone().json().catch(() => ({}))) as { error?: string };
@@ -287,7 +266,7 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
 
   return {
     items: filteredItems,
-    allItems: mergedItems,
+    allItems: vaultItems,
     loading,
     error,
     unlocked,

@@ -5,7 +5,8 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Input } from '../ui/Input';
 import { apiFetch } from '../../lib/auth';
-import { addEntry, isVaultUnlocked } from '../../lib/vault-session';
+import { isVaultUnlocked } from '../../lib/vault-session';
+import { saveKeyOnDevice } from '../../lib/device-save';
 import type { PlanSnapshot } from '../PlanCatalog';
 import { agentPubkeyError } from '../../lib/agent-pubkey';
 import { copyWithFeedback } from '../../lib/app-feedback';
@@ -77,7 +78,7 @@ export const AgentsSection: React.FC = () => {
       let vaultNote = 'Copy the seed now — you keep it. Server only has the pubkey.';
       if (isVaultUnlocked()) {
         try {
-          await addEntry(slug, seedB64);
+          await saveKeyOnDevice(slug, seedB64);
           vaultNote = 'Private seed saved on this device. Passkey verifies when you retrieve it. Server never sees it.';
         } catch {
           /* show the one-time copy box instead */

@@ -8,6 +8,7 @@
  */
 
 import { prfSalt } from './sync-auth';
+import { assertSafeRequest } from './secret-guard';
 import {
   enrollVault,
   unlockVault,
@@ -299,6 +300,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
+  assertSafeRequest(`${API_BASE}${path}`, { ...options, headers });
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
@@ -335,6 +337,7 @@ export async function proxyFetch(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('X-Upstream-API-Key', apiKey);
+  assertSafeRequest(`${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`, { ...options, headers });
   try {
     return await fetch(
       `${API_BASE}/proxy/${upstream}/${path.replace(/^\//, '')}`,
@@ -659,8 +662,7 @@ export function setPasskeyTrust(userId: string, passphrase: string): void {
 }
 
 export function getPasskeyTrust(): { userId: string; passphrase: string } | null {
-  const u = resolvePasskeyUserId({
-    passkeyUser: localStorage.getItem(PASSKEY_USER),
+  const u = localStorage.getItem(PASSKEY_USER)?.trim() || resolvePasskeyUserId({
     wallet: localStorage.getItem(WALLET_KEY),
   });
   if (!u) return null;
@@ -888,6 +890,7 @@ export async function registerPasskey(
     throw new Error((err as { detail: string }).detail ?? 'Registration failed');
   }
   const result = await verRes.json();
+  setPasskeyTrust(opts.user.name, '');
 
   // Identity passkey is stored on the Python control plane at this point.
   // Path A Device Vault still needs PRF + the Cloudflare worker. Do not fail
