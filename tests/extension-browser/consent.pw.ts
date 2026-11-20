@@ -2,6 +2,37 @@ import { test, expect, installHarness, samples, negatives, origin, secondOrigin,
 
 installHarness();
 
+test('KS-EXT-009 duplicate on another approved origin explains that the original binding stays unchanged', async () => {
+  await openPopup();
+  await unlock();
+  await add();
+  await save();
+  await popup.close();
+  await page.goto(`${secondOrigin}/input.html`);
+  await openPopup();
+  await add();
+  await expect(popup.locator('#origin')).toHaveText(secondOrigin);
+  await popup.locator('#label').fill('Updated synthetic label');
+  await popup.locator('#save').click();
+  await expect(popup.locator('#confirm')).toBeVisible();
+  await expect(popup.locator('#origin')).toHaveText('the original saved origin (unchanged)');
+  await expect(popup.locator('#status')).toContainText('The key stays bound to its original site.');
+  await popup.setViewportSize({ width: 380, height: 600 });
+  await popup.locator('#status').scrollIntoViewIfNeeded();
+  await popup.screenshot({ path: `${process.env.KEYSHIELD_REAL_SIZE_SCREENSHOTS || output}/popup-duplicate-binding.png` });
+  expect((await state()).entries).toHaveLength(1);
+  expect((await state()).entries[0]).toMatchObject({ origin, label: samples[0].provider });
+  await popup.locator('#confirm').click();
+  await expect(popup.locator('#status')).toHaveText('Saved encrypted on this device');
+  expect((await state()).entries).toHaveLength(1);
+  expect((await state()).entries[0]).toMatchObject({ origin, label: 'Updated synthetic label' });
+  await expect(popup.locator('#entry-list .saved-key-origin')).toHaveText(`Fill only on ${origin}`);
+  await expect(popup.locator('#fill-availability')).toHaveText(`Not available on this site. Fill only on ${origin}`);
+  await popup.locator('#fill').click();
+  await expect(popup.locator('#status')).toHaveText('Fill refused: this key belongs to another origin');
+  expect(JSON.stringify(networkRequests)).not.toContain('FAKE_KEYSHIELD_NOT_A_KEY::');
+});
+
 test('KS-USE-002 another approved origin cannot fill a key bound to the first origin', async () => {
   await openPopup();
   await unlock();

@@ -126,7 +126,8 @@ async function save(confirmDuplicate) {
   if (result.duplicate) {
     pendingUpdate = payload;
     $('confirm').hidden = false;
-    showStatus('Already saved — Update label? Confirm to change only the label.');
+    $('origin').textContent = 'the original saved origin (unchanged)';
+    showStatus('Already saved — Update label? Confirm to change only the label. The key stays bound to its original site.');
   } else {
     clearPending();
     await refresh();
