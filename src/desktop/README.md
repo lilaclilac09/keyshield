@@ -26,6 +26,8 @@ set.
 | `request-audit.cjs` | Opt-in, value-free HTTP(S) request shape audit |
 | `runtime-preflight.cjs` | Checks a packaged `.app` for its Chromium runtime files |
 | `boot.html` | Diagnostics screen shown when the dashboard cannot open |
+| `loading.html` | Local navy shield screen shown before the dashboard loads |
+| `assets/dmg-background.png` | Finder installer artwork (editable source: adjacent SVG) |
 | `scripts/build-renderer.cjs` | Builds `src/web` and verifies the output is complete |
 | `scripts/pack-mac.cjs` | Packs `KeyShield.app` (+ zip, and a DMG on macOS) |
 | `OPEN-ME.txt` | Install instructions shipped in the zip |
@@ -48,6 +50,16 @@ Output lands in `release/`:
 - `KeyShield.dmg.build-info.json` — full desktop/renderer commit and tree
   SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
   (renderer parent SHAs identify revisions included in integration merges)
+
+Set `KS_DESKTOP_RELEASE_DIR=/absolute/new/output` to keep earlier artifacts intact.
+The Mac pack step requires a logged-in Finder session with AppleScript automation
+available. It creates a writable HFS+ image, records the background, window bounds
+and icon positions in Finder, detaches it, then converts it to compressed UDZO.
+Missing Finder metadata fails the build instead of silently shipping an unstyled
+image. The hidden `.background/installer.png` and `.DS_Store` are presentation
+data, not install helpers. BUILD-INFO and OPEN-ME remain visible below the app.
+The SVG uses the shared login shield geometry and app.ks palette; the committed
+720×560 PNG needs no image-generation dependency at packaging time.
 
 To build with another reviewed integration pin without switching the desktop
 checkout:
@@ -85,7 +97,8 @@ build.
 
 ## How launch works
 
-1. The pack script builds the `src/web` dashboard and bundles it as
+1. After preflight succeeds, the shell displays its local navy loading screen.
+   The pack script builds the `src/web` dashboard and bundles it as
    `Contents/Resources/renderer/`. The app loads that copy through a
    session-only https intercept for `app.ks.aileena.xyz`, so the window
    works offline. Packaged builds never fall back to hosted dashboard content;

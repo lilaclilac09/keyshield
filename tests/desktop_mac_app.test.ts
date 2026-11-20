@@ -328,7 +328,12 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     const buildInfo = join(tempDir(), "BUILD-INFO.txt");
     writeFileSync(buildInfo, "synthetic build");
     stageDmgContents(source, staging, buildInfo);
-    expect(readdirSync(staging).sort()).toEqual(["Applications", "BUILD-INFO.txt", "KeyShield.app", "OPEN-ME.txt"]);
+    expect(readdirSync(staging).sort()).toEqual([".background", "Applications", "BUILD-INFO.txt", "KeyShield.app", "OPEN-ME.txt"]);
+    expect(readdirSync(join(staging, ".background"))).toEqual(["installer.png"]);
+    const background = readFileSync(join(staging, ".background", "installer.png"));
+    expect(background.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    expect(background.readUInt32BE(16)).toBe(720);
+    expect(background.readUInt32BE(20)).toBe(560);
     expect(preflight.inspectMacBundle(join(staging, "KeyShield.app")).ok).toBe(true);
     expect(readFileSync(join(staging, "OPEN-ME.txt"), "utf8")).toContain("Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.");
     expect(existsSync(resolve(root, "src/desktop/Open-KeyShield.command"))).toBe(false);
@@ -342,5 +347,49 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
   it("refuses to stage a missing app instead of providing an install helper fallback", () => {
     const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
     expect(() => stageDmgContents(join(tempDir(), "missing.app"), tempDir(), "missing-build-info")).toThrow();
+  });
+
+  it("configures the Finder background, bounds, and all four visible icon positions", () => {
+    const { finderPresentation } = require("../src/desktop/scripts/pack-mac.cjs");
+    const script = finderPresentation();
+    for (const value of ["icon view", "not arranged", ".background/installer.png", "{120, 90, 840, 672}", "{176, 245}", "{544, 245}", "{92, 445}", "{260, 445}"]) {
+      expect(script).toContain(value);
+    }
+    const svg = read("src/desktop/assets/dmg-background.svg");
+    for (const value of ["#0b1226", "#131c39", "#243365", "Drag KeyShield to Applications", "Local test build — unsigned, not notarized"]) expect(svg).toContain(value);
+  });
+
+  it.each(["success", "finder-error", "missing-metadata", "convert-error"])("creates and cleans up a writable Finder image: %s", (outcome) => {
+    const { createBrandedDmg } = require("../src/desktop/scripts/pack-mac.cjs");
+    const dest = tempDir();
+    const calls: string[][] = [];
+    const execute = (command: string, args: string[]) => {
+      calls.push([command, ...args]);
+      if (command === "osascript") {
+        if (outcome === "finder-error") throw new Error("Finder unavailable");
+        if (outcome !== "missing-metadata") writeFileSync(join(args[2], ".DS_Store"), "synthetic metadata");
+      }
+      if (args[0] === "convert" && outcome === "convert-error") throw new Error("conversion failed");
+    };
+    const create = () => createBrandedDmg("staging", join(dest, "KeyShield.dmg"), execute);
+    if (outcome === "success") expect(create).not.toThrow();
+    else expect(create).toThrow(outcome === "finder-error" ? /Finder unavailable/ : outcome === "missing-metadata" ? /did not save/ : /conversion failed/);
+    expect(calls[0]).toContain("UDRW");
+    expect(calls[1]).toContain("-readwrite");
+    expect(calls.filter((args) => args[1] === "detach")).toHaveLength(1);
+    expect(calls.some((args) => args.includes("UDZO"))).toBe(outcome === "success" || outcome === "convert-error");
+    expect(readdirSync(dest)).toEqual([]);
+  });
+
+  it("shows a local navy shield loading screen without replacing fail-closed diagnostics", () => {
+    const loading = read("src/desktop/loading.html");
+    expect(loading).toContain("background: #0b1226");
+    expect(loading).toContain("Loading KeyShield…");
+    expect(loading).toContain('<svg width="48"');
+    expect(loading).toContain("default-src 'none'");
+    expect(loading).not.toContain("<script");
+    expect(read("src/desktop/main.cjs")).toContain("local loading screen shown");
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("path.join(desktopDir, 'loading.html')");
+    expect(read("src/desktop/boot.html")).toContain("window.keyshieldRedaction.redact");
   });
 });

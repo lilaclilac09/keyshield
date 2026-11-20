@@ -30,7 +30,7 @@ const { sourceRevision, withRendererSource, writeDmgBuildInfo, fetchPinnedRender
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
-const releaseDir = path.join(desktopDir, 'release');
+const releaseDir = path.resolve(process.env.KS_DESKTOP_RELEASE_DIR || path.join(desktopDir, 'release'));
 const outDir = path.join(desktopDir, 'out');
 
 function run(cmd, args, opts = {}) {
@@ -141,6 +141,60 @@ function stageDmgContents(sourceApp, staging, buildInfo) {
   copyInstallNotes(staging);
   fs.copyFileSync(buildInfo, path.join(staging, 'BUILD-INFO.txt'));
   fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
+  fs.mkdirSync(path.join(staging, '.background'));
+  fs.copyFileSync(path.join(desktopDir, 'assets', 'dmg-background.png'), path.join(staging, '.background', 'installer.png'));
+}
+
+function finderPresentation() {
+  return `on run argv
+  set volumePath to item 1 of argv
+  set volumeAlias to POSIX file volumePath as alias
+  tell application "Finder"
+    tell folder volumeAlias
+      open
+      set current view of container window to icon view
+      set toolbar visible of container window to false
+      set statusbar visible of container window to false
+      set bounds of container window to {120, 90, 840, 672}
+      set options to icon view options of container window
+      set arrangement of options to not arranged
+      set icon size of options to 88
+      set text size of options to 12
+      set background picture of options to POSIX file (volumePath & "/.background/installer.png")
+      set position of item "KeyShield.app" to {176, 245}
+      set position of item "Applications" to {544, 245}
+      set position of item "BUILD-INFO.txt" to {92, 445}
+      set position of item "OPEN-ME.txt" to {260, 445}
+      update without registering applications
+      close
+      open
+      delay 2
+      close
+    end tell
+  end tell
+end run`;
+}
+
+function createBrandedDmg(staging, dmgPath, execute = execFileSync) {
+  const work = fs.mkdtempSync(path.join(path.dirname(dmgPath), '.dmg-'));
+  const writable = path.join(work, 'writable.dmg');
+  const mount = path.join(work, 'mount');
+  fs.mkdirSync(mount);
+  let mounted = false;
+  const options = { stdio: 'inherit', timeout: 180000 };
+  try {
+    execute('hdiutil', ['create', '-volname', 'KeyShield', '-fs', 'HFS+', '-srcfolder', staging, '-format', 'UDRW', writable], options);
+    execute('hdiutil', ['attach', '-readwrite', '-nobrowse', '-noautoopen', '-mountpoint', mount, writable], options);
+    mounted = true;
+    execute('osascript', ['-e', finderPresentation(), mount], options);
+    if (!fs.existsSync(path.join(mount, '.DS_Store'))) throw new Error('Finder did not save the DMG presentation');
+    execute('hdiutil', ['detach', mount], options);
+    mounted = false;
+    execute('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', dmgPath], options);
+  } finally {
+    if (mounted) execute('hdiutil', ['detach', mount], options);
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
 function stageAppBundle(sourceApp, destApp) {
@@ -269,6 +323,7 @@ async function main() {
     extraResource: [
       path.join(desktopDir, 'renderer'),
       path.join(desktopDir, 'boot.html'),
+      path.join(desktopDir, 'loading.html'),
       path.join(desktopDir, 'redaction.js'),
     ],
     icon: icns || iconPng,
@@ -279,6 +334,7 @@ async function main() {
       if (file === '/out' || file.startsWith('/out/')) return true;
       if (file === '/release' || file.startsWith('/release/')) return true;
       if (file.startsWith('/scripts')) return true;
+      if (file === '/assets' || file.startsWith('/assets/')) return true;
       if (file === '/e2e' || file.startsWith('/e2e/')) return true;
       if (file === '/renderer' || file.startsWith('/renderer/')) return true;
       if (file === '/OPEN-ME.txt') return true;
@@ -329,14 +385,7 @@ async function main() {
     stageDmgContents(preferred.appPath, staging, buildInfo);
 
     if (process.platform === 'darwin') {
-      execFileSync('hdiutil', [
-        'create',
-        '-volname', 'KeyShield',
-        '-srcfolder', staging,
-        '-ov',
-        '-format', 'UDZO',
-        dmgPath,
-      ], { stdio: 'inherit' });
+      createBrandedDmg(staging, dmgPath);
       const info = writeDmgBuildInfo(dmgPath, sources);
       writeBuildInfo(reports, rendererReport.assets.length, sources, info.sha256);
       console.log('dmg', dmgPath);
@@ -357,4 +406,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg };

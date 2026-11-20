@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="560" viewBox="0 0 720 560">
+  <rect width="720" height="560" fill="#0b1226"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+    <rect x="32" y="38" width="52" height="60" rx="12" fill="#131c39" stroke="#243365"/>
+    <g transform="translate(40 46) scale(1.5)" fill="none">
+      <path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="white" stroke-width="1.5"/>
+      <circle cx="11.5" cy="11" r="2" stroke="#a8b3d8" stroke-width="1.2"/>
+      <path d="M13 12.5L16 15.5" stroke="#a8b3d8" stroke-width="1.2"/>
+    </g>
+    <text x="104" y="67" fill="white" font-size="27" font-weight="600">Drag KeyShield to Applications</text>
+    <text x="104" y="94" fill="#a8b3d8" font-size="14">Your API iCloud Keychain</text>
+    <rect x="56" y="154" width="240" height="186" rx="20" fill="#131c39" stroke="#243365"/>
+    <rect x="424" y="154" width="240" height="186" rx="20" fill="#131c39" stroke="#243365"/>
+    <path d="M330 245H390M376 231L390 245L376 259" fill="none" stroke="#a8b3d8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="40" y="385" fill="#8a96c2" font-size="12">Build details and installation notes</text>
+    <path d="M32 508H688" stroke="#243365"/>
+    <text x="360" y="537" text-anchor="middle" fill="#a8b3d8" font-size="12">Local test build — unsigned, not notarized</text>
+  </g>
+</svg>
