@@ -41,7 +41,7 @@ describe('MAS packaging', () => {
     expect(options.platform).toBe('darwin');
     expect(options.arch).toEqual(['arm64', 'x64']);
     expect(options.osxSign).toBe(false);
-    expect(options.extraResource).toHaveLength(3);
+    expect(options.extraResource.map((file: string) => file.split('/').pop())).toEqual(['renderer', 'boot.html', 'loading.html', 'redaction.js']);
     for (const file of ['/scripts/mock.cjs', '/e2e/keys.json', '/release/a', '/out/a']) expect(options.ignore(file)).toBe(true);
     expect(options.ignore('/main.cjs')).toBe(false);
   });

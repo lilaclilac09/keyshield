@@ -162,6 +162,23 @@ real-key rejection is claimed by this build. The existing Playwright Electron
 harness also needs inspector/DevTools listeners denied by these unchanged
 sandbox entitlements; do not grant server access just for tests.
 
+Local experiment (2026-11-20 UTC): rebased on the branded DMG shell
+`31615c89dbc4e56202d0fec8515db0aa7dbea7aa`, with its unmodified renderer pin
+`9170938d0f3ab2f1d75b449513344c0a182b8963`. Fresh-container launch displayed
+the bundled sign-in page; email sign-in and sign-up with a `.test` identity
+failed at the network boundary. Entering a deliberately fake session token
+exposed the Vault UI without authenticating or unlocking it. Clicking Save
+with `FAKE_KEYSHIELD_NOT_A_KEY::demo` produced “Unrecognized key format”; a
+realistic but fake `sk-proj-…` value was recognized, then rejected because the
+Device Vault was locked. Neither saved a key. This is **not** a synthetic-key
+prefix enforcement result. The renderer still requires the guard described
+above. Evidence is stored outside the repo in `~/mas-evidence/rebased-*`:
+screenshots, container logs, process/socket snapshots and packet captures.
+Process-filtered captures recorded no packets; a simultaneous system-wide
+DNS/TCP-SYN capture provides an independent cross-check. These observations
+cover the exercised paths, not a proof about every possible future renderer
+or Chromium network feature.
+
 ## Install
 
 Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.
