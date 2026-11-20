@@ -2,15 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Plug } from 'lucide-react';
 import { apiFetch, getPasskeyTrust } from '../../lib/auth';
 import { describeRpcPing, formatUsd, SHOP_MPP_USD, formatRpcMs, loadRpcPing, saveRpcPing, type RpcPingSample } from '../../lib/shop-demo';
-import { isVaultUnlocked } from '../../lib/vault-session';
+import { isVaultUnlocked, listEntries } from '../../lib/vault-session';
+import { inferType } from '../../types';
+import { DEVICE_CALL_SKIPPED } from '../../lib/device-save';
 import {
   callKeychain,
   fetchKeychainHome,
   type KeychainCallResult,
   type KeychainHome,
+  type KeychainStoredApi,
 } from '../../lib/keychain';
 import { buyMppShopSku } from '../../lib/mpp-shop';
-import { formatExpiry } from '../../lib/provider-catalog';
+import { formatExpiry, providerMeta } from '../../lib/provider-catalog';
 import {
   fetchAccountPurchases,
   listPurchases,
@@ -73,7 +76,17 @@ export const HomeSection: React.FC<Props> = ({
   const passkey = !!getPasskeyTrust();
   const vaultOpen = isVaultUnlocked();
   const wallet = home?.wallet;
-  const apis = home?.apis ?? [];
+  const apis: Array<KeychainStoredApi & { deviceOnly: boolean }> = [
+    ...(home?.apis ?? []).map((api) => ({ ...api, deviceOnly: false })),
+    ...(vaultOpen ? listEntries() : []).filter((entry) => inferType(entry.upstream) === 'api_key').map((entry) => {
+      const upstream = entry.upstream.replace(/#\d+$/, '');
+      return {
+        id: `device:${entry.upstream}`, upstream,
+        name: `${providerMeta(upstream).name}${entry.upstream.slice(upstream.length)}`,
+        prefix: 'Device-local', deviceOnly: true,
+      };
+    }),
+  ];
   const conn = home?.connection;
   const intervalSec = conn?.lowest_ttl_sec ?? home?.rpc_cache.lowest_ttl_sec ?? 2;
   const firstApi = apis[0];
@@ -95,7 +108,13 @@ export const HomeSection: React.FC<Props> = ({
     [account],
   );
 
-  const runCall = async (upstream: string) => {
+  const runCall = async (upstream: string, deviceOnly: boolean) => {
+    if (deviceOnly) {
+      setOk(true);
+      setMsg(DEVICE_CALL_SKIPPED);
+      emitAppFeedback({ kind: 'info', title: 'Call skipped', detail: DEVICE_CALL_SKIPPED, source: 'proxy' });
+      return;
+    }
     setBusy(upstream); setMsg(null);
     emitAppFeedback({ kind: 'busy', title: `Calling ${upstream}…`, source: 'proxy' });
     try {
@@ -244,7 +263,7 @@ export const HomeSection: React.FC<Props> = ({
           ) : (
             apis.slice(0, 8).map((api) => {
               const active = lastCall?.upstream === api.upstream;
-              const connecting = active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
+              const connecting = api.deviceOnly ? 'Device-local · call skipped' : active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
               return (
                 <div key={api.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3">
                   <div>
@@ -259,7 +278,7 @@ export const HomeSection: React.FC<Props> = ({
                       type="button"
                       data-testid={`api-call-${api.upstream}`}
                       disabled={busy !== null}
-                      onClick={() => void runCall(api.upstream)}
+                      onClick={() => void runCall(api.upstream, api.deviceOnly)}
                       className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
                     >
                       {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
@@ -297,7 +316,7 @@ export const HomeSection: React.FC<Props> = ({
             type="button"
             data-testid="home-call-first"
             disabled={busy !== null || !firstApi}
-            onClick={() => firstApi && void runCall(firstApi.upstream)}
+            onClick={() => firstApi && void runCall(firstApi.upstream, firstApi.deviceOnly)}
             className="h-12 px-5 rounded-xl border border-zinc-500 text-white text-[16px] font-semibold disabled:opacity-50"
           >
             {firstApi ? (busy === firstApi.upstream ? 'Calling…' : `Call ${firstApi.upstream}`) : 'Call API (none saved)'}

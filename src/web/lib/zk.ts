@@ -212,14 +212,8 @@ export async function revealZkItem(id: string): Promise<string> {
   return openZk(root, unb64u(share), item);
 }
 
-/** Save a key as a ZK row (ZK mode on, vault unlocked). */
+/** Save new keys in the device vault; existing ZK rows remain readable. */
 export async function storeZkItem(upstream: string, value: string, name?: string): Promise<void> {
-  const root = getZkRoot();
-  if (!root) throw new Error('ZK mode is on: unlock Device Vault with your passkey to save keys');
-  const body = await sealZk(root, upstream, value, name);
-  const r = await apiFetch('/manage/store', { method: 'POST', body: JSON.stringify(body) });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? `store failed (${r.status})`);
-  }
+  const { saveKeyOnDevice } = await import('./device-save');
+  await saveKeyOnDevice(upstream, value);
 }
