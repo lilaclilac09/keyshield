@@ -392,4 +392,45 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("path.join(desktopDir, 'loading.html')");
     expect(read("src/desktop/boot.html")).toContain("window.keyshieldRedaction.redact");
   });
+
+  it("uses the shared shield on a navy rounded square with a transparent PNG master", () => {
+    const svg = read("src/desktop/assets/app-icon.svg");
+    const shield = "M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z";
+    expect(svg).toContain(shield);
+    expect(read("src/web/components/AuthScreen.tsx")).toContain(shield);
+    expect(svg).toContain('fill="#0b1226"');
+    expect(svg).toContain('rx="200"');
+    const png = readFileSync(resolve(root, "src/desktop/assets/app-icon.png"));
+    expect(png.readUInt32BE(16)).toBe(1024);
+    expect(png.readUInt32BE(20)).toBe(1024);
+    expect(png[25]).toBe(6);
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("icon: icns || iconPng");
+    expect(read("src/desktop/scripts/pack-mac.cjs")).not.toContain("drawIconPng");
+  });
+
+  it("generates all ten iconutil inputs from the shield master and removes the iconset", () => {
+    const { makeIcns } = require("../src/desktop/scripts/pack-mac.cjs");
+    const output = tempDir();
+    const calls: string[][] = [];
+    const icon = makeIcns("darwin", (command: string, args: string[]) => calls.push([command, ...args]), output);
+    expect(icon).toBe(join(output, "KeyShield.icns"));
+    expect(calls.filter(([command]) => command === "sips").map((args) => Number(args[2]))).toEqual([16, 32, 32, 64, 128, 256, 256, 512, 512, 1024]);
+    for (const args of calls.filter(([command]) => command === "sips")) expect(args[4]).toBe(resolve(root, "src/desktop/assets/app-icon.png"));
+    expect(calls[10]).toEqual(["iconutil", "-c", "icns", join(output, "KeyShield.iconset"), "-o", icon]);
+    expect(existsSync(join(output, "KeyShield.iconset"))).toBe(false);
+  });
+
+  it.each(["sips", "iconutil"])("aborts and cleans up a failed Mac icon build: %s", (failure) => {
+    const { makeIcns } = require("../src/desktop/scripts/pack-mac.cjs");
+    const output = tempDir();
+    expect(() => makeIcns("darwin", (command: string) => {
+      if (command === failure) throw new Error("synthetic icon failure");
+    }, output)).toThrow("synthetic icon failure");
+    expect(existsSync(join(output, "KeyShield.iconset"))).toBe(false);
+  });
+
+  it("does not invoke Mac icon tools on other platforms", () => {
+    const { makeIcns } = require("../src/desktop/scripts/pack-mac.cjs");
+    expect(makeIcns("linux", () => { throw new Error("unexpected native tool"); }, tempDir())).toBeNull();
+  });
 });

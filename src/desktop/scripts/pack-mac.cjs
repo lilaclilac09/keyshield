@@ -9,7 +9,7 @@
  * - Packaging validates renderer assets and runtime files; packaged startup
  *   failures show a local diagnostics screen instead of hosted content.
  * - The icon is a real .icns when built on macOS (generated from the same
- *   in-code artwork at every size iconutil needs). Other platforms keep
+ *   shield master at every size iconutil needs). Other platforms keep
  *   the PNG with a warning.
  * - Zips are made with ditto on macOS, which preserves symlinks,
  *   permissions and macOS metadata; other platforms fall back to
@@ -40,66 +40,18 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-function drawIconPng(size) {
-  const zlib = require('node:zlib');
-  const w = size;
-  const h = size;
-  const raw = Buffer.alloc((w * 4 + 1) * h);
-  const radius = (size * 90) / 256;
-  for (let y = 0; y < h; y++) {
-    const row = y * (w * 4 + 1);
-    raw[row] = 0;
-    for (let x = 0; x < w; x++) {
-      const i = row + 1 + x * 4;
-      const cx = x - size / 2;
-      const cy = y - size / 2;
-      const inside = cx * cx + cy * cy < radius * radius;
-      raw[i] = inside ? 232 : 11;
-      raw[i + 1] = inside ? 236 : 18;
-      raw[i + 2] = inside ? 255 : 38;
-      raw[i + 3] = 255;
-    }
-  }
-  function chunk(type, data) {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length, 0);
-    const payload = Buffer.concat([Buffer.from(type), data]);
-    let c = 0xffffffff;
-    for (const b of payload) {
-      c ^= b;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    }
-    const crcBuf = Buffer.alloc(4);
-    crcBuf.writeUInt32BE((c ^ 0xffffffff) >>> 0, 0);
-    return Buffer.concat([len, payload, crcBuf]);
-  }
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  return Buffer.concat([
-    sig,
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw)),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
 function writePngIcon(dest) {
-  fs.writeFileSync(dest, drawIconPng(256));
+  fs.copyFileSync(path.join(desktopDir, 'assets', 'app-icon.png'), dest);
 }
 
 /**
- * Build a real .icns from the in-code artwork. Returns the .icns path, or
- * null when iconutil is unavailable (non-macOS) so the caller falls back
- * to the PNG with a warning.
+ * Build every iconutil size from the committed shield master. Non-macOS
+ * keeps the PNG; a failed macOS icon build aborts packaging.
  */
-function makeIcns() {
-  if (process.platform !== 'darwin') return null;
-  const iconset = path.join(desktopDir, 'KeyShield.iconset');
-  const icns = path.join(desktopDir, 'KeyShield.icns');
+function makeIcns(platform = process.platform, execute = execFileSync, output = desktopDir) {
+  if (platform !== 'darwin') return null;
+  const iconset = path.join(output, 'KeyShield.iconset');
+  const icns = path.join(output, 'KeyShield.icns');
   try {
     fs.rmSync(iconset, { recursive: true, force: true });
     fs.mkdirSync(iconset, { recursive: true });
@@ -116,13 +68,10 @@ function makeIcns() {
       ['icon_512x512@2x.png', 1024],
     ];
     for (const [name, size] of sizes) {
-      fs.writeFileSync(path.join(iconset, name), drawIconPng(size));
+      execute('sips', ['-z', String(size), String(size), path.join(desktopDir, 'assets', 'app-icon.png'), '--out', path.join(iconset, name)], { stdio: 'pipe' });
     }
-    execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns], { stdio: 'inherit' });
+    execute('iconutil', ['-c', 'icns', iconset, '-o', icns], { stdio: 'inherit' });
     return icns;
-  } catch (err) {
-    console.warn(`iconutil failed (${err instanceof Error ? err.message : String(err)}) — using PNG icon`);
-    return null;
   } finally {
     fs.rmSync(iconset, { recursive: true, force: true });
   }
@@ -409,4 +358,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns };

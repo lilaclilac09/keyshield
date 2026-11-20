@@ -102,6 +102,7 @@ test('branded DMG: read-only layout and exact installed bundle', async () => {
 test('desktop-owned navy loading screen (held locally for visual capture)', async () => {
   const { app, page, dir } = await launch('navy-loading');
   await expect(page.getByTestId('email-signup')).toBeVisible();
+  await page.screenshot({ path: path.join(shots, `keyshield-${kind}-branded-login.png`) });
   expect(fs.readFileSync(path.join(dir, 'launch.log'), 'utf8')).toContain('local loading screen shown');
   await app.evaluate(async ({ BrowserWindow, app: electronApp }, source) => {
     await BrowserWindow.getAllWindows()[0].loadFile(electronApp.isPackaged ? `${electronApp.getAppPath()}/../loading.html` : `${source}/loading.html`);

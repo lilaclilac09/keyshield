@@ -28,6 +28,7 @@ set.
 | `boot.html` | Diagnostics screen shown when the dashboard cannot open |
 | `loading.html` | Local navy shield screen shown before the dashboard loads |
 | `assets/dmg-background.png` | Finder installer artwork (editable source: adjacent SVG) |
+| `assets/app-icon.png` | Transparent 1024px shield master (adjacent SVG); sips + iconutil generate all Mac sizes |
 | `scripts/build-renderer.cjs` | Builds `src/web` and verifies the output is complete |
 | `scripts/pack-mac.cjs` | Packs `KeyShield.app` (+ zip, and a DMG on macOS) |
 | `OPEN-ME.txt` | Install instructions shipped in the zip |
