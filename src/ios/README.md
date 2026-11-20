@@ -15,16 +15,47 @@ The generated project is checked in alongside `project.yml`. Regenerate after ad
 
 ## Run unit and UI tests
 
-From the repository root, run both targets (replace the destination with your simulator if needed):
+First turn off **Simulator → Edit → Automatically Sync Pasteboard**. From the
+repository root, run both existing Debug targets on a fresh disposable simulator:
 
 ```sh
-xcodebuild test -project src/ios/KeyShield.xcodeproj -scheme KeyShield \
-  -destination 'id=EDD9B083-63F1-44E6-9A7B-0A6964CC2561' \
-  CODE_SIGNING_ALLOWED=NO -resultBundlePath ~/ks-ui.xcresult
+python3 src/ios/scripts/run-e2e-journey.py --suite regression \
+  --results "$HOME/ks-ios-regression-$(date +%s)"
 ```
 
-Use a new result-bundle path for each run. To run just one target, add
-`-only-testing:KeyShieldTests` or `-only-testing:KeyShieldUITests`.
+The wrapper is required for UI tests: it seeds bundled synthetic values through
+`simctl pbcopy` from files outside logs, never `typeText` in a secret field.
+Backup's wrong-passphrase UI test is explicitly skipped because that sheet has
+no explicit Paste/import control; `CoreTests/testBackupRoundTripWrongPasswordCorruptionAndEmpty`
+still covers wrong-passphrase rejection. Debug regressions retain their existing
+isolated test harness; they are not evidence of OS authentication.
+
+## Running the E2E journey
+
+With pasteboard sync off and Xcode's iOS 26.5 runtime installed, run from the repo root:
+
+```sh
+python3 src/ios/scripts/run-e2e-journey.py --suite all \
+  --results "$HOME/ks-ios-e2e-$(date +%s)"
+```
+
+This runs existing Debug unit/UI tests, then only `KeyShieldE2EJourneyTests`
+using `KeyShieldSimulatorTester` / `SimulatorRelease`, each on a fresh simulator.
+Use `--suite journey` for the journey alone; `--runtime` and `--device-type`
+override the defaults (iOS 26.5 / iPhone 17 Pro). Logs and `.xcresult` bundles go
+under the new results directory. Disposable simulators and fixture files are
+deleted afterward. Automatic diagnostic screenshots/recordings and verbose
+system diagnostics are disabled on the **test runner**, not the app;
+no revealed-value screenshots are attached.
+
+The journey launches the normal app without test flags, imports the bundled
+synthetic OpenAI fixture using **Paste**, and exercises relaunch/unlock,
+approved Copy/Reveal, lock masking, demo Payments, Developer/Docs, opt-in agent
+approve/deny, metadata-only Activity, rotation and deletion. Face ID is enrolled
+and matches are sent with simulator `notifyutil` events at fresh OS prompts.
+Authentication is **simulated**, fixtures are **fake**, and the explicitly enabled
+agent demo is **in-process/mock-only**: no external agent, network request or real
+payment. This does not verify a physical device or real Face ID/Secure Enclave.
 
 ## Install the simulator tester
 
