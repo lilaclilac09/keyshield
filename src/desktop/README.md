@@ -131,6 +131,49 @@ lock API. Helpers inherit the sandbox; no login helper is installed.
 
 ### Synthetic-only beta boundary (not a functional private beta yet)
 
+#### Required fixture renderer contract
+
+`pack:mas` builds the pinned renderer with
+`VITE_KEYSHIELD_RENDERER_PROFILE=mas-fixture`. The renderer owner must bake
+`__KEYSHIELD_RENDERER_PROFILE__` and emit a dist-root `renderer-profile.json`
+containing `{"profile":"mas-fixture","commit":"<full pinned SHA>"}`.
+Ordinary renderer builds use `standard`; the DMG path does not select or
+validate the MAS profile. The current #154 pin is intentionally rejected:
+it does not implement this contract. A tested fixture renderer and verified
+replacement pin are required before another MAS app can be produced.
+
+Before packaging and again inside the bundle, the MAS gate requires that
+marker and matching commit, and scans every renderer file (including maps)
+for `keyshield-production.up.railway.app`, `sync.ks.aileena.xyz`,
+`app.ks.aileena.xyz`, `accounts.google.com`, `unpkg.com`,
+`fonts.googleapis.com`, and broker/approval bridge identifiers. Symlinked
+assets are refused. `BUILD-INFO.txt` records the renderer profile, commit,
+and SHA-256 of the exact marker bytes. This supplements, not replaces,
+the existing exact commit/tree/parent/input-closure provenance verification.
+String scans are a regression gate, not proof against encoded/dynamic URLs
+or an assertion that credential forms are absent.
+
+Runtime contract for the renderer owner: fixture mode must refuse to mount
+unless `window.keyshieldDesktop?.syntheticOnly === true`. The shell exposes
+that frozen boolean and requires the fixture profile at MAS packaging time;
+the permanent network block remains in force. Fixture mode must use a
+dedicated entry graph that omits auth/token/Google forms, ordinary backend
+clients, external fonts/CDNs and broker code. Auto-enter only the bundled
+synthetic identity. Expose one immutable fixture: label `Demo key`, value
+`FAKE_KEYSHIELD_NOT_A_KEY::demo`; reject every other value at every save/import
+entry, not merely values missing the prefix. No free-text credential input.
+
+Persist fixture ciphertext in a versioned localStorage or IndexedDB namespace
+in the existing `persist:keyshield` partition. Do not reuse ordinary auth or
+vault keys. Derive the fixture encryption key from a bundled, explicitly
+public fixture seed with a fixture-specific HKDF context. Lock clears the
+in-memory key/plaintext; a fixed “Unlock demo” action re-derives it and
+revalidates that the decrypted state contains only the one fixture. No
+WebAuthn, passphrase prompt, production endpoint or relay is needed. This
+is a demonstration of lock/reopen mechanics, not security for real secrets.
+The installed proof must cover fresh launch, fixture save, lock/unlock and
+quit/reopen with no broker or external traffic, and reject tampered state.
+
 Every MAS build embeds a read-only `Resources/beta-policy.json`. MAS runtime
 **or presence** of this file enables the boundary, even if its JSON is invalid
 or says false. There is no environment or CLI opt-out. Both the default session

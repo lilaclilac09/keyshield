@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const syntheticOnly = process.mas || process.argv.includes('--ks-synthetic-only');
 
-contextBridge.exposeInMainWorld('keyshieldDesktop', {
+contextBridge.exposeInMainWorld('keyshieldDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
   syntheticOnly: Boolean(syntheticOnly),
@@ -18,4 +18,4 @@ contextBridge.exposeInMainWorld('keyshieldDesktop', {
   getDiagnostics: () => ipcRenderer.invoke('ks-diagnostics'),
   retry: () => ipcRenderer.send('ks-retry'),
   quit: () => ipcRenderer.send('ks-quit'),
-});
+}));

@@ -244,7 +244,7 @@ function createPackagerIgnore(output = releaseDir) {
   };
 }
 
-function prepareMacBuild() {
+function prepareMacBuild(rendererEnv = {}) {
   const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
   if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
   const rendererRef = fetchPinnedRenderer(repoRoot, pin);
@@ -256,7 +256,7 @@ function prepareMacBuild() {
     const revision = sourceRevision(root, 'src/web');
     revision.inputs = pin.inputs;
     run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
-      env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
+      env: { ...process.env, ...rendererEnv, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
     });
     return revision;
   });

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { prepareMacBuild, macPackagerOptions, checkBundle, writeBuildInfo } = require('./pack-mac.cjs');
+const { verifyMasRendererProfile } = require('./mas-renderer-contract.cjs');
 
 const desktop = path.resolve(__dirname, '..');
 const output = path.join(desktop, 'release', 'mas');
@@ -48,7 +49,8 @@ async function main() {
   fs.mkdirSync(output, { recursive: true });
   const pkg = path.join(output, 'KeyShield-mas.pkg');
   fs.rmSync(pkg, { force: true });
-  const { sources, rendererReport, icon } = prepareMacBuild();
+  const { sources, rendererReport, icon } = prepareMacBuild({ VITE_KEYSHIELD_RENDERER_PROFILE: 'mas-fixture' });
+  sources.renderer.profile = verifyMasRendererProfile(path.join(desktop, 'renderer'), sources.renderer.commit);
   const options = macPackagerOptions(icon);
   const apps = await require('@electron/packager')({
     ...options,
@@ -66,6 +68,8 @@ async function main() {
     },
   });
   const app = path.join(apps[0], 'KeyShield.app');
+  const bundledProfile = verifyMasRendererProfile(path.join(app, 'Contents', 'Resources', 'renderer'), sources.renderer.commit);
+  if (bundledProfile.manifestSha256 !== sources.renderer.profile.manifestSha256) throw new Error('MAS renderer profile changed during packaging');
   const policy = path.join(app, 'Contents', 'Resources', 'beta-policy.json');
   if (JSON.parse(fs.readFileSync(policy, 'utf8')).syntheticOnly !== true) throw new Error('MAS synthetic beta policy missing');
   fs.chmodSync(policy, 0o444);
@@ -92,6 +96,7 @@ async function main() {
     optionsForFile: (file) => ({ entitlements: file === app ? generated : inherit, hardenedRuntime: false }),
   });
   const info = writeBuildInfo([['mas-universal', report]], rendererReport.assets.length, sources, null, path.join(output, 'BUILD-INFO.txt'));
+  fs.appendFileSync(info, `\nrenderer profile: ${sources.renderer.profile.profile}\nrenderer profile commit: ${sources.renderer.profile.commit}\nrenderer profile manifest sha256: ${sources.renderer.profile.manifestSha256}\n`);
   fs.appendFileSync(info, `\n${inputs.signed ? 'MAS distribution signed — upload requires owner review' : 'Local synthetic MAS sandbox check — not App Store signed'}\n`);
   fs.appendFileSync(info, 'MAS launch log: ~/Library/Containers/xyz.aileena.keyshield/Data/Library/Logs/KeyShield/keyshield-desktop.log\n');
   if (inputs.signed) {
