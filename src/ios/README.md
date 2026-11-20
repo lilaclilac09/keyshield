@@ -2,6 +2,90 @@
 
 Native SwiftUI app, iOS 17+, with no third-party runtime dependencies.
 
+## Private iPhone / TestFlight preparation
+
+Version **0.1.0 (1)** uses bundle ID `xyz.aileena.keyshield.ios`. The checked-in
+team is empty. Override `DEVELOPMENT_TEAM` with an `xcodebuild` command-line
+setting or a local `-xcconfig` file; do not commit team credentials or signing
+assets. The helper below maps the environment variable `TEAM_ID` to that setting.
+Device Release uses automatic signing and **no additional entitlements** (no
+associated domains, keychain sharing, or passkeys). Simulator entitlements remain
+SDK-scoped and are not used on devices.
+
+Unsigned local validation, with no account, provisioning updates, export or upload:
+
+```sh
+xcodebuild archive -project src/ios/KeyShield.xcodeproj -scheme KeyShield \
+  -configuration Release -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  -archivePath /Users/devin/ks-testflight/KeyShield-unsigned.xcarchive
+```
+
+This archive is **not installable or distributable**. Signing-only steps remain:
+
+1. In **Xcode → Settings → Accounts**, sign in to the intended Apple Developer
+   Program account. Select the authorized team and allow Xcode to manage its
+   signing certificates/profiles. Nothing should be entered into source files.
+2. Confirm this bundle ID is available for that team, create the App Store Connect
+   app record, and review export compliance, app privacy, and internal tester access.
+   Increase `CURRENT_PROJECT_VERSION` before each subsequent uploaded build.
+3. From the repository root, create a signed archive **without uploading**:
+
+   ```sh
+   TEAM_ID=YOUR_TEAM_ID src/ios/scripts/archive-testflight.sh --archive-only
+   ```
+
+   Replace `YOUR_TEAM_ID` with the team's 10-character ID locally. The helper
+   defaults to archive-only; it uses `-allowProvisioningUpdates` and may contact
+   Apple. `ARCHIVE_PATH` and `EXPORT_PATH` can override output locations; otherwise
+   outputs go under `~/ks-testflight/` with a timestamped archive name.
+4. **Only after explicit upload authorization**, the following builds a new signed
+   archive and invokes `-exportArchive` with `destination=upload`. It **uploads**;
+   do not run it during unsigned preparation:
+
+   ```sh
+   TEAM_ID=YOUR_TEAM_ID src/ios/scripts/archive-testflight.sh --upload
+   ```
+
+   `ExportOptions-TestFlight.plist` uses `app-store-connect`, automatic signing,
+   a placeholder team ID, and `testFlightInternalTestingOnly=true`. The helper
+   substitutes the team in a temporary private copy, never the tracked template.
+   Distribution is **internal testers only**, not external testing or App Store
+   release. Wait for processing, resolve Apple's validation/compliance questions,
+   and explicitly assign the build to authorized internal testers.
+
+Device Release does not set `SIMULATOR_APPROVAL_DEMO`; every demo integration also
+requires `targetEnvironment(simulator)`. `-UITestMode` is compiled only under
+`DEBUG`. The production save/rotate synthetic-fixture guards remain enabled:
+**real credentials/providers, external agents, live payments, and passkeys remain
+unavailable on an iPhone**. No physical-device, Secure Enclave, signing, Apple
+validation or TestFlight-delivery claims follow from an unsigned archive or
+Simulator test. Verify device-owner authentication and persistence on the intended
+iPhone after signing, using disposable synthetic data only.
+
+`Info.plist` declares `ITSAppUsesNonExemptEncryption=NO`: this build uses standard
+CryptoKit/system cryptography (including AES-GCM) for local data, not proprietary
+cryptography, qualifying for the standard-encryption exemption. The owner must
+still review Apple's export-compliance questions and applicable country rules
+before upload, and reassess this declaration if cryptography changes. Face ID,
+launch screen, and iPhone/iPad orientations are explicit. No
+`LSApplicationQueriesSchemes` are needed: the app does not call `canOpenURL` to
+query other apps.
+
+`PrivacyInfo.xcprivacy` declares only the required-reason API actually used:
+UserDefaults **CA92.1**, reading/writing this app's own approval state. Entry/audit
+dates use `Date`, not filesystem timestamp APIs; the source does not read file
+timestamps, boot time, disk capacity or keyboard dictionaries, so those categories
+are not declared. Data stays on device except for user-directed encrypted backup
+sharing; there is no tracking or developer-side data collection. Reassess the
+manifest and App Store privacy answers if a real transport or SDK is added.
+
+`Assets.xcassets/AppIcon.appiconset` includes all iPhone/iPad slots and an opaque
+1024px App Store icon. Regenerate the simple shield/keyhole artwork on macOS with
+`swift src/ios/scripts/generate-app-icon.swift`, then run XcodeGen. Test the archive
+helper's safety gates with `python3 src/ios/scripts/test-archive-testflight.py`;
+these tests substitute a local fake `xcodebuild` and never sign or upload.
+
 ## Regenerate the project
 
 From the repository root:
@@ -33,8 +117,8 @@ On a Mac with Xcode and a booted iOS 17+ simulator, extract and install it:
 
 The Release simulator app is ad-hoc signed with Xcode's **Sign to Run Locally**
 identity (`-`). Simulator-only entitlements provide an application identifier and
-Keychain access group; no Apple Developer team is needed for the simulator. Device
-signing settings are unchanged. Do not rebuild this tester with
+Keychain access group; no Apple Developer team is needed for the simulator. These
+simulator signing settings are never applied to a device build. Do not rebuild this tester with
 `CODE_SIGNING_ALLOWED=NO`: the previous unsigned archive lacked these entitlements
 and Keychain vault creation failed with OSStatus -34018. Release never substitutes
 an in-memory key store or authentication stub.
