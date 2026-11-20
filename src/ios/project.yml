@@ -22,10 +22,18 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: xyz.aileena.keyshield.ios
+        DEVELOPMENT_TEAM: ''
+        MARKETING_VERSION: '0.1.0'
+        CURRENT_PROJECT_VERSION: '1'
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: KeyShield/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: '-'
         CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]: KeyShield/Simulator.entitlements
-        INFOPLIST_KEY_NSFaceIDUsageDescription: Approve a displayed KeyShield operation.
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]: ''
+      configs:
+        Release:
+          CODE_SIGN_STYLE[sdk=iphoneos*]: Automatic
   KeyShieldTests:
     type: bundle.unit-test
     platform: iOS
