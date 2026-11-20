@@ -169,25 +169,14 @@ app.get('/vault/:id', async (c) => {
   const id = c.req.param('id');
   const ifNoneMatch = c.req.header('if-none-match');
 
-  // Conditional-GET fast path: if the client has a cached etag and
-  // it still matches what's in R2, return 304 without reading the
-  // body. R2 HEAD is cheaper than GET (metadata only).
-  if (ifNoneMatch) {
-    const head = await c.env.VAULTS.head(id);
-    if (!head) return c.json({ error: 'not found' }, 404);
-    if (ifNoneMatchHits(head.etag, ifNoneMatch)) {
-      return new Response(null, {
-        status: 304,
-        headers: {
-          ETag: quoteEtag(head.etag),
-          'Cache-Control': VAULT_CACHE_CONTROL,
-        },
-      });
-    }
-  }
-
   const { cipher, etag } = await readVaultWithEtag(c.env.VAULTS, id);
   if (!cipher) return c.json({ error: 'not found' }, 404);
+  if (etag && ifNoneMatch && ifNoneMatchHits(etag, ifNoneMatch)) {
+    return new Response(null, {
+      status: 304,
+      headers: { ETag: quoteEtag(etag), 'Cache-Control': VAULT_CACHE_CONTROL },
+    });
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Cache-Control': VAULT_CACHE_CONTROL,
@@ -218,9 +207,13 @@ app.put('/vault/:id', async (c) => {
 });
 
 app.delete('/vault/:id', async (c) => {
-  const ok = await deleteVault(c.env.VAULTS, c.req.param('id'), c.req.header('X-Vault-Base-Revision')!);
-  if (!ok) return c.json({ error: 'vault changed in another tab/device — reload and unlock to refresh' }, 409);
-  return new Response(null, { status: 204 });
+  try {
+    const ok = await deleteVault(c.env.VAULTS, c.req.param('id'), c.req.header('X-Vault-Base-Revision')!);
+    if (!ok) return c.json({ error: 'vault changed — nothing was deleted, reload' }, 409);
+    return new Response(null, { status: 204 });
+  } catch {
+    return c.json({ error: 'Vault deletion unavailable — nothing was deleted. Try again after refreshing.' }, 503);
+  }
 });
 
 // --------------------------------------------------------------------

@@ -82,11 +82,11 @@ describe('revision-aware vault PUT', () => {
     expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual(cipher(100));
   });
 
-  it('deletes only a matching revision; none succeeds only while absent', async () => {
+  it('tombstones only a matching revision; repeated DELETE is idempotent', async () => {
     await (env as any).VAULTS.put(ID, JSON.stringify(cipher(100)));
     expect((await SELF.fetch(new Request(request(200, '100'), { method: 'DELETE' }))).status).toBe(204);
-    expect(await (env as any).VAULTS.get(ID)).toBeNull();
-    expect((await SELF.fetch(new Request(request(200, '100'), { method: 'DELETE' }))).status).toBe(409);
+    expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual({ deleted: true, deletedAt: expect.any(Number), revision: 100 });
+    expect((await SELF.fetch(new Request(request(200, '100'), { method: 'DELETE' }))).status).toBe(204);
     expect((await SELF.fetch(new Request(request(200, 'none'), { method: 'DELETE' }))).status).toBe(204);
   });
 

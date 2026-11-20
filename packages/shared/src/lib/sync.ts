@@ -26,9 +26,10 @@ export class SyncAuthError extends Error {
 }
 
 export class SyncHttpError extends Error {
-  constructor(public readonly status: number, statusText: string) {
+  constructor(public readonly status: number, statusText: string, operation: 'sync' | 'whole-vault-delete' = 'sync') {
     super(status === 428 ? 'Update KeyShield to keep syncing. Update the app and refresh.'
-      : status === 409 ? 'Vault changed in another tab/device. Reload and unlock to refresh.'
+      : status === 409 ? operation === 'whole-vault-delete' ? 'vault changed — nothing was deleted, reload' : 'Vault changed in another tab/device. Reload and unlock to refresh.'
+        : operation === 'whole-vault-delete' ? 'Whole-vault deletion failed. Refresh and try again.'
         : `sync request failed: ${status} ${statusText}`);
     this.name = 'SyncHttpError';
   }
@@ -53,7 +54,7 @@ export interface SyncBackend {
     baseRevision: number | null,
   ): Promise<'ok' | 'conflict'>;
 
-  /** DELETE /vault/:id. Throws SyncAuthError on 401. */
+  /** Whole-vault DELETE (tombstone), not a single-entry removal. */
   remove(vaultId: string, getToken: () => string | null, baseRevision: number | null): Promise<void>;
 }
 
@@ -119,7 +120,7 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
       if (res.status === 401) throw new SyncAuthError();
       // 204 is the Worker's success; treat any 2xx as success.
       if (!res.ok && res.status !== 204) {
-        throw new SyncHttpError(res.status, res.statusText);
+        throw new SyncHttpError(res.status, res.statusText, 'whole-vault-delete');
       }
     },
   };

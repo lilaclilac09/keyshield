@@ -18,10 +18,16 @@ export const VaultCipherSchema = z.object({
 });
 export type VaultCipher = z.infer<typeof VaultCipherSchema>;
 
+const VaultTombstoneSchema = z.object({
+  deleted: z.literal(true),
+  deletedAt: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+}).strict();
+
 /**
  * Read whatever is currently in R2 for a vault ID. Returns null if
- * absent OR if the stored bytes are corrupt. Writes still require a
- * matching revision and never replace corrupt objects as absent.
+ * absent, tombstoned, OR if the stored bytes are corrupt. Writes distinguish
+ * tombstones from corruption and never replace corrupt objects as absent.
  */
 export async function readVault(
   bucket: R2Bucket,
@@ -38,18 +44,22 @@ export async function readVault(
 export async function readVaultWithEtag(
   bucket: R2Bucket,
   vaultId: string,
-): Promise<{ cipher: VaultCipher | null; etag: string | null }> {
+): Promise<{ cipher: VaultCipher | null; etag: string | null; tombstone: boolean }> {
   const obj = await bucket.get(vaultId);
-  if (!obj) return { cipher: null, etag: null };
+  if (!obj) return { cipher: null, etag: null, tombstone: false };
   try {
     const json = await obj.json();
+    if (VaultTombstoneSchema.safeParse(json).success) {
+      return { cipher: null, etag: obj.etag, tombstone: true };
+    }
     const parsed = VaultCipherSchema.safeParse(json);
     return {
       cipher: parsed.success ? parsed.data : null,
       etag: obj.etag,
+      tombstone: false,
     };
   } catch {
-    return { cipher: null, etag: obj.etag };
+    return { cipher: null, etag: obj.etag, tombstone: false };
   }
 }
 
@@ -63,8 +73,8 @@ export async function writeVault(
   baseRevision: string,
 ): Promise<boolean> {
   if (!isVaultBaseRevision(baseRevision)) return false;
-  const { cipher: existing, etag } = await readVaultWithEtag(bucket, vaultId);
-  if (!matchesRevision(existing, etag, baseRevision)) return false;
+  const { cipher: existing, etag, tombstone } = await readVaultWithEtag(bucket, vaultId);
+  if (baseRevision === 'none' ? etag !== null && !tombstone : !matchesRevision(existing, baseRevision)) return false;
   if (existing && existing.updatedAt >= cipher.updatedAt) {
     return false;
   }
@@ -79,19 +89,27 @@ export function isVaultBaseRevision(base: string | undefined): base is string {
   return base === 'none' || (typeof base === 'string' && /^(0|[1-9]\d*)$/.test(base) && Number.isSafeInteger(Number(base)));
 }
 
-function matchesRevision(cipher: VaultCipher | null, etag: string | null, base: string): boolean {
-  return base === 'none' ? etag === null : cipher !== null && cipher.updatedAt === Number(base);
+function matchesRevision(cipher: VaultCipher | null, base: string): boolean {
+  return cipher !== null && cipher.updatedAt === Number(base);
 }
 
+/** Whole-vault deletion; single-entry removals use a re-encrypted PUT. */
 export async function deleteVault(
   bucket: R2Bucket,
   vaultId: string,
   baseRevision: string,
 ): Promise<boolean> {
   if (!isVaultBaseRevision(baseRevision)) return false;
-  const { cipher, etag } = await readVaultWithEtag(bucket, vaultId);
-  if (!matchesRevision(cipher, etag, baseRevision)) return false;
-  if (etag === null) return true;
-  await bucket.delete(vaultId);
-  return true;
+  const { cipher, etag, tombstone } = await readVaultWithEtag(bucket, vaultId);
+  if (etag === null || tombstone) return true;
+  if (!cipher || !matchesRevision(cipher, baseRevision)) return false;
+  const written = await bucket.put(vaultId, JSON.stringify({
+    deleted: true,
+    deletedAt: Date.now(),
+    revision: cipher.updatedAt,
+  }), {
+    httpMetadata: { contentType: 'application/json' },
+    onlyIf: { etagMatches: etag },
+  });
+  return written !== null;
 }

@@ -25,7 +25,14 @@ describe.each([['web', webBackend], ['shared', sharedBackend]] as const)('%s vau
     if (status === 409) await expect(backend.push('vault', cipher, () => 'token', 100)).resolves.toBe('conflict');
     else await expect(backend.push('vault', cipher, () => 'token', 100)).rejects.toThrow('Update KeyShield to keep syncing');
     expect(network).toHaveBeenCalledTimes(1);
-    await expect(backend.remove('vault', () => 'token', 100)).rejects.toThrow(status === 409 ? 'Reload and unlock to refresh' : 'Update KeyShield to keep syncing');
+    await expect(backend.remove('vault', () => 'token', 100)).rejects.toThrow(status === 409 ? 'vault changed — nothing was deleted, reload' : 'Update KeyShield to keep syncing');
     expect(network).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed on whole-vault deletion unavailability without reflecting server details or retrying', async () => {
+    const network = vi.fn(async () => new Response('SYNTHETIC_PRIVATE_SERVER_DETAIL', { status: 503, statusText: 'SYNTHETIC_PRIVATE_SERVER_DETAIL' }));
+    vi.stubGlobal('fetch', network);
+    await expect(factory('https://sync.synthetic.invalid').remove('vault', () => 'token', 100)).rejects.toThrow('Whole-vault deletion failed. Refresh and try again.');
+    expect(network).toHaveBeenCalledTimes(1);
   });
 });
