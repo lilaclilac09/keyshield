@@ -6,6 +6,8 @@ Browser requests outside loopback are blocked; the Python API has a socket/DNS
 loopback-only guard. No HARs/traces/storage exports or service logs are generated.
 App-owned local test databases naturally contain synthetic session state; do not
 commit or share them. Only numeric request metadata is retained in results.
+Recording-only CSS masks even the truncated session-token preview on BEFORE's
+Home card as `[REDACTED]`, without changing its layout or app behavior.
 
 ## One-time setup (from repository root)
 

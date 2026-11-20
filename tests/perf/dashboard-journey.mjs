@@ -89,6 +89,11 @@ async function journey(revision, index) {
       return route.abort('blockedbyclient');
     });
     await context.addInitScript(() => {
+      document.addEventListener('DOMContentLoaded', () => {
+        const style = document.createElement('style');
+        style.textContent = '[data-testid="extension-token-copy"] code { color: transparent !important; position: relative; } [data-testid="extension-token-copy"] code::after { content: "[REDACTED]"; color: #8a96c2; position: absolute; left: 12px; top: 8px; }';
+        document.head.append(style);
+      });
       window.__perfLCP = 0;
       new PerformanceObserver(list => { for (const e of list.getEntries()) window.__perfLCP = e.startTime; })
         .observe({type:'largest-contentful-paint',buffered:true});
