@@ -5,6 +5,21 @@
  * https://app.ks.aileena.xyz, in a Keychain-like Mac window.
  *
  * Does not reimplement vault / billing / MPP / agents / proxy.
+ *
+ * Launch is deliberately defensive, because this shell has failed silently
+ * three times in a row: a bundle with broken helper symlinks stayed
+ * "Running in Background" with no window; a wrong preflight check quit a
+ * valid app before any window; a hung intercept left the Dock icon with no
+ * window. Each of those is now guarded in its own place, and every launch
+ * writes a plain-text log (see diagnostics.cjs) so the next failure can be
+ * read instead of guessed at.
+ *
+ * The one failure this file still cannot see from the outside is a
+ * renderer that loads but never mounts React (a blank dark window). That
+ * is why createWindow() probes the page after load: if #root is still
+ * empty after ten seconds, the window shows the diagnostics screen
+ * (boot.html) with the reason and the captured renderer errors, instead
+ * of sitting blank forever.
  */
 
 const {
@@ -22,8 +37,15 @@ const {
 } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
-const { inspectMacBundle } = require('./runtime-preflight.cjs');
+const { inspectMacBundle, fatalMissing } = require('./runtime-preflight.cjs');
+const { hasRenderer, serveDashboardRequest } = require('./renderer-server.cjs');
+const { createDiagnostics } = require('./diagnostics.cjs');
+const { redact } = require('./redaction.js');
+const { installRequestAudit } = require('./request-audit.cjs');
+const { validateRenderer, startupFailure, authorizeTouchId, runtimePreflightDetail } = require('./startup-policy.cjs');
+
+const diagnostics = createDiagnostics();
+diagnostics.log('KeyShield desktop starting');
 
 const DASHBOARD_HOST = 'app.ks.aileena.xyz';
 const DASHBOARD_ORIGIN = `https://${DASHBOARD_HOST}`;
@@ -33,8 +55,10 @@ const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
 const LIVE = process.env.KS_DESKTOP_LIVE === '1';
 const SYNC_PROXY = process.env.KS_DESKTOP_SYNC_PROXY === '1';
+const PACKAGED = app.isPackaged || process.env.KS_DESKTOP_FORCE_PACKAGED === '1';
 
 function rendererDir() {
+  if (process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
   if (app.isPackaged) return path.join(process.resourcesPath, 'renderer');
   return path.join(__dirname, 'renderer');
 }
@@ -45,57 +69,42 @@ function bootHtmlPath() {
   return path.join(__dirname, 'boot.html');
 }
 
-function hasRenderer() {
-  try {
-    return fs.existsSync(path.join(rendererDir(), 'index.html'));
-  } catch {
-    return false;
-  }
+function hasRendererFiles() {
+  return hasRenderer(rendererDir());
 }
 
 function useBundle() {
-  return !LIVE && hasRenderer();
+  return !LIVE && hasRendererFiles();
 }
 
 function packagedRuntimePreflight() {
+  if (process.env.KS_DESKTOP_FORCE_PREFLIGHT_FAILURE === '1') return { ok: false, missing: ['forced preflight failure'] };
   if (process.platform !== 'darwin' || !app.isPackaged) return { ok: true, skipped: true };
   const contents = path.resolve(process.resourcesPath, '..');
   return inspectMacBundle(contents);
 }
 
 function blockStartup(report, reason) {
+  const fatal = report ? fatalMissing(report) : [];
   const details = [
     reason ? `Reason: ${reason}` : null,
     report?.appBundle ? `App: ${report.appBundle}` : null,
-    ...(report?.missing || []).map((file) => `Missing: ${file}`),
+    ...fatal.map((file) => `Missing: ${file}`),
+    ...(report?.warnings || []).map((file) => `Warning: ${file}`),
+    `Log: ${diagnostics.logPath}`,
   ].filter(Boolean).join('\n');
   const message = [
     'KeyShield hit a launch problem. A window should still open.',
-    'If macOS refused to open the app, run Open-KeyShield.command from the zip,',
-    'or: xattr -cr /Applications/KeyShield.app && open /Applications/KeyShield.app',
+    'This local synthetic test build is not Developer ID signed or notarized.',
+    'macOS Gatekeeper protections are left intact.',
     '',
     details,
   ].join('\n');
-  dialog.showErrorBox('KeyShield needs a moment', message);
-}
-
-function serveRenderer(requestUrl) {
-  const root = rendererDir();
-  const url = new URL(requestUrl);
-  let rel = decodeURIComponent(url.pathname || '/');
-  if (rel === '/' || rel === '') rel = '/index.html';
-  const file = path.normalize(path.join(root, rel));
-  const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  if (file !== root && !file.startsWith(rootPrefix)) {
-    return new Response('forbidden', { status: 403 });
-  }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-    return net.fetch(pathToFileURL(path.join(root, 'index.html')).toString());
-  }
-  return net.fetch(pathToFileURL(file).toString());
+  dialog.showErrorBox('KeyShield needs a moment', redact(message));
 }
 
 function installHttpsHandler(ses) {
+  if (process.env.KS_DESKTOP_FORCE_INTERCEPT_FAILURE === '1') throw new Error('forced HTTPS handler failure');
   if (!useBundle() && !SYNC_PROXY) return false;
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
   // — that replaces Chromium's standard https handler and can prevent the window
@@ -108,7 +117,7 @@ function installHttpsHandler(ses) {
       return net.fetch(request, { bypassCustomProtocolHandlers: true });
     }
     if (useBundle() && url.hostname === DASHBOARD_HOST) {
-      return serveRenderer(request.url);
+      return serveDashboardRequest(rendererDir(), request);
     }
     if (SYNC_PROXY && url.hostname === SYNC_HOST) {
       const local = `${LOCAL_SYNC}${url.pathname}${url.search}`;
@@ -197,8 +206,8 @@ function bringWindowToForeground(win) {
 }
 
 function showShellFeedback(payload) {
-  const title = String(payload?.title || 'KeyShield');
-  const detail = String(payload?.detail || payload?.body || '');
+  const title = redact(payload?.title || 'KeyShield');
+  const detail = redact(payload?.detail || payload?.body || '');
   const kind = String(payload?.kind || 'info');
   const win = BrowserWindow.getAllWindows()[0];
   const visibleMs = feedbackVisibilityMs(kind);
@@ -245,45 +254,45 @@ ipcMain.handle('ks-clipboard-write', (_event, text) => {
   return { ok: true };
 });
 
-async function maybeTouchId() {
-  if (process.platform !== 'darwin') return { skipped: true };
-  if (typeof systemPreferences.promptTouchID !== 'function') return { skipped: true };
+ipcMain.handle('ks-reveal-log', () => {
   try {
-    await systemPreferences.promptTouchID('Unlock KeyShield');
-    showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
-    return { ok: true };
+    shell.showItemInFolder(diagnostics.logPath);
+    return { ok: true, logPath: redact(diagnostics.logPath) };
   } catch (err) {
-    // No biometrics, user cancelled, or unsigned app — do not lock her out.
-    const reason = err instanceof Error ? err.message : String(err);
-    showShellFeedback({
-      kind: 'info',
-      title: 'Continuing without Touch ID',
-      detail: `Touch ID was not completed (${reason}). Next step: continue in KeyShield and tap Sign In again, or paste a session token.`,
-      source: 'unlock',
-    });
-    return { skipped: true };
+    return { ok: false, error: redact(err instanceof Error ? err.message : String(err)) };
   }
-}
+});
+
+ipcMain.handle('ks-diagnostics', () => ({
+  ok: true,
+  logPath: redact(diagnostics.logPath),
+  summary: diagnostics.summary(),
+}));
 
 ipcMain.handle('ks-touch-id', async (_event, reason) => {
-  if (process.platform !== 'darwin' || typeof systemPreferences.promptTouchID !== 'function') {
-    return { ok: true, skipped: true };
-  }
-  try {
-    await systemPreferences.promptTouchID(String(reason || 'Unlock KeyShield'));
+  const result = await authorizeTouchId(systemPreferences, process.platform, redact(reason || 'Unlock KeyShield'));
+  if (result.ok) {
     showShellFeedback({ kind: 'success', title: 'Unlocked with Touch ID', source: 'unlock' });
     bringWindowToForeground(BrowserWindow.getAllWindows()[0]);
-    return { ok: true };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    showShellFeedback({
+  } else {
+    const feedback = {
       kind: 'error',
-      title: 'Touch ID cancelled',
-      detail: `Touch ID was cancelled (${error}). Next step: tap Sign In again or use the session token fallback in the auth card.`,
+      title: 'Touch ID authorization failed',
+      detail: result.error,
       source: 'unlock',
-    });
-    return { ok: false, error };
+    };
+    showShellFeedback(feedback);
+    try {
+      await _event.sender.executeJavaScript(`window.dispatchEvent(new CustomEvent('ks-app-feedback', { detail: ${JSON.stringify(feedback)} }));`);
+    } catch { /* The requesting window may have closed. */ }
   }
+  return result;
+});
+
+ipcMain.on('ks-quit', () => app.quit());
+ipcMain.on('ks-retry', () => {
+  for (const win of BrowserWindow.getAllWindows()) win.destroy();
+  void createWindow();
 });
 
 function buildMenu(win) {
@@ -327,18 +336,90 @@ function buildMenu(win) {
           label: 'API health (Railway)',
           click: () => { void shell.openExternal(`${PROD_API}/health`); },
         },
+        {
+          label: 'Reveal launch log',
+          click: () => { shell.showItemInFolder(diagnostics.logPath); },
+        },
       ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * Show the diagnostics screen (boot.html) with the reason for the failure
+ * and the renderer errors captured so far. The screen itself offers Retry
+ * (restart local startup checks), Quit, Copy diagnostics and Reveal log.
+ * If boot.html itself is missing, fall back to an error box — a bundle
+ * that broken still has to say so out loud.
+ */
+async function showDiagnosticsScreen(win, reason, detail) {
+  if (!win || win.isDestroyed()) return;
+  const boot = bootHtmlPath();
+  diagnostics.log(`diagnostics screen: ${reason} — ${detail || ''}`);
+  if (!fs.existsSync(boot)) {
+    dialog.showErrorBox(
+      'KeyShield could not open',
+      [
+        `KeyShield could not load the dashboard (${reason}).`,
+        detail ? `Detail: ${redact(detail)}` : null,
+        '',
+        'The fallback screen is missing from this install, so there is nothing to show.',
+        `Launch details were written to:\n${diagnostics.logPath}`,
+      ].filter(Boolean).map(redact).join('\n'),
+    );
+    return;
+  }
+  const query = {
+    reason: redact(reason || 'launch-failed'),
+    detail: redact(detail).slice(0, 500),
+    log: redact(diagnostics.logPath),
+    errors: redact(diagnostics.recentErrors().slice(-3).map((entry) => entry.message).join(' | ')).slice(0, 500),
+  };
+  try {
+    await win.loadFile(boot, { query });
+  } catch (err) {
+    diagnostics.log(`diagnostics screen failed to load: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * The page loaded, but did React mount? Poll #root for up to ten seconds.
+ * Returns true once the app has rendered anything, false when the page
+ * stayed empty — the blank-window failure that used to be silent.
+ */
+async function probeMounted(win) {
+  if (!win || win.isDestroyed()) return false;
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    if (win.isDestroyed()) return false;
+    try {
+      const current = win.webContents.getURL();
+      if (current.includes('boot.html')) return true;
+      const count = await win.webContents.executeJavaScript(
+        "(() => { const root = document.getElementById('root'); return root ? root.children.length : -1; })()",
+      );
+      if (typeof count === 'number' && count > 0) return true;
+    } catch {
+      // The page may still be loading; keep polling.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return false;
+}
+
 async function loadDashboard(win) {
   try {
     await withTimeout(win.loadURL(startUrl()), 12000, 'dashboard-load-timeout');
-    return;
+    diagnostics.log('dashboard loaded');
+    return 'dashboard';
   } catch (first) {
     const detail = first instanceof Error ? first.message : String(first);
+    diagnostics.log(`dashboard load failed: ${detail}`);
+    if (PACKAGED) {
+      await showDiagnosticsScreen(win, 'dashboard-load-failed', detail);
+      return 'diagnostics';
+    }
     showShellFeedback({
       kind: 'error',
       title: 'Dashboard failed to load',
@@ -347,24 +428,32 @@ async function loadDashboard(win) {
     });
     try {
       await withTimeout(win.loadURL(`${DASHBOARD_ORIGIN}/?desktop=1`), 10000, 'live-dashboard-timeout');
-      return;
+      diagnostics.log('dashboard loaded on retry');
+      return 'dashboard';
     } catch {
-      const boot = bootHtmlPath();
-      if (fs.existsSync(boot)) {
-        await win.loadFile(boot);
-        return;
-      }
-      throw first;
+      await showDiagnosticsScreen(win, 'dashboard-load-failed', detail);
+      return 'diagnostics';
     }
   }
 }
 
 async function createWindow() {
   const ses = session.fromPartition('persist:keyshield');
-  try {
-    installHttpsHandler(ses);
-  } catch (err) {
-    console.error('https handler skipped', err);
+  installRequestAudit(ses, process.env.KS_DESKTOP_REQUEST_AUDIT);
+  let failure = startupFailure({
+    packaged: PACKAGED,
+    preflight: packagedRuntimePreflight(),
+    rendererValid: validateRenderer(rendererDir()),
+    api: process.env.KS_DESKTOP_API_URL,
+  });
+  if (!failure) {
+    try {
+      if (ses.protocol.isProtocolHandled && await ses.protocol.isProtocolHandled('https')) ses.protocol.unhandle('https');
+      installHttpsHandler(ses);
+    } catch (err) {
+      diagnostics.log(`https handler skipped: ${err instanceof Error ? err.message : String(err)}`);
+      if (PACKAGED) failure = 'Bundled HTTPS handler could not be installed';
+    }
   }
 
   ses.setPermissionRequestHandler((_wc, permission, callback) => {
@@ -421,7 +510,10 @@ async function createWindow() {
   win.webContents.on('did-finish-load', () => {
     if (process.platform !== 'darwin') return;
     void win.webContents.insertCSS(`
-      html.ks-desktop, html { --ks-desktop-drag: 38px; }
+      html.ks-desktop, html { --ks-desktop-drag: 38px; overflow-y: auto !important; }
+      body { overflow-y: auto !important; }
+      #root > .min-h-screen { height: auto !important; min-height: 100vh; padding-top: 48px !important; padding-bottom: 32px !important; }
+      #root > .min-h-screen > * { flex-shrink: 0; }
       body::before {
         content: '';
         position: fixed;
@@ -436,6 +528,7 @@ async function createWindow() {
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return;
+    diagnostics.log(`did-fail-load ${errorCode} ${_url || ''}: ${errorDescription || ''}`);
     showShellFeedback({
       kind: 'error',
       title: 'Dashboard failed to load',
@@ -444,12 +537,50 @@ async function createWindow() {
     });
     const boot = bootHtmlPath();
     if (fs.existsSync(boot) && !String(_url || '').includes('boot.html')) {
-      void win.loadFile(boot);
+      void showDiagnosticsScreen(win, 'dashboard-load-failed', errorDescription || String(errorCode));
     }
   });
 
+  // A renderer that loads but never mounts React used to leave a blank
+  // dark window with no error anywhere. Capture console errors and a
+  // crashed renderer process so the diagnostics screen can name the cause.
+  win.webContents.on('console-message', (_event, level, message, _line, sourceId) => {
+    const isError = level === 'error' || level === 3;
+    if (isError) diagnostics.recordRendererError(message, sourceId);
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const detail = `renderer process gone (${details.reason || 'unknown'}${details.exitCode ? `, exit ${details.exitCode}` : ''})`;
+    diagnostics.log(detail);
+    showShellFeedback({
+      kind: 'error',
+      title: 'KeyShield renderer crashed',
+      detail,
+      source: 'proxy',
+    });
+    void showDiagnosticsScreen(win, 'renderer-crashed', detail);
+  });
+
   buildMenu(win);
-  await loadDashboard(win);
+  if (failure) {
+    await showDiagnosticsScreen(win, 'startup-blocked', failure);
+    bringWindowToForeground(win);
+    return win;
+  }
+  const loaded = await loadDashboard(win);
+  if (loaded === 'dashboard') {
+    const mounted = await probeMounted(win);
+    if (!mounted && !win.isDestroyed()) {
+      const errors = diagnostics.recentErrors();
+      await showDiagnosticsScreen(
+        win,
+        'blank-renderer',
+        errors.length > 0
+          ? errors[errors.length - 1].message
+          : 'The dashboard page loaded but nothing rendered. The bundled renderer may be incomplete, or the live site failed to mount.',
+      );
+    }
+  }
   bringWindowToForeground(win);
   flushPendingShellFeedback(win);
   return win;
@@ -460,6 +591,24 @@ app.commandLine.appendSwitch('enable-features', 'WebAuthentication,WebAuthentica
 if (process.platform === 'darwin' && typeof app.setActivationPolicy === 'function') {
   try { app.setActivationPolicy('regular'); } catch { /* older Electron */ }
 }
+
+function reportFatalError(err) {
+  const message = err instanceof Error ? (err.stack || err.message) : String(err);
+  diagnostics.log(`uncaught exception: ${message}`);
+  dialog.showErrorBox(
+    'KeyShield hit a problem',
+    [
+      'KeyShield hit an unexpected problem and will close.',
+      redact(err instanceof Error ? err.message : String(err)),
+      '',
+      `Details were written to:\n${redact(diagnostics.logPath)}`,
+    ].join('\n'),
+  );
+  app.quit();
+}
+
+process.on('uncaughtException', reportFatalError);
+process.on('unhandledRejection', reportFatalError);
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -486,14 +635,11 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     const preflight = packagedRuntimePreflight();
-    if (!preflight.ok) {
-      // Warn, but do not app.quit() — a false-positive preflight previously
-      // left KeyShield running in the background with no window.
-      blockStartup(preflight);
+    if (!preflight.skipped) {
+      diagnostics.log(`preflight ok=${preflight.ok} ${runtimePreflightDetail(preflight)}`);
     }
     const win = await createWindow();
     bringWindowToForeground(win);
-    void maybeTouchId();
     app.on('activate', () => {
       const existing = BrowserWindow.getAllWindows()[0];
       if (existing) {
@@ -503,6 +649,7 @@ if (!gotLock) {
       void createWindow();
     });
   }).catch((err) => {
+    diagnostics.log(`startup failed: ${err instanceof Error ? (err.stack || err.message) : String(err)}`);
     blockStartup(null, err instanceof Error ? err.message : String(err));
     app.quit();
   });

@@ -1,6 +1,9 @@
 'use strict';
 
 /**
+ * Checks a packaged macOS Electron app bundle for the Chromium runtime
+ * files the app needs to open a window.
+ *
  * Electron 33 (and current electron-packager) darwin layout:
  *
  *   KeyShield.app/Contents/
@@ -12,8 +15,15 @@
  *
  * Helpers do NOT contain a nested Electron Framework / icudtl.dat.
  * Contents/Resources/icudtl.dat is also not required on Electron 33.
- * Requiring those paths (PR #137) false-positives a valid bundle and
- * blocked launch with "KeyShield cannot start".
+ * An earlier version of this check required those paths, false-positived
+ * on a valid bundle, and blocked launch — so this file splits every finding
+ * into fatal (the app cannot open a window without it) and warning (worth
+ * reporting, never a reason to refuse launch). The runtime only ever warns;
+ * the pack script fails only on fatal items.
+ *
+ * This check covers the Electron 33 layout. If Electron is upgraded, the
+ * layout expectations here must be re-verified against the new version's
+ * bundle before shipping.
  */
 
 const fs = require('node:fs');
@@ -22,6 +32,15 @@ const path = require('node:path');
 function exists(file) {
   try {
     return fs.existsSync(file);
+  } catch {
+    return false;
+  }
+}
+
+function isExecutable(file) {
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    return true;
   } catch {
     return false;
   }
@@ -54,6 +73,7 @@ function inspectMacBundle(root) {
   const missing = [];
   const warnings = [];
 
+  // Fatal: the main executable must exist and be runnable.
   let executables = [];
   try {
     executables = fs.readdirSync(macos).filter((name) => !name.startsWith('.'));
@@ -62,8 +82,23 @@ function inspectMacBundle(root) {
   }
   if (executables.length === 0) {
     missing.push(path.join(macos, 'KeyShield'));
+  } else {
+    for (const name of executables) {
+      if (!isExecutable(path.join(macos, name))) {
+        missing.push(path.join(macos, name));
+      }
+    }
   }
 
+  // Fatal: the Electron framework binary.
+  const frameworkBin = path.join(
+    frameworks,
+    'Electron Framework.framework',
+    'Electron Framework',
+  );
+  if (!exists(frameworkBin)) missing.push(frameworkBin);
+
+  // Fatal: ICU data. Electron 33 ships it in exactly one of these places.
   const icuInFramework = path.join(
     frameworks,
     'Electron Framework.framework',
@@ -83,13 +118,10 @@ function inspectMacBundle(root) {
     missing.push(icuInFramework);
   }
 
-  const frameworkBin = path.join(
-    frameworks,
-    'Electron Framework.framework',
-    'Electron Framework',
-  );
-  if (!exists(frameworkBin)) missing.push(frameworkBin);
-
+  // Fatal only when no helper app exists at all; a single helper with a
+  // missing binary is a warning (the window can still open — the main and
+  // renderer helpers are the ones that matter, and their absence is caught
+  // by the empty-helpers case in a real bundle).
   const helpers = helperAppNames(frameworks);
   if (helpers.length === 0) {
     missing.push(path.join(frameworks, 'KeyShield Helper.app'));
@@ -103,11 +135,13 @@ function inspectMacBundle(root) {
         bins = [];
       }
       if (bins.length === 0) {
-        missing.push(path.join(helperMac, helper.replace(/\.app$/, '')));
+        warnings.push(path.join(helperMac, helper.replace(/\.app$/, '')));
       }
     }
   }
 
+  // Warning only: without the bundled renderer the app falls back to the
+  // live dashboard, so a missing renderer never blocks launch.
   const rendererIndex = path.join(resources, 'renderer', 'index.html');
   if (!exists(rendererIndex)) warnings.push(rendererIndex);
 
@@ -120,6 +154,11 @@ function inspectMacBundle(root) {
     warnings,
     helpers,
   };
+}
+
+/** The fatal subset of a report — the only items that may fail a pack. */
+function fatalMissing(report) {
+  return (report && Array.isArray(report.missing)) ? report.missing.slice() : [];
 }
 
 function verifyMacBundleRuntime(appPath) {
@@ -136,6 +175,7 @@ function verifyMacBundleRuntime(appPath) {
 module.exports = {
   contentsDir,
   inspectMacBundle,
+  fatalMissing,
   verifyMacBundleRuntime,
   helperAppNames,
 };

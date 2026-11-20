@@ -1,0 +1,14 @@
+{
+  "source": "keyshield-acceptance/fixtures/keys.json — synthetic marked envelopes; never send to real providers",
+  "samples": [
+    { "id": "openai", "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" },
+    { "id": "anthropic", "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk-ant-api03-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" },
+    { "id": "stripe_test", "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk_test_CCCCCCCCCCCCCCCCCCCCCCCC" },
+    { "id": "stripe_live_like", "value": "FAKE_KEYSHIELD_NOT_A_KEY::sk_live_DDDDDDDDDDDDDDDDDDDDDDDD" },
+    { "id": "github", "value": "FAKE_KEYSHIELD_NOT_A_KEY::ghp_EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE" },
+    { "id": "aws_access", "value": "FAKE_KEYSHIELD_NOT_A_KEY::AKIAFFFFFFFFFFFFFFFF" },
+    { "id": "aws_secret", "value": "FAKE_KEYSHIELD_NOT_A_KEY::GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG" },
+    { "id": "solana", "value": "FAKE_KEYSHIELD_NOT_A_KEY::HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH" },
+    { "id": "bearer", "value": "FAKE_KEYSHIELD_NOT_A_KEY::Bearer JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ" }
+  ]
+}

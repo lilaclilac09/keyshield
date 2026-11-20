@@ -1,18 +1,21 @@
 {
-  "name": "keyshield",
-  "productName": "KeyShield",
-  "version": "2.0.0",
-  "private": true,
   "description": "KeyShield — your API iCloud Keychain (Mac app)",
+  "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "@electron/packager": "^18.3.6",
+    "electron": "33.4.11"
+  },
   "main": "main.cjs",
+  "name": "keyshield",
+  "private": true,
+  "productName": "KeyShield",
   "scripts": {
     "start": "electron .",
     "build:renderer": "node scripts/build-renderer.cjs",
     "pack": "node scripts/pack-mac.cjs",
-    "dmg": "node scripts/pack-mac.cjs"
+    "dmg": "node scripts/pack-mac.cjs",
+    "test:e2e": "playwright test --config e2e/playwright.config.cjs",
+    "verify": "node --check main.cjs && node --check preload.cjs && node --check runtime-preflight.cjs && node --check renderer-server.cjs && node --check diagnostics.cjs && node --check scripts/pack-mac.cjs && node --check scripts/build-renderer.cjs"
   },
-  "devDependencies": {
-    "@electron/packager": "^18.3.6",
-    "electron": "33.4.11"
-  }
+  "version": "2.0.0"
 }
