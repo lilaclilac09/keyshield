@@ -174,8 +174,15 @@ final class KeyShieldUITests: XCTestCase {
         screenshot("Demo-01-OptIn")
         tap("approvalDemo.enable")
         tab("Vault")
-        XCTAssertTrue(app.buttons["vault.entry.Simulator approval fixture"].exists)
+        let fixtures = app.buttons.matching(identifier: "vault.entry.Simulator approval fixture")
+        XCTAssertEqual(fixtures.count, 1)
+        tab("Agents"); tap("approvalDemo.disable")
+        tab("Vault"); add(rotated, label: "Simulator approval fixture"); tap("key.save")
+        tap("Keep both")
+        XCTAssertEqual(fixtures.count, 2)
         tab("Agents")
+        tap("approvalDemo.enable")
+        XCTAssertTrue(request.waitForExistence(timeout: 5))
 
         for attempt in 1...2 {
             tap("approvalDemo.request")

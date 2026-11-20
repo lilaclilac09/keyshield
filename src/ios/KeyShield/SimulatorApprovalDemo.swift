@@ -25,15 +25,16 @@ struct SimulatorApprovalDemo {
     static func prepareFixture(in vault: VaultStore) throws -> Self {
         let fingerprint = SHA256.hash(data: Data(fixture.utf8)).prefix(8)
             .map { String(format: "%02x", $0) }.joined()
-        let id: UUID
-        switch try vault.save(label: entryLabel, value: fixture) {
-        case let .saved(saved): id = saved
-        case let .duplicate(existing): id = existing
-        case .ambiguousDuplicate: throw ShieldError.duplicate
+        let matches = try vault.list().filter {
+            $0.label == entryLabel && $0.fingerprint == fingerprint
         }
-        guard try vault.list().contains(where: {
-            $0.id == id && $0.label == entryLabel && $0.fingerprint == fingerprint
-        }) else { throw ShieldError.invalid }
+        if let entry = matches.first {
+            guard matches.count == 1 else { throw ShieldError.duplicate }
+            return Self(entryID: entry.id)
+        }
+        guard case let .saved(id) = try vault.save(label: entryLabel, value: fixture) else {
+            throw ShieldError.duplicate
+        }
         return Self(entryID: id)
     }
 
