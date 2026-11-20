@@ -87,6 +87,7 @@ describe('PUT /vault/:id', () => {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        'X-Vault-Base-Revision': 'none',
       },
       body: JSON.stringify(cipher),
     });
@@ -103,12 +104,12 @@ describe('PUT /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify(makeCipher(100)),
     });
     const stale = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': '100' },
       body: JSON.stringify(makeCipher(99)),
     });
     expect(stale.status).toBe(409);
@@ -118,12 +119,12 @@ describe('PUT /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify(makeCipher(100)),
     });
     const dup = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': '100' },
       body: JSON.stringify(makeCipher(100)),
     });
     expect(dup.status).toBe(409);
@@ -133,7 +134,7 @@ describe('PUT /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     const r = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: 'not json',
     });
     expect(r.status).toBe(400);
@@ -143,7 +144,7 @@ describe('PUT /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     const r = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify({ unrelated: 'object' }),
     });
     expect(r.status).toBe(400);
@@ -156,7 +157,7 @@ describe('PUT /vault/:id', () => {
     huge.ciphertext = 'A'.repeat(5000);
     const r = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify(huge),
     });
     expect(r.status).toBe(413);
@@ -177,12 +178,12 @@ describe('DELETE /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify(makeCipher(100)),
     });
     const del = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, 'X-Vault-Base-Revision': '100' },
     });
     expect(del.status).toBe(204);
     const get = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
@@ -195,7 +196,7 @@ describe('DELETE /vault/:id', () => {
     const token = await tokenFor(VAULT_ID);
     const r = await SELF.fetch(`http://w/vault/${VAULT_ID}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, 'X-Vault-Base-Revision': 'none' },
     });
     expect(r.status).toBe(204);
   });
@@ -216,7 +217,7 @@ describe('vault isolation', () => {
     const tokenB = await tokenFor('vault-B');
     await SELF.fetch('http://w/vault/vault-A', {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${tokenA}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${tokenA}`, 'Content-Type': 'application/json', 'X-Vault-Base-Revision': 'none' },
       body: JSON.stringify(makeCipher(100)),
     });
     const getB = await SELF.fetch('http://w/vault/vault-B', {

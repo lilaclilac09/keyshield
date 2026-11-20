@@ -119,6 +119,7 @@ describe('POST /auth/revoke', () => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        'X-Vault-Base-Revision': 'none',
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({

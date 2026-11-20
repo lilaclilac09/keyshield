@@ -374,7 +374,7 @@ describe('central guards and consent', () => {
     const release = registerSavingSecret(secret);
     try {
       await expect(apiFetch('/synthetic', { body: JSON.stringify({ value: secret }) })).rejects.toThrow('Refusing request containing');
-      await expect(makeHttpSyncBackend('https://synthetic.invalid').push('vault', { version: 1, iv: 'iv', ciphertext: secret, updatedAt: 1 }, () => 'token')).rejects.toThrow('Refusing request containing');
+      await expect(makeHttpSyncBackend('https://synthetic.invalid').push('vault', { version: 1, iv: 'iv', ciphertext: secret, updatedAt: 1 }, () => 'token', null)).rejects.toThrow('Refusing request containing');
     } finally { release(); }
     expect(requests).toHaveLength(0); expectPrivate(secret);
   });
