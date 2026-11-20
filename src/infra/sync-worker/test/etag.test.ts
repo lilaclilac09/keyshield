@@ -36,10 +36,13 @@ async function tokenFor(vaultId: string) {
 }
 
 async function putVault(token: string, body = VAULT_BODY) {
+  const stored = await (env as any).VAULTS.get(VAULT_ID);
+  const base = stored ? String((await stored.json()).updatedAt) : 'none';
   return SELF.fetch(`http://w/vault/${VAULT_ID}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
+      'X-Vault-Base-Revision': base,
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),

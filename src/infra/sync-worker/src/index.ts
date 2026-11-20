@@ -26,7 +26,7 @@ import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { ed25519 } from '@noble/curves/ed25519';
 import { extractBearer, issueJwt, verifyJwt } from './auth';
-import { readVaultWithEtag, writeVault, deleteVault, VaultCipherSchema } from './cas';
+import { readVaultWithEtag, writeVault, deleteVault, isVaultBaseRevision, VaultCipherSchema } from './cas';
 import {
   bumpCounter,
   consumeChallenge,
@@ -138,6 +138,13 @@ app.use('/vault/:id', async (c, next) => {
   await next();
 });
 
+app.use('/vault/:id', async (c, next) => {
+  if ((c.req.method === 'PUT' || c.req.method === 'DELETE') && !isVaultBaseRevision(c.req.header('X-Vault-Base-Revision'))) {
+    return c.json({ error: 'Update KeyShield to keep syncing. Update the app and refresh.' }, 428);
+  }
+  await next();
+});
+
 // Browser/agent caches use ETag/If-None-Match for cheap freshness
 // checks. We respond with `Cache-Control: private` so the response
 // is cacheable BY THE BROWSER ONLY — never by an intermediate proxy
@@ -205,13 +212,14 @@ app.put('/vault/:id', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'invalid cipher shape', issues: parsed.error.issues }, 400);
   }
-  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data, c.req.header('X-Vault-Base-Revision'));
+  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data, c.req.header('X-Vault-Base-Revision')!);
   if (!ok) return c.json({ error: 'vault changed in another tab/device — reload and unlock to refresh' }, 409);
   return c.json({ ok: true });
 });
 
 app.delete('/vault/:id', async (c) => {
-  await deleteVault(c.env.VAULTS, c.req.param('id'));
+  const ok = await deleteVault(c.env.VAULTS, c.req.param('id'), c.req.header('X-Vault-Base-Revision')!);
+  if (!ok) return c.json({ error: 'vault changed in another tab/device — reload and unlock to refresh' }, 409);
   return new Response(null, { status: 204 });
 });
 

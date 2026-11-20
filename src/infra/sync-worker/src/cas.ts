@@ -1,8 +1,7 @@
 /**
  * Compare-and-set logic for vault writes.
  *
- * Revision-aware clients must build on the stored revision and win
- * an atomic conditional R2 write. Legacy clients retain timestamp ordering.
+ * Clients must build on the stored revision and win an atomic R2 write.
  *
  * The vault payload itself is opaque to us — we only inspect the
  * `updatedAt` field for ordering. Everything else is end-to-end
@@ -21,8 +20,8 @@ export type VaultCipher = z.infer<typeof VaultCipherSchema>;
 
 /**
  * Read whatever is currently in R2 for a vault ID. Returns null if
- * absent OR if the stored bytes are corrupt (we treat corrupt = absent
- * for write purposes, so a CAS push will succeed and overwrite).
+ * absent OR if the stored bytes are corrupt. Writes still require a
+ * matching revision and never replace corrupt objects as absent.
  */
 export async function readVault(
   bucket: R2Bucket,
@@ -56,37 +55,43 @@ export async function readVaultWithEtag(
 
 /**
  * Returns false on a revision mismatch or a lost conditional-write race.
- * An absent base revision preserves the legacy timestamp-only rule.
  */
 export async function writeVault(
   bucket: R2Bucket,
   vaultId: string,
   cipher: VaultCipher,
-  baseRevision?: string,
+  baseRevision: string,
 ): Promise<boolean> {
+  if (!isVaultBaseRevision(baseRevision)) return false;
   const { cipher: existing, etag } = await readVaultWithEtag(bucket, vaultId);
-  if (baseRevision !== undefined) {
-    if (baseRevision === 'none') {
-      if (etag !== null) return false;
-    } else if (!/^(0|[1-9]\d*)$/.test(baseRevision) || !existing || existing.updatedAt !== Number(baseRevision)) {
-      return false;
-    }
-  }
+  if (!matchesRevision(existing, etag, baseRevision)) return false;
   if (existing && existing.updatedAt >= cipher.updatedAt) {
     return false;
   }
   const written = await bucket.put(vaultId, JSON.stringify(cipher), {
     httpMetadata: { contentType: 'application/json' },
-    ...(baseRevision === undefined ? {} : {
-      onlyIf: etag === null ? { etagDoesNotMatch: '*' } : { etagMatches: etag },
-    }),
+    onlyIf: etag === null ? { etagDoesNotMatch: '*' } : { etagMatches: etag },
   });
-  return baseRevision === undefined || written !== null;
+  return written !== null;
+}
+
+export function isVaultBaseRevision(base: string | undefined): base is string {
+  return base === 'none' || (typeof base === 'string' && /^(0|[1-9]\d*)$/.test(base) && Number.isSafeInteger(Number(base)));
+}
+
+function matchesRevision(cipher: VaultCipher | null, etag: string | null, base: string): boolean {
+  return base === 'none' ? etag === null : cipher !== null && cipher.updatedAt === Number(base);
 }
 
 export async function deleteVault(
   bucket: R2Bucket,
   vaultId: string,
-): Promise<void> {
+  baseRevision: string,
+): Promise<boolean> {
+  if (!isVaultBaseRevision(baseRevision)) return false;
+  const { cipher, etag } = await readVaultWithEtag(bucket, vaultId);
+  if (!matchesRevision(cipher, etag, baseRevision)) return false;
+  if (etag === null) return true;
   await bucket.delete(vaultId);
+  return true;
 }

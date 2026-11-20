@@ -28,7 +28,9 @@ export class SyncAuthError extends Error {
 
 export class SyncHttpError extends Error {
   constructor(public readonly status: number, statusText: string) {
-    super(`sync push failed: ${status} ${statusText}`);
+    super(status === 428 ? 'Update KeyShield to keep syncing. Update the app and refresh.'
+      : status === 409 ? 'Vault changed in another tab/device. Reload and unlock to refresh.'
+        : `sync request failed: ${status} ${statusText}`);
     this.name = 'SyncHttpError';
   }
 }
@@ -53,7 +55,7 @@ export interface SyncBackend {
   ): Promise<'ok' | 'conflict'>;
 
   /** DELETE /vault/:id. Throws SyncAuthError on 401. */
-  remove(vaultId: string, getToken: () => string | null): Promise<void>;
+  remove(vaultId: string, getToken: () => string | null, baseRevision: number | null): Promise<void>;
 }
 
 function authHeaders(getToken: () => string | null): Record<string, string> {
@@ -125,17 +127,18 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
       return 'ok';
     },
 
-    async remove(vaultId, getToken) {
-      const res = await fetch(vaultUrl(syncUrl, vaultId), {
+    async remove(vaultId, getToken, baseRevision) {
+      const url = vaultUrl(syncUrl, vaultId);
+      const options = {
         method: 'DELETE',
-        headers: authHeaders(getToken),
-      });
+        headers: { ...authHeaders(getToken), 'X-Vault-Base-Revision': baseRevision === null ? 'none' : String(baseRevision) },
+      };
+      assertSafeRequest(url, options);
+      const res = await fetch(url, options);
       if (res.status === 401) throw new SyncAuthError();
       // 204 is the Worker's success; treat any 2xx as success.
       if (!res.ok && res.status !== 204) {
-        throw new Error(
-          `sync remove failed: ${res.status} ${res.statusText}`,
-        );
+        throw new SyncHttpError(res.status, res.statusText);
       }
       changed();
     },

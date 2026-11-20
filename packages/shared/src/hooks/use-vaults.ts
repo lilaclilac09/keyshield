@@ -133,8 +133,9 @@ export const useVaults = (searchQuery: string, _activeFilter: string) => {
       setVaultItems((prev) => prev.filter((i) => i.id !== id));
       try {
         await removeEntry(id);
-      } catch {
+      } catch (error) {
         refresh();
+        throw error;
       }
     },
     [refresh],

@@ -50,7 +50,7 @@ describe('revision-aware vault PUT', () => {
 
   it.each(['', 'invalid', '-1', '100.5', 'NaN'])('rejects malformed base %j', async (base) => {
     await (env as any).VAULTS.put(ID, JSON.stringify(cipher(100)));
-    expect((await SELF.fetch(request(101, base))).status).toBe(409);
+    expect((await SELF.fetch(request(101, base))).status).toBe(428);
     expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual(cipher(100));
   });
 
@@ -60,12 +60,34 @@ describe('revision-aware vault PUT', () => {
     expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual(cipher(100));
   });
 
-  it('preserves timestamp-only ordering for legacy clients without the header', async () => {
-    expect((await SELF.fetch(request(100))).status).toBe(200);
-    expect((await SELF.fetch(request(99))).status).toBe(409);
-    expect((await SELF.fetch(request(100))).status).toBe(409);
-    expect((await SELF.fetch(request(200))).status).toBe(200);
-    expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual(cipher(200));
+  it.each(['PUT', 'DELETE'])('refuses legacy %s before any R2 access, keeping old-client GET unchanged', async (method) => {
+    await (env as any).VAULTS.put(ID, JSON.stringify(cipher(100)));
+    const bucket = { get: vi.fn(), put: vi.fn(), delete: vi.fn() };
+    const req = new Request(request(200), { method });
+    const res = await app.fetch(req, { ...env, VAULTS: bucket } as any);
+    expect(res.status).toBe(428);
+    expect(await res.json()).toEqual({ error: 'Update KeyShield to keep syncing. Update the app and refresh.' });
+    expect(bucket.get).not.toHaveBeenCalled();
+    expect(bucket.put).not.toHaveBeenCalled();
+    expect(bucket.delete).not.toHaveBeenCalled();
+    const read = await SELF.fetch(`http://w/vault/${ID}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual(cipher(100));
+  });
+
+  it.each(['99', 'none'])('refuses a DELETE based on %s when stored revision is 100', async (base) => {
+    await (env as any).VAULTS.put(ID, JSON.stringify(cipher(100)));
+    const res = await SELF.fetch(new Request(request(200, base), { method: 'DELETE' }));
+    expect(res.status).toBe(409);
+    expect(await (await (env as any).VAULTS.get(ID)).json()).toEqual(cipher(100));
+  });
+
+  it('deletes only a matching revision; none succeeds only while absent', async () => {
+    await (env as any).VAULTS.put(ID, JSON.stringify(cipher(100)));
+    expect((await SELF.fetch(new Request(request(200, '100'), { method: 'DELETE' }))).status).toBe(204);
+    expect(await (env as any).VAULTS.get(ID)).toBeNull();
+    expect((await SELF.fetch(new Request(request(200, '100'), { method: 'DELETE' }))).status).toBe(409);
+    expect((await SELF.fetch(new Request(request(200, 'none'), { method: 'DELETE' }))).status).toBe(204);
   });
 
   it('allows the revision header in browser CORS preflight', async () => {

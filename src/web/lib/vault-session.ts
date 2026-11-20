@@ -399,7 +399,7 @@ async function mutateSession(fn: (p: VaultPlaintext) => void, operation: 'save' 
     const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
       ? 'expired'
       : err instanceof SyncHttpError
-        ? err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
+        ? err.status === 428 ? 'update' : err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
         : 'unreachable';
     reportVaultSyncChange(operation, false, reason);
     throw new VaultSyncChangeError(operation, reason);
