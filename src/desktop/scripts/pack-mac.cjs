@@ -244,7 +244,7 @@ function createPackagerIgnore(output = releaseDir) {
   };
 }
 
-async function main() {
+function prepareMacBuild() {
   const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
   if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
   const rendererRef = fetchPinnedRenderer(repoRoot, pin);
@@ -275,11 +275,11 @@ async function main() {
   const icns = makeIcns();
   if (!icns) console.warn('no .icns icon — the app will use the PNG icon instead');
 
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(releaseDir, { recursive: true });
+  return { sources, rendererReport, icon: icns || iconPng };
+}
 
-  const packager = require('@electron/packager');
-  const apps = await packager({
+function macPackagerOptions(icon) {
+  return {
     dir: desktopDir,
     out: outDir,
     platform: 'darwin',
@@ -296,7 +296,7 @@ async function main() {
       path.join(desktopDir, 'loading.html'),
       path.join(desktopDir, 'redaction.js'),
     ],
-    icon: icns || iconPng,
+    icon,
     darwinDarkModeSupport: true,
     osxSign: false,
     ignore: createPackagerIgnore(),
@@ -308,7 +308,15 @@ async function main() {
       LSBackgroundOnly: false,
       LSUIElement: false,
     },
-  });
+  };
+}
+
+async function main() {
+  const { sources, rendererReport, icon } = prepareMacBuild();
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(releaseDir, { recursive: true });
+  const packager = require('@electron/packager');
+  const apps = await packager(macPackagerOptions(icon));
 
   const reports = [];
   const zipped = [];
@@ -366,4 +374,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, createPackagerIgnore };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, createPackagerIgnore, prepareMacBuild, macPackagerOptions, checkBundle };

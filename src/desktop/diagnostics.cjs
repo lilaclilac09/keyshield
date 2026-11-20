@@ -19,6 +19,7 @@ const path = require('node:path');
 const { redact } = require('./redaction.js');
 
 function defaultLogPath() {
+  if (process.mas) return path.join(require('electron').app.getPath('logs'), 'keyshield-desktop.log');
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Logs', 'KeyShield', 'keyshield-desktop.log');
   }
@@ -26,6 +27,7 @@ function defaultLogPath() {
 }
 
 function logFilePath(customPath) {
+  if (process.mas) return defaultLogPath();
   return customPath || process.env.KS_DESKTOP_LOG || defaultLogPath();
 }
 

@@ -86,6 +86,49 @@ its own final checksum without changing that checksum.
 `.dmg` is not a launchable Mac app). `npm run verify` syntax-checks every
 script in this folder.
 
+## Mac App Store / TestFlight build
+
+On macOS run `npm run pack:mas`. This reuses the DMG renderer pin,
+provenance, icon, resources and preflight, but downloads Electron's **MAS**
+runtime and builds a universal arm64+x64 app under `release/mas/`.
+Without signing inputs it ad-hoc signs the sandboxed app, labels BUILD-INFO
+**Local synthetic MAS sandbox check — not App Store signed**, and skips pkg.
+`npm run pack` remains the existing unsigned DMG/zip path.
+
+For a distribution pkg, supply all of:
+
+- `KS_MAS_APP_IDENTITY`: installed `Apple Distribution: …` signing identity.
+- `KS_MAS_INSTALLER_IDENTITY`: installed `3rd Party Mac Developer Installer: …`
+  or `Mac Installer Distribution: …` identity.
+- `KS_MAS_PROVISIONING_PROFILE`: path to the distribution `.provisionprofile`,
+  embedded by osx-sign; it must authorize `xyz.aileena.keyshield`.
+- `KS_MAS_TEAM_ID`: ten-character Apple team id matching that profile.
+- `KS_MAS_BUILD_NUMBER`: numeric bundle version, increased for every upload.
+- `KS_MAS_NON_EXEMPT_ENCRYPTION`: exactly `true` or `false`. This is the
+  owner's legal encryption declaration; signing/pkg refuses to guess it.
+
+Then `npm run pack:mas` signs using `@electron/osx-sign` and creates
+`release/mas/KeyShield-mas.pkg` with `productbuild`. No upload is performed;
+the owner must review encryption/export compliance, signing and App Store
+Connect setup before uploading via Apple's tools for TestFlight. No testers
+or public links are created. Real signing/upload cannot be validated without
+the owner's identities, profile and App Store Connect access.
+
+Sandbox audit: the shell spawns no external processes and opens no local
+listening sockets; `renderer-server.cjs` reads bundled files through Electron's
+HTTPS handler. Only outbound network access is entitled. There is no broker
+runtime in this desktop checkout; packaging excludes scripts/e2e and asserts
+that broker/approval/mock files are absent. MAS disables live/local sync and
+external renderer overrides, request-audit file writes, and log path overrides.
+Logs use Electron's container-aware logs directory, normally
+`~/Library/Containers/xyz.aileena.keyshield/Data/Library/Logs/KeyShield/`.
+Reveal-log uses Finder for that owned log; external HTTPS links use Launch
+Services. No file-access, server or keychain-group entitlements are requested.
+Electron's Mach-port rendezvous needs an application group: the bundle id for
+local ad-hoc checks, or `TEAMID.xyz.aileena.keyshield` when signing (authorize it
+in the distribution profile). MAS skips Electron's unsupported single-instance
+lock API. Helpers inherit the sandbox; no login helper is installed.
+
 ## Install
 
 Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.

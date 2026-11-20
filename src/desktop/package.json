@@ -13,9 +13,10 @@
     "start": "electron .",
     "build:renderer": "node scripts/build-renderer.cjs",
     "pack": "node scripts/pack-mac.cjs",
+    "pack:mas": "node scripts/pack-mas.cjs",
     "dmg": "node scripts/pack-mac.cjs",
     "test:e2e": "playwright test --config e2e/playwright.config.cjs",
-    "verify": "node --check main.cjs && node --check preload.cjs && node --check runtime-preflight.cjs && node --check renderer-server.cjs && node --check diagnostics.cjs && node --check scripts/pack-mac.cjs && node --check scripts/build-renderer.cjs"
+    "verify": "node --check main.cjs && node --check preload.cjs && node --check runtime-preflight.cjs && node --check renderer-server.cjs && node --check diagnostics.cjs && node --check scripts/pack-mac.cjs && node --check scripts/pack-mas.cjs && node --check scripts/build-renderer.cjs"
   },
   "version": "2.0.0"
 }

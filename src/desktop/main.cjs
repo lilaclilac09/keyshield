@@ -53,12 +53,12 @@ const PROD_API = 'https://keyshield-production.up.railway.app';
 const SYNC_HOST = 'sync.ks.aileena.xyz';
 const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
-const LIVE = process.env.KS_DESKTOP_LIVE === '1';
-const SYNC_PROXY = process.env.KS_DESKTOP_SYNC_PROXY === '1';
+const LIVE = !process.mas && process.env.KS_DESKTOP_LIVE === '1';
+const SYNC_PROXY = !process.mas && process.env.KS_DESKTOP_SYNC_PROXY === '1';
 const PACKAGED = app.isPackaged || process.env.KS_DESKTOP_FORCE_PACKAGED === '1';
 
 function rendererDir() {
-  if (process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
+  if (!process.mas && process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
   if (app.isPackaged) return path.join(process.resourcesPath, 'renderer');
   return path.join(__dirname, 'renderer');
 }
@@ -442,7 +442,7 @@ async function loadDashboard(win) {
 
 async function createWindow() {
   const ses = session.fromPartition('persist:keyshield');
-  installRequestAudit(ses, process.env.KS_DESKTOP_REQUEST_AUDIT);
+  installRequestAudit(ses, process.mas ? undefined : process.env.KS_DESKTOP_REQUEST_AUDIT);
   let failure = startupFailure({
     packaged: PACKAGED,
     preflight: packagedRuntimePreflight(),
@@ -613,7 +613,7 @@ function reportFatalError(err) {
 process.on('uncaughtException', reportFatalError);
 process.on('unhandledRejection', reportFatalError);
 
-const gotLock = app.requestSingleInstanceLock();
+const gotLock = process.mas || app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
