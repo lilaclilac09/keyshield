@@ -89,6 +89,20 @@ struct SettingsView: View {
                     Label("Synthetic-only tester build", systemImage: "testtube.2").foregroundStyle(ShieldTheme.accent)
                     Text("Do not import production credentials. No cloud sync, agent transport, or passkey registration is available in this build.").font(.caption).foregroundStyle(.secondary)
                 }
+                Section("Reference & help") {
+                    NavigationLink {
+                        DeveloperReferenceView()
+                    } label: {
+                        Label("Developer", systemImage: "terminal")
+                    }
+                    .accessibilityIdentifier("settings.developer")
+                    NavigationLink {
+                        DocsAndTroubleshootingView()
+                    } label: {
+                        Label("Docs & Troubleshooting", systemImage: "book")
+                    }
+                    .accessibilityIdentifier("settings.docs")
+                }
                 Section("Security") {
                     Button("Lock now", systemImage: "lock.fill") { model.lockNow() }.accessibilityIdentifier("settings.lock")
                     Button("Passkey (requires signed build with associated domain)") {}.disabled(true).accessibilityIdentifier("settings.passkey")
