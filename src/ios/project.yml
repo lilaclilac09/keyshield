@@ -1,4 +1,8 @@
 name: KeyShield
+configs:
+  Debug: debug
+  Release: release
+  SimulatorRelease: release
 options:
   deploymentTarget:
     iOS: '17.0'
@@ -7,6 +11,9 @@ settings:
     SWIFT_VERSION: '5.0'
     GENERATE_INFOPLIST_FILE: YES
     TARGETED_DEVICE_FAMILY: '1,2'
+  configs:
+    SimulatorRelease:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphonesimulator*]: '$(inherited) SIMULATOR_APPROVAL_DEMO'
 targets:
   KeyShield:
     type: application
@@ -38,3 +45,12 @@ schemes:
         KeyShield: all
     test:
       targets: [KeyShieldTests, KeyShieldUITests]
+  KeyShieldSimulatorTester:
+    build:
+      targets:
+        KeyShield: all
+    run:
+      config: SimulatorRelease
+    test:
+      config: SimulatorRelease
+      targets: [KeyShieldUITests]

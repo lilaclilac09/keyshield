@@ -86,9 +86,37 @@ app. When checking a packaged artifact, point the generated `.xctestrun` file's
 use `xcodebuild test-without-building`; do not silently reinstall a different
 build. The usual Debug tests still use their isolated harness.
 
+## Simulator-only per-use approval demo
+
+Build the separate tester scheme; the ordinary Release and all device builds
+exclude the demo:
+
+```sh
+xcodebuild -project src/ios/KeyShield.xcodeproj -scheme KeyShieldSimulatorTester \
+  -configuration SimulatorRelease -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath ~/ks-demo-dd build
+ditto -c -k --keepParent ~/ks-demo-dd/Build/Products/SimulatorRelease-iphonesimulator/KeyShield.app \
+  ~/KeyShield-iOS-Simulator-Approval-Demo.zip
+```
+
+Install this zip using the commands above, substituting its name. Create or
+unlock the vault and go to **Agents → Enable demo and prepare fixture**. This
+saves one fixed synthetic entry without replacing any existing entry. Choose
+**Request mock operation** to review the named agent, entry and fixed
+`POST api.provider.test/v1/mock` operation. To approve, tap **Approve with Face ID
+/ passcode** and complete the OS prompt using the steps above. The app sends only
+`Approved` to the in-process agent; Deny or cancel sends nothing. Request again
+to see a fresh OS prompt. This mock does not use the network, issue a token, or
+write to the clipboard. Locking the vault turns the demo off.
+
+To run the UI test on a fresh, Face ID–enrolled simulator, use
+`-scheme KeyShieldSimulatorTester -configuration SimulatorRelease
+-only-testing:KeyShieldUITests/KeyShieldUITests/testSimulatorDemoRequiresFreshFaceIDAndSendsNoReceiptOnDeny`
+with the `xcodebuild test` command above, without `CODE_SIGNING_ALLOWED=NO`.
+
 Only synthetic `FAKE_KEYSHIELD_NOT_A_KEY::` fixture envelopes can be stored. Provider calls are simulated in process for `api.provider.test` only; no URLSession or socket transport exists in the executor. All other hosts are refused. Agent results contain only status, outcome, byte count, and correlation ID, never provider bodies or headers. Human responses are redacted. No pasteboard observation or automatic import occurs.
 
-Debug builds alone support `-UITestMode`: an isolated temporary vault, in-memory key and lockout stores, and a device-authentication stub. Each process starts empty. The simulation button is also compiled only in Debug. Release ignores that argument and contains none of the harness. Outside Debug test mode, unlock/approval uses LocalAuthentication device-owner authentication (Face ID or device passcode); the encryption key is device-only Keychain data. Session-code approval is disabled in the UI until secure out-of-band issuance exists; no code is generated or shown by the UI. Passkeys, cloud sync, phrase recovery, remote device revocation, and agent transport are explicitly unavailable.
+Debug builds alone support `-UITestMode`: an isolated temporary vault, in-memory key and lockout stores, and a device-authentication stub. Each process starts empty. The original agent-token simulation button is also compiled only in Debug. Release ignores that argument and contains none of the harness. Outside Debug test mode, unlock/approval uses LocalAuthentication device-owner authentication (Face ID or device passcode); the encryption key is device-only Keychain data. Session-code approval is disabled in the UI until secure out-of-band issuance exists; no code is generated or shown by the UI. Passkeys, cloud sync, phrase recovery, remote device revocation, and agent transport are explicitly unavailable.
 
 Keep encrypted backups and their passphrases safe. Restore replaces entries after authentication and revokes in-memory agent sessions. Recovery screens explain the local-only limitations rather than promising companion-app capabilities.
 

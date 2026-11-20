@@ -132,8 +132,23 @@ struct ApprovalView: View {
         NavigationStack {
             Form {
                 Section("You are approving exactly this operation") {
+                    #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+                    if item.isSimulatorDemo {
+                        LabeledContent("Requester", value: SimulatorApprovalDemo.requester)
+                            .accessibilityIdentifier("approvalDemo.requester")
+                        LabeledContent("Action", value: "Run one mock operation")
+                        LabeledContent("Entry", value: SimulatorApprovalDemo.entryLabel)
+                            .accessibilityIdentifier("approvalDemo.entry")
+                        Text("Simulator-only. The agent receives only an approved status.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        LabeledContent("Action", value: item.operation.kind.rawValue)
+                        LabeledContent("Key", value: model.entries.first { $0.id == item.operation.keyId }?.label ?? "Unknown")
+                    }
+                    #else
                     LabeledContent("Action", value: item.operation.kind.rawValue)
                     LabeledContent("Key", value: model.entries.first { $0.id == item.operation.keyId }?.label ?? "Unknown")
+                    #endif
                     Text(item.operation.keyId.uuidString).font(.caption.monospaced()).foregroundStyle(.secondary)
                     HStack { Text("Host"); Spacer(); Text(item.operation.host ?? "On this device").accessibilityIdentifier("approval.host") }
                     LabeledContent("Method", value: item.operation.method ?? "Not applicable")

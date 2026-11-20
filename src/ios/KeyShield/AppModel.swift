@@ -22,6 +22,9 @@ struct DisplayApproval: Identifiable {
     let id: UUID
     let operation: Operation
     let expires: Date
+    #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+    var isSimulatorDemo = false
+    #endif
 }
 struct DisplaySession: Identifiable {
     let id = UUID()
@@ -60,6 +63,9 @@ final class AppModel: ObservableObject {
     @Published var backupURL: URL?
     @Published var activityURL: URL?
     @Published var notice: String?
+    #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+    @Published private(set) var simulatorDemo: SimulatorApprovalDemo?
+    #endif
 
     init() {
         #if DEBUG
@@ -127,6 +133,10 @@ final class AppModel: ObservableObject {
     func lockNow(expired: Bool = false) {
         lock.lock(); sessions.revokeAll()
         for i in activeSessions.indices { activeSessions[i].revoked = true }
+        #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+        if let id = simulatorDemo?.pendingID { approvals?.deny(id) }
+        simulatorDemo = nil
+        #endif
         if let approval { approvals?.deny(approval.id) }
         approval = nil; revealed.removeAll(); revealExpiry.removeAll()
         entries = []; events = []; clipboardExpires = nil
@@ -172,6 +182,13 @@ final class AppModel: ObservableObject {
         }
     }
     func denyApproval() {
+        #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+        if let id = simulatorDemo?.pendingID {
+            approvals?.deny(id)
+            simulatorDemo?.pendingID = nil
+            simulatorDemo?.outcome = .notApproved
+        }
+        #endif
         if let approval { approvals?.deny(approval.id) }
         approval = nil
     }
@@ -182,9 +199,53 @@ final class AppModel: ObservableObject {
         #else
         let authorizer: BiometricAuthorizer = DeviceBiometricAuthorizer()
         #endif
+        #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+        if approval.isSimulatorDemo {
+            guard let demo = simulatorDemo, demo.pendingID == approval.id else { throw ShieldError.denied }
+            do {
+                let grant = try await approvals.approveBiometrically(approval.id, operation: approval.operation, authorizer: DeviceBiometricAuthorizer())
+                guard self.approval?.id == approval.id, simulatorDemo?.pendingID == approval.id else { return }
+                let receipt = try demo.runOnce(authorization: grant, vault: vault, audit: audit)
+                simulatorDemo?.pendingID = nil
+                simulatorDemo?.outcome = .approved(receipt)
+                self.approval = nil
+                refresh()
+            } catch {
+                if simulatorDemo?.pendingID == approval.id { denyApproval() }
+            }
+            return
+        }
+        #endif
         let grant = try await approvals.approveBiometrically(approval.id, operation: approval.operation, authorizer: authorizer)
         try complete(grant, operation: approval.operation)
     }
+    #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+    func enableSimulatorDemo() {
+        guard simulatorDemo == nil, unlocked, !lock.isLocked else { return }
+        do {
+            simulatorDemo = try SimulatorApprovalDemo.prepareFixture(in: vault)
+            refresh()
+        } catch {
+            self.error = "The demo fixture could not be prepared. No existing entry was replaced."
+        }
+    }
+    func disableSimulatorDemo() {
+        guard simulatorDemo?.pendingID == nil else { return }
+        simulatorDemo = nil
+    }
+    func requestSimulatorDemoApproval() {
+        guard let demo = simulatorDemo, demo.pendingID == nil, approval == nil else { return }
+        perform {
+            guard let approvals else { throw ShieldError.storage }
+            let operation = demo.operation
+            let id = try approvals.beginDeviceApproval(operation)
+            simulatorDemo?.pendingID = id
+            simulatorDemo?.outcome = nil
+            approval = DisplayApproval(id: id, operation: operation, expires: clock.now.addingTimeInterval(policy.codeTTL),
+                                       isSimulatorDemo: true)
+        }
+    }
+    #endif
     private func complete(_ grant: Authorization, operation: Operation) throws {
         guard unlocked, !lock.isLocked else { throw ShieldError.locked }
         switch operation.kind {

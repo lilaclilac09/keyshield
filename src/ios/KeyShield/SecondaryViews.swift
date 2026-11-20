@@ -13,6 +13,34 @@ struct AgentsView: View {
                         Button("Simulate agent request", systemImage: "play.rectangle") { model.simulateAgent() }.accessibilityIdentifier("agents.simulate")
                     #endif
                 }
+                #if SIMULATOR_APPROVAL_DEMO && targetEnvironment(simulator)
+                Section("Simulator-only approval demo") {
+                    Text("An in-process demo with one synthetic vault entry and no external connections.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    if let demo = model.simulatorDemo {
+                        Text(SimulatorApprovalDemo.requester).font(.headline)
+                        Text("\(SimulatorApprovalDemo.entryLabel) · \(SimulatorApprovalDemo.method) \(SimulatorApprovalDemo.path)")
+                            .font(.callout)
+                        Button("Request mock operation", systemImage: "play.rectangle") { model.requestSimulatorDemoApproval() }
+                            .disabled(demo.pendingID != nil).accessibilityIdentifier("approvalDemo.request")
+                        if let outcome = demo.outcome {
+                            switch outcome {
+                            case let .approved(receipt):
+                                Label("Agent receipt: \(receipt.rawValue)", systemImage: "checkmark.circle")
+                                    .accessibilityIdentifier("approvalDemo.receipt")
+                            case .notApproved:
+                                Text("Not approved. No approval sent to the demo agent.")
+                                    .accessibilityIdentifier("approvalDemo.denied")
+                            }
+                        }
+                        Button("Turn off demo") { model.disableSimulatorDemo() }
+                            .disabled(demo.pendingID != nil).accessibilityIdentifier("approvalDemo.disable")
+                    } else {
+                        Button("Enable demo and prepare fixture") { model.enableSimulatorDemo() }
+                            .accessibilityIdentifier("approvalDemo.enable")
+                    }
+                }
+                #endif
                 Section("Pending requests") {
                     if let id = model.pendingAgent {
                         VStack(alignment: .leading, spacing: 10) {
