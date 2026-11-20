@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ baseURL: process.env.PW_BASE_URL ?? 'http://127.0.0.1:5173', trace: 'off', ...(process.env.CHROME_BIN ? { launchOptions: { executablePath: process.env.CHROME_BIN } } : {}) });
+test.beforeEach(({}, info) => { info.annotations.push({ type: 'mock-boundary', description: 'PR154 synthetic failure-state regressions mock API/sync. The companion tutorial uses real local services.' }); });
+
 const key = 'sk-proj-synthetic-sync-outage-only';
 const exception = 'SYNTHETIC_PRIVATE_SYNC_EXCEPTION';
 const saveUnavailable = 'Key NOT saved because vault sync could not be reached. Press Save again once vault sync is back.';
@@ -20,7 +23,8 @@ test('hosted deletes with an unlocked device vault preserve a prior sync failure
   await page.route('**/*', route => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.origin === 'http://127.0.0.1:5173') return route.continue();
+    if (url.origin === new URL(process.env.PW_BASE_URL ?? 'http://127.0.0.1:5173').origin && !url.pathname.startsWith('/__sync/')) return route.continue();
+      url.pathname = url.pathname.replace(/^\/__sync/, '');
     if (url.pathname === '/health') return route.fulfill({ json: { ok: true } });
     if (url.pathname === '/manage/vault') return route.fulfill({ json: { items: rows } });
     if (url.pathname.startsWith('/manage/vault/') && request.method() === 'DELETE') {
@@ -73,8 +77,8 @@ for (const failure of ['503', 'network', 'conflict', '401', '403', '413', '400']
     const rejection = failure === '401' || failure === '403'
       ? 'vault sync session expired. Lock and unlock the vault, then try again.'
       : failure === '413' ? 'the vault is too large to sync.' : failure === '400' ? 'vault sync rejected the change.' : null;
-    const saveError = rejection ? `Key NOT saved: ${rejection}` : failure === 'conflict' ? 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.' : saveUnavailable;
-    const deleteError = rejection ? `Entry NOT deleted: ${rejection}` : failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.' : deleteUnavailable;
+    const saveError = rejection ? `Key NOT saved: ${rejection}` : failure === 'conflict' ? 'Key NOT saved: the vault changed in another tab/device. Reload and unlock to refresh.' : saveUnavailable;
+    const deleteError = rejection ? `Entry NOT deleted: ${rejection}` : failure === 'conflict' ? 'Entry NOT deleted and is still in the vault: the vault changed in another tab/device. Reload and unlock to refresh.' : deleteUnavailable;
     let down = true;
     let puts = 0;
     let polls = 0;
@@ -87,7 +91,8 @@ for (const failure of ['503', 'network', 'conflict', '401', '403', '413', '400']
     await page.route('**/*', route => {
       const request = route.request();
       const url = new URL(request.url());
-      if (url.origin === 'http://127.0.0.1:5173') return route.continue();
+      if (url.origin === new URL(process.env.PW_BASE_URL ?? 'http://127.0.0.1:5173').origin && !url.pathname.startsWith('/__sync/')) return route.continue();
+      url.pathname = url.pathname.replace(/^\/__sync/, '');
       if (url.pathname === '/health') return route.fulfill({ json: { ok: true } });
       if (url.pathname === '/manage/vault') {
         polls++;

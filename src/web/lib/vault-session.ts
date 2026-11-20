@@ -87,6 +87,7 @@ interface SessionState {
   bearer: BearerHolder;
   sync: SyncBackend;
   plaintext: VaultPlaintext;
+  baseRevision: number | null;
 }
 
 let _state: SessionState | null = null;
@@ -162,7 +163,7 @@ export async function unlockVault(
   const cipher = await sync.pull(vaultId, () => bearer.get());
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
 
-  _state = { vaultId, masterKey, bearer, sync, plaintext };
+  _state = { vaultId, masterKey, bearer, sync, plaintext, baseRevision: cipher?.updatedAt ?? null };
   setCachedVaultId(vaultId);
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
@@ -239,12 +240,14 @@ export async function removeEntry(upstream: string): Promise<void> {
 
 async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete' = 'save'): Promise<void> {
   if (!_state) throw new Error('vault locked');
+  const session = _state;
+  const baseRevision = session.baseRevision;
   const next: VaultPlaintext = {
-    entries: { ..._state.plaintext.entries },
-    updatedAt: Date.now(),
+    entries: { ...session.plaintext.entries },
+    updatedAt: Math.max(Date.now(), (baseRevision ?? -1) + 1),
   };
   fn(next);
-  const cipher = await encryptVault(_state.masterKey, next);
+  const cipher = await encryptVault(session.masterKey, next);
   const payload = {
     version: cipher.version,
     iv: cipher.iv,
@@ -257,24 +260,23 @@ async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'dele
   }
   let result;
   try {
-    result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+    result = await session.sync.push(session.vaultId, payload, () => session.bearer.get(), baseRevision);
   } catch (err) {
     const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
       ? 'expired'
       : err instanceof SyncHttpError
-        ? err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
+        ? err.status === 428 ? 'update' : err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
         : 'unreachable';
     reportVaultSyncChange(operation, false, reason);
     throw new VaultSyncChangeError(operation, reason);
   }
   if (result === 'conflict') {
-    // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
-    // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
-    // protects against silent overwrite (we threw, caller can retry).
     reportVaultSyncChange(operation, false, 'conflict');
     throw new VaultSyncChangeError(operation, 'conflict');
   }
-  _state.plaintext = next;
+  if (_state !== session) throw new VaultLockedError();
+  session.plaintext = next;
+  session.baseRevision = payload.updatedAt;
   reportVaultSyncChange(operation, true);
 }
 

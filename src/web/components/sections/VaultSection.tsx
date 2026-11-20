@@ -18,7 +18,7 @@ interface Props {
   onStored?: () => void;
 }
 
-export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlockError, onStored, onUnlock }) => {
+export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd, onDelete, onDecrypt, unlocked, unlockError, onStored, onUnlock }) => {
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<'save' | 'save-call' | null>(null);
@@ -77,18 +77,18 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   <div className="space-y-6">
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
       <p className="text-[16px] font-semibold text-white">Keychain — paste a key</p>
-      <p className="text-[12px] text-[#8a96c2]">Dashboard saves require an unlocked Device Vault: keys are encrypted on this device and only ciphertext is synced. They are not saved locally in plaintext. Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault.</p>
+      <p className="text-[12px] text-[#8a96c2]">Dashboard saves require an unlocked Device Vault: keys are encrypted on this device and only ciphertext is synced. They are not saved locally in plaintext. Enter or paste the credential you want to save. The Safari extension saves to its own separate vault.</p>
       <p className="text-[12px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app. Saving here does not give agents access. Approval exists only as an opt-in development mock, not in the packaged app.</p>
       <p className="text-[12px] text-[#8a96c2]">Legacy non-ZK /manage/store records are separate: they contain backend-readable plaintext, local to this device only if the backend runs here. Dashboard saves do not use that path.</p>
       <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : 'Auto-detects provider prefix'}</span>
+        <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Provider from your paste: ${detected.upstream} ${detected.prefix}` : 'Paste a key to recognize its provider'}</span>
         <button type="button" disabled={busy || !paste.trim()} onClick={() => void saveAndCall(false)} className="h-9 px-3 rounded-lg bg-white text-black text-[13px] font-semibold disabled:opacity-50">{busyAction === 'save' ? 'Saving…' : 'Save'}</button>
         <button type="button" disabled={busy || !detected.upstream} onClick={() => void saveAndCall(true)} className="h-9 px-3 rounded-lg border border-zinc-500 text-white text-[13px] font-semibold disabled:opacity-50">{busyAction === 'save-call' ? 'Saving + Calling…' : 'Save + Call'}</button>
       </div>
       {busy && <p className="text-[12px] text-[#8a96c2]">Next step: wait for the save result before closing this window.</p>}
       {msg && <p className="text-[13px] text-[#a8b3d8]">{msg}</p>}
-      {needsVault && <DeviceVaultConsent onUnlock={onUnlock} />}
+      {(needsVault || !unlocked) && <DeviceVaultConsent onUnlock={onUnlock} />}
     </div>
     <div data-testid="vault-saved-apis" className="rounded-xl border border-[#243365] bg-[#0e1631] p-4 space-y-3">
       <div className="flex items-baseline justify-between gap-3">

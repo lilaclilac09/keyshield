@@ -1,6 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { rendererProfilePlugin } from './renderer-profile';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -9,7 +10,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
     },
-    plugins: [react()],
+    plugins: [react(), rendererProfilePlugin(env.VITE_KEYSHIELD_RENDERER_PROFILE ?? 'standard')],
     define: {
       'process.env.KEYSHIELD_API_URL': JSON.stringify(env.KEYSHIELD_API_URL ?? 'http://127.0.0.1:8001'),
       'process.env.KEYSHIELD_SYNC_URL': JSON.stringify(env.KEYSHIELD_SYNC_URL ?? 'http://localhost:8787'),

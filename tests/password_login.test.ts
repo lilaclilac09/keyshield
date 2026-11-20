@@ -12,6 +12,10 @@ describe("email + password sign-in on AuthScreen", () => {
     expect(src).toContain('data-testid="email-signup"');
     expect(src).toContain('data-testid="email-signin"');
     expect(src).toContain('type="password"');
+    expect(src).toContain('or use email + KeyShield password');
+    expect(src).toContain('KeyShield password (not your Google password)');
+    expect(src).toContain('htmlFor="keyshield-password"');
+    expect(src).not.toContain('or use Gmail + password');
     expect(src).toContain("you@gmail.com");
     expect(src).toContain("not a Solana-only");
     expect(src).toContain("A wallet is optional");
@@ -30,6 +34,25 @@ describe("email + password sign-in on AuthScreen", () => {
     expect(src).toContain("setAuthMethod");
     expect(src).toContain("seedPasskey");
     expect(src).toContain("method: 'password'");
+  });
+
+  it("describes explicit key selection and pasting, not background discovery", () => {
+    const hint = readFileSync('src/web/components/ExtensionInstallHint.tsx', 'utf8');
+    const vault = readFileSync('src/web/components/sections/VaultSection.tsx', 'utf8');
+    expect(hint).toContain('saves a key only when you select it or enter it manually');
+    expect(vault).toContain('Provider from your paste:');
+    expect(vault).toContain('Paste a key to recognize its provider');
+    expect(hint + vault).not.toMatch(/auto-detect/i);
+  });
+
+  it('uses neutral reviewed-extension instructions with no account-token handoff or bundled v2 claim', () => {
+    const hint = readFileSync('src/web/components/ExtensionInstallHint.tsx', 'utf8');
+    expect(hint).toContain('separately distributed, reviewed KeyShield extension build');
+    expect(hint).toContain('Never copy an account or session token into an extension.');
+    expect(hint).not.toMatch(/src\/extension|Load unpacked|1\.2\.5|Create \/ unlock vault|Copy token/);
+    for (const path of ['HomeSection', 'DocsSection']) {
+      expect(readFileSync('src/web/components/sections/' + path + '.tsx', 'utf8')).toContain('ExtensionInstallHint variant="home"');
+    }
   });
 
   it("documents Google OAuth env vars without requiring them to boot", () => {

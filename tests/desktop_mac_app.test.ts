@@ -244,7 +244,7 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(read("src/desktop/main.cjs")).toContain("ks-focus-main");
     expect(read("src/desktop/main.cjs")).toContain("ks-clipboard-write");
     expect(read("src/web/lib/app-feedback.ts")).toContain("writeText");
-    expect(read("src/web/components/sections/HomeSection.tsx")).toContain("ExtensionTokenCopy");
+    expect(read("src/web/components/sections/HomeSection.tsx")).toContain("ExtensionInstallHint");
   });
 
   it("treats Electron userAgent as a desktop shell when preload is missing", () => {
