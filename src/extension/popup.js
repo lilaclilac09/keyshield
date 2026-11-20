@@ -38,7 +38,7 @@ function showPending(pending) {
 }
 function describeFill() {
   const entry = listedEntries.find((entry) => entry.id === $('entries').value);
-  const unavailable = entry && entry.origin !== pageOrigin;
+  const unavailable = entry && (!pageGrant || entry.origin !== pageOrigin);
   $('fill-availability').textContent = entry
     ? `${unavailable ? 'Not available on this site. ' : ''}Fill only on ${entry.origin}`
     : 'No saved key selected. Unlock or add a key.';
@@ -63,7 +63,7 @@ function renderEntries(entries) {
     origin.className = 'saved-key-origin';
     origin.textContent = `Fill only on ${entry.origin}`;
     row.append(badge, name, origin);
-    if (entry.origin !== pageOrigin) {
+    if (!pageGrant || entry.origin !== pageOrigin) {
       const notice = document.createElement('p');
       notice.className = 'unavailable';
       notice.textContent = 'Not available on this site';
