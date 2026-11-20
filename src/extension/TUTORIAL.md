@@ -64,6 +64,13 @@ build, and screenshot artifacts remain under its unique `run-*` directory; no
 other browser processes or existing extension builds are touched. Every automated
 test also uses a fresh `mkdtempSync(.../profile-)` user-data directory.
 
+### Manual recording
+
+A manual fresh-profile launch is an alternative to the Playwright headed command
+above. Use the isolated test build, serve the same loopback HTTPS fixtures, and
+apply the same `.test` resolver mappings and local test policy. Keep the disposable
+profile separate from your everyday browser; the same mock boundaries apply.
+
 ## Numbered steps (identical to the E2E `test.step` names)
 
 ### 1. Build and load in a dedicated local test profile
@@ -83,13 +90,18 @@ the round trip. Nothing is connected to a dashboard account.
 
 ### 3. Submit exactly one synthetic value
 
-Either highlight only the input's entire marked value and right-click **Save
+Either highlight the input's **ENTIRE fixture value, including its
+`FAKE_KEYSHIELD_NOT_A_KEY::` marker**, and right-click **Save
 selection to KeyShield**, or open the toolbar popup, manually paste/type that one
 synthetic value into **Paste or type one key**, and click **Add key**. The automated
 suite covers both alternatives. Neither path scans other page fields. The pending
 value exists only in worker memory until a separate Save click; closing discards it.
 
 ### 4. Review the masked confirmation and explicitly Save
+
+The vault must still be unlocked. It auto-locks after **60 seconds idle**; a locked
+Save or Fill asks you to unlock first and saves nothing. Unlock again if needed
+before continuing through steps 4–6.
 
 Check preview `••••AAAA`, provider `openai`, and bound origin
 `https://dashboard.provider.test`. Set label `Tutorial synthetic key` and click
@@ -101,6 +113,7 @@ exists in the selected input and in the unlocked worker; it is not persisted the
 
 ### 5. Fill a focused field on the bound origin
 
+Keep the vault unlocked (unlock again if the 60-second idle lock has fired).
 Close confirmation if open. On the provider page, clear and focus the input.
 Reopen the normal toolbar popup and click **Fill into this page**. The value should
 appear only in that focused field. This explicitly gives that page access to the
@@ -108,6 +121,8 @@ value; origin binding is not protection against a compromised destination page.
 
 ### 6. Observe refusal on another origin
 
+Keep the vault unlocked so this demonstrates origin refusal rather than a lock
+refusal; unlock again if the 60-second idle lock has fired.
 Close the popup, visit `https://evil.test/input.html`, clear/focus its input, and
 reopen the popup. Click Fill. Expect `not a supported provider page` and an empty
 input. Full exact origins, including ports, remain bound even though browser
