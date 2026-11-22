@@ -66,7 +66,9 @@ This repo's own `AGENTS.md`, `CLAUDE.md`, `.cursor` rules, and README instructio
 
 ## 8. Evidence closer — required at the end of every task and PR
 
-"Every task ends with this block — not a summary of intent, not 'should work'":
+Required format (owner decision): use one closed `txt` fenced block, as shown below. The opening line is exactly three backticks followed by `txt` (up to three leading spaces and trailing whitespace are allowed); the closing line is exactly three backticks (with the same whitespace allowance). Everything outside these blocks is ignored by the machine check.
+
+The last such block containing a line starting with `root cause:` is checked. All eight labels must appear exactly once, at line start, in the order shown, and each must have a nonempty value. A value includes its same-line text and continuation lines until the next label. Unchecked `- [ ]` lines are ignored; checked `- [x]` / `- [X]` and leading `- ` markers are removed from values. The `safe to merge` value must be exactly `yes`, `no`, or `yes after manual env/config step` (case-insensitive, trimmed). Forbidden claims still fail inside values, including quoted text and literal HTML comments.
 
 ```txt
 root cause:
@@ -79,6 +81,61 @@ manual steps:
 safe to merge:
 ```
 
-"`safe to merge:` is one of `yes` / `no` / `yes after manual env/config step`."
+The following excerpts are verbatim from Aileen's source files.
+
+Source: `aileen_machina_01/AGENTS.md`, "Evidence" section:
+
+````md
+## Evidence (required closer — no mood, no “should work”)
+
+Every task ends with:
+
+```txt
+root cause:
+files changed:
+checks run:
+manual QA:
+verification:
+remaining risks:
+manual steps:
+safe to merge:
+```
+````
+
+Source: `aileen_machina_01/.cursor/rules/senior-engineer-loop.mdc`, "Evidence closer" section:
+
+````md
+## Evidence closer (non-negotiable)
+
+Every task ends with this block — not a summary of intent, not “should work”:
+
+```txt
+root cause:
+files changed:
+checks run:
+manual QA:
+verification:
+remaining risks:
+manual steps:
+safe to merge:
+```
+````
+
+Source: `aileen_machina_01/.cursor/rules/verification.mdc`, "Every final reply" section:
+
+````md
+## Every final reply
+
+```txt
+root cause:
+files changed:
+checks run:
+manual QA:
+verification:
+remaining risks:
+manual steps:
+safe to merge:
+```
+````
 
 Merge: "no owner approval = no merge." Aileen has approved Devin merging its own PRs on her repos; every other agent needs her approval.

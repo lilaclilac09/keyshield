@@ -4,6 +4,8 @@
 
 ## evidence
 
+Use one `txt` fenced block with all eight labels exactly once, in the order shown.
+
 ```txt
 root cause:
 files changed:

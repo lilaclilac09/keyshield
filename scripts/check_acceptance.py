@@ -25,143 +25,68 @@ FORBIDDEN = [
     "\u5e94\u8be5\u597d\u4e86",
     "\u5dee\u4e0d\u591a\u597d\u4e86",
 ]
+REQUIRED_BLOCK = "```txt\n" + "\n".join(field + ":" for field in FIELDS) + "\n```"
+LABEL = re.compile(r"^(" + "|".join(re.escape(field) for field in FIELDS) + r"):(.*)$")
 
 
-def _field_re(field):
-    return re.compile(rf"^{re.escape(field)}\s*:(.*)$", re.IGNORECASE)
-
-
-def _fence_after(line, fence):
-    match = re.match(r" {0,3}(`{3,}|~{3,})(.*)$", line)
-    if not match:
-        return fence
-    marker, suffix = match.groups()
-    if fence is None:
-        char = re.escape(marker[0])
-        if re.search(rf"(?<!{char}){re.escape(marker)}(?!{char})", suffix):
-            return None
-        return (marker[0], len(marker))
-    if marker[0] == fence[0] and len(marker) >= fence[1] and not suffix.strip():
-        return None
-    return fence
-
-
-def _visible_lines(body):
-    lines, visible, removed = [], [], False
-
-    def emit(text, hidden=False):
-        nonlocal visible, removed
-        parts = text.split("\n")
-        for i, part in enumerate(parts):
-            if hidden:
-                removed = True
-            else:
-                visible.append(part)
-            if i < len(parts) - 1:
-                line = "".join(visible)
-                if line.strip() or not removed:
-                    lines.append(line)
-                visible, removed = [], False
-
-    pos, fence = 0, None
-    while pos < len(body):
-        if pos == 0 or body[pos - 1] == "\n":
-            end = body.find("\n", pos)
-            end = len(body) if end == -1 else end + 1
-            line = body[pos:end].rstrip("\r\n")
-            next_fence = _fence_after(line, fence)
-            if fence is not None or next_fence is not None:
-                emit(body[pos:end])
-                fence, pos = next_fence, end
+def _last_closer(body):
+    last, fence, selected, lines = None, None, False, []
+    for line in body.splitlines():
+        if fence is None:
+            opening = re.fullmatch(r" {0,3}(`{3,}|~{3,})(.*)", line)
+            if not opening:
                 continue
-        if body.startswith("<!--", pos):
-            end = body.find("-->", pos + 4)
-            if end != -1:
-                emit(body[pos:end + 3], hidden=True)
-                pos = end + 3
+            marker, suffix = opening.groups()
+            if marker[0] == "`" and "`" in suffix:
                 continue
-        if body[pos] == "`":
-            marker = re.match(r"`+", body[pos:]).group()
-            closing = re.search(rf"(?<!`){marker}(?!`)", body[pos + len(marker):])
-            if closing:
-                end = pos + len(marker) + closing.end()
-                emit(body[pos:end])
-                pos = end
-                continue
-            emit(marker)
-            pos += len(marker)
-            continue
-        emit(body[pos])
-        pos += 1
-    line = "".join(visible)
-    if line.strip() or (visible and not removed):
-        lines.append(line)
-    return lines
+            fence = marker
+            selected = re.fullmatch(r" {0,3}```txt[ \t]*", line) is not None
+            lines = []
+        elif re.fullmatch(r" {0,3}" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*", line):
+            if (selected and re.fullmatch(r" {0,3}```[ \t]*", line)
+                    and any(value.startswith("root cause:") for value in lines)):
+                last = lines
+            fence, selected, lines = None, False, []
+        elif selected:
+            lines.append(line)
+    return last
 
 
-def _value_text(text):
-    text = text.strip()
-    text = re.sub(r"^(?:[-*+]|\d+\.)(?:\s+|$)", "", text)
-    checkbox = re.match(r"\[([ xX])\](?:\s+|$)", text)
-    if checkbox:
-        if checkbox[1] == " ":
-            return ""
-        text = text[checkbox.end():]
-    return text.strip()
-
-
-def closer_values(body):
-    """Field -> value from the last closer block: unindented labels from `root cause:` to `safe to merge:`."""
-    lines = _visible_lines(body)
-    starts = [i for i, line in enumerate(lines) if _field_re(FIELDS[0]).match(line)]
-    if not starts:
-        return {}
-    fence = None
-    for line in lines[:starts[-1]]:
-        fence = _fence_after(line, fence)
-    values, current = {}, None
-    for line in lines[starts[-1]:]:
-        stripped = line.strip()
-        next_fence = _fence_after(line, fence)
-        if next_fence != fence:
-            break
-        if (re.match(r" {0,3}#{1,6}(?:\s|$)", line)
-                or re.fullmatch(r" {0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})", line)):
-            break
-        match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None)
-        if current == FIELDS[-1]:
-            if match:
-                break
-            value = _value_text(stripped)
-            if value:
-                values[current].append(value)
-                break
-            continue
-        if match:
-            current = match[0]
-            if current in values:
-                break
-            value = _value_text(match[1].group(1))
-            values[current] = [value]
-            if current == FIELDS[-1] and value:
-                break
-        elif current and stripped:
-            values[current].append(_value_text(stripped))
-    return {f: " ".join(v for v in vs if v) for f, vs in values.items()}
+def _value(line):
+    line = line.lstrip()
+    if re.match(r"- \[ \](?:\s|$)", line):
+        return ""
+    line = re.sub(r"^- \[[xX]\](?:\s+|$)", "", line)
+    if line.startswith("- "):
+        line = line[2:]
+    return line.strip()
 
 
 def problems(body):
+    block = _last_closer(body)
+    if block is None:
+        return ["required evidence closer (one fenced txt block):\n" + REQUIRED_BLOCK]
+    labels, values, current = [], {}, None
+    for line in block:
+        match = LABEL.match(line)
+        if match:
+            current = match[1]
+            labels.append(current)
+            values.setdefault(current, []).append(_value(match[2]))
+        elif current:
+            values[current].append(_value(line))
+    values = {field: " ".join(value for value in parts if value) for field, parts in values.items()}
     found = []
-    values = closer_values(body)
+    if labels != FIELDS:
+        found.append("fields must appear exactly once, at line start, in order: " + ", ".join(FIELDS))
     for field in FIELDS:
         if field not in values:
             found.append(f"missing field `{field}:`")
-            continue
-        value = values[field]
-        if not value:
+        elif not values[field]:
             found.append(f"empty field `{field}:`")
-        elif field == "safe to merge" and value.strip("`*. ").lower() not in SAFE_TO_MERGE:
-            found.append(f"`safe to merge:` must be one of {sorted(SAFE_TO_MERGE)}, got {value!r}")
+    verdict = values.get("safe to merge", "")
+    if verdict and verdict.lower() not in SAFE_TO_MERGE:
+        found.append(f"`safe to merge:` must be one of {sorted(SAFE_TO_MERGE)}, got {verdict!r}")
     lowered = "\n".join(values.values()).lower()
     for phrase in FORBIDDEN:
         if phrase in lowered:
@@ -182,8 +107,8 @@ def read_body(argv):
 
 def main(argv):
     found = problems(read_body(argv))
-    for p in found:
-        print(f"ACCEPTANCE.md: {p}")
+    for problem in found:
+        print(f"ACCEPTANCE.md: {problem}")
     if not found:
         print("ACCEPTANCE.md: evidence closer complete")
     return 1 if found else 0
