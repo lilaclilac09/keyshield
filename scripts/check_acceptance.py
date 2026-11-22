@@ -31,29 +31,78 @@ def _field_re(field):
     return re.compile(rf"^{re.escape(field)}\s*:(.*)$", re.IGNORECASE)
 
 
+def _fence_after(line, fence):
+    match = re.match(r" {0,3}(`{3,}|~{3,})(.*)$", line)
+    if not match:
+        return fence
+    marker, suffix = match.groups()
+    if fence is None:
+        return (marker[0], len(marker))
+    if marker[0] == fence[0] and len(marker) >= fence[1] and not suffix.strip():
+        return None
+    return fence
+
+
+def _visible_lines(body):
+    lines, fence, comment = [], None, False
+    for line in body.splitlines():
+        if fence is not None or (not comment and _fence_after(line, None) is not None):
+            lines.append(line)
+            fence = _fence_after(line, fence)
+            continue
+        visible, pos = [], 0
+        while pos < len(line):
+            if comment:
+                end = line.find("-->", pos)
+                if end == -1:
+                    break
+                comment, pos = False, end + 3
+            else:
+                start = line.find("<!--", pos)
+                if start == -1:
+                    visible.append(line[pos:])
+                    break
+                visible.append(line[pos:start])
+                comment, pos = True, start + 4
+        clean = "".join(visible)
+        lines.append(clean)
+        if not comment:
+            fence = _fence_after(clean, fence)
+    return lines
+
+
 def closer_values(body):
     """Field -> value from the last closer block: unindented labels from `root cause:` to `safe to merge:`."""
-    lines = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL).splitlines()
+    lines = _visible_lines(body)
     starts = [i for i, line in enumerate(lines) if _field_re(FIELDS[0]).match(line)]
     if not starts:
         return {}
-    fenced = sum(l.strip().startswith("```") for l in lines[:starts[-1]]) % 2 == 1
+    fence = None
+    for line in lines[:starts[-1]]:
+        fence = _fence_after(line, fence)
+    outer_fence = fence
     values, current = {}, None
     for line in lines[starts[-1]:]:
         stripped = line.strip()
-        if (stripped.startswith("```")
-                or ((not fenced or current == FIELDS[-1]) and re.match(r" {0,3}#{1,6}\s", line))
-                or re.match(r"[-*+]\s+\[[ xX]\](?:\s|$)", stripped)
+        next_fence = _fence_after(line, fence)
+        if next_fence != fence:
+            if current == FIELDS[-1] or (fence == outer_fence and next_fence is None):
+                break
+            fence = next_fence
+            continue
+        if (((fence is None or current == FIELDS[-1]) and re.match(r" {0,3}#{1,6}\s", line))
                 or (current == FIELDS[-1] and not stripped)):
             break
-        match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None)
+        if re.match(r"[-*+]\s+\[ \](?:\s|$)", stripped):
+            continue
+        match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None) if fence == outer_fence else None
         if match:
             current = match[0]
             if current in values:
                 break
             values[current] = [match[1].group(1).strip()]
         elif current and stripped:
-            values[current].append(stripped.lstrip("- ").strip())
+            values[current].append(re.sub(r"^[-*+]\s+", "", stripped))
     return {f: " ".join(v for v in vs if v) for f, vs in values.items()}
 
 
