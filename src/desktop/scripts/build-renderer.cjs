@@ -33,9 +33,9 @@ const stampFile = path.join(desktopDir, '.renderer-install-stamp');
 const env = {
   ...process.env,
   KEYSHIELD_API_URL:
-    process.env.KEYSHIELD_API_URL || 'https://keyshield-production.up.railway.app',
+    process.env.KEYSHIELD_API_URL || 'https://api.ks.aileena.xyz',
   KEYSHIELD_PUBLIC_API_BASE:
-    process.env.KEYSHIELD_PUBLIC_API_BASE || 'https://keyshield-production.up.railway.app',
+    process.env.KEYSHIELD_PUBLIC_API_BASE || 'https://api.ks.aileena.xyz',
   KEYSHIELD_SYNC_URL: process.env.KEYSHIELD_SYNC_URL || process.env.KEYSHIELD_PUBLIC_SYNC_URL || '',
   KEYSHIELD_PUBLIC_SYNC_URL: process.env.KEYSHIELD_PUBLIC_SYNC_URL || '',
 };
@@ -104,6 +104,24 @@ function verifyRendererDist(dist) {
   return { ok: missing.length === 0, missing, assets };
 }
 
+function rendererPolicyRevision() {
+  const file = 'src/web/lib/host-deploy.ts';
+  return { file, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex') };
+}
+
+function withRendererPolicy(build, root = sourceRoot) {
+  if (path.resolve(root) === repoRoot) return build();
+  const file = rendererPolicyRevision().file;
+  const target = path.join(root, file);
+  const original = fs.readFileSync(target);
+  try {
+    fs.copyFileSync(path.join(repoRoot, file), target);
+    return build();
+  } finally {
+    fs.writeFileSync(target, original);
+  }
+}
+
 function main() {
   if (!fs.existsSync(path.join(webDir, 'package.json'))) {
     console.error('src/web/package.json missing');
@@ -117,7 +135,7 @@ function main() {
   }
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const dist = process.env.KS_RENDERER_DIST_DIR || path.join(webDir, 'dist');
-  const build = spawnSync(npm, ['run', 'build:vite', '--', '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' });
+  const build = withRendererPolicy(() => spawnSync(npm, ['run', 'build:vite', '--', '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' }));
   if (build.status !== 0) throw new Error(`renderer build failed (${build.status})`);
   const report = verifyRendererDist(dist);
   if (!report.ok) {
@@ -133,4 +151,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { verifyRendererDist, installStamp, nodeModulesFresh };
+module.exports = { verifyRendererDist, installStamp, nodeModulesFresh, withRendererPolicy, rendererPolicyRevision, env };

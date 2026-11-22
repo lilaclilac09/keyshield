@@ -3,7 +3,7 @@
  * bakes a localhost API/sync URL (CI forgot KEYSHIELD_API_URL / SYNC), route to
  * a public control plane. Defaults are OSS-friendly; override per deploy:
  *
- * - KEYSHIELD_PUBLIC_API_BASE — FastAPI (default: public Railway URL in repo)
+ * - KEYSHIELD_PUBLIC_API_BASE — FastAPI (default: https://api.ks.aileena.xyz)
  * - KEYSHIELD_PUBLIC_SYNC_URL — CF worker for Path A sync (optional)
  */
 
@@ -23,18 +23,16 @@ export function isLocalhostUrl(url: string): boolean {
   return LOCALHOST_RE.test(url.trim());
 }
 
-// Hosts that used to be wired up but were never given DNS records, so any
-// bundle that still bakes them in produces "API unreachable" at runtime.
-// Treat as if the URL had not been provided and fall through to PROD_API_BASE.
-const LEGACY_API_HOST_RE = /^https?:\/\/(api|sync)\.ks\.aileena\.xyz(\/|$)/i;
+// Sync is optional; stale sync URLs fall through to the configured sync service.
+const LEGACY_API_HOST_RE = /^https?:\/\/sync\.ks\.aileena\.xyz(\/|$)/i;
 
 export function isLegacyBakedUrl(url: string): boolean {
   return LEGACY_API_HOST_RE.test(url.trim());
 }
 
 export const PROD_API_BASE: string =
-  (_e.KEYSHIELD_PUBLIC_API_BASE as string) ||
-  'https://keyshield-production.up.railway.app';
+  (typeof process !== 'undefined' && process.env.KEYSHIELD_PUBLIC_API_BASE) ||
+  'https://api.ks.aileena.xyz';
 
 /** Hosted dashboard. Sign-in on 127.0.0.1:5173 must bounce here. */
 export const PROD_DASHBOARD_URL = 'https://app.ks.aileena.xyz';

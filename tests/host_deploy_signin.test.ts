@@ -4,9 +4,21 @@ import {
   isLocalViteSigninHost,
   PROD_DASHBOARD_URL,
   signinDashboardHref,
+  PROD_API_BASE,
+  isLegacyBakedUrl,
+  usePublicControlPlaneFallback,
 } from "../src/web/lib/host-deploy";
 
 describe("hosted Sign-in bounce", () => {
+  it("uses the canonical API and does not classify it as an obsolete host", () => {
+    expect(PROD_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(isLegacyBakedUrl(PROD_API_BASE)).toBe(false);
+    expect(usePublicControlPlaneFallback("app.ks.aileena.xyz", PROD_API_BASE)).toBe(false);
+    expect(usePublicControlPlaneFallback("app.ks.aileena.xyz", "")).toBe(true);
+    expect(usePublicControlPlaneFallback("app.ks.aileena.xyz", "http://127.0.0.1:8001")).toBe(true);
+    expect(usePublicControlPlaneFallback("localhost", "http://127.0.0.1:8001")).toBe(false);
+    expect(isLegacyBakedUrl("https://sync.ks.aileena.xyz")).toBe(true);
+  });
   it("keeps 127.0.0.1:5173 as a login tab that must redirect", () => {
     expect(
       isLocalViteSigninHost({
