@@ -75,6 +75,6 @@ describe('MAS fixture renderer contract', () => {
     expect(mas).toContain('renderer profile manifest sha256:');
     expect(mac).toContain('function prepareMacBuild(rendererEnv = {})');
     expect(mac).toContain('const { sources, rendererReport, icon } = prepareMacBuild();');
-    expect(mac).not.toContain('VITE_KEYSHIELD_RENDERER_PROFILE');
+    expect(mac).not.toContain("VITE_KEYSHIELD_RENDERER_PROFILE: 'mas-fixture'");
   });
 });

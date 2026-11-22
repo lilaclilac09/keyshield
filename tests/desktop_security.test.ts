@@ -98,6 +98,9 @@ describe('startup policy — KS-HUM-003/SEC-002/SAFE-002', () => {
       writeFileSync(join(dir, 'assets/app.js'), 'void 0');
       writeFileSync(join(dir, 'assets/app.css'), 'body{}');
       expect(validateRenderer(dir)).toBe(true);
+      writeFileSync(join(dir, 'index.html'), '<div id="root"></div><link rel="icon" href="data:,"><script src="/assets/app.js"></script>');
+      expect(validateRenderer(dir)).toBe(false);
+      expect(validateRenderer(dir, { requireStylesheet: false })).toBe(true);
       writeFileSync(join(dir, 'index.html'), '<div id="root"></div>');
       expect(validateRenderer(dir)).toBe(false);
     } finally { rmSync(dir, { recursive: true }); }

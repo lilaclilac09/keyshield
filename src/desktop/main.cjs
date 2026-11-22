@@ -456,7 +456,7 @@ async function createWindow() {
   let failure = startupFailure({
     packaged: PACKAGED,
     preflight: packagedRuntimePreflight(),
-    rendererValid: validateRenderer(rendererDir()),
+    rendererValid: validateRenderer(rendererDir(), { requireStylesheet: !SYNTHETIC_ONLY }),
     api: process.env.KS_DESKTOP_API_URL,
   });
   if (!failure) {

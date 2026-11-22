@@ -129,7 +129,7 @@ local ad-hoc checks, or `TEAMID.xyz.aileena.keyshield` when signing (authorize i
 in the distribution profile). MAS skips Electron's unsupported single-instance
 lock API. Helpers inherit the sandbox; no login helper is installed.
 
-### Synthetic-only beta boundary (not a functional private beta yet)
+### Synthetic-only fixture beta boundary
 
 #### Required fixture renderer contract
 
@@ -138,9 +138,13 @@ lock API. Helpers inherit the sandbox; no login helper is installed.
 `__KEYSHIELD_RENDERER_PROFILE__` and emit a dist-root `renderer-profile.json`
 containing `{"profile":"mas-fixture","commit":"<full pinned SHA>"}`.
 Ordinary renderer builds use `standard`; the DMG path does not select or
-validate the MAS profile. The current #154 pin is intentionally rejected:
-it does not implement this contract. A tested fixture renderer and verified
-replacement pin are required before another MAS app can be produced.
+validate the MAS profile. The verified renderer pin is
+`862600e679ed244005420805586b6ae799cceea6`, descending from #154 at
+`9170938d0f3ab2f1d75b449513344c0a182b8963` through `50d888c9`.
+The pin includes the complete parent/tree closure to the original input
+revisions. Uncleared #149 is not an ancestor. Fixture builds use inline
+styles, so only this profile skips the separate CSS-asset requirement;
+referenced assets and the standard build's stylesheet checks remain required.
 
 Before packaging and again inside the bundle, the MAS gate requires that
 marker and matching commit, and scans every renderer file (including maps)
@@ -184,28 +188,52 @@ are guarded too. External navigation, popups and `shell.openExternal` are
 disabled; the live-dashboard/API-health menu items are omitted. Block logs
 contain only `host … blocked`, never paths, queries, bodies or input values.
 
-No synthetic authentication/sync responder is shipped. The pinned renderer
-needs `/auth/signup` or `/auth/login`, WebAuthn passkey options/verification,
-authenticator PRF output, sync `/auth/register`, `/auth/challenge`,
-`/auth/exchange`, and GET/PUT `/vault/:id`. Safely simulating that whole flow
-would require a substantial mock and authenticator fixtures, not a small
-in-process responder. All these network calls are blocked, so a fresh beta
-cannot sign in, enroll/unlock Device Vault, or complete a save. A manually
-entered synthetic session token can expose the UI but does not unlock a vault.
+No synthetic authentication/sync responder is needed: the isolated fixture
+renderer consumes the preload handshake, accepts no free-text key or credential
+input, and stores only the exact built-in pair as AES-GCM ciphertext under
+`ks-mas-fixture:v1` in partition localStorage. It uses a public bundled HKDF
+seed, not a passkey. Do not use this demonstration to protect real secrets.
+The existing Playwright Electron harness needs inspector/DevTools listeners
+denied by these unchanged sandbox entitlements; do not grant server access
+just for tests.
 
-The preload exposes `keyshieldDesktop.syntheticOnly` for future renderer
-integration; this pinned renderer does **not** consume it. The shell cannot
-inspect plaintext inside encrypted vault payloads and cannot prevent typing
-a realistic-looking key into renderer memory. Before this can be described
-as accepting only synthetic keys, the renderer owner must reject values not
-starting with `FAKE_KEYSHIELD_NOT_A_KEY::` in `saveKeyOnDevice` before encryption
-and all other key-import/save entry points, and provide a dedicated synthetic
-auth/PRF flow. Do not enter real credentials. No successful synthetic save or
-real-key rejection is claimed by this build. The existing Playwright Electron
-harness also needs inspector/DevTools listeners denied by these unchanged
-sandbox entitlements; do not grant server access just for tests.
+#### Installed fixture results (2026-11-22 UTC)
 
-Local experiment (2026-11-20 UTC): rebased on the branded DMG shell
+The sandboxed universal app was launched from `release/mas/` after deleting
+`~/Library/Containers/xyz.aileena.keyshield`. First launch showed only the
+fixture UI, with a locked vault and the built-in `Demo key` selection; no
+credential, Google or token form. Unlocking and selecting Demo key reported
+it saved. Lock, quit, relaunch and unlock restored the saved entry. With all
+KeyShield processes stopped, an independent LevelDB reader decrypted and
+asserted the exact fixture pair, then flipped one ciphertext bit without
+corrupting the database or envelope. Relaunch visibly rejected the data,
+disabled unlock and omitted the entry. The public seed is intentionally
+available to this evidence script; this is not a confidentiality claim.
+
+The final system-wide capture used `tcpdump -i any -s 2048 -B 524288` with
+`port 53 or (tcp[tcpflags] & (tcp-syn|tcp-ack) = tcp-syn)`. It covered the
+entire repeated fresh-container lifecycle above: **634 packets captured,
+23,360 received by filter, 0 dropped by kernel**. Decoded hostname matches
+for production API, sync, hosted app and Google were all 0; resolved-IP
+matches for `153.52.255.62`, `66.33.60.194`, `76.76.21.61` and
+`74.125.20.84` were all 0. Sync returned no address, so no sync-IP claim is
+made. Process metadata contained 0 KeyShield matches; all four process-prefix
+`lsof -i` snapshots covering main and helpers were empty. Container logs
+showed three successful preflight/dashboard launches and **0 blocked-host
+lines**: this fixture did not attempt an external request. Bundle/archive
+broker paths and runtime broker-process matches were 0.
+
+Evidence: `~/mas-evidence/fixture-{first-launch,saved,locked,reopened-unlocked,tamper-rejected}.png`,
+`fixture-{dns-syn.pcapng,dns-syn.txt,capture.log,container.log,tamper.cjs,tamper.log}`,
+and `fixture-*-{processes,lsof}.txt`. The initial capture had drops; a second
+capture's 192-byte snapshot truncated DNS decoding. Both are retained as
+`fixture-initial-*` and `fixture-short-snap.*`, not used for final results.
+Desktop Vitest: 8 files / 124 tests passed. `npm run verify` passed, and the
+renderer owner's stricter dist audit passed on the built fixture assets.
+These observations cover the exercised lifecycle, not every possible future
+renderer or Chromium feature. No distribution signing or upload was performed.
+
+Historical pre-fixture experiment (2026-11-20 UTC): rebased on the branded DMG shell
 `ad98300ece8386149352d4c55e22497f39540694`, with its unmodified renderer pin
 `9170938d0f3ab2f1d75b449513344c0a182b8963`. Fresh-container launch displayed
 the bundled sign-in page; email sign-in and sign-up with a `.test` identity

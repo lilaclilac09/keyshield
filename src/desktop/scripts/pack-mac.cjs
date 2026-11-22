@@ -265,7 +265,7 @@ function prepareMacBuild(rendererEnv = {}) {
   if (!hasRenderer(rendererDir)) {
     throw new Error('src/desktop/renderer/index.html is missing after the build — refusing to pack a blank app');
   }
-  const rendererReport = verifyRendererDist(rendererDir);
+  const rendererReport = verifyRendererDist(rendererDir, { requireStylesheet: rendererEnv.VITE_KEYSHIELD_RENDERER_PROFILE !== 'mas-fixture' });
   if (!rendererReport.ok) {
     throw new Error(`bundled renderer is incomplete: ${rendererReport.missing.join(', ')}`);
   }
