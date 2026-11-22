@@ -12,6 +12,7 @@ export default defineConfig({
     environment: 'node',
     include: [
       'src/lib/**/*.test.ts',
+      'src/sync/**/*.test.ts',
       'src/storage/**/*.test.ts',
       'src/screens/**/*.test.ts',
       'src/components/**/*.test.ts',
