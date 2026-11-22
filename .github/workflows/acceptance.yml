@@ -1,0 +1,16 @@
+name: acceptance
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  evidence-closer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: PR body follows ACCEPTANCE.md §8
+        run: python scripts/check_acceptance.py

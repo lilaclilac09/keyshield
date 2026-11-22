@@ -1,3 +1,5 @@
+Every agent here accepts work only against [ACCEPTANCE.md](ACCEPTANCE.md) (Aileen's standard). Every task and PR ends with its evidence closer.
+
 # KeyShield — Agent Design Guide
 
 > How to wire AI agents, trading bots, and API aggregators into KeyShield's zero-trust proxy. When to use which agent. Why each design decision.
