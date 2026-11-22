@@ -7,7 +7,7 @@
 This spec has two parts:
 
 - **Part I (sections 1 to 9): protocol.** What KeyShield is and how keys, tokens and the proxy work. Unchanged from 0.1.
-- **Part II (sections 10 to 17): product, acceptance and delivery.** What a person must be able to do with each thing we hand them, and how an agent proves it. Every acceptance rule in Part II comes from Aileen's own workflow files (section 10) and cites the file and line. Where her files say nothing, section 16 says so instead of inventing a standard.
+- **Part II (sections 10 to 18): product, acceptance and delivery.** What a person must be able to do with each thing we hand them, and how an agent proves it. Every acceptance rule in Part II comes from Aileen's own workflow files (section 10) and cites the file and line. Section 16 separates existing practice from remaining gaps; section 18 maps existing tests without treating them as acceptance.
 
 ---
 
@@ -306,6 +306,8 @@ A surface is accepted only when every row applies and has its evidence. The jour
 
 For every surface: when it was handed over before with a bug, the hand-over includes that bug's A3 record and the repeat checks from A23.
 
+Existing tests, their limits and observed breakages are mapped in section 18; they do not replace the evidence required here.
+
 ---
 
 ## 15. Build order
@@ -321,26 +323,109 @@ Nothing else starts until this spec is approved.
 
 ---
 
-## 16. Not covered by Aileen's files
+## 16. Gaps and where existing practice answers them
 
-Her files do not set a standard for the items below. This spec does not substitute one. Each needs her decision.
+Q1 and Q2 remain open. Q3 to Q8 cite existing practice, not new owner questions; the last column preserves what that practice does not establish. Revision prefixes K and T are defined in section 18; `[AG]`, `[QA]` and `[UI]` retain section 10's pinned revisions.
 
-| # | Gap | What her files do say |
+| # | Topic | Existing practice and remaining gap |
 |---|---|---|
-| Q1 | What counts as "production" for a download (Mac app, extension, iPhone build). Rule A13 defines production only as the deployed website | Production proof and "localhost is not proof" (A13, A14) |
-| Q2 | Screenshot size for the Mac app and extension popup. Her rule names 390 x 844, a phone web viewport | `[UI]` |
-| Q3 | How the Mac app signs in. Her files make wallet first the door on `app.ks.aileena.xyz`; this repo's README says the Phantom extension is not available inside the Mac app | `[KF]`, `[PRJ]` |
-| Q4 | Code signing, notarization, Gatekeeper, App Store and TestFlight requirements | Nothing |
-| Q5 | Security and cryptography review standards for the vault | Nothing beyond `[PRJ]` lines 75 to 76 (key derivation and ciphertext only) |
-| Q6 | Performance or latency targets | Nothing. This repo's README already forbids publishing latency figures that were not measured |
-| Q7 | Whether her rule "every number must be precise" (written for articles) applies to product copy and docs | `[AC]` "Writing Style" |
-| Q8 | Automated test coverage required per surface | Run the slice's dedicated test when it has one (`[QA]`), nothing on coverage |
+| Q1 | Production proof for downloads: open | A13/A14 and `[AG]`:237-257 define website production proof; K:src/desktop/README.md:41-70 defines source/renderer revisions and final DMG checksum, :139-177 installed-app checks. A public download-to-checksum-to-installed-app acceptance chain: none found. |
+| Q2 | Mac and extension screenshot size: open | `[UI]`:10-20,30-34 specifies 390 x 844 for site UI. K:src/desktop/main.cjs:479-481 defaults to a 1280 x 860 window, not a screenshot policy. Binding Mac/extension screenshot dimensions: none found. |
+| Q3 | Mac sign-in | K:src/desktop/README.md:9-14 defines the shared web renderer and hosted API default; K:tests/desktop_mac_app.test.ts:239-258 checks email-first signup and session-token fallback; D5 tests local synthetic signup. Hosted Google configuration and real Mac passkey success remain unverified. |
+| Q4 | Signing and distribution | K:src/desktop/README.md:72-84: Linux cannot produce the DMG; local build is unsigned/unnotarized; preserve Gatekeeper; tester distribution needs Developer ID signing and notarization. T:src/ios/README.md:5-64 separates unsigned archive, signed archive-only and explicitly authorized internal TestFlight upload. Published signed/notarized Mac and delivered TestFlight/device evidence: none found. |
+| Q5 | Security and crypto review | K:docs/HARNESS.md:100-117 requires owner merge/security review and gates crypto/key-storage changes; K:docs/technical/cryptography.md:7-35,39-66 describes primitives and trust boundaries. W2/E3/B4/B5/D2 test specific properties, not an audit. Independent crypto-audit scope/sign-off: none found. |
+| Q6 | Performance and latency | K:docs/technical/human-usable-ui-standards.md:6-23 requires waiting feedback within 100ms for actions taking over 400ms and readable completion timing. K:docs/STRESS_TEST_PLAN.md:48-64 separates mock/production, percentiles, sample count/method and hardware/SHA; K:docs/BUILDING_KEYSHIELD.md:293 labels unmeasured latency as targets, not SLA. Production proxy/native-startup/sync SLA: none found. |
+| Q7 | Precise numbers in product copy | K:docs/DEMO_RECORDING_SCRIPT.md:14-16 says use numbers from the actual take, not canned figures; K:docs/STRESS_TEST_PLAN.md:48-64 requires measurement context; K:docs/PROJECT_RESUME.md:72 forbids invented adoption/audit/latency claims. A universal product-copy precision format or automated gate: none found. |
+| Q8 | Automated coverage per surface | K:docs/technical/human-usable-ui-standards.md:55-62 requires UX regression tests; `[QA]`:48-55 requires affected-flow evidence. K:package.json dispatches workspace tests, not root tests; K:.github/workflows/node-tests.yml:21-43 makes workspace tests best-effort. Section 18 lists separate root/browser/desktop/native commands. A required-green gate for every journey on every surface: none found. |
 
 ---
 
 ## 17. Approval of this spec
 
 This spec is accepted when Aileen approves it (A10). Until then it is a draft, and no product, packaging or release work starts from it.
+
+---
+
+## 18. Existing tests and checks
+
+### Revisions and commands
+
+Prefixes below expand to immutable `repo@commit:path` references (all repos belong to `lilaclilac09`). IDs match the research inventory; partial coverage is not a journey pass.
+
+| Prefix | Repository and commit | Scope |
+|---|---|---|
+| K | `keyshield@6c914c0b075e7f0371113eb05e7639d7f53619d0` | Researched main revision |
+| S | `aileen_machina_01@624411cfa9348ee29b2a7a844501bc00ca9125a5` | Site practices and separate `/ks` implementation |
+| I | `keyshield@d0242058fc7bbf8f7ae7897c2e9857bac4c952fe` | Branch-only iOS journey; not on main |
+| T | `keyshield@7d3bea9429b4d291e1cfd4f78fb941a1a4efecd1` | Branch-only iOS/TestFlight prep; not on main or interchangeable with I |
+| C | `keyshield@718eaa53b59cf7edf4f0372ce074fe35fb408205` | Branch-only sync/CAS tests; not on main |
+
+Run from the referenced revision, with synthetic data and local/mocked services only. In tables, `V` means `npx vitest run <test path>` (without revision prefix); `P` means `python -m pytest <test path> -v`; `B` means `npm run test:e2e -- <test path>`. Commands identify existing runners, not a claim they currently work.
+
+### Web dashboard
+
+| Journey / IDs | Immutable paths | Run | Kind and actual coverage |
+|---|---|---|---|
+| J1.1, J1.4, J2, J3, J4: W7/W8 | K:tests/e2e/user-flows.spec.ts; K:tests/e2e/key-capture.spec.ts | B per file | Browser with mocked API: opens seeded signed-in UI, saves/reloads stub rows, confirms deletion, removes agent, reveal/hide. No sign-in, durable app reopen, Developer revoke-next-call or vault-lock proof. |
+| J1.2: W1; J1.3: W2 | K:tests/password_login.test.ts; K:tests/web_zk.test.ts | V per file | Source/unit: email/auth endpoint strings; PRF vector and seal/open roundtrip, not unlock ceremony. |
+| J1.4/J5: W3/W4/W6; J1.5: W5 | K:tests/vault_quick_paste.test.ts; K:tests/vault_list.test.ts; K:tests/human_usable_ux.test.ts; K:tests/session_scope.test.ts | V per file | Source/unit: input/list/error handling, pending-hit retention, feedback timing, token claims. J1.5 Developer token-copy/placeholder UI: none found on main. |
+| J2/J5: C1/C2/C3 | C:tests/vault_stale_tab_cas.test.ts; C:tests/vault_sync_mutations.test.ts; C:tests/shared_vault_sync_errors.test.ts | V per file | Branch-only source/unit with mocked transport: confirmed revision/plaintext preserved on failure, deletion fails closed, conflicts not swallowed. |
+| J5: C5 | C:tests/e2e/vault-sync-failure-state.spec.ts | `PW_USE_EXTERNAL_SERVER=1` B; local src/web Vite on 5173 | Branch-only browser with mocked API: outage/conflict/auth errors retain draft/card state, explicit retry recovers, no false saved status or secret reflection. Synthetic unlock bypasses ceremony. |
+| J1.1/J1.3: S1 (separate site app) | S:aileena-new/scripts/verify-keyshield-app.ts:43-142 | In aileena-new: `pnpm verify:keyshield`, omit VERIFY_BASE_URL | Source/unit + in-process routes: PRF/wallet crypto, host/navigation strings, unauthenticated vault 401. Not src/web UI. |
+
+J1.6 exact `/proxy` end to end: none found; B4/B5 below cover `/vproxy` with mock upstream only. Complete main-branch J4 lock and J5 outage UI proof: none found.
+
+### Mac app
+
+| Journey / IDs | Immutable paths | Run | Kind and actual coverage |
+|---|---|---|---|
+| J1.1/J1.2/J4/J5: D1/D2 | K:tests/desktop_mac_app.test.ts; K:tests/desktop_security.test.ts | V per file | Source/unit with filesystem/Electron fixtures: renderer parity, email-first login, startup/Touch ID failure closed, redaction. Not native launch or offline-save durability. |
+| J1.1 delivery: D3/D4 | K:tests/desktop_build_provenance.test.ts; K:tests/desktop_evidence.test.ts | V per file | Source/unit/local Git fixtures: renderer pin and DMG checksum metadata; reporter redacts case output. Not public download/install proof. |
+| J1.1-J1.5, partial J4: D5 | K:src/desktop/e2e/desktop.spec.cjs | In src/desktop: `npm run test:e2e`; installed variant adds `KS_E2E_APP=/Applications/KeyShield.app/Contents/MacOS/KeyShield` | Local integration with Electron UI, local Python API and synthetic passkey/worker: signup, unlock, encrypted save/reload, placeholder snippets after mint, locked save refusal. Requires built renderer and loopback API (K:src/desktop/README.md:137-177). |
+| J1.6, J2, J3, complete J4/J5 | None found in dedicated desktop E2E | None | Save+Call explicitly skipped in D5:472-474; same-provider saves are not replacement; shared helper/backend coverage is not desktop journey proof. |
+
+Downloaded DMG acceptance is not tested. An installed-app runner is not proof the public download opens; Linux fixture tests do not verify Gatekeeper or real Touch ID.
+
+### Chrome extension
+
+| Journey / IDs | Immutable paths | Run | Kind and actual coverage |
+|---|---|---|---|
+| J1.1/J1.4/partial J4: E4 | K:tests/ext_detect.test.ts | V | Source/unit: popup/manifest, provider detection, masked row shaping drops raw values. Not installed Chrome UI or lock behavior. |
+| J1.2/J1.4/partial J5: E1/E2 | K:tests/ext_session_bridge.test.ts; K:tests/ext_autostore.test.ts | V per file | Source/unit with mocked probe: token reconciliation, sign-in href, permission/in-flight save gating and failed-local-probe fallback. |
+| J1.3/J1.4: E3 | K:tests/ext_zk.test.ts | V | Source/unit: vector decrypt, public hint, no raw pending keys in chrome.storage.local. Not unlock UI or restart persistence. |
+| J1.5/J1.6/J2/J3, complete J4/J5 | None found | None | Installed Chrome extension journeys are not tested; W8 tests only a dashboard deep link. |
+
+### iPhone
+
+| Journey / IDs | Immutable paths | Run | Kind and actual coverage |
+|---|---|---|---|
+| J1.1/J1.3-J1.5/J2/J4: I1 | I:src/ios/KeyShieldUITests/KeyShieldE2EJourneyTests.swift:61-178 | `python3 src/ios/scripts/run-e2e-journey.py --suite journey --results "$HOME/ks-ios-e2e-NEW"` | Branch-only native simulator: onboarding, explicit paste/save, relaunch/Face ID simulation, approved copy/reveal, lock masks, placeholder examples, rotate/delete persist. Local vault, not hosted sign-in/token copy. |
+| J1.1/J1.3-J1.5/J2-J4: I2/I3/I4 | T:src/ios/KeyShieldTests/CoreTests.swift; T:src/ios/KeyShieldUITests/KeyShieldUITests.swift; T:src/ios/KeyShieldTests/ProxyExampleTests.swift | `xcodebuild test -project src/ios/KeyShield.xcodeproj -scheme KeyShield -destination 'id=SIMULATOR_UDID' CODE_SIGNING_ALLOWED=NO -resultBundlePath "$HOME/ks-NEW.xcresult"` | Branch-only source/unit and native simulator targets: local encryption/session expiry/revoke, navigation/save/lock/rotate/delete, placeholder examples. Release-specific cases have extra prerequisites (T:src/ios/README.md:101-171). |
+| J5 shared mobile logic: C4 | C:src/mobile/src/sync/boundary.test.ts | V | Branch-only source/unit with mocked transport/cache: failed pulls/writes preserve confirmed state, no retries, unknown revision fails closed. React Native boundary, not Swift src/ios UI. |
+| J1.2 hosted sign-in, J1.6 external /proxy, native J5 sync | None found | None | Native beta is local-only with in-process mock provider; no cloud-sync or external-agent proof (T:src/ios/BETA_BOUNDARY.md:46-70). |
+
+Real-device/signed iPhone acceptance is not tested. Simulator evidence is not physical Face ID, Secure Enclave or TestFlight-delivery proof.
+
+### SDK / CLI / local proxy
+
+| Journey / IDs | Immutable paths | Run | Kind and actual coverage |
+|---|---|---|---|
+| J1.2/J1.4/J1.5: B1/B2/B3 | K:src/backend/tests/test_password_login.py; K:src/backend/tests/test_passkey_login.py; K:src/backend/tests/test_vault_routes.py | P per file | Local integration (TestClient/temp DB): signup/relogin/errors, passkey error/challenge routes, legacy synthetic store/list/decrypt and empty-write safety. Not UI, PRF ceremony or encrypted client reopen. |
+| J1.6/J3: B4/B5 | K:src/backend/tests/test_token_scopes.py; K:src/backend/tests/test_zk_local_proxy.py | P per file | Local integration, mock upstream: scoped token cannot read vault, `/vproxy` injects synthetic key, local proxy/root/Host guards, revoke makes next call 401. Exact `/proxy` end to end: none found. |
+| J1.2/J1.4/J2/J3/partial J5: L1/L2 | K:src/sdk/packages/cli/test/v2-client.test.ts; K:src/sdk/packages/cli/test/session-store.test.ts | `npm test --workspace=@keyshield/cli -- test/v2-client.test.ts test/session-store.test.ts` | Source/unit: mocked login/store/delete/revoke/errors; real temp-file session roundtrip, atomic overwrite, mode 0600, deletion. Legacy raw-key methods are not no-raw-key agent proof. |
+| J1.4/J2/J3/partial J5: R1/R2/R3 | K:src/infra/sync-worker/test/routes.test.ts; K:src/infra/sync-worker/test/revoke.test.ts; K:src/infra/sync-worker/test/etag.test.ts | `npm test --workspace=@keyshield/sync-worker -- test/routes.test.ts test/revoke.test.ts test/etag.test.ts` | Local integration (worker runtime/seeded JWT): ciphertext CRUD/stale-write denial, worker-token revocation, ETag/304. Not Developer-token UI or client offline durability. |
+| J1.1 installed CLI, J1.3 interactive unlock, J1.5 Developer clipboard, J4 vault-lock UI, complete J5 recovery | None found | None | B5 supplied-root crypto and L2 session-file deletion do not prove interactive unlock/lock. |
+
+### Current state of these tests (2026-11-22)
+
+Observed on K and branch C in isolated Linux archives, synthetic fixtures only; no production/provider calls. These are known breakages and coverage limits, not accepted deliveries:
+
+- Root Vitest: **143 pass / 1 fail** across 14 files. K:tests/vault_list.test.ts:119 fails the source assertion `Vault page saved-key hero > lists /manage/vault rows after sign-in the same way the popup does` (expected `extractDetectedKeys` in component source). Root tests require explicit `npx vitest run <files>`; root `npm test` runs workspaces only.
+- CLI: **29 pass** (L1/L2). Worker: **31 pass** (R1-R3), but installed runtime falls back from requested compatibility date 2026-01-15 to supported 2024-12-30; coverage is degraded.
+- Backend + SDK pytest: **43 pass** (B1-B5). Branch C sync: **36 pass** (C1-C4), not main coverage.
+- Playwright E2E: **blocked**, not passed. K:playwright.config.ts points at removed `frontend/`; its web server fails before W7/W8 run. C5's external-server attempt was also blocked by missing wallet-adapter dependencies.
+- `npm ci`: **fails**, package/lock out of sync (missing plugin-react, lucide-react, pluginutils and react-refresh entries). Completed checks used `npm install --ignore-scripts` in external copies, not a reproducible lock install; Node 24 host differs from CI Node 20.
+- Mac/iOS native suites: **not run on Linux**. No real-device checks, signed iPhone delivery or downloaded-DMG acceptance; desktop Save+Call remains skipped. S1 was researched, not run.
 
 ---
 
