@@ -74,7 +74,7 @@ function installDependencies() {
  * local script/stylesheet the page references resolves to a real file.
  * Returns { ok, missing, assets }.
  */
-function verifyRendererDist(dist) {
+function verifyRendererDist(dist, { requireStylesheet = true } = {}) {
   const missing = [];
   const index = path.join(dist, 'index.html');
   if (!fs.existsSync(index)) {
@@ -93,7 +93,7 @@ function verifyRendererDist(dist) {
   }
   if (assets.length === 0) missing.push(assetsDir);
   if (!assets.some((file) => file.endsWith('.js'))) missing.push(path.join(assetsDir, '*.js'));
-  if (!assets.some((file) => file.endsWith('.css'))) missing.push(path.join(assetsDir, '*.css'));
+  if (requireStylesheet && !assets.some((file) => file.endsWith('.css'))) missing.push(path.join(assetsDir, '*.css'));
   const refs = new Set();
   for (const match of html.matchAll(/(?:src|href)="(\/[^"]+)"/g)) refs.add(match[1]);
   for (const ref of refs) {
@@ -119,7 +119,7 @@ function main() {
   const dist = process.env.KS_RENDERER_DIST_DIR || path.join(webDir, 'dist');
   const build = spawnSync(npm, ['run', 'build:vite', '--', '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' });
   if (build.status !== 0) throw new Error(`renderer build failed (${build.status})`);
-  const report = verifyRendererDist(dist);
+  const report = verifyRendererDist(dist, { requireStylesheet: process.env.VITE_KEYSHIELD_RENDERER_PROFILE !== 'mas-fixture' });
   if (!report.ok) {
     console.error('renderer build is incomplete — refusing to ship it:');
     for (const file of report.missing) console.error(`  missing: ${file}`);

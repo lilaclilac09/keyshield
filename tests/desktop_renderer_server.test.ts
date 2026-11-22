@@ -27,7 +27,7 @@ const diagnosticsModule = require("../src/desktop/diagnostics.cjs") as {
   };
 };
 const buildRenderer = require("../src/desktop/scripts/build-renderer.cjs") as {
-  verifyRendererDist: (dist: string) => { ok: boolean; missing: string[]; assets: string[] };
+  verifyRendererDist: (dist: string, options?: { requireStylesheet: boolean }) => { ok: boolean; missing: string[]; assets: string[] };
 };
 
 const tempDirs: string[] = [];
@@ -165,6 +165,18 @@ describe("diagnostics log", () => {
 });
 
 describe("renderer build verification", () => {
+  it("allows a stylesheet-free fixture without relaxing referenced assets or standard builds", () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "index.html"), '<script src="/assets/app.js"></script>');
+    mkdirSync(join(dir, "assets"));
+    writeFileSync(join(dir, "assets/app.js"), "console.log(1)");
+    expect(buildRenderer.verifyRendererDist(dir).ok).toBe(false);
+    expect(buildRenderer.verifyRendererDist(dir, { requireStylesheet: false }).ok).toBe(true);
+    writeFileSync(join(dir, "index.html"), '<link href="/assets/missing.css">');
+    expect(buildRenderer.verifyRendererDist(dir, { requireStylesheet: false }).ok).toBe(false);
+    expect(buildRenderer.verifyRendererDist(tempDir(), { requireStylesheet: false }).ok).toBe(false);
+  });
+
   it("accepts a complete Vite output", () => {
     const dir = tempDir();
     writeFileSync(

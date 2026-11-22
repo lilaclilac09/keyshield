@@ -23,12 +23,12 @@ function validateApiOverride(value) {
   }
 }
 
-function validateRenderer(root) {
+function validateRenderer(root, { requireStylesheet = true } = {}) {
   try {
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     const refs = [...html.matchAll(/<(?:script|link)\b[^>]*?(?:src|href)=["']([^"']+)["']/gi)].map((match) => match[1]);
-    const assets = refs.filter((ref) => !/^https?:\/\//i.test(ref));
-    if (!html.includes('id="root"') || !assets.some((ref) => /\.js(?:\?|$)/.test(ref)) || !assets.some((ref) => /\.css(?:\?|$)/.test(ref))) return false;
+    const assets = refs.filter((ref) => !/^(?:https?:\/\/|data:)/i.test(ref));
+    if (!html.includes('id="root"') || !assets.some((ref) => /\.js(?:\?|$)/.test(ref)) || (requireStylesheet && !assets.some((ref) => /\.css(?:\?|$)/.test(ref)))) return false;
     return assets.every((ref) => {
       const file = path.resolve(root, ref.replace(/^\//, '').split(/[?#]/)[0]);
       return file.startsWith(`${path.resolve(root)}${path.sep}`) && fs.statSync(file).isFile();

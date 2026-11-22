@@ -9,7 +9,7 @@
  * - Packaging validates renderer assets and runtime files; packaged startup
  *   failures show a local diagnostics screen instead of hosted content.
  * - The icon is a real .icns when built on macOS (generated from the same
- *   in-code artwork at every size iconutil needs). Other platforms keep
+ *   shield master at every size iconutil needs). Other platforms keep
  *   the PNG with a warning.
  * - Zips are made with ditto on macOS, which preserves symlinks,
  *   permissions and macOS metadata; other platforms fall back to
@@ -30,7 +30,7 @@ const { sourceRevision, withRendererSource, writeDmgBuildInfo, fetchPinnedRender
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
-const releaseDir = path.join(desktopDir, 'release');
+const releaseDir = path.resolve(process.env.KS_DESKTOP_RELEASE_DIR || path.join(desktopDir, 'release'));
 const outDir = path.join(desktopDir, 'out');
 
 function run(cmd, args, opts = {}) {
@@ -40,66 +40,18 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-function drawIconPng(size) {
-  const zlib = require('node:zlib');
-  const w = size;
-  const h = size;
-  const raw = Buffer.alloc((w * 4 + 1) * h);
-  const radius = (size * 90) / 256;
-  for (let y = 0; y < h; y++) {
-    const row = y * (w * 4 + 1);
-    raw[row] = 0;
-    for (let x = 0; x < w; x++) {
-      const i = row + 1 + x * 4;
-      const cx = x - size / 2;
-      const cy = y - size / 2;
-      const inside = cx * cx + cy * cy < radius * radius;
-      raw[i] = inside ? 232 : 11;
-      raw[i + 1] = inside ? 236 : 18;
-      raw[i + 2] = inside ? 255 : 38;
-      raw[i + 3] = 255;
-    }
-  }
-  function chunk(type, data) {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length, 0);
-    const payload = Buffer.concat([Buffer.from(type), data]);
-    let c = 0xffffffff;
-    for (const b of payload) {
-      c ^= b;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    }
-    const crcBuf = Buffer.alloc(4);
-    crcBuf.writeUInt32BE((c ^ 0xffffffff) >>> 0, 0);
-    return Buffer.concat([len, payload, crcBuf]);
-  }
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  return Buffer.concat([
-    sig,
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw)),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
 function writePngIcon(dest) {
-  fs.writeFileSync(dest, drawIconPng(256));
+  fs.copyFileSync(path.join(desktopDir, 'assets', 'app-icon.png'), dest);
 }
 
 /**
- * Build a real .icns from the in-code artwork. Returns the .icns path, or
- * null when iconutil is unavailable (non-macOS) so the caller falls back
- * to the PNG with a warning.
+ * Build every iconutil size from the committed shield master. Non-macOS
+ * keeps the PNG; a failed macOS icon build aborts packaging.
  */
-function makeIcns() {
-  if (process.platform !== 'darwin') return null;
-  const iconset = path.join(desktopDir, 'KeyShield.iconset');
-  const icns = path.join(desktopDir, 'KeyShield.icns');
+function makeIcns(platform = process.platform, execute = execFileSync, output = desktopDir) {
+  if (platform !== 'darwin') return null;
+  const iconset = path.join(output, 'KeyShield.iconset');
+  const icns = path.join(output, 'KeyShield.icns');
   try {
     fs.rmSync(iconset, { recursive: true, force: true });
     fs.mkdirSync(iconset, { recursive: true });
@@ -116,13 +68,10 @@ function makeIcns() {
       ['icon_512x512@2x.png', 1024],
     ];
     for (const [name, size] of sizes) {
-      fs.writeFileSync(path.join(iconset, name), drawIconPng(size));
+      execute('sips', ['-z', String(size), String(size), path.join(desktopDir, 'assets', 'app-icon.png'), '--out', path.join(iconset, name)], { stdio: 'pipe' });
     }
-    execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns], { stdio: 'inherit' });
+    execute('iconutil', ['-c', 'icns', iconset, '-o', icns], { stdio: 'inherit' });
     return icns;
-  } catch (err) {
-    console.warn(`iconutil failed (${err instanceof Error ? err.message : String(err)}) — using PNG icon`);
-    return null;
   } finally {
     fs.rmSync(iconset, { recursive: true, force: true });
   }
@@ -141,6 +90,63 @@ function stageDmgContents(sourceApp, staging, buildInfo) {
   copyInstallNotes(staging);
   fs.copyFileSync(buildInfo, path.join(staging, 'BUILD-INFO.txt'));
   fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
+  fs.mkdirSync(path.join(staging, '.background'));
+  fs.copyFileSync(path.join(desktopDir, 'assets', 'dmg-background.png'), path.join(staging, '.background', 'installer.png'));
+}
+
+function finderPresentation() {
+  return `on run argv
+  set volumePath to item 1 of argv
+  set volumeAlias to POSIX file volumePath as alias
+  tell application "Finder"
+    tell folder volumeAlias
+      open
+      set current view of container window to icon view
+      set toolbar visible of container window to false
+      set statusbar visible of container window to false
+      set bounds of container window to {120, 90, 840, 672}
+      set options to icon view options of container window
+      set arrangement of options to not arranged
+      set icon size of options to 88
+      set text size of options to 12
+      set background color of options to {2827, 4626, 9766}
+      set shows icon preview of options to false
+      set label position of options to bottom
+      set background picture of options to POSIX file (volumePath & "/.background/installer.png")
+      set position of item "KeyShield.app" to {176, 245}
+      set position of item "Applications" to {544, 245}
+      set position of item "BUILD-INFO.txt" to {92, 420}
+      set position of item "OPEN-ME.txt" to {260, 420}
+      update without registering applications
+      close
+      open
+      delay 2
+      close
+    end tell
+  end tell
+end run`;
+}
+
+function createBrandedDmg(staging, dmgPath, execute = execFileSync) {
+  const work = fs.mkdtempSync(path.join(path.dirname(dmgPath), '.dmg-'));
+  const writable = path.join(work, 'writable.dmg');
+  const mount = path.join(work, 'mount');
+  fs.mkdirSync(mount);
+  let mounted = false;
+  const options = { stdio: 'inherit', timeout: 180000 };
+  try {
+    execute('hdiutil', ['create', '-volname', 'KeyShield', '-fs', 'HFS+', '-srcfolder', staging, '-format', 'UDRW', writable], options);
+    execute('hdiutil', ['attach', '-readwrite', '-nobrowse', '-noautoopen', '-mountpoint', mount, writable], options);
+    mounted = true;
+    execute('osascript', ['-e', finderPresentation(), mount], options);
+    if (!fs.existsSync(path.join(mount, '.DS_Store'))) throw new Error('Finder did not save the DMG presentation');
+    execute('hdiutil', ['detach', mount], options);
+    mounted = false;
+    execute('hdiutil', ['convert', writable, '-format', 'UDZO', '-o', dmgPath], options);
+  } finally {
+    if (mounted) execute('hdiutil', ['detach', mount], options);
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
 function stageAppBundle(sourceApp, destApp) {
@@ -220,7 +226,25 @@ function zipApp(appDir, zipPath) {
   }
 }
 
-async function main() {
+function createPackagerIgnore(output = releaseDir) {
+  const relative = path.relative(desktopDir, path.resolve(output));
+  if (!relative) throw new Error('Release directory must not be the desktop source root');
+  const releaseRoot = `/${relative.split(path.sep).join('/')}`;
+  return (file) => {
+    if (!file) return false;
+    if (file === releaseRoot || file.startsWith(`${releaseRoot}/`)) return true;
+    if (file === '/out' || file.startsWith('/out/')) return true;
+    if (file === '/release' || file.startsWith('/release/')) return true;
+    if (file.startsWith('/scripts')) return true;
+    if (file === '/assets' || file.startsWith('/assets/')) return true;
+    if (file === '/e2e' || file.startsWith('/e2e/')) return true;
+    if (file === '/renderer' || file.startsWith('/renderer/')) return true;
+    if (file === '/OPEN-ME.txt') return true;
+    return false;
+  };
+}
+
+function prepareMacBuild(rendererEnv = {}) {
   const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
   if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
   const rendererRef = fetchPinnedRenderer(repoRoot, pin);
@@ -232,7 +256,7 @@ async function main() {
     const revision = sourceRevision(root, 'src/web');
     revision.inputs = pin.inputs;
     run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
-      env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
+      env: { ...process.env, ...rendererEnv, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
     });
     return revision;
   });
@@ -241,7 +265,7 @@ async function main() {
   if (!hasRenderer(rendererDir)) {
     throw new Error('src/desktop/renderer/index.html is missing after the build — refusing to pack a blank app');
   }
-  const rendererReport = verifyRendererDist(rendererDir);
+  const rendererReport = verifyRendererDist(rendererDir, { requireStylesheet: rendererEnv.VITE_KEYSHIELD_RENDERER_PROFILE !== 'mas-fixture' });
   if (!rendererReport.ok) {
     throw new Error(`bundled renderer is incomplete: ${rendererReport.missing.join(', ')}`);
   }
@@ -251,11 +275,11 @@ async function main() {
   const icns = makeIcns();
   if (!icns) console.warn('no .icns icon — the app will use the PNG icon instead');
 
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(releaseDir, { recursive: true });
+  return { sources, rendererReport, icon: icns || iconPng };
+}
 
-  const packager = require('@electron/packager');
-  const apps = await packager({
+function macPackagerOptions(icon) {
+  return {
     dir: desktopDir,
     out: outDir,
     platform: 'darwin',
@@ -269,21 +293,13 @@ async function main() {
     extraResource: [
       path.join(desktopDir, 'renderer'),
       path.join(desktopDir, 'boot.html'),
+      path.join(desktopDir, 'loading.html'),
       path.join(desktopDir, 'redaction.js'),
     ],
-    icon: icns || iconPng,
+    icon,
     darwinDarkModeSupport: true,
     osxSign: false,
-    ignore: (file) => {
-      if (!file) return false;
-      if (file === '/out' || file.startsWith('/out/')) return true;
-      if (file === '/release' || file.startsWith('/release/')) return true;
-      if (file.startsWith('/scripts')) return true;
-      if (file === '/e2e' || file.startsWith('/e2e/')) return true;
-      if (file === '/renderer' || file.startsWith('/renderer/')) return true;
-      if (file === '/OPEN-ME.txt') return true;
-      return false;
-    },
+    ignore: createPackagerIgnore(),
     appCopyright: 'KeyShield',
     extendInfo: {
       NSFaceIDUsageDescription: 'Unlock KeyShield with Touch ID.',
@@ -292,7 +308,15 @@ async function main() {
       LSBackgroundOnly: false,
       LSUIElement: false,
     },
-  });
+  };
+}
+
+async function main() {
+  const { sources, rendererReport, icon } = prepareMacBuild();
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(releaseDir, { recursive: true });
+  const packager = require('@electron/packager');
+  const apps = await packager(macPackagerOptions(icon));
 
   const reports = [];
   const zipped = [];
@@ -329,14 +353,7 @@ async function main() {
     stageDmgContents(preferred.appPath, staging, buildInfo);
 
     if (process.platform === 'darwin') {
-      execFileSync('hdiutil', [
-        'create',
-        '-volname', 'KeyShield',
-        '-srcfolder', staging,
-        '-ov',
-        '-format', 'UDZO',
-        dmgPath,
-      ], { stdio: 'inherit' });
+      createBrandedDmg(staging, dmgPath);
       const info = writeDmgBuildInfo(dmgPath, sources);
       writeBuildInfo(reports, rendererReport.assets.length, sources, info.sha256);
       console.log('dmg', dmgPath);
@@ -357,4 +374,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, createPackagerIgnore, prepareMacBuild, macPackagerOptions, checkBundle };
