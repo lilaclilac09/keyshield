@@ -38,6 +38,10 @@ PROVIDERS: dict[str, dict] = {
     "mistral": {"base": "https://api.mistral.ai", "auth": "bearer"},
     "cohere": {"base": "https://api.cohere.ai", "auth": "bearer"},
     "nvidia": {"base": "https://integrate.api.nvidia.com", "auth": "bearer"},
+    "tinker": {
+        "base": "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1",
+        "auth": "bearer",
+    },
     "helius": {
         "base": "https://mainnet.helius-rpc.com",
         "auth": "query",

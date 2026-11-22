@@ -181,3 +181,27 @@ def test_invalid_token_still_401_not_403(env):
     client, _, item_id, _ = env
     r = client.get(f"/manage/decrypt/{item_id}", headers=_h("nope.nope"))
     assert r.status_code == 401
+
+
+def test_proxy_token_reaches_tinker_with_vault_key(env, monkeypatch):
+    from src.backend.routes import proxy as proxy_routes
+
+    client, owner, _, _ = env
+    tinker_key = "tml-demo-not-a-real-key-000000000000"
+    r = client.post(
+        "/manage/store", headers=_h(owner), json={"upstream": "tinker", "apiKey": tinker_key}
+    )
+    assert r.status_code == 200, r.text
+    tok = client.post("/sessions/proxy-token", headers=_h(owner), json={}).json()["token"]
+
+    routed: list[tuple[str, str, str]] = []
+
+    async def fake_upstream(api_router, upstream, path, body, api_key, request, interceptor):
+        routed.append((upstream, path, api_key))
+        return b'{"ok": true}', 200, "MISS", None
+
+    monkeypatch.setattr(proxy_routes, "_call_upstream", fake_upstream)
+    r = client.post("/vproxy/tinker/chat/completions", headers=_h(tok), json={"model": "m"})
+    assert r.status_code == 200, r.text
+    assert routed == [("tinker", "chat/completions", tinker_key)]
+    assert tinker_key not in r.text

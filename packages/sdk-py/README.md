@@ -104,4 +104,4 @@ client = OpenAI(base_url="http://127.0.0.1:8787/vproxy/openai/v1", api_key="<loc
 - **Limits:**
   - The proxy only listens on loopback and refuses other `Host` headers.
   - The hosted guardrails (spend caps, 5xx freeze, MPP metering, Helius RPC cache) don't run locally.
-  - Supported upstreams: openai, anthropic, openrouter, groq, mistral, cohere, nvidia, helius.
+  - Supported upstreams: openai, anthropic, openrouter, groq, mistral, cohere, nvidia, tinker, helius.
