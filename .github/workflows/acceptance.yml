@@ -1,16 +1,37 @@
 name: acceptance
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
 
 jobs:
   evidence-closer:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Bootstrap verifier only when absent from base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ ! -f scripts/check_acceptance.py ]; then
+            echo 'bootstrap: verifier not yet on base'
+            mkdir -p scripts
+            curl --fail --silent --show-error --location \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github.raw+json' \
+              "$GITHUB_API_URL/repos/$PR_HEAD_REPO/contents/scripts/check_acceptance.py?ref=$PR_HEAD_SHA" \
+              --output scripts/check_acceptance.py
+          fi
       - name: PR body follows ACCEPTANCE.md §8
         run: python scripts/check_acceptance.py

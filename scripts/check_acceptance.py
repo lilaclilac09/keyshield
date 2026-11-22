@@ -37,6 +37,9 @@ def _fence_after(line, fence):
         return fence
     marker, suffix = match.groups()
     if fence is None:
+        char = re.escape(marker[0])
+        if re.search(rf"(?<!{char}){re.escape(marker)}(?!{char})", suffix):
+            return None
         return (marker[0], len(marker))
     if marker[0] == fence[0] and len(marker) >= fence[1] and not suffix.strip():
         return None
@@ -44,31 +47,67 @@ def _fence_after(line, fence):
 
 
 def _visible_lines(body):
-    lines, fence, comment = [], None, False
-    for line in body.splitlines():
-        if fence is not None or (not comment and _fence_after(line, None) is not None):
-            lines.append(line)
-            fence = _fence_after(line, fence)
-            continue
-        visible, pos = [], 0
-        while pos < len(line):
-            if comment:
-                end = line.find("-->", pos)
-                if end == -1:
-                    break
-                comment, pos = False, end + 3
+    lines, visible, removed = [], [], False
+
+    def emit(text, hidden=False):
+        nonlocal visible, removed
+        parts = text.split("\n")
+        for i, part in enumerate(parts):
+            if hidden:
+                removed = True
             else:
-                start = line.find("<!--", pos)
-                if start == -1:
-                    visible.append(line[pos:])
-                    break
-                visible.append(line[pos:start])
-                comment, pos = True, start + 4
-        clean = "".join(visible)
-        lines.append(clean)
-        if not comment:
-            fence = _fence_after(clean, fence)
+                visible.append(part)
+            if i < len(parts) - 1:
+                line = "".join(visible)
+                if line.strip() or not removed:
+                    lines.append(line)
+                visible, removed = [], False
+
+    pos, fence = 0, None
+    while pos < len(body):
+        if pos == 0 or body[pos - 1] == "\n":
+            end = body.find("\n", pos)
+            end = len(body) if end == -1 else end + 1
+            line = body[pos:end].rstrip("\r\n")
+            next_fence = _fence_after(line, fence)
+            if fence is not None or next_fence is not None:
+                emit(body[pos:end])
+                fence, pos = next_fence, end
+                continue
+        if body.startswith("<!--", pos):
+            end = body.find("-->", pos + 4)
+            if end != -1:
+                emit(body[pos:end + 3], hidden=True)
+                pos = end + 3
+                continue
+        if body[pos] == "`":
+            marker = re.match(r"`+", body[pos:]).group()
+            closing = re.search(rf"(?<!`){marker}(?!`)", body[pos + len(marker):])
+            if closing:
+                end = pos + len(marker) + closing.end()
+                emit(body[pos:end])
+                pos = end
+                continue
+            emit(marker)
+            pos += len(marker)
+            continue
+        emit(body[pos])
+        pos += 1
+    line = "".join(visible)
+    if line.strip() or (visible and not removed):
+        lines.append(line)
     return lines
+
+
+def _value_text(text):
+    text = text.strip()
+    text = re.sub(r"^(?:[-*+]|\d+\.)(?:\s+|$)", "", text)
+    checkbox = re.match(r"\[([ xX])\](?:\s+|$)", text)
+    if checkbox:
+        if checkbox[1] == " ":
+            return ""
+        text = text[checkbox.end():]
+    return text.strip()
 
 
 def closer_values(body):
@@ -80,29 +119,34 @@ def closer_values(body):
     fence = None
     for line in lines[:starts[-1]]:
         fence = _fence_after(line, fence)
-    outer_fence = fence
     values, current = {}, None
     for line in lines[starts[-1]:]:
         stripped = line.strip()
         next_fence = _fence_after(line, fence)
         if next_fence != fence:
-            if current == FIELDS[-1] or (fence == outer_fence and next_fence is None):
-                break
-            fence = next_fence
-            continue
-        if (((fence is None or current == FIELDS[-1]) and re.match(r" {0,3}#{1,6}\s", line))
-                or (current == FIELDS[-1] and not stripped)):
             break
-        if re.match(r"[-*+]\s+\[ \](?:\s|$)", stripped):
+        if (re.match(r" {0,3}#{1,6}(?:\s|$)", line)
+                or re.fullmatch(r" {0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})", line)):
+            break
+        match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None)
+        if current == FIELDS[-1]:
+            if match:
+                break
+            value = _value_text(stripped)
+            if value:
+                values[current].append(value)
+                break
             continue
-        match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None) if fence == outer_fence else None
         if match:
             current = match[0]
             if current in values:
                 break
-            values[current] = [match[1].group(1).strip()]
+            value = _value_text(match[1].group(1))
+            values[current] = [value]
+            if current == FIELDS[-1] and value:
+                break
         elif current and stripped:
-            values[current].append(re.sub(r"^[-*+]\s+", "", stripped))
+            values[current].append(_value_text(stripped))
     return {f: " ".join(v for v in vs if v) for f, vs in values.items()}
 
 
