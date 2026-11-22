@@ -139,8 +139,9 @@ If the app shows its diagnostics screen, use **Copy diagnostics** (or
   when running the desktop unit suite. Without it that packaging test is skipped.
 - The API default is `https://api.ks.aileena.xyz`; loopback/HTTPS runtime overrides
   retain their existing policy. The renderer remains pinned to #150 as a baseline.
-  Desktop builds overlay only the current `src/web/lib/host-deploy.ts` endpoint
-  policy during compilation, then restore the isolated pinned worktree. The
+  Desktop builds replace `src/web/lib/host-deploy.ts` in memory with the desktop-only
+  `src/desktop/host-deploy.ts` policy via a desktop Vite plugin. Shared web source
+  and its normal Vite configuration are never modified by this build. The
   overlay file's SHA-256 is recorded in DMG build provenance under `renderer.overlays`.
   `KS_MAC_VERIFY_APP` also enables the packaged ASAR/renderer forbidden-host check.
 - `KS_DESKTOP_LIVE=1` explicitly selects the live site instead of the bundled

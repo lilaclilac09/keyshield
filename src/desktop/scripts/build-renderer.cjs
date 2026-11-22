@@ -105,21 +105,22 @@ function verifyRendererDist(dist) {
 }
 
 function rendererPolicyRevision() {
-  const file = 'src/web/lib/host-deploy.ts';
-  return { file, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex') };
+  const file = 'src/desktop/host-deploy.ts';
+  return { file, target: 'src/web/lib/host-deploy.ts', sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex') };
 }
 
-function withRendererPolicy(build, root = sourceRoot) {
-  if (path.resolve(root) === repoRoot) return build();
-  const file = rendererPolicyRevision().file;
-  const target = path.join(root, file);
-  const original = fs.readFileSync(target);
-  try {
-    fs.copyFileSync(path.join(repoRoot, file), target);
-    return build();
-  } finally {
-    fs.writeFileSync(target, original);
-  }
+function rendererPolicyPlugin(root = sourceRoot, readPolicy = fs.readFileSync) {
+  const policy = rendererPolicyRevision();
+  const target = path.resolve(root, policy.target);
+  const targets = new Set([target, fs.realpathSync(target)]);
+  return {
+    name: 'keyshield-desktop-endpoint-policy',
+    enforce: 'pre',
+    load(id) {
+      if (!targets.has(path.resolve(id.split('?')[0]))) return null;
+      return readPolicy(path.join(repoRoot, policy.file), 'utf8');
+    },
+  };
 }
 
 function main() {
@@ -135,7 +136,7 @@ function main() {
   }
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const dist = process.env.KS_RENDERER_DIST_DIR || path.join(webDir, 'dist');
-  const build = withRendererPolicy(() => spawnSync(npm, ['run', 'build:vite', '--', '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' }));
+  const build = spawnSync(npm, ['run', 'build:vite', '--', '--config', path.join(__dirname, 'renderer-vite.config.mjs'), '--outDir', dist], { cwd: webDir, env, stdio: 'inherit' });
   if (build.status !== 0) throw new Error(`renderer build failed (${build.status})`);
   const report = verifyRendererDist(dist);
   if (!report.ok) {
@@ -151,4 +152,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { verifyRendererDist, installStamp, nodeModulesFresh, withRendererPolicy, rendererPolicyRevision, env };
+module.exports = { verifyRendererDist, installStamp, nodeModulesFresh, rendererPolicyPlugin, rendererPolicyRevision, env };

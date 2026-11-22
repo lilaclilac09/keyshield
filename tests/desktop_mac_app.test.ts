@@ -1,9 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { PROD_API_BASE as DESKTOP_API_BASE, isLegacyBakedUrl as isDesktopLegacyUrl } from "../src/desktop/host-deploy";
 import { isDesktopShell } from "../src/web/lib/desktop-shell";
 
 const root = resolve(__dirname, "..");
@@ -178,7 +179,9 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     const { env } = require("../src/desktop/scripts/build-renderer.cjs");
     expect(env.KEYSHIELD_API_URL).toBe("https://api.ks.aileena.xyz");
     expect(env.KEYSHIELD_PUBLIC_API_BASE).toBe("https://api.ks.aileena.xyz");
-    for (const file of ["src/desktop/main.cjs", "src/desktop/scripts/build-renderer.cjs", "src/web/lib/host-deploy.ts", "src/web/vite.config.ts"]) {
+    expect(DESKTOP_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(isDesktopLegacyUrl(DESKTOP_API_BASE)).toBe(false);
+    for (const file of ["src/desktop/main.cjs", "src/desktop/scripts/build-renderer.cjs", "src/desktop/host-deploy.ts"]) {
       expect(read(file), file).not.toContain("keyshield-production.up.railway.app");
     }
     expect(read("src/desktop/main.cjs")).toContain("const PROD_API = 'https://api.ks.aileena.xyz'");
@@ -369,16 +372,23 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     }
   });
 
-  it("overlays only the endpoint policy and restores the pinned source on success or failure", () => {
-    const { withRendererPolicy, rendererPolicyRevision } = require("../src/desktop/scripts/build-renderer.cjs");
+  it("overlays only the desktop endpoint policy in memory without modifying shared source", () => {
+    const { rendererPolicyPlugin, rendererPolicyRevision } = require("../src/desktop/scripts/build-renderer.cjs");
     const source = tempDir();
     const policy = join(source, "src/web/lib/host-deploy.ts");
     mkdirSync(join(source, "src/web/lib"), { recursive: true });
     writeFileSync(policy, "original pinned policy");
-    expect(rendererPolicyRevision()).toMatchObject({ file: "src/web/lib/host-deploy.ts", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
-    expect(withRendererPolicy(() => readFileSync(policy, "utf8"), source)).toBe(read("src/web/lib/host-deploy.ts"));
+    expect(rendererPolicyRevision()).toMatchObject({ file: "src/desktop/host-deploy.ts", target: "src/web/lib/host-deploy.ts", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const plugin = rendererPolicyPlugin(source);
+    expect(plugin.load(policy)).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load(`${policy}?v=synthetic`)).toBe(read("src/desktop/host-deploy.ts"));
+    const alias = join(tempDir(), "source-alias");
+    symlinkSync(source, alias);
+    expect(rendererPolicyPlugin(alias).load(realpathSync(policy))).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load("")).toBe(null);
+    expect(plugin.load(join(source, "src/web/lib/auth.ts"))).toBe(null);
     expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
-    expect(() => withRendererPolicy(() => { throw new Error("synthetic build failure"); }, source)).toThrow("synthetic build failure");
+    expect(() => rendererPolicyPlugin(source, () => { throw new Error("synthetic build failure"); }).load(policy)).toThrow("synthetic build failure");
     expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
   });
 
