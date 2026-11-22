@@ -22,8 +22,8 @@ FORBIDDEN = [
     "should work",
     "should be fixed",
     "looks good",
-    "应该好了",
-    "差不多好了",
+    "\u5e94\u8be5\u597d\u4e86",
+    "\u5dee\u4e0d\u591a\u597d\u4e86",
 ]
 
 
@@ -33,7 +33,7 @@ def _field_re(field):
 
 def closer_values(body):
     """Field -> value from the last closer block: unindented labels from `root cause:` to `safe to merge:`."""
-    lines = body.splitlines()
+    lines = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL).splitlines()
     starts = [i for i, line in enumerate(lines) if _field_re(FIELDS[0]).match(line)]
     if not starts:
         return {}
@@ -41,7 +41,10 @@ def closer_values(body):
     values, current = {}, None
     for line in lines[starts[-1]:]:
         stripped = line.strip()
-        if stripped.startswith("```") or (not fenced and re.match(r" {0,3}#{1,6}\s", line)):
+        if (stripped.startswith("```")
+                or ((not fenced or current == FIELDS[-1]) and re.match(r" {0,3}#{1,6}\s", line))
+                or re.match(r"[-*+]\s+\[[ xX]\](?:\s|$)", stripped)
+                or (current == FIELDS[-1] and not stripped)):
             break
         match = next(((f, _field_re(f).match(line)) for f in FIELDS if _field_re(f).match(line)), None)
         if match:
@@ -49,8 +52,6 @@ def closer_values(body):
             if current in values:
                 break
             values[current] = [match[1].group(1).strip()]
-            if current == FIELDS[-1]:
-                break
         elif current and stripped:
             values[current].append(stripped.lstrip("- ").strip())
     return {f: " ".join(v for v in vs if v) for f, vs in values.items()}
