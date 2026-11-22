@@ -1,4 +1,4 @@
-import { test, expect, installHarness, samples, negatives, origin, secondOrigin, page, popup, worker, networkRequests, openPopup, unlock, add, save, stored, state, selection } from './harness';
+import { test, expect, installHarness, samples, negatives, origin, secondOrigin, page, popup, worker, networkRequests, openPopup, unlock, add, save, stored, state, selection, output } from './harness';
 
 installHarness();
 
