@@ -4,12 +4,12 @@ Every agent (Devin, Claude, Cursor, Codex, any child session) accepts work in th
 
 Sources:
 
-- [aileen_machina_01/AGENTS.md](https://github.com/lilaclilac09/aileen_machina_01/blob/main/AGENTS.md) (constitution, 施工队安全条例, blocker table)
+- [aileen_machina_01/AGENTS.md](https://github.com/lilaclilac09/aileen_machina_01/blob/main/AGENTS.md) (constitution, production safety rules, blocker table)
 - [aileen_machina_01/CURSOR_RULES.md](https://github.com/lilaclilac09/aileen_machina_01/blob/main/CURSOR_RULES.md) and [.cursor/rules/](https://github.com/lilaclilac09/aileen_machina_01/tree/main/.cursor/rules): `verification.mdc`, `senior-engineer-loop.mdc`, `debug-repro-loop.mdc`, `ui-step-screenshot.mdc`
 - [aileen_machina_01/QA.md](https://github.com/lilaclilac09/aileen_machina_01/blob/main/QA.md) and [.github/pull_request_template.md](https://github.com/lilaclilac09/aileen_machina_01/blob/main/.github/pull_request_template.md)
 - [polar-lab/.cursor/rules/ship-visible-mvp.mdc](https://github.com/lilaclilac09/polar-lab/blob/main/.cursor/rules/ship-visible-mvp.mdc)
 
-Machine check: `python scripts/check_acceptance.py` runs on every PR (`.github/workflows/acceptance.yml`) and fails when the PR body misses the evidence closer or a closer field uses a forbidden claim ("should work", "should be fixed", "looks good", "应该好了", "差不多好了").
+Machine check: `python scripts/check_acceptance.py` runs on every PR (`.github/workflows/acceptance.yml`) and fails when the PR body misses the evidence closer or a closer field uses a forbidden claim ("should work", "should be fixed", "looks good", or the Chinese equivalents encoded in the script).
 
 ## 1. Workflow — `AGENTS.md`, `senior-engineer-loop.mdc`
 
@@ -37,15 +37,15 @@ Machine check: `python scripts/check_acceptance.py` runs on every PR (`.github/w
 ## 4. UI — `ui-step-screenshot.mdc`, design OS
 
 - [ ] "no screenshots = not done."
-- [ ] "截图和交互都要给用户看。口头 'done' 不算。" Screenshot at 390×844 **and** interaction proof (walkthrough or 录屏).
-- [ ] "UI merge/验收 reply with only text, or only stills and no interaction proof = incomplete."
+- [ ] "Show the user screenshots and interaction. Saying 'done' does not count." Screenshot at 390×844 **and** interaction proof (walkthrough or screen recording).
+- [ ] "UI merge/acceptance reply with only text, or only stills and no interaction proof = incomplete."
 
-## 5. Ship / done — `AGENTS.md` 施工队安全条例, `ship-visible-mvp.mdc`
+## 5. Ship / done — `AGENTS.md` production safety rules, `ship-visible-mvp.mdc`
 
-- [ ] "**if you cannot prove it on production, do not claim it is fixed.** 不能在线上证明 就不准说修好了"
-- [ ] "不准把 **draft PR** 当任务终点"; "不准只跑 **localhost** 就结束 ship/merge 任务".
-- [ ] After merge: PR state `MERGED`, merge SHA exists, `git merge-base --is-ancestor <merge_sha> origin/main` is true. "GitHub 显示 merged 但 commit 不在 `origin/main` → **not done**".
-- [ ] "不准在已有实现存在时 **重写同功能**" — existing implementation → only rebase / resolve / merge.
+- [ ] "**if you cannot prove it on production, do not claim it is fixed.**"
+- [ ] "Do not treat a **draft PR** as the task endpoint"; "Do not end a ship/merge task after testing only **localhost**".
+- [ ] After merge: PR state `MERGED`, merge SHA exists, `git merge-base --is-ancestor <merge_sha> origin/main` is true. "GitHub shows merged but the commit is not in `origin/main` → **not done**".
+- [ ] "Do not **rewrite the same functionality** when an implementation already exists" — existing implementation → only rebase / resolve / merge.
 - [ ] "Demo ≠ product"; end with product status "`LIVE` / `BLOCKED` / `LOCAL ONLY` + next human action in one line."
 
 ## 6. Repo-specific rules
