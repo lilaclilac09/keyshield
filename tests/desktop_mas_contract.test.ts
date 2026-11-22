@@ -77,4 +77,32 @@ describe('MAS fixture renderer contract', () => {
     expect(mac).toContain('const { sources, rendererReport, icon } = prepareMacBuild();');
     expect(mac).not.toContain("VITE_KEYSHIELD_RENDERER_PROFILE: 'mas-fixture'");
   });
+
+  it.each([true, false])('omits the misleading shell Lock only in MAS (mas=%s)', (mas) => {
+    const source = readFileSync(resolve(__dirname, '../src/desktop/main.cjs'), 'utf8');
+    const start = source.indexOf('function buildMenu(win) {');
+    const buildMenu = source.slice(start, source.indexOf('\n/**', start));
+    let menu: any;
+    let reloads = 0;
+    const feedback: unknown[] = [];
+    runInNewContext(`${buildMenu}\nbuildMenu(win);`, {
+      process: { platform: 'darwin', mas }, app: { name: 'KeyShield' },
+      SYNTHETIC_ONLY: mas,
+      Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu: (template: unknown) => { menu = template; } },
+      win: { isDestroyed: () => false, reload: () => { reloads++; } },
+      showShellFeedback: (payload: unknown) => { feedback.push(payload); },
+    });
+    const lock = menu[0].submenu.find((item: any) => item.label === 'Lock');
+    if (mas) {
+      expect(lock).toBeUndefined();
+      expect(menu[0].submenu.some((item: any) => item.accelerator === 'Cmd+L')).toBe(false);
+      expect(reloads).toBe(0);
+      expect(feedback).toEqual([]);
+    } else {
+      expect(lock.accelerator).toBe('Cmd+L');
+      lock.click();
+      expect(reloads).toBe(1);
+      expect(feedback).toEqual([{ kind: 'info', title: 'Locked', detail: 'Reloading KeyShield', source: 'unlock' }]);
+    }
+  });
 });

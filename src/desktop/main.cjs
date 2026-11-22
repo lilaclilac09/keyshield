@@ -314,14 +314,14 @@ function buildMenu(win) {
           submenu: [
             { role: 'about' },
             { type: 'separator' },
-            {
+            ...(!process.mas ? [{
               label: 'Lock',
               accelerator: 'Cmd+L',
               click: () => {
                 showShellFeedback({ kind: 'info', title: 'Locked', detail: 'Reloading KeyShield', source: 'unlock' });
                 if (win && !win.isDestroyed()) win.reload();
               },
-            },
+            }] : []),
             { type: 'separator' },
             { role: 'hide' },
             { role: 'hideOthers' },
