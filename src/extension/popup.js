@@ -24,12 +24,17 @@ function clearPending() {
   $('confirm').hidden = true;
   $('preview').textContent = '';
 }
+function showBinding({ fillOrigin, duplicate }) {
+  $('origin').textContent = fillOrigin || 'Unlock to confirm where this key can fill';
+  $('binding-note').textContent = duplicate && fillOrigin ? `Already saved — stays bound to ${fillOrigin}.` : '';
+  $('binding-note').hidden = !duplicate || !fillOrigin;
+}
 function showPending(pending) {
   selected = pending;
   selectedGrant = { origins: [originPattern(pending.origin)] };
   pendingUpdate = null;
   $('preview').textContent = pending.preview;
-  $('origin').textContent = pending.origin;
+  showBinding(pending);
   $('provider').replaceChildren(...pending.providers.map((provider) => new Option(provider, provider)));
   $('provider').value = pending.provider;
   $('confirmation').hidden = false;
@@ -86,7 +91,10 @@ function action(id, handler, permission = null) {
       if (permission && (!request || !await request)) throw new Error('not a supported provider page');
       await handler();
     }
-    catch (error) { showStatus(error.message, error.message.includes('Unlock') ? 'locked' : 'error'); }
+    catch (error) {
+      if (selected) showBinding({});
+      showStatus(error.message, error.message.includes('Unlock') ? 'locked' : 'error');
+    }
     finally { $(id).disabled = false; }
   });
 }
@@ -94,10 +102,12 @@ action('unlock', async () => {
   const passphrase = $('passphrase').value;
   $('passphrase').value = '';
   renderEntries((await send({ type: 'UNLOCK', passphrase })).entries);
+  if (selected) showBinding((await send({ type: 'PENDING' })).pending);
   showStatus('Vault unlocked on this device', 'success');
 });
 action('lock', async () => {
   await send({ type: 'LOCK' });
+  if (selected) showBinding({});
   renderEntries([]);
   showStatus('Vault locked', 'locked');
 });
@@ -126,8 +136,8 @@ async function save(confirmDuplicate) {
   if (result.duplicate) {
     pendingUpdate = payload;
     $('confirm').hidden = false;
-    $('origin').textContent = 'the original saved origin (unchanged)';
-    showStatus('Already saved — Update label? Confirm to change only the label. The key stays bound to its original site.');
+    showBinding({ fillOrigin: result.origin, duplicate: true });
+    showStatus('Already saved — Update label? Confirm to change only the label.');
   } else {
     clearPending();
     await refresh();

@@ -130,12 +130,12 @@ describe('popup permission consent', () => {
     const calls: string[] = [];
     let inGesture = false;
     let allow = true;
-    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: tabOrigin, providers: ['openai'], permissionNeeded: true };
+    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: tabOrigin, fillOrigin: tabOrigin, duplicate: false, providers: ['openai'], permissionNeeded: true };
     const chrome = {
       runtime: { async sendMessage(message) {
         calls.push(message.type); messages.push(message.type);
         if (['PENDING', 'ADD'].includes(message.type)) return { ok: true, pending };
-        if (message.type === 'SAVE') return { ok: true, duplicate: true };
+        if (message.type === 'SAVE') return { ok: true, duplicate: true, origin: tabOrigin };
         return { ok: true, entries: [] };
       } },
       tabs: { async query() { calls.push('query'); return [{ url: pathname === '/confirm.html' ? 'chrome-extension://unit/confirm.html' : `${tabOrigin}/api-keys` }]; } },
@@ -208,12 +208,22 @@ describe('device local vault', () => {
     await vault.unlock(passphrase);
     await vault.save(candidate, 'First');
     const before = structuredClone(local.data);
-    expect(await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Changed')).toEqual({ duplicate: true });
+    expect(await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Changed')).toEqual({ duplicate: true, origin });
     expect(local.data).toEqual(before);
     await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Confirmed', true);
     expect(vault.list()).toHaveLength(1);
     expect(vault.list()[0]).toMatchObject({ label: 'Confirmed', origin });
+    expect((await vault.lookup(candidate.value)).entry?.origin).toBe(origin);
+    expect((await vault.lookup(samples[1].value)).entry).toBeUndefined();
     vault.lock();
+    await expect(vault.lookup(candidate.value)).rejects.toThrow('Unlock');
+  });
+  it('fails a binding lookup closed if the vault locks while HMAC is pending', async () => {
+    const vault = new LocalVault(storage());
+    await vault.unlock(passphrase);
+    const lookup = vault.lookup(candidate.value);
+    vault.lock();
+    await expect(lookup).rejects.toThrow('Unlock');
   });
   it('decline records only metadata and never creates a vault or queue', async () => {
     const local = storage();

@@ -20,11 +20,19 @@ let serial = (async () => {
   if (legacy.length) await chrome.storage.local.remove(legacy);
 })();
 
-function pendingMetadata() {
+async function pendingMetadata() {
   if (!pending) throw new Error('No pending value — add or select a key again');
   if (pending.error) throw new Error(pending.error);
   const { id, provider, preview, origin, permissionNeeded } = pending;
-  return { id, provider, preview, origin, permissionNeeded, providers };
+  let fillOrigin = null;
+  let duplicate = false;
+  try {
+    const { entry } = await vault.lookup(pending.value);
+    vault.requireUnlocked();
+    fillOrigin = entry ? entry.origin : origin;
+    duplicate = Boolean(entry);
+  } catch {}
+  return { id, provider, preview, origin, permissionNeeded, providers, fillOrigin, duplicate };
 }
 
 function prepare(value, tab, origin, permissionNeeded = false) {
@@ -42,7 +50,7 @@ async function handleSelection(info, tab) {
     const permission = permissionFor(tab?.url);
     if (!permission || !tab?.id) throw new Error('not a supported provider page');
     const granted = await chrome.permissions.contains({ origins: [permission] });
-    prepare(info.selectionText, tab, new URL(tab.url).origin, !granted);
+    await prepare(info.selectionText, tab, new URL(tab.url).origin, !granted);
   } catch (error) {
     pending = { id: crypto.randomUUID(), error: error.message };
   }
@@ -97,10 +105,10 @@ async function handle(message) {
     case 'ADD': {
       pending = null;
       const { tab, origin } = await activeTab();
-      return { pending: prepare(message.value, tab, origin) };
+      return { pending: await prepare(message.value, tab, origin) };
     }
     case 'PENDING':
-      return { pending: pendingMetadata() };
+      return { pending: await pendingMetadata() };
     case 'CANCEL': {
       if (!pending || pending.id !== message.id) return {};
       const cancelled = pending;
@@ -110,7 +118,7 @@ async function handle(message) {
     }
     case 'SAVE': {
       vault.requireUnlocked();
-      pendingMetadata();
+      await pendingMetadata();
       if (pending.id !== message.id) throw new Error('No pending value — add or select a key again');
       const selected = pending;
       const tab = await chrome.tabs.get(selected.tabId);
