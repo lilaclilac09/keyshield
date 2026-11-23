@@ -108,3 +108,36 @@ src/.keyshield-devnet/
 # Cloudflare Wrangler local dev/cache (never commit)
 **/.wrangler/
 src/demo-next/tsconfig.tsbuildinfo
+
+# Secrets — NEVER commit (added 2026-11-23)
+# Block .env, keys, keypairs, and wallets. Do not commit secrets.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.keystore
+*.jks
+wallet.json
+**/wallet.json
+id.json
+**/id.json
+keypair.json
+*-keypair.json
+*.keypair.json
+*.keypair
+authority.json
+secrets.json
+credentials.json
+service-account*.json
+.secret
+secrets/
+*.wallet
