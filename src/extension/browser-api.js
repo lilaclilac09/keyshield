@@ -6,8 +6,7 @@
  * expose browser.*. Alias both directions so the rest of this unpacked
  * folder can keep using chrome.* without a rewrite.
  *
- * Cursor Muse (the model) and Cursor @Browser do not host WebExtensions.
- * Load this folder in a real WebExtensions browser — see MUSE.md.
+ * Load this folder in a browser that supports WebExtensions.
  */
 (function keyShieldBrowserApi(root) {
   if (!root) return;

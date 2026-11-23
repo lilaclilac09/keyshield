@@ -1,101 +1,41 @@
-# KeyShield Browser Extension
+# KeyShield extension
 
-Auto-detects API keys on any page (OpenAI, Anthropic, Groq, Helius, Alchemy, etc.) and stores them in your encrypted KeyShield vault. Also intercepts HTTP `402 Payment Required` (x402) responses and prompts you to pay.
+**Extension-only device-local storage.** No account, dashboard connection, sync, or server fallback. Shared human/agent vault interoperability is **UNVERIFIED**: no approved local call path exists for another surface to use a saved item without exporting the key/root.
 
-## Layout
+Load this folder unpacked in Chromium. For Firefox, package a copy using `manifest.firefox.json` as `manifest.json`. Safari packaging: [SAFARI.md](SAFARI.md).
 
-This directory is the **unpacked extension root**. No build step required — all files are plain JS/HTML/JSON, ready to load.
+1. Open a supported provider dashboard. In the popup, paste/type **one** value and click **Add key**; approve that provider's optional site permission. Nothing on the page is read.
+2. Alternatively, select exactly one value and choose **Save selection to KeyShield** from the context menu. The confirmation window shows only its masked preview, provider selector and label. If site permission is missing, it shows **Permission needed for <origin>**; the separate **Save** click requests it. Denial saves nothing. iOS Safari uses Add key because it lacks context menus.
+3. Confirm/change the provider and label. Create/unlock the local vault with a passphrase of at least 12 characters, then click **Save** separately. A duplicate needs **Already saved — Update label?** confirmation; only its original label changes. Cancel or close discards the pending value, with no queue.
+4. Close the selection confirmation window if open. Focus an input on the **same saved origin**, then open the normal toolbar popup and click **Fill into this page**. The selection confirmation window is save-only and has no Fill control.
+5. Lock explicitly or let the idle timer lock (60 seconds by default; 1–3600 seconds configurable for the current background session). Worker shutdown also locks. There is no recovery for a forgotten passphrase.
 
-```
-src/extension/
-├── manifest.json          Chrome / Edge / Brave / Arc MV3 (service worker)
-├── manifest.muse.json     Firefox / browser-agnostic MV3 (`browser.*`)
-├── manifest.firefox.json  same package as manifest.muse.json
-├── browser-api.js         chrome ↔ browser alias
-├── MUSE.md                what Muse actually supports vs Chrome, how to load
-├── SAFARI.md              Safari wrapper build + install + test
-├── background.js          service worker (key save, x402, audit retention)
-├── content.js             content script (key detection, x402 interceptor)
-├── session-bridge.js      document_start token restore on dashboard hosts
-├── popup.html             toolbar popup UI
-└── popup.js               popup logic (settings + token status)
-```
+## Supported boundary
 
-## Backend
+- Supported origins are defined in `lib/policy.js`: OpenAI, Anthropic, Stripe, GitHub (settings paths only), and AWS console. No subdomain wildcard; HTTPS exact-origin matching. Chromium site permissions are origin-wide, while GitHub's settings-path restriction is additionally enforced by policy.
+- There is no page-wide discovery or candidate enumeration. The extension accepts only the native menu click's `info.selectionText` or one manually entered popup value. Whole-value recognition in `lib/recognize.js` rejects masked values, multiple keys, surrounding page text, hashes, UUIDs, placeholders, IDs and public base58 strings. AWS secret recognition requires the single `AWS_SECRET_ACCESS_KEY=...` assignment to disambiguate an otherwise generic string; it retains only that one secret. AWS components are never paired by reading a page. Recognition is heuristic, not proof of credential validity; there are no provider validation calls.
+- No page-reading injection, automatic scanning, observers, clipboard API access, arbitrary-site fill, dashboard messages, remote requests or externally connectable interface. `scripting`/`activeTab` are used only for explicit fill. The context menu is restricted to selections on provider URL patterns (GitHub settings only); the worker checks exact origin before confirmation and browser-managed site permission before saving. Popup/confirmation load caches the permission target; Add, Save (including duplicate confirmation) and Fill synchronously request permission first on click, before any asynchronous work. The worker independently rechecks policy and permission afterward.
+- Provider pages are untrusted. A single pending value is held only in service-worker memory; the confirmation UI receives masked metadata and an opaque ID, never the value. Cancel, closing its window or worker restart loses it. The service worker accepts messages only from its own exact `popup.html`/`confirm.html` URLs and extension ID, never from page scripts or external extensions. On upgrade, legacy extension storage outside `vault` and `auditLog` is removed.
+- Internal messages: `ADD {value}` → masked pending metadata; `PENDING` → `{id,provider,preview,origin,permissionNeeded,providers}`; `CANCEL {id,audit?}`; `UNLOCK {passphrase}`; `LOCK`; `IDLE {seconds}`; `LIST` → saved metadata only; `SAVE {id,provider,label,confirmDuplicate}`; `FILL {id}`. Responses are `{ok:true,...}` or `{ok:false,error}`. Stale/missing pending IDs fail closed. This is an internal consent UI interface, **not** a shared-vault API.
+- Save and fill fail closed when locked/unavailable. Save rechecks the bound tab's current origin and permission (the confirmation window need not be the provider tab). Fill rechecks the active tab's permission and origin and writes only its currently focused editable input in the top frame; the injected function checks origin again. A site receiving an explicitly filled key can read that input: fill grants that site access to that key.
+- Trust includes the browser, extension code, local OS and user passphrase. This does not protect an unlocked compromised browser/OS, and does not isolate plaintext from the explicitly selected destination site.
 
-Sign-in default is the hosted dashboard:
+## Local record format (version 1)
 
-- API base: `https://keyshield-production.up.railway.app`
-- Dashboard: `https://app.ks.aileena.xyz` (not `ks.app.aileena.xyz`)
+Only `chrome.storage.local` is persistent; no root or derived key is stored there or exported. Records are not compatible with other KeyShield vault formats.
 
-`https://keyshield.dev` has **no public DNS** and is rewritten to
-`app.ks.aileena.xyz`. Local Vite is Settings → **Use local dev**
-and only if `127.0.0.1:5173` answers. Sign-in default is
-`https://app.ks.aileena.xyz/?ext=1&demo=shop`.
+- Storage key `vault`: `{version:1, iterations:310000, salt:number[16], iv:number[12], ciphertext:number[]}`. Byte arrays are JSON arrays of unsigned bytes.
+- Passphrase UTF-8 → PBKDF2 with the random 128-bit salt, SHA-256, 310,000 iterations, 512 derived bits. First 32 bytes → nonextractable AES-256-GCM key. Last 32 bytes → nonextractable HMAC-SHA-256 key (domain separation by disjoint KDF output halves).
+- AES-GCM uses a new random 96-bit IV on every write, default 128-bit authentication tag, no additional authenticated data. WebCrypto ciphertext layout is encrypted bytes followed by the 16-byte tag. Salt and IV are public; all entry data is encrypted. Wrong passphrases or authentication failure leave the vault locked.
+- Decrypted payload: JSON array of `{id,provider,origin,value,preview,label,fingerprint}`. `id` is a random UUID; `origin` is the selected/entered value's bound tab's exact HTTPS origin. Preview is bullets plus last four characters. Every entry holds exactly one value. All these fields, including fingerprints, are encrypted at rest.
+- Fingerprint: HMAC-SHA-256 over UTF-8 of the exact value string; serialized as comma-separated decimal bytes. Duplicates are global within this local vault, regardless of capture origin; confirmation changes only the original label, never the value or origin.
+- Storage key `auditLog`: last 500 entries, `{action:'saved'|'declined'|'filled', provider:string, origin:string, time:ISO8601-string}`. Metadata only, no values, previews, labels, fingerprints or page text. Explicit Cancel records `declined`; closing writes nothing.
+- Derived keys and decrypted entries are held in service-worker memory only. Idle timeout drops references; it does not claim secure memory erasure from a managed runtime. Configured timeout resets to 60 seconds on worker restart.
 
-If GitHub DNS fails, **do not** edit `~/Downloads/…` unless you want
-the new Sign-in button. Login works without that folder: open
-`https://app.ks.aileena.xyz`, copy the session token, popup
-**Register token**. See `LOCAL-SIGNIN.md`.
-If Chrome cannot Reload: **Remove** then **Load unpacked** from this
-folder.
+## Synthetic checks
 
-## Install — Chrome / Edge / Brave / Arc
+`npx vitest run`
 
-1. Open `chrome://extensions/` (or the equivalent on your Chromium browser).
-2. Toggle **Developer mode** on (top right).
-3. Click **Load unpacked**.
-4. Select this directory: `src/extension/`.
-5. The KeyShield icon appears in the toolbar. Click it to confirm settings.
+`npx playwright test --config tests/extension-playwright.config.ts`
 
-The extension picks up `manifest.json` automatically.
-
-## Install — Firefox / Muse (browser-agnostic)
-
-Cursor Muse (the model) and Cursor @Browser **cannot** load this extension.
-Use a real WebExtensions host. Full matrix: `MUSE.md`.
-
-1. Open `about:debugging`.
-2. Click **This Firefox** in the left sidebar.
-3. Click **Load Temporary Add-on…**
-4. Navigate to `src/extension/` and pick **`manifest.muse.json`**
-   (`manifest.firefox.json` is the same MV3 file).
-
-Temporary add-ons are removed when the browser closes — that's expected for development.
-
-## Install — Safari (macOS + Xcode)
-
-Safari needs an Xcode wrapper project (Safari Web Extension App). Build it on
-macOS from this repo:
-
-1. `npm run extension:build-safari`
-2. Open the generated project:
-   `open src/extension/safari-wrapper/KeyShield/KeyShield.xcodeproj`
-3. In Xcode, set a Signing Team for both targets (app + extension), then
-   Build/Run the app target once.
-4. Safari → **Settings** → **Extensions** → enable **KeyShield**.
-
-Detailed troubleshooting + validation checks are in `SAFARI.md`.
-
-## How it works
-
-- **Auto-detect:** `content.js` scans visible text and form inputs every 3 seconds (and on copy/input events) for known API key shapes. When a match is found on a known provider domain, a "Save to vault" toast appears.
-- **System-style approve/use:** When a key is detected, the panel asks for
-  explicit approval (`Use once` / `Always allow`) before vault writes on that
-  host. This mirrors OS password-prompt intent and keeps the flow explicit.
-- **Vault save:** Approved saves call `background.js`, which `POST`s
-  `/manage/store` on the backend. Requires KeyShield sign-in.
-- **x402 payments:** Any fetch that returns `402` with `X-Payment-Required: x402` triggers a payment prompt; trusted domains under your threshold can auto-pay.
-- **Audit log:** Stored under `chrome.storage.local.ks_audit_log` and purged by age + cap on extension install/update.
-
-## Troubleshooting
-
-- **"No token" badge in popup:** Open `https://app.ks.aileena.xyz` (or Sign-in on 1.2.5). Wallet / passkey once. The dashboard pushes the token back. Fallback: copy token → **Register token**.
-- **Sign-in should open already logged in:** Load unpacked **1.2.5**. A token in the popup or on the hosted site is enough. Old 1.1.1 still opens dead `keyshield.dev`. `127.0.0.1:5173` refused means Vite is off — Sign-in must fall back to the hosted app.
-- **Popup does not open / NVIDIA blank stays empty:** `chrome://extensions` → **Remove** then **Load unpacked** `src/extension`. Card **1.2.5**. Toolbar click must open `popup.html` with **`ok 1.2.5 <all_urls>`**. Saved `nvapi-` keys fill empty API Key blanks silently. No toast. 🔑 only on hover. See `INSTALL-LOCAL.md`.
-- **1.1.3 still loaded, `git pull` cannot resolve github.com:** do not paste HTML into zsh. Run the python3 patch in `LOCAL-DETECT.md`, then Remove + Load unpacked. Leftover repair stays **1.2.4**. Product Load unpacked is **1.2.5**.
-- **Passkey after jump-out:** a preregistered `ks_passkey_user` / wallet id must show **Sign In as abcd…wxyz**. A stale token 401 must not wipe that id.
-- **Chrome "Reload" does nothing / is missing:** Remove the card, then Load unpacked from the same path. The Source line must still be this folder.
-- **Want local Vite instead:** popup Settings → **Use local dev** only after `curl http://127.0.0.1:5173` works.
-- **Backend unreachable:** Confirm the configured API base is reachable. Defaults and local dev fallbacks are listed in `host_permissions` / Firefox `permissions`.
-- **Manifest changes:** After editing `manifest.json`, try the **Reload** circle. If Chrome will not reload, Remove then Load unpacked.
+Browser tests serve copied FAKE-marked fixtures over local HTTPS on an ephemeral loopback port, with host-resolver rules mapping the mock origins' standard HTTPS port to that listener. They generate a test-only recognizer/allowlist and handler hook in ignored `dist/extension-acceptance`; production contains neither the synthetic domain nor the hook. Tests make a real DOM/input selection, then invoke the exact context-menu handler via that hook: native right-click menus are not automated. Most browser cases use a test-only pregranted host manifest; the missing-permission case uses the optional-only manifest and mocks denial on Save. Unit tests exercise request/denial and assert synchronous request ordering before a microtask for Add, Save, duplicate confirmation and Fill, including the confirmation window. Native permission-dialog acceptance is not automated. Manual Add/fill popup tests render the real popup in a separate unfocused extension window because toolbar popups are not Playwright Page targets. Selection tests open the actual confirmation window. Tests inspect worker memory and encrypted storage to ensure unselected fixture values never reach the extension. Request counts and screenshots are recorded; no provider networks are contacted. Shared human/agent vault interoperability remains **UNVERIFIED**.
