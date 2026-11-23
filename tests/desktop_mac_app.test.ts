@@ -1,8 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { PROD_API_BASE as DESKTOP_API_BASE, isLegacyBakedUrl as isDesktopLegacyUrl } from "../src/desktop/host-deploy";
 import { isDesktopShell } from "../src/web/lib/desktop-shell";
 
 const root = resolve(__dirname, "..");
@@ -173,7 +175,16 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
 
   it("packed renderer talks to the hosted control plane by default", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
-    expect(build).toContain("https://keyshield-production.up.railway.app");
+    expect(build).toContain("https://api.ks.aileena.xyz");
+    const { env } = require("../src/desktop/scripts/build-renderer.cjs");
+    expect(env.KEYSHIELD_API_URL).toBe("https://api.ks.aileena.xyz");
+    expect(env.KEYSHIELD_PUBLIC_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(DESKTOP_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(isDesktopLegacyUrl(DESKTOP_API_BASE)).toBe(false);
+    for (const file of ["src/desktop/main.cjs", "src/desktop/scripts/build-renderer.cjs", "src/desktop/host-deploy.ts"]) {
+      expect(read(file), file).not.toContain("keyshield-production.up.railway.app");
+    }
+    expect(read("src/desktop/main.cjs")).toContain("const PROD_API = 'https://api.ks.aileena.xyz'");
     expect(build).toContain("build:vite");
     expect(build).toContain("verifyRendererDist");
     expect(build).toContain("assets");
@@ -342,6 +353,82 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
 
   it("rejects the desktop source root as the release directory", () => {
     const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    expect(() => createPackagerIgnore(resolve(root, "src/desktop"))).toThrow("Release directory must not be the desktop source root");
+  });
+
+  it.each([undefined, "", "  ", "-"])("defaults to offline ad-hoc sealing without Team ID library validation: %s", (identity) => {
+    const { macSigningOptions } = require("../src/desktop/scripts/pack-mac.cjs");
+    const options = macSigningOptions(identity ?? "");
+    expect(options.identity).toBe("-");
+    expect(options.identityValidation).toBe(false);
+    expect(options.preAutoEntitlements).toBe(false);
+    expect(options.preEmbedProvisioningProfile).toBe(false);
+    expect(options.strictVerify).toBe(true);
+    expect(options.optionsForFile("KeyShield Helper.app")).toEqual({ hardenedRuntime: false, timestamp: "none" });
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("osxSign: macSigningOptions()");
+  });
+
+  it("provides a validated identity hook without overriding Electron's per-role entitlements", () => {
+    const { macSigningOptions } = require("../src/desktop/scripts/pack-mac.cjs");
+    const options = macSigningOptions("Developer ID Application: Synthetic Identity");
+    expect(options.identityValidation).toBe(true);
+    expect(options.preAutoEntitlements).toBe(true);
+    expect(options.optionsForFile("KeyShield.app")).toEqual({ hardenedRuntime: true, timestamp: undefined });
+    expect(options.optionsForFile("KeyShield.app")).not.toHaveProperty("entitlements");
+  });
+
+  it("requires strict verification and propagates broken-seal errors", () => {
+    const { verifyMacSeal } = require("../src/desktop/scripts/pack-mac.cjs");
+    const calls: unknown[][] = [];
+    verifyMacSeal("/synthetic/KeyShield.app", (...args: unknown[]) => calls.push(args));
+    expect(calls).toEqual([["codesign", ["--verify", "--deep", "--strict", "/synthetic/KeyShield.app"], { stdio: "inherit" }]]);
+    expect(() => verifyMacSeal("/synthetic/KeyShield.app", () => { throw new Error("broken seal"); })).toThrow("broken seal");
+  });
+
+  it("verifies the staged app before creating the branded DMG", () => {
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toMatch(/verifyMacSeal\(path.join\(staging, 'KeyShield.app'\)\);\s*createBrandedDmg\(staging, dmgPath\);/);
+  });
+
+  it.runIf(process.platform === "darwin" && Boolean(process.env.KS_MAC_VERIFY_APP))("strictly verifies the built Mac app, including nested helpers and frameworks", () => {
+    execFileSync("codesign", ["--verify", "--deep", "--strict", process.env.KS_MAC_VERIFY_APP!], { stdio: "pipe" });
+  });
+
+  it.runIf(Boolean(process.env.KS_MAC_VERIFY_APP))("ships no Railway host in the packaged ASAR or renderer", () => {
+    const resources = join(process.env.KS_MAC_VERIFY_APP!, "Contents/Resources");
+    expect(readFileSync(join(resources, "app.asar")).toString("utf8")).not.toMatch(/railway/i);
+    for (const name of readdirSync(join(resources, "renderer/assets"))) {
+      expect(readFileSync(join(resources, "renderer/assets", name)).toString("utf8"), name).not.toContain("keyshield-production.up.railway.app");
+    }
+  });
+
+  it("overlays only the desktop endpoint policy in memory without modifying shared source", () => {
+    const { rendererPolicyPlugin, rendererPolicyRevision } = require("../src/desktop/scripts/build-renderer.cjs");
+    const source = tempDir();
+    const policy = join(source, "src/web/lib/host-deploy.ts");
+    mkdirSync(join(source, "src/web/lib"), { recursive: true });
+    writeFileSync(policy, "original pinned policy");
+    expect(rendererPolicyRevision()).toMatchObject({ file: "src/desktop/host-deploy.ts", target: "src/web/lib/host-deploy.ts", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const plugin = rendererPolicyPlugin(source);
+    expect(plugin.load(policy)).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load(`${policy}?v=synthetic`)).toBe(read("src/desktop/host-deploy.ts"));
+    const alias = join(tempDir(), "source-alias");
+    symlinkSync(source, alias);
+    expect(rendererPolicyPlugin(alias).load(realpathSync(policy))).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load("")).toBe(null);
+    expect(plugin.load(join(source, "src/web/lib/auth.ts"))).toBe(null);
+    expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
+    expect(() => rendererPolicyPlugin(source, () => { throw new Error("synthetic build failure"); }).load(policy)).toThrow("synthetic build failure");
+    expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
+  });
+
+  it("excludes custom release artifacts while keeping similarly named source paths", () => {
+    const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    const ignore = createPackagerIgnore(resolve(root, "src/desktop/builds/../builds/tester"));
+    for (const file of ["/builds/tester", "/builds/tester/KeyShield.dmg", "/builds/tester/KeyShield.zip", "/builds/tester/dmg-root/KeyShield.app", "/release/old.dmg", "/out/app"]) {
+      expect(ignore(file), file).toBe(true);
+    }
+    for (const file of ["", "/main.cjs", "/builds/tester-other/config.json"]) expect(ignore(file), file).toBe(false);
+    expect(createPackagerIgnore(resolve(root, "../external-release"))("/main.cjs")).toBe(false);
     expect(() => createPackagerIgnore(resolve(root, "src/desktop"))).toThrow("Release directory must not be the desktop source root");
   });
 

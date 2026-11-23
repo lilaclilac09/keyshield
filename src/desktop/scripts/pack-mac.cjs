@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Pack unsigned KeyShield.app (+ zip, and a DMG when the host can make one).
- * Personal use: no Developer ID, no notarization.
+ * Pack ad-hoc sealed KeyShield.app (+ zip, and a DMG when the host can make one).
+ * Personal use: no Developer ID by default, no notarization.
  *
  * What changed from the previous pack script:
  *
@@ -25,7 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { inspectMacBundle, verifyMacBundleRuntime } = require('../runtime-preflight.cjs');
 const { hasRenderer } = require('../renderer-server.cjs');
-const { verifyRendererDist } = require('./build-renderer.cjs');
+const { verifyRendererDist, rendererPolicyRevision } = require('./build-renderer.cjs');
 const { sourceRevision, withRendererSource, writeDmgBuildInfo, fetchPinnedRenderer } = require('./build-provenance.cjs');
 
 const desktopDir = path.resolve(__dirname, '..');
@@ -226,6 +226,25 @@ function zipApp(appDir, zipPath) {
   }
 }
 
+function macSigningOptions(identity = process.env.KS_MAC_SIGN_IDENTITY) {
+  identity = String(identity || '-').trim() || '-';
+  return {
+    identity,
+    identityValidation: identity !== '-',
+    preAutoEntitlements: identity !== '-',
+    preEmbedProvisioningProfile: false,
+    strictVerify: true,
+    optionsForFile: () => ({
+      hardenedRuntime: identity !== '-',
+      timestamp: identity === '-' ? 'none' : undefined,
+    }),
+  };
+}
+
+function verifyMacSeal(appPath, execute = execFileSync) {
+  execute('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
+}
+
 function createPackagerIgnore(output = releaseDir) {
   const relative = path.relative(desktopDir, path.resolve(output));
   if (!relative) throw new Error('Release directory must not be the desktop source root');
@@ -255,6 +274,7 @@ async function main() {
   sources.renderer = withRendererSource(repoRoot, rendererRef, (root, dist) => {
     const revision = sourceRevision(root, 'src/web');
     revision.inputs = pin.inputs;
+    revision.overlays = [rendererPolicyRevision()];
     run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
       env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
     });
@@ -298,7 +318,7 @@ async function main() {
     ],
     icon: icns || iconPng,
     darwinDarkModeSupport: true,
-    osxSign: false,
+    osxSign: macSigningOptions(),
     ignore: createPackagerIgnore(),
     appCopyright: 'KeyShield',
     extendInfo: {
@@ -320,6 +340,7 @@ async function main() {
       continue;
     }
     reports.push([arch, checkBundle(appPath, arch)]);
+    if (process.platform === 'darwin') verifyMacSeal(appPath);
     copyInstallNotes(appDir);
     const zipName = `KeyShield-mac-${arch}.zip`;
     const zipPath = path.join(releaseDir, zipName);
@@ -345,6 +366,7 @@ async function main() {
     stageDmgContents(preferred.appPath, staging, buildInfo);
 
     if (process.platform === 'darwin') {
+      verifyMacSeal(path.join(staging, 'KeyShield.app'));
       createBrandedDmg(staging, dmgPath);
       const info = writeDmgBuildInfo(dmgPath, sources);
       writeBuildInfo(reports, rendererReport.assets.length, sources, info.sha256);
@@ -366,4 +388,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, createPackagerIgnore };
+module.exports = { writeBuildInfo, stageDmgContents, finderPresentation, createBrandedDmg, makeIcns, macSigningOptions, verifyMacSeal, createPackagerIgnore };

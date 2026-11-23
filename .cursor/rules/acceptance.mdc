@@ -1,0 +1,13 @@
+---
+description: Aileen acceptance standard — ACCEPTANCE.md
+alwaysApply: true
+---
+
+
+Every coding agent in this repo follows [ACCEPTANCE.md](ACCEPTANCE.md): Aileen's own acceptance standard, quoted from her rule files. Do not accept work by any other standard.
+
+```txt
+never mark a task complete based only on code inspection.
+no screenshots = not done. if you cannot prove it, do not claim it is fixed.
+every task and PR ends with the evidence closer in ACCEPTANCE.md §8.
+```

@@ -49,7 +49,7 @@ diagnostics.log('KeyShield desktop starting');
 
 const DASHBOARD_HOST = 'app.ks.aileena.xyz';
 const DASHBOARD_ORIGIN = `https://${DASHBOARD_HOST}`;
-const PROD_API = 'https://keyshield-production.up.railway.app';
+const PROD_API = 'https://api.ks.aileena.xyz';
 const SYNC_HOST = 'sync.ks.aileena.xyz';
 const LOCAL_SYNC = 'http://127.0.0.1:8787';
 
@@ -333,7 +333,7 @@ function buildMenu(win) {
           click: () => { void shell.openExternal(DASHBOARD_ORIGIN); },
         },
         {
-          label: 'API health (Railway)',
+          label: 'API health',
           click: () => { void shell.openExternal(`${PROD_API}/health`); },
         },
         {
