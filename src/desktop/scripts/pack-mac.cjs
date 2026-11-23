@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Pack unsigned KeyShield.app (+ zip, and a DMG when the host can make one).
- * Personal use: no Developer ID, no notarization.
+ * Pack ad-hoc sealed KeyShield.app (+ zip, and a DMG when the host can make one).
+ * Personal use: no Developer ID by default, no notarization.
  *
  * What changed from the previous pack script:
  *
@@ -25,12 +25,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { inspectMacBundle, verifyMacBundleRuntime } = require('../runtime-preflight.cjs');
 const { hasRenderer } = require('../renderer-server.cjs');
-const { verifyRendererDist } = require('./build-renderer.cjs');
+const { verifyRendererDist, rendererPolicyRevision } = require('./build-renderer.cjs');
 const { sourceRevision, withRendererSource, writeDmgBuildInfo, fetchPinnedRenderer } = require('./build-provenance.cjs');
 
 const desktopDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(desktopDir, '..', '..');
-const releaseDir = path.join(desktopDir, 'release');
+const releaseDir = path.resolve(process.env.KS_DESKTOP_RELEASE_DIR || path.join(desktopDir, 'release'));
 const outDir = path.join(desktopDir, 'out');
 
 function run(cmd, args, opts = {}) {
@@ -220,6 +220,42 @@ function zipApp(appDir, zipPath) {
   }
 }
 
+function macSigningOptions(identity = process.env.KS_MAC_SIGN_IDENTITY) {
+  identity = String(identity || '-').trim() || '-';
+  return {
+    identity,
+    identityValidation: identity !== '-',
+    preAutoEntitlements: identity !== '-',
+    preEmbedProvisioningProfile: false,
+    strictVerify: true,
+    optionsForFile: () => ({
+      hardenedRuntime: identity !== '-',
+      timestamp: identity === '-' ? 'none' : undefined,
+    }),
+  };
+}
+
+function verifyMacSeal(appPath, execute = execFileSync) {
+  execute('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
+}
+
+function createPackagerIgnore(output = releaseDir) {
+  const relative = path.relative(desktopDir, path.resolve(output));
+  if (!relative) throw new Error('Release directory must not be the desktop source root');
+  const releaseRoot = `/${relative.split(path.sep).join('/')}`;
+  return (file) => {
+    if (!file) return false;
+    if (file === releaseRoot || file.startsWith(`${releaseRoot}/`)) return true;
+    if (file === '/out' || file.startsWith('/out/')) return true;
+    if (file === '/release' || file.startsWith('/release/')) return true;
+    if (file.startsWith('/scripts')) return true;
+    if (file === '/e2e' || file.startsWith('/e2e/')) return true;
+    if (file === '/renderer' || file.startsWith('/renderer/')) return true;
+    if (file === '/OPEN-ME.txt') return true;
+    return false;
+  };
+}
+
 async function main() {
   const pin = JSON.parse(fs.readFileSync(process.env.KS_RENDERER_PIN || path.join(desktopDir, 'renderer-inputs.json'), 'utf8'));
   if (process.env.KS_RENDERER_REF && process.env.KS_RENDERER_REF !== pin.commit) throw new Error('KS_RENDERER_REF does not match renderer pin');
@@ -231,6 +267,7 @@ async function main() {
   sources.renderer = withRendererSource(repoRoot, rendererRef, (root, dist) => {
     const revision = sourceRevision(root, 'src/web');
     revision.inputs = pin.inputs;
+    revision.overlays = [rendererPolicyRevision()];
     run(process.execPath, [path.join(__dirname, 'build-renderer.cjs')], {
       env: { ...process.env, KS_RENDERER_SOURCE_ROOT: root, KS_RENDERER_DIST_DIR: dist || '' },
     });
@@ -273,17 +310,8 @@ async function main() {
     ],
     icon: icns || iconPng,
     darwinDarkModeSupport: true,
-    osxSign: false,
-    ignore: (file) => {
-      if (!file) return false;
-      if (file === '/out' || file.startsWith('/out/')) return true;
-      if (file === '/release' || file.startsWith('/release/')) return true;
-      if (file.startsWith('/scripts')) return true;
-      if (file === '/e2e' || file.startsWith('/e2e/')) return true;
-      if (file === '/renderer' || file.startsWith('/renderer/')) return true;
-      if (file === '/OPEN-ME.txt') return true;
-      return false;
-    },
+    osxSign: macSigningOptions(),
+    ignore: createPackagerIgnore(),
     appCopyright: 'KeyShield',
     extendInfo: {
       NSFaceIDUsageDescription: 'Unlock KeyShield with Touch ID.',
@@ -304,6 +332,7 @@ async function main() {
       continue;
     }
     reports.push([arch, checkBundle(appPath, arch)]);
+    if (process.platform === 'darwin') verifyMacSeal(appPath);
     copyInstallNotes(appDir);
     const zipName = `KeyShield-mac-${arch}.zip`;
     const zipPath = path.join(releaseDir, zipName);
@@ -329,6 +358,7 @@ async function main() {
     stageDmgContents(preferred.appPath, staging, buildInfo);
 
     if (process.platform === 'darwin') {
+      verifyMacSeal(path.join(staging, 'KeyShield.app'));
       execFileSync('hdiutil', [
         'create',
         '-volname', 'KeyShield',
@@ -357,4 +387,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { writeBuildInfo, stageDmgContents };
+module.exports = { writeBuildInfo, stageDmgContents, macSigningOptions, verifyMacSeal, createPackagerIgnore };
