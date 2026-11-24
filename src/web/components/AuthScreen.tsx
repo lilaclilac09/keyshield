@@ -424,7 +424,7 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
 
                 <div className="flex items-center gap-2 py-1">
                   <div className="flex-1 border-t border-[#243365]/50" />
-                  <span className="text-[10px] text-[#5e6a91] uppercase tracking-wider">or use Gmail + password</span>
+                  <span className="text-[10px] text-[#5e6a91] uppercase tracking-wider">or use email + KeyShield password</span>
                   <div className="flex-1 border-t border-[#243365]/50" />
                 </div>
 
@@ -444,8 +444,9 @@ export const AuthScreen: React.FC<Props> = ({ onAuthenticated }) => {
                     placeholder="you@gmail.com"
                     className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[13px] text-white placeholder:text-[#3e4a72]"
                   />
-                  <label className="block text-[11px] text-[#8a96c2] uppercase tracking-wider">Password</label>
+                  <label htmlFor="keyshield-password" className="block text-[11px] text-[#8a96c2] uppercase tracking-wider">KeyShield password (not your Google password)</label>
                   <input
+                    id="keyshield-password"
                     data-testid="password-login-input"
                     type="password"
                     autoComplete="current-password"
