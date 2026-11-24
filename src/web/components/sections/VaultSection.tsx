@@ -9,6 +9,7 @@ import { DeviceVaultConsent } from '../DeviceVaultConsent';
 import { formatStoredApiCard } from '../../lib/provider-catalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
 import { humanActionError } from '../../lib/human-usable';
+import { VaultSyncChangeError } from '../../lib/vault-sync-status';
 
 interface Props {
   items: VaultItem[]; total: number; searchQuery: string;
@@ -59,6 +60,10 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
       setPaste('');
     } catch (err) {
       setNeedsVault(err instanceof DeviceVaultRequiredError);
+      if (err instanceof VaultSyncChangeError) {
+        emitAppFeedback({ kind: 'error', title: 'Save failed', source: 'save' });
+        return;
+      }
       const detail = humanActionError('vault-save', err);
       setMsg(detail);
       emitAppFeedback({ kind: 'error', title: 'Save failed', detail, source: 'save' });
@@ -71,7 +76,10 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
   return (
   <div className="space-y-6">
     <div className="rounded-xl border border-[#243365] bg-[#131c39] p-4 space-y-3">
-      <p className="text-[16px] font-semibold text-white">Keychain — paste or extension detect</p>
+      <p className="text-[16px] font-semibold text-white">Keychain — paste a key</p>
+      <p className="text-[12px] text-[#8a96c2]">Dashboard saves require an unlocked Device Vault: keys are encrypted on this device and only ciphertext is synced. They are not saved locally in plaintext. Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault.</p>
+      <p className="text-[12px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app. Saving here does not give agents access. Approval exists only as an opt-in development mock, not in the packaged app.</p>
+      <p className="text-[12px] text-[#8a96c2]">Legacy non-ZK /manage/store records are separate: they contain backend-readable plaintext, local to this device only if the backend runs here. Dashboard saves do not use that path.</p>
       <textarea value={paste} onChange={(e) => setPaste(e.target.value)} rows={2} placeholder="sk-or-…  sk-proj-…  gsk_…  helius UUID…" className="w-full rounded-lg bg-[#0e1631] border border-[#243365] px-3 py-2 text-[14px] font-mono text-white placeholder:text-[#3e4a72]" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] text-[#8a96c2]">{detected.matched ? `Detected ${detected.upstream} ${detected.prefix}` : 'Auto-detects provider prefix'}</span>
@@ -109,7 +117,9 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
                 <strong className="text-[13px] text-white">{card.title}</strong>
                 <p className="text-[11px] text-[#8a96c2]">{card.subtitle} · {card.meta}</p>
               </div>
-              <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || item.value}</code>
+              {item.id.startsWith('device:') ? (
+                <p className="text-[11px] text-[#8a96c2]">Per-agent use of Device Vault keys is not available in this app.</p>
+              ) : <code className="text-[11px] text-[#93b4ff] break-all">{item.prefix || `Legacy proxy URL — separate from Device Vault: ${item.value}`}</code>}
             </div>
             );
           })}
@@ -118,7 +128,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
         <p className="text-[13px] text-[#8a96c2]">
           {searchQuery
             ? 'No secrets match your search'
-            : 'No keys in this session yet. Detect writes this list.'}
+            : 'No keys in this session yet. Paste a key to save it in your Device Vault.'}
         </p>
       )}
     </div>
@@ -134,7 +144,7 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
           <Key size={20} className="text-white" strokeWidth={1.75} />
         </div>
         <p className="text-[14px] text-[#e8ecff] font-medium">{searchQuery ? 'No secrets match your search' : 'Your vault is empty'}</p>
-        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Detect on a key page. This block is where saved keys show.'}</p>
+        <p className="text-[12px] text-[#8a96c2] mt-1 mb-5">{searchQuery ? '' : 'Unlock your Device Vault, then paste a key or choose Add Secret.'}</p>
         {!searchQuery && (
           <>
             <button onClick={onAdd} className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-black text-[13px] font-semibold uppercase tracking-wider inline-flex items-center gap-2 transition-colors">
@@ -148,14 +158,14 @@ export const VaultSection: React.FC<Props> = ({ items, total, searchQuery, onAdd
               <div className="flex items-center justify-center gap-2 text-[11px] text-[#8a96c2] flex-wrap">
                 <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Add key here</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
-                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Stored in vault</span>
+                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Encrypted on device</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
-                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Agent calls /proxy/...</span>
+                <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Ciphertext-only sync</span>
                 <ArrowRight size={11} className="text-[#3e4a72]" />
-                <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Key injected per-request</span>
+                <span className="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">Per-agent use unavailable</span>
               </div>
               <p className="text-[10px] text-[#5e6a91] mt-2">
-                Agents use the proxy URL. The raw key stays hidden until you click reveal.
+                Saving Device Vault keys does not enable per-agent use in this app.
               </p>
             </div>
           </>

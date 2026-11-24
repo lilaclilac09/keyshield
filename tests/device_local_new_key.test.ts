@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { SAVE_SYNC_FAILED } from '../src/web/lib/vault-sync-status';
 
 vi.mock('react', () => ({
   useState: (value: unknown) => [value, vi.fn()],
@@ -78,7 +79,7 @@ describe('canonical dashboard new key device-local privacy', () => {
     if (failure === 'unsafe ciphertext') vi.spyOn(vaultCrypto, 'encryptVault').mockResolvedValue({ version: 1, iv: 'iv', ciphertext: raw, updatedAt: 1 });
     const error = await useVaults('', '').addItem(input).catch((err: Error) => err);
     expect(error).toBeInstanceOf(Error);
-    expect(String(error)).toBe('Error: Device vault save failed. Unlock the vault and retry.');
+    expect(error.message).toBe(failure === 'network' ? SAVE_SYNC_FAILED : 'Device vault save failed. Unlock the vault and retry.');
     diagnostics.push(String(error));
     expect(getDecryptedKey('openai')).toBeNull();
     expectPrivate();

@@ -95,10 +95,10 @@ export const DocsSection: React.FC = () => {
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3">
           <Puzzle size={14} className="text-[#93b4ff]" />
-          <span className="text-[13px] font-semibold uppercase tracking-wider">Chrome extension (preferred)</span>
+          <span className="text-[13px] font-semibold uppercase tracking-wider">Browser extension (separate from the packaged app)</span>
         </div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
-          Preferred browser is <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Latest Load unpacked is <strong className="text-white">1.2.5 · latest</strong>. The dashboard passes your session to the extension so you can save detected keys from provider sites into your vault. There is no Chrome Web Store listing yet — load from the repo folder below. Firefox uses the same KeyShield name via <code className="text-white">manifest.muse.json</code> (browser-agnostic MV3). Cursor Muse is a model, not an extension host.
+          Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault, not this Device Vault. These instructions are for installing the browser extension separately in <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Latest Load unpacked is <strong className="text-white">1.2.5 · latest</strong>. There is no Chrome Web Store listing yet — load from the repo folder below. Firefox uses the same KeyShield name via <code className="text-white">manifest.muse.json</code> (browser-agnostic MV3). Cursor Muse is a model, not an extension host.
         </p>
         <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
           <li>Print the folder (do not paste HTML into zsh): <code className="text-white">python3 -c &quot;import os; print(os.path.abspath(&apos;src/extension&apos;))&quot;</code></li>
@@ -117,10 +117,10 @@ export const DocsSection: React.FC = () => {
       </Card>
 
       <Card variant="bordered">
-        <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">OpenRouter interface (inserted)</span></div>
+        <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Legacy OpenRouter proxy examples — separate from Device Vault</span></div>
         <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
           Free Nemotron: <a href={OPENROUTER_MODEL_URL} target="_blank" rel="noreferrer" className="text-white hover:underline">{OPENROUTER_DEMO_MODEL}</a>.
-          Get your own key at openrouter.ai/keys. Activity → Connect saves it only in your unlocked device vault; unlock or create the vault first. Connect does not send the key to KeyShield or configure hosted vproxy or Meter. Give agents only a proxy-only token. These examples call /vproxy with existing hosted keys; device-encrypted keys require your local keyshield-proxy because the hosted proxy cannot decrypt them.
+          Legacy proxy integration is separate from the dashboard Device Vault. The Python keyshield-proxy uses separately sealed keys plus a server share, not dashboard Device Vault keys, and has no per-use approval. These examples do not provide access to Device Vault keys. Give agents only a proxy-only token.
         </p>
         <div className="space-y-3">
           <CodeBlock code={openrouterCurlSnippet('<YOUR_AGENT_TOKEN>')} />
@@ -132,8 +132,8 @@ export const DocsSection: React.FC = () => {
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3"><Key size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">API keychain</span></div>
         <p className="text-[14px] text-[#a8b3d8] leading-relaxed mb-3">
-          Passkey unlocks the Device Vault. Paste or the extension detects a key → store → one-click <code className="text-white">POST /keychain/call</code>.
-          Frameworks point <code className="text-white">base_url</code> at <code className="text-white">/vproxy/&#123;upstream&#125;</code> — KeyShield cannot inject into every binary.
+          Unlock the Device Vault, then paste and save a key. Keys are encrypted on this device; only ciphertext is synced, not plaintext. Save + Call skips the call for device-encrypted keys.
+          Per-agent use of Device Vault keys is not available in this app. Approval exists only as an opt-in development mock, not in the packaged app.
           Lowest cached RPC TTL is 2s (<code className="text-white">getSlot</code> / <code className="text-white">getLatestBlockhash</code>). Writes never cache.
         </p>
       </Card>
@@ -146,7 +146,7 @@ export const DocsSection: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card><div className="flex items-center gap-2 mb-2"><Key size={16} className="text-white" /><span className="text-[14px] font-medium text-white">Vault</span></div><p className="text-[12px] text-[#a8b3d8] leading-relaxed">Your API keys, encrypted with AES-256-GCM. The decryption key never leaves your machine.</p></Card>
-        <Card><div className="flex items-center gap-2 mb-2"><Shield size={16} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Proxy</span></div><p className="text-[12px] text-[#a8b3d8] leading-relaxed">A request hits /proxy/{'{upstream}'}/. The server decrypts your key in memory, injects it, and forwards. The agent never sees the plaintext.</p></Card>
+        <Card><div className="flex items-center gap-2 mb-2"><Shield size={16} className="text-emerald-400" /><span className="text-[14px] font-medium text-white">Device Vault limitations</span></div><p className="text-[12px] text-[#a8b3d8] leading-relaxed">Per-agent use of Device Vault keys is not available in this app. Approval exists only as an opt-in development mock, not in the packaged app.</p></Card>
         <Card><div className="flex items-center gap-2 mb-2"><Bot size={16} className="text-[#a8b3d8]" /><span className="text-[14px] font-medium text-white">Agent</span></div><p className="text-[12px] text-[#a8b3d8] leading-relaxed">A programmatic identity with its own ed25519 keypair. You register the pubkey once. The agent self-authenticates by signing a server challenge.</p></Card>
       </div>
 
@@ -172,7 +172,7 @@ export const DocsSection: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">1</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Generate a keypair</div><p className="text-[12px] text-[#8a96c2] mt-0.5">In the Agents tab, click Generate, or run:</p><CodeBlock code={`from keyshield_sdk import AgentKeyShield\ncreds = AgentKeyShield.generate_keypair()\nprint(creds)\n# {"private_key_hex": "abcd...", "pubkey_b58": "9WzDX..."}`} /></div></div>
         <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">2</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Register the pubkey</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Agents tab → paste pubkey + name → Register.</p></div></div>
-        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">3</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Agent calls the proxy</div><p className="text-[12px] text-[#8a96c2] mt-0.5">Create a proxy-only token in Developer. Keep provider keys in the Vault UI:</p><CodeBlock code={frameworkSnippets('openai').python} /></div></div>
+        <div className="flex items-start gap-3"><div className="w-7 h-7 rounded-lg bg-zinc-900 border border-[#243365] flex items-center justify-center text-[12px] text-white shrink-0 font-medium">3</div><div className="flex-1"><div className="text-[13px] text-white font-medium">Legacy proxy example — separate from Device Vault</div><p className="text-[12px] text-[#8a96c2] mt-0.5">This is not a Device Vault workflow. The Python keyshield-proxy uses separately sealed keys plus a server share, not dashboard Device Vault keys, and has no per-use approval. Use only a proxy-only agent token:</p><CodeBlock code={frameworkSnippets('openai').python} /></div></div>
       </div>
 
       {/* Billing */}
@@ -182,7 +182,7 @@ export const DocsSection: React.FC = () => {
         <p className="text-[14px] text-[#a8b3d8] mt-1">How payment works for non-self-custodian calls.</p>
       </div>
 
-      <p className="text-[13px] text-[#e8ecff]">When you call <code className="text-white">/proxy/openai/...</code> and you haven't stored an OpenAI key in your vault, KeyShield uses its own platform key and charges you. Four ways to pay:</p>
+      <p className="text-[13px] text-[#e8ecff]">Legacy proxy billing is separate from dashboard Device Vault storage. It does not enable per-agent use of Device Vault keys. Four ways to pay:</p>
       <ol className="space-y-2 list-decimal list-inside text-[13px] text-[#e8ecff] mt-2">
         <li><strong className="text-white">Free credit</strong> — every new wallet gets $0.10 to test. About 100 GPT-4o-mini calls.</li>
         <li><strong className="text-white">Prepaid balance</strong> — top up with USDC. Calls deduct in real time.</li>
@@ -201,7 +201,7 @@ export const DocsSection: React.FC = () => {
           ['AES-256-GCM', 'Authenticated encryption \u2014 tampering with ciphertext fails decryption loudly'],
           ['PBKDF2-HMAC-SHA256', '100k iterations to derive the encryption key from your passphrase'],
           ['ed25519 challenges', 'Wallet + agent auth signed with curve25519, replay-protected by 5-min nonces'],
-          ['Zero-knowledge (Device Vault, ZK mode)', 'Server stores only ciphertext. The default hosted vault behind /vproxy keeps a server-readable copy (not ZK)'],
+          ['Zero-knowledge (Device Vault)', 'Device Vault sync stores ciphertext only. Legacy non-ZK backend storage keeps a server-readable plaintext copy and is separate from Device Vault'],
           ['Proxy-only agent tokens', 'Agent and developer tokens get 403 on vault, decrypt and management routes'],
         ].map(([t, d]) => (
           <div key={t} className="flex items-start gap-3 px-4 py-3 rounded-lg bg-[#131c39] border border-[#243365]/50">
