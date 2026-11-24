@@ -22,8 +22,10 @@
 		82E202BD2B17B816CF5B87DF /* ProxyExampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B866639F580E681D76B0B42 /* ProxyExampleTests.swift */; };
 		83ACCE0A5D93EED8727EF4D1 /* keys.json in Resources */ = {isa = PBXBuildFile; fileRef = C947F06C890E86634E30E950 /* keys.json */; };
 		962DD91376011584B24F4689 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13611F3765F4FC81C6F6228C /* RootView.swift */; };
+		970E379E414EEE920A56661E /* KeyShieldE2EJourneyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98AAE63A3B55AA30F82C090E /* KeyShieldE2EJourneyTests.swift */; };
 		98C8E5060B37D6BFC23355DD /* KeyShieldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A55159A48A89F80F568901B /* KeyShieldApp.swift */; };
 		AAEDACE2F0A6BD0CC74C4F5A /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E479D7408C6267C986310B8 /* CoreTests.swift */; };
+		AB507020C8DD4A48FCE19928 /* E2EHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41F41FE046600A746F44383C /* E2EHost.swift */; };
 		BADB099CBB50B277F431B9D9 /* DeveloperReferenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D28DE3F1EA1F3A0BA620D2ED /* DeveloperReferenceViews.swift */; };
 		C609921C6B8B34BEB9263A79 /* SecondaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */; };
 		D402178F3CD13314FBEC48A4 /* DemoPaymentsLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */; };
@@ -62,6 +64,7 @@
 		195AD174033854AB6DEEF001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		270C3B73A802B039F3E05F79 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2A55159A48A89F80F568901B /* KeyShieldApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyShieldApp.swift; sourceTree = "<group>"; };
+		41F41FE046600A746F44383C /* E2EHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = E2EHost.swift; sourceTree = "<group>"; };
 		4E7DB5D7509329808938A48F /* KeyShieldUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeyShieldUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		505F344BC9DDB85F3B636170 /* VaultViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultViews.swift; sourceTree = "<group>"; };
 		60F54FA3C8D99D1385BC63D8 /* ApprovalCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCenter.swift; sourceTree = "<group>"; };
@@ -73,6 +76,7 @@
 		82A6FB24F515FCA099EC6736 /* PaymentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentsView.swift; sourceTree = "<group>"; };
 		899C45D46F2BBE7C20645435 /* ProviderRequestExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRequestExecutor.swift; sourceTree = "<group>"; };
 		8C1E16210FE2FDB08909D19C /* AgentSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessions.swift; sourceTree = "<group>"; };
+		98AAE63A3B55AA30F82C090E /* KeyShieldE2EJourneyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyShieldE2EJourneyTests.swift; sourceTree = "<group>"; };
 		9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondaryViews.swift; sourceTree = "<group>"; };
 		9D3F055BB1393D7795C12A27 /* Simulator.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Simulator.entitlements; sourceTree = "<group>"; };
 		A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoPaymentsLedger.swift; sourceTree = "<group>"; };
@@ -149,6 +153,8 @@
 		84EEA72C4995BD2C4467D205 /* KeyShieldUITests */ = {
 			isa = PBXGroup;
 			children = (
+				41F41FE046600A746F44383C /* E2EHost.swift */,
+				98AAE63A3B55AA30F82C090E /* KeyShieldE2EJourneyTests.swift */,
 				04FE2CD938EA3DB55971700C /* KeyShieldUITests.swift */,
 			);
 			path = KeyShieldUITests;
@@ -309,6 +315,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB507020C8DD4A48FCE19928 /* E2EHost.swift in Sources */,
+				970E379E414EEE920A56661E /* KeyShieldE2EJourneyTests.swift in Sources */,
 				3941AEC5B0DFBD816A29D571 /* KeyShieldUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
