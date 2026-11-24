@@ -2,8 +2,9 @@
 
 import { API_BASE, apiFetch } from './auth';
 import { emitVaultChanged } from './vault-list';
-import { vaultStoreName } from './provider-catalog';
+import { saveKeyOnDevice } from './device-save';
 import { extractPageKeyRecords, labelForDetectedKey } from './page-key-labels';
+import { OPENROUTER_CHAT_PATH, openrouterChatBody } from './openrouter-interface';
 
 export interface DetectedKey {
   upstream: string | null;
@@ -156,45 +157,46 @@ export function quickPasteError(raw: string): string | null {
   return 'Unrecognized key format. Paste the full key (e.g. sk-ant-api03-…, sk-or-v1-…, a Helius UUID).';
 }
 
-export function frameworkSnippets(upstream: string, token = '<TOKEN_HERE>', apiBase = API_BASE): Record<string, string> {
+export function frameworkSnippets(upstream: string, token = '<YOUR_AGENT_TOKEN>', apiBase = API_BASE): Record<string, string> {
   const up = upstream || 'openrouter';
-  const path = up === 'helius' ? '' : up === 'openai' ? 'v1/models' : up === 'openrouter' ? 'api/v1/chat/completions' : 'v1/models';
+  const isHelius = up === 'helius' || up === 'helius-rpc';
+  const path = isHelius ? '' : up === 'openrouter' ? OPENROUTER_CHAT_PATH : up === 'groq' ? 'openai/v1/models' : 'v1/models';
   const slotBody = '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}';
-  const curl = up === 'helius'
+  const body = up === 'openrouter' ? JSON.stringify(openrouterChatBody()) : isHelius ? slotBody : null;
+  const curl = body
     ? [
-        `curl -sS ${apiBase}/vproxy/helius/ \\`,
+        `curl -sS -X POST ${apiBase}/vproxy/${up}/${path} \\`,
         `  -H "Authorization: Bearer ${token}" \\`,
         '  -H "Content-Type: application/json" \\',
-        `  -d '${slotBody}'`,
+        `  -d '${body}'`,
       ].join('\n')
     : [
         `curl -sS ${apiBase}/vproxy/${up}/${path} \\`,
         `  -H "Authorization: Bearer ${token}"`,
       ].join('\n');
-  const pythonArg = up === 'helius' ? `json=${slotBody}` : 'method="GET"';
   const python = [
-    'from keyshield_sdk import KeyShield',
-    `ks = KeyShield(token="${token}")`,
-    '# key stays in the vault — SDK only holds the session',
-    `r = ks.proxy("${up}", "${path}", ${pythonArg})`,
+    'import requests',
+    `r = requests.${body ? 'post' : 'get'}(`,
+    `    "${apiBase}/vproxy/${up}/${path}",`,
+    `    headers={"Authorization": "Bearer ${token}"},`,
+    ...(body ? [`    json=${body},`] : []),
+    ')',
     'print(r.status_code, r.headers.get("x-ks-cache"))',
   ].join('\n');
   const jsLines = [
     `const r = await fetch("${apiBase}/vproxy/${up}/${path}", {`,
-    `  method: "${up === 'helius' ? 'POST' : 'GET'}",`,
+    `  method: "${body ? 'POST' : 'GET'}",`,
     `  headers: { Authorization: "Bearer ${token}", "Content-Type": "application/json" },`,
   ];
-  if (up === 'helius') {
-    jsLines.push(`  body: JSON.stringify(${slotBody}),`);
+  if (body) {
+    jsLines.push(`  body: JSON.stringify(${body}),`);
   }
   jsLines.push('});', 'console.log(r.headers.get("x-ks-cache"), await r.json());');
   return { curl, python, js: jsLines.join('\n') };
 }
 
 export async function detectKeyOnServer(value: string): Promise<DetectedKey> {
-  const r = await apiFetch('/keychain/detect', { method: 'POST', body: JSON.stringify({ value }) });
-  if (!r.ok) throw new Error('detect failed');
-  return r.json();
+  return detectUpstream(value);
 }
 
 export async function fetchRpcCache(): Promise<{ methods: RpcCacheMethod[]; writes_bypass: string[]; lowest_ttl_sec: number | null }> {
@@ -215,22 +217,8 @@ async function writeManageStore(
   upstream: string,
   extra: { name?: string; expiresAt?: string; domain?: string; pageTitle?: string } = {},
 ): Promise<{ id?: string }> {
-  const pageName = extra.name || labelForDetectedKey(value, extractPageKeyRecords(value));
-  const stored = await apiFetch('/manage/store', {
-    method: 'POST',
-    body: JSON.stringify({
-      upstream,
-      apiKey: value,
-      value,
-      name: vaultStoreName({ upstream, value, name: pageName, host: extra.domain, pageTitle: extra.pageTitle }),
-      expires_at: extra.expiresAt || undefined,
-      domain: extra.domain || undefined,
-      pageTitle: extra.pageTitle || undefined,
-    }),
-  });
-  const body = await stored.json().catch(() => ({ detail: 'store failed' }));
-  if (!stored.ok) throw new Error((body as { detail?: string }).detail ?? 'store failed');
-  return body as { id?: string };
+  await saveKeyOnDevice(upstream, value, extra);
+  return { id: upstream };
 }
 
 export async function storeDetectedKey(
@@ -242,8 +230,6 @@ export async function storeDetectedKey(
   const up = (upstream || detected.upstream || '').trim();
   if (!value.trim()) throw new Error('Paste a key first');
   if (!up) throw new Error('unrecognized key shape — pick a provider or paste a known prefix');
-  // Write /manage/store only. /keychain/store used to overwrite the latest
-  // helius row, so a sixth UUID ate one of the five already in Vault.
   const saved = await writeManageStore(value, up, extra);
   emitVaultChanged();
   return {

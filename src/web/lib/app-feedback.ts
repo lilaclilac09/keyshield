@@ -4,6 +4,8 @@
  * also mirrors events as a native notification when the window is unfocused.
  */
 
+import { redactSavingSecrets } from './secret-guard';
+
 export type AppFeedbackKind = 'success' | 'error' | 'info' | 'busy';
 export type AppFeedbackSource = 'unlock' | 'save' | 'copy' | 'proxy' | 'mpp' | 'auth' | 'health';
 
@@ -18,6 +20,7 @@ export const APP_FEEDBACK_EVENT = 'ks-app-feedback';
 
 export function emitAppFeedback(fb: AppFeedback): void {
   if (typeof window === 'undefined' || !fb?.title) return;
+  fb = redactSavingSecrets(fb);
   window.dispatchEvent(new CustomEvent(APP_FEEDBACK_EVENT, { detail: fb }));
   try {
     window.keyshieldDesktop?.notify?.(fb);

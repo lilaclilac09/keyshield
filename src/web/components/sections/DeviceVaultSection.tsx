@@ -27,12 +27,12 @@ import {
   X, Check, Trash2, ChevronDown, ChevronUp, Fingerprint, ArrowRight, Cpu,
 } from 'lucide-react';
 
-import { proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
+import { apiFetch, proxyFetch, registerPasskey, requestVaultUnlock, getPasskeyTrust, setPasskeyTrust, getWalletAddress, API_BASE, getToken, PasskeyAlreadyEnrolledError } from '../../lib/auth';
 import {
-  isVaultUnlocked, lockVault, listEntries, addEntry, removeEntry,
+  isVaultUnlocked, lockVault, listEntries, removeEntry,
 } from '../../lib/vault-session';
+import { saveKeyOnDevice } from '../../lib/device-save';
 import type { VaultEntry } from '../../lib/vault';
-import { CodeBlock } from '../ui/CodeBlock';
 import { ZkModeCard } from './ZkModeCard';
 
 // ── Getting-started tutorial (collapsible, dismissible) ──────────────
@@ -138,22 +138,13 @@ const GettingStartedGuide: React.FC = () => {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <Cpu size={13} className="text-emerald-400" />
-                <span className="text-[13px] text-white font-medium">Agents use the proxy</span>
+                <span className="text-[13px] text-white font-medium">Per-agent use is unavailable</span>
               </div>
               <p className="text-[12px] text-[#8a96c2] mt-1 leading-relaxed">
-                Your agent calls <code className="text-white text-[11px]">/proxy/openai/...</code> with a session token.
-                The decrypted key is injected per-request via a one-shot header —
-                the agent never sees the raw API key.
+                Per-agent use of Device Vault keys is not available in this app.
+                Saving a key does not give agents access. Approval exists only as an opt-in
+                development mock, not in the packaged app.
               </p>
-              <div className="mt-2">
-                <CodeBlock code={`from keyshield_sdk import KeyShield
-ks = KeyShield(token=os.environ["KS_TOKEN"])
-client = ks.openai_client()   # key injected automatically
-resp = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "Hello"}],
-)`} />
-              </div>
             </div>
           </div>
 
@@ -166,10 +157,11 @@ resp = client.chat.completions.create(
               <ArrowRight size={11} className="text-[#3e4a72]" />
               <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-[#a8b3d8]">Ciphertext to sync storage</span>
               <ArrowRight size={11} className="text-[#3e4a72]" />
-              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Proxy injects per-request</span>
+              <span className="px-2 py-1 rounded bg-[#131c39] border border-[#243365]/50 text-white">Per-agent use unavailable</span>
             </div>
             <p className="text-center text-[10px] text-[#5e6a91] mt-2">
-              Server is zero-knowledge — it never sees your plaintext keys
+              Device Vault sync receives ciphertext only, not plaintext keys. This is not local plaintext storage.
+              Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault.
             </p>
           </div>
         </div>
@@ -252,7 +244,7 @@ const AddDeviceKeyModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdded }
     setBusy(true);
     setErr('');
     try {
-      await addEntry(provider.id, keyValue);
+      await saveKeyOnDevice(provider.id, keyValue);
       // Wipe local copy immediately — vault-session now owns it.
       setKeyValue('');
       onAdded();
@@ -551,12 +543,30 @@ type Phase = 'idle' | 'busy';
 export const DeviceVaultSection: React.FC = () => {
   const [trust, setTrust]       = useState(() => getPasskeyTrust());
   const [unlocked, setUnlocked] = useState<boolean>(() => isVaultUnlocked());
+  const [unenrolledUser, setUnenrolledUser] = useState<string | null>(null);
   const [entries, setEntries]   = useState<VaultEntry[]>(() => (isVaultUnlocked() ? listEntries() : []));
   const [extKeys, setExtKeys]   = useState<ShimEntry[]>([]);
   const [phase, setPhase]       = useState<Phase>('idle');
   const [phaseMsg, setPhaseMsg] = useState('');
   const [err, setErr]           = useState('');
   const [showAdd, setShowAdd]   = useState(false);
+  const trustedUser = trust?.userId;
+  const token = getToken();
+  const needsEnrollment = !trustedUser || trustedUser === unenrolledUser;
+
+  useEffect(() => {
+    setUnenrolledUser(null);
+    if (!trustedUser || unlocked || !token) return;
+    let current = true;
+    void apiFetch('/auth/passkey/list').then(async (response) => {
+      if (!response.ok) return;
+      const { credentials } = await response.json();
+      if (current && Array.isArray(credentials) && credentials.length === 0) {
+        setUnenrolledUser(trustedUser);
+      }
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [trustedUser, unlocked, token]);
 
   const refresh = useCallback(() => {
     setUnlocked(isVaultUnlocked());
@@ -582,8 +592,7 @@ export const DeviceVaultSection: React.FC = () => {
     setErr('');
     try {
       await registerPasskey('Device Vault');
-      const addr = getWalletAddress();
-      if (addr) setPasskeyTrust(addr, '');
+      setUnenrolledUser(null);
       refresh();
       setPhaseMsg('Unlocking…');
       await requestVaultUnlock();
@@ -688,7 +697,7 @@ export const DeviceVaultSection: React.FC = () => {
       )}
 
       {/* State 1 — not registered */}
-      {!trust && !unlocked && (
+      {needsEnrollment && !unlocked && (
         <div className="rounded-xl border border-dashed border-[#243365]/60 py-16 flex flex-col items-center text-center px-6">
           <div className="w-12 h-12 rounded-xl bg-[#131c39] border border-[#243365]/50 flex items-center justify-center mb-4">
             <KeyRound size={20} className="text-white" strokeWidth={1.75} />
@@ -711,7 +720,7 @@ export const DeviceVaultSection: React.FC = () => {
       )}
 
       {/* State 2 — registered + locked */}
-      {trust && !unlocked && (
+      {!needsEnrollment && !unlocked && (
         <div className="rounded-xl border border-[#243365]/50 py-12 flex flex-col items-center text-center px-6 bg-[#131c39]">
           <div className="w-12 h-12 rounded-xl bg-[#0e1631] border border-[#243365]/50 flex items-center justify-center mb-4">
             <Lock size={18} className="text-[#a8b3d8]" strokeWidth={1.75} />
@@ -740,9 +749,9 @@ export const DeviceVaultSection: React.FC = () => {
           </div>
           <p className="text-[14px] text-[#e8ecff] font-medium">Vault unlocked &mdash; no encrypted keys yet</p>
           <p className="text-[12px] text-[#8a96c2] mt-1 mb-5 leading-relaxed max-w-md">
-            Add an API key to store its ciphertext in sync storage. The plaintext
-            key never leaves this device after add &mdash; the proxy receives it
-            per-request via a one-shot header.
+            Add an API key to encrypt it on this device and sync ciphertext only.
+            Per-agent use of Device Vault keys is not available in this app.
+            Approval exists only as an opt-in development mock, not in the packaged app.
           </p>
           <button
             onClick={() => setShowAdd(true)}

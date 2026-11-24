@@ -56,6 +56,106 @@ const LOCAL_SYNC = 'http://127.0.0.1:8787';
 const LIVE = process.env.KS_DESKTOP_LIVE === '1';
 const SYNC_PROXY = process.env.KS_DESKTOP_SYNC_PROXY === '1';
 const PACKAGED = app.isPackaged || process.env.KS_DESKTOP_FORCE_PACKAGED === '1';
+const BROKER_ENABLED = process.env.KS_DESKTOP_BROKER === '1';
+let mainWindow = null;
+let broker = null;
+let brokerPort = null;
+let registrationObserver = null;
+
+function assertBrokerSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame ||
+      event.senderFrame.parent !== null) {
+    throw new Error('broker_caller_refused');
+  }
+  let origin;
+  try { origin = new URL(event.senderFrame.url).origin; } catch {}
+  if (origin !== DASHBOARD_ORIGIN) throw new Error('broker_caller_refused');
+}
+
+async function confirmApprovalPasskey({ credentialId }) {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return false;
+  const result = await dialog.showMessageBox(win, {
+    type: 'question', message: 'Use this passkey for agent approvals on this device?',
+    detail: `Credential ID: ${credentialId}`, buttons: ['Cancel', 'Use passkey'],
+    defaultId: 0, cancelId: 0, noLink: true,
+  });
+  if (result.response !== 1 || mainWindow !== win || win.isDestroyed()) return false;
+  if (typeof systemPreferences.canPromptTouchID === 'function' && systemPreferences.canPromptTouchID()) {
+    await systemPreferences.promptTouchID('enable agent approvals on this device');
+  }
+  return mainWindow === win && !win.isDestroyed();
+}
+
+async function startBroker() {
+  if (!BROKER_ENABLED || PACKAGED) return;
+  try { await initializeBroker(); }
+  catch (error) {
+    broker?.server?.close();
+    broker = null;
+    brokerPort = null;
+    registrationObserver = null;
+    console.error('Approval broker unavailable; continuing without it', redact(error?.message ?? error));
+  }
+}
+
+async function initializeBroker() {
+  const { createBroker } = require('./broker.cjs');
+  const { createApprovalPasskey } = require('./approval-passkey.cjs');
+  const passkey = createApprovalPasskey({ file: path.join(app.getPath('userData'), 'approval-passkey.json'), origin: DASHBOARD_ORIGIN,
+    confirmEnrollment: confirmApprovalPasskey });
+  const { createRegistrationObserver } = require('./registration-observer.cjs');
+  registrationObserver = createRegistrationObserver({
+    apiOrigin: new URL(process.env.KS_DESKTOP_API_URL || PROD_API).origin, origin: DASHBOARD_ORIGIN,
+  });
+  broker = createBroker({ mockMode: true, isPackaged: PACKAGED, passkey });
+  const address = await broker.listen();
+  brokerPort = address.port;
+  console.log(`KeyShield approval broker listening on 127.0.0.1:${brokerPort}`);
+  const calls = {
+    listAgents: () => broker.listAgents(),
+    registerAgent: (name) => ({ ...broker.registerAgent(name), brokerUrl: `http://127.0.0.1:${brokerPort}` }),
+    revokeAgent: (agentId) => broker.revokeAgent(agentId),
+    listRequests: () => broker.listRequests(),
+    approvalStatus: () => ({ available: Boolean(passkey.get()) }),
+    deny: (id) => broker.deny(id),
+    revokeRequest: (id) => broker.revokeRequest(id),
+    approve: (payload) => broker.approve(payload),
+    beginApproval: (requestId) => broker.beginApproval(requestId),
+    invalidateApprovals: () => { broker.invalidateApprovals(); registrationObserver.invalidate(); },
+    pinApprovalPasskey: async ({ response }) => {
+      if (passkey.get()) throw new Error('approval_passkey_already_pinned');
+      const observed = registrationObserver.consume(response);
+      await passkey.register(response, observed.challenge, observed.accountId, observed.isCurrent);
+      mainWindow.webContents.send('ks-broker:changed');
+    },
+  };
+  for (const [name, call] of Object.entries(calls)) {
+    ipcMain.handle(`ks-broker:${name}`, (event, payload) => {
+      assertBrokerSender(event);
+      return call(payload);
+    });
+  }
+  const seen = new Set();
+  broker.onChange(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('ks-broker:changed');
+    for (const request of broker.listRequests()) {
+      if (seen.has(request.id)) continue;
+      seen.add(request.id);
+      if (request.status !== 'pending') continue;
+      try {
+        new Notification({ title: 'Agent approval requested', body: 'Review the operation in KeyShield.' }).show();
+      } catch { /* notifications optional */ }
+      bringWindowToForeground(mainWindow);
+    }
+  });
+}
+
+app.on('before-quit', () => {
+  broker?.server.close();
+});
 
 function rendererDir() {
   if (process.env.KS_DESKTOP_RENDERER_DIR) return process.env.KS_DESKTOP_RENDERER_DIR;
@@ -105,26 +205,39 @@ function blockStartup(report, reason) {
 
 function installHttpsHandler(ses) {
   if (process.env.KS_DESKTOP_FORCE_INTERCEPT_FAILURE === '1') throw new Error('forced HTTPS handler failure');
-  if (!useBundle() && !SYNC_PROXY) return false;
+  if (!useBundle() && !SYNC_PROXY && !registrationObserver) return false;
   // Intercept https on this session only. Do not registerSchemesAsPrivileged('https')
   // — that replaces Chromium's standard https handler and can prevent the window
   // from ever loading.
-  ses.protocol.handle('https', (request) => {
+  const forward = (request, url = request.url) => ses.fetch(url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    duplex: 'half',
+    credentials: request.credentials,
+    redirect: request.redirect,
+    signal: request.signal,
+    bypassCustomProtocolHandlers: true,
+  });
+  const handle = (request) => {
     let url;
     try {
       url = new URL(request.url);
     } catch {
-      return net.fetch(request, { bypassCustomProtocolHandlers: true });
+      return forward(request);
     }
     if (useBundle() && url.hostname === DASHBOARD_HOST) {
       return serveDashboardRequest(rendererDir(), request);
     }
     if (SYNC_PROXY && url.hostname === SYNC_HOST) {
       const local = `${LOCAL_SYNC}${url.pathname}${url.search}`;
-      return net.fetch(local, { bypassCustomProtocolHandlers: true });
+      return forward(request, local);
     }
-    return net.fetch(request, { bypassCustomProtocolHandlers: true });
-  });
+    return registrationObserver && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.session === ses
+      ? registrationObserver.observe(request, forward) : forward(request);
+  };
+  ses.protocol.handle('https', handle);
+  if (registrationObserver) ses.protocol.handle('http', handle);
   return true;
 }
 
@@ -493,8 +606,13 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: false,
+      ...(BROKER_ENABLED && brokerPort !== null
+        ? { additionalArguments: [`--ks-desktop-broker-port=${brokerPort}`] }
+        : {}),
     },
   });
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
 
   win.once('ready-to-show', () => bringWindowToForeground(win));
   bringWindowToForeground(win);
@@ -638,6 +756,7 @@ if (!gotLock) {
     if (!preflight.skipped) {
       diagnostics.log(`preflight ok=${preflight.ok} ${runtimePreflightDetail(preflight)}`);
     }
+    await startBroker();
     const win = await createWindow();
     bringWindowToForeground(win);
     app.on('activate', () => {

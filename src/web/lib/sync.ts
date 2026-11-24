@@ -13,6 +13,7 @@
  * has access to the unwrapped vault state.
  */
 import type { VaultCipher } from './vault';
+import { assertSafeRequest } from './secret-guard';
 
 /**
  * Thrown on a 401 from the Worker. Callers should re-authenticate
@@ -23,6 +24,13 @@ export class SyncAuthError extends Error {
   constructor(message = 'sync token rejected — re-authenticate') {
     super(message);
     this.name = 'SyncAuthError';
+  }
+}
+
+export class SyncHttpError extends Error {
+  constructor(public readonly status: number, statusText: string) {
+    super(`sync push failed: ${status} ${statusText}`);
+    this.name = 'SyncHttpError';
   }
 }
 
@@ -66,7 +74,16 @@ function vaultUrl(syncUrl: string, vaultId: string): string {
 }
 
 export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
-  return {
+  function changed() {
+    if (typeof window !== 'undefined' && window.keyshieldDesktop?.broker) window.dispatchEvent(new Event('ks-vault-sync-error'));
+  }
+  function guard<A extends unknown[], R>(call: (...args: A) => Promise<R>) {
+    return async (...args: A): Promise<R> => {
+      try { const result = await call(...args); if (result === 'conflict') changed(); return result; }
+      catch (e) { changed(); throw e; }
+    };
+  }
+  const backend: SyncBackend = {
     async pull(vaultId, getToken) {
       const res = await fetch(vaultUrl(syncUrl, vaultId), {
         method: 'GET',
@@ -81,22 +98,28 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
         throw new Error(`sync pull failed: ${res.status} ${res.statusText}`);
       }
       const json = (await res.json()) as VaultCipher;
+      if (typeof window !== 'undefined' && window.keyshieldDesktop?.broker) {
+        window.dispatchEvent(new CustomEvent('ks-vault-cipher-pulled', { detail: { vaultId, revision: json.updatedAt } }));
+      }
       return json;
     },
 
     async push(vaultId, cipher, getToken) {
-      const res = await fetch(vaultUrl(syncUrl, vaultId), {
+      const url = vaultUrl(syncUrl, vaultId);
+      const options = {
         method: 'PUT',
         headers: {
           ...authHeaders(getToken),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(cipher),
-      });
+      };
+      assertSafeRequest(url, options);
+      const res = await fetch(url, options);
       if (res.status === 409) return 'conflict';
       if (res.status === 401) throw new SyncAuthError();
       if (!res.ok) {
-        throw new Error(`sync push failed: ${res.status} ${res.statusText}`);
+        throw new SyncHttpError(res.status, res.statusText);
       }
       return 'ok';
     },
@@ -113,6 +136,8 @@ export function makeHttpSyncBackend(syncUrl: string): SyncBackend {
           `sync remove failed: ${res.status} ${res.statusText}`,
         );
       }
+      changed();
     },
   };
+  return { pull: guard(backend.pull), push: guard(backend.push), remove: guard(backend.remove) };
 }

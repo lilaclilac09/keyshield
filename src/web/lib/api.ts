@@ -3,6 +3,7 @@
  */
 
 import { apiFetch } from './auth';
+import { saveKeyOnDevice } from './device-save';
 import type { BuildTxResponse } from './solana';
 
 // ─── Account deletion ──────────────────────────────────────────────────────
@@ -350,17 +351,8 @@ export async function storeUpstreamKey(
   upstream: string,
   apiKey: string,
 ): Promise<{ id: string }> {
-  const r = await apiFetch('/manage/store', {
-    method: 'POST',
-    body: JSON.stringify({ upstream, apiKey, name: `${upstream} key` }),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({ detail: 'store failed' }));
-    throw new Error((err as { detail?: string; error?: string }).detail
-      ?? (err as { error?: string }).error
-      ?? 'store failed');
-  }
-  return r.json();
+  await saveKeyOnDevice(upstream, apiKey);
+  return { id: upstream };
 }
 
 export async function demoMeterStream(

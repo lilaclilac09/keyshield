@@ -13,9 +13,9 @@ declare global {
     focusMainWindow?: () => void;
     openExternal?: (url: string) => void;
     writeText?: (text: string) => Promise<{ ok: boolean }>;
+    broker?: import('./lib/desktop-broker').DesktopBroker;
   }
   interface Window {
     keyshieldDesktop?: KeyshieldDesktopShell;
   }
 }
-

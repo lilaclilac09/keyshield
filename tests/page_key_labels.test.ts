@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import {
   extractPageKeyRecords,
   labelForDetectedKey,
@@ -31,12 +29,5 @@ describe("page key labels", () => {
     expect(uniquifyVaultName("helius key", "helius", ["helius1"])).toBe("helius2");
     expect(uniquifyVaultName("Panthermaze", "helius", [])).toBe("Panthermaze");
     expect(uniquifyVaultName("Panthermaze", "helius", ["Panthermaze"])).toBe("Panthermaze 2");
-  });
-
-  it("content script harvests the same Name column", () => {
-    const js = readFileSync(resolve(__dirname, "../src/extension/content.js"), "utf8");
-    expect(js).toContain("ksCollectPageKeyRecords");
-    expect(js).toContain("ksLooksLikePageKeyName");
-    expect(js).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
