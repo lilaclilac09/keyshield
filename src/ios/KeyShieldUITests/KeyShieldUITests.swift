@@ -50,7 +50,67 @@ final class KeyShieldUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
+    private func paymentField(_ id: String, _ value: String) {
+        let field = app.staticTexts["receipt.field." + id]
+        for _ in 0..<8 {
+            if field.exists && field.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(field.exists)
+        XCTAssertEqual(field.label, value)
+    }
+    private func paymentsFlow() {
+        create()
+        XCTAssertEqual(app.tabBars.buttons.count, 5)
+        if !app.buttons["home.payments"].isHittable { app.swipeUp() }
+        screenshot("Payments-01-Home")
+        tap("home.payments")
+        XCTAssertTrue(app.staticTexts["No receipts"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["The iOS app does not make or record payments yet. Turn on demo receipts to explore synthetic examples."].exists)
+        XCTAssertFalse(app.staticTexts["payments.demoBanner"].exists)
+        screenshot("Payments-02-Empty")
+        app.switches["payments.showDemo"].switches.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["payments.demoBanner"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["payments.demoBanner"].label, "DEMO — synthetic data, no real payments")
+        XCTAssertTrue(app.staticTexts["payments.badge.demo_receipt_mpp_001"].exists)
+        screenshot("Payments-03-DemoLedger")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["payments.badge.demo_receipt_x402_002"].exists)
+        app.swipeDown()
+        tap("payments.receipt.demo_receipt_mpp_001")
+        XCTAssertTrue(app.staticTexts["payments.demoBanner"].exists)
+        paymentField("id", "demo_receipt_mpp_001")
+        paymentField("status", "Simulated settled")
+        paymentField("provider", "Demo Metered API")
+        paymentField("endpoint", "POST https://api.mpp-provider.test/v1/demo")
+        screenshot("Payments-04-ReceiptDetail")
+        paymentField("amount", "123.456789 DEMO_USDC")
+        paymentField("timestamp", "2030-01-02T12:00:00Z")
+        paymentField("actor", "Human")
+        paymentField("wallet", "DEMO_HUMAN_WALLET")
+        paymentField("agent", "demo_agent_none")
+        paymentField("session", "demo_session_human")
+        XCTAssertTrue(app.staticTexts["payments.demoBanner"].isHittable)
+        screenshot("Payments-05-ReceiptActor")
+        app.navigationBars.buttons["Payments"].tap()
+        app.switches["payments.showDemo"].switches.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No receipts"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["payments.demoBanner"].exists)
+        XCTAssertFalse(app.buttons["payments.receipt.demo_receipt_mpp_001"].exists)
+        screenshot("Payments-06-DemoOff")
+        tab("Vault")
+        XCTAssertTrue(app.staticTexts["Your vault is empty"].exists)
+        tab("Activity")
+        XCTAssertFalse(app.debugDescription.contains("demo_receipt_"))
+    }
+    #if DEBUG
+    func testPaymentsDemoLedgerIsOptInAndDetailIsMarked() { paymentsFlow() }
+    #endif
     #if !DEBUG
+    func testReleasePaymentsZipSmoke() {
+        XCTAssertTrue(app.launchArguments.isEmpty)
+        paymentsFlow()
+    }
     func testReleaseLaunchWithTestArgumentShowsNormalOnboarding() {
         app.terminate()
         app.launchArguments = ["-UITestMode"]
