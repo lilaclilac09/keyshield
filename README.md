@@ -4,6 +4,8 @@
 
 <h1 align="center">KeyShield</h1>
 
+**Status: BLOCKED (full product acceptance)** — the public app sign-in screen and marketing site are reachable (2026-11-22), but this audit does not establish the store → reopen → agent-call journey or native delivery. [SPEC.md §12](SPEC.md#12-things-we-hand-to-people) records the unresolved downloaded-Mac-app report and no accepted surface. Next human action: verify J1 on the intended delivered build using synthetic credentials and a mocked provider; do not treat landing-page reachability or source tests as acceptance. Audit: [notes/acceptance-audit-2026-11-22.md](notes/acceptance-audit-2026-11-22.md).
+
 <p align="center">
   <strong>your API iCloud Keychain</strong><br/>
   Keep API credentials in your vault and give agents controlled access.<br/>
@@ -50,7 +52,7 @@ Three layers. Two meters. Seats are not calls.
 | **Plugin** (paid 1) | Auto plugins + biometric passkey verify | SDK/CLI inject the key at request time (`X-Upstream-API-Key`). Passkey PRF proves this device. The key passes through the hosted proxy for that request, so this path is not zero-knowledge; use ZK mode + `keyshield-proxy` for that. $20/mo included, then PAYG. |
 | **Accelerate** (paid 2) | Acceleration + extreme-low-latency *target* | RPC cache, batch, parallel quote+analyze, Groq-class urgent path. $100/mo included, then PAYG. Fleet seats. Latency numbers are not published until measured. |
 
-**Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Railway already serves `GET /billing/plans`; the Vercel app bundle may lag.
+**Subscription** pays for devices and that control plane (humans have calendars). **Pay-as-you-go** (ledger / MPP / x402) pays for agent calls (bots are bursty). Full tables: [§4 Plans](#4-plans--business-scope). In the app: **Payments → Plans** (and **Settings**). Historical API observations are recorded below; current billing behavior was not verified in this audit.
 
 **Start here:** [How to use this](#how-to-use-this) · [Chrome extension Sign in](#chrome-extension-sign-in) · [Free Nemotron in any agent](#use-case-free-nemotron-in-any-agent-framework) · [How agents register](#how-agents-register) · [Plans](#4-plans--business-scope) · [MPP vs Nevermined](#keyshield-mpp-moat-vs-nevermined-evidence-checked-2026-11-09) · [Repository index](#repository-index)
 
@@ -124,7 +126,7 @@ Dashboard tabs stay as they are: **Home**, **Vault**, **Payments**
 
 | You are using | Popup Settings → Dashboard URL | Why |
 |---|---|---|
-| Hosted login | `https://app.ks.aileena.xyz` (**Sign-in**) | Live vault. Not `ks.app.aileena.xyz` |
+| Hosted login | `https://app.ks.aileena.xyz` (**Sign-in**) | Sign-in page observed; authenticated vault journey unverified. Not `ks.app.aileena.xyz` |
 | `http://127.0.0.1:5173/` | page **redirects** to `https://app.ks.aileena.xyz` | Local Vite is not the login host. Keep UI with `?local=1` |
 | `https://keyshield.dev` | rewritten to `https://app.ks.aileena.xyz` | No public DNS |
 
@@ -680,7 +682,7 @@ as instruction 0 so the program does not return 6114.
 | Record-demo harness | [`docs/DEMO_RECORDING_SCRIPT.md`](docs/DEMO_RECORDING_SCRIPT.md) · `npm run demo:record` |
 | YouTube cut | Publish the voiced take from `docs/DEMO_RECORDING_SCRIPT.md` and paste the `youtu.be` URL here — none is checked into the repo yet |
 
-**What is live vs still a draft**
+**Historical status (2026-10-05; not current production verification)**
 
 | Surface | Status (2026-10-05) |
 |---|---|

@@ -3,6 +3,7 @@ import { Bot } from 'lucide-react';
 import { API_BASE, getToken, getWalletAddress } from '../lib/auth';
 import { copyWithFeedback } from '../lib/app-feedback';
 import { RevealField } from './ui/RevealField';
+import { CodeBlock } from './ui/CodeBlock';
 
 interface Props {
   onLogout: () => void;
@@ -12,7 +13,7 @@ interface Props {
 export const AgentSessionScreen: React.FC<Props> = ({ onLogout }) => {
   const token = getToken() ?? '';
   const pubkey = getWalletAddress() ?? '';
-  const curl = `curl -sS ${API_BASE}/vproxy/openai/v1/models \\\n  -H "Authorization: Bearer ${token || '<TOKEN>'}"`;
+  const curl = `curl -sS ${API_BASE}/vproxy/openai/v1/models \\\n  -H "Authorization: Bearer <YOUR_AGENT_TOKEN>"`;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0b1226] px-6 py-12" data-testid="agent-session">
@@ -38,7 +39,7 @@ export const AgentSessionScreen: React.FC<Props> = ({ onLogout }) => {
         >
           Copy agent token
         </button>
-        <pre className="text-[11px] font-mono text-[#a8b3d8] bg-[#0e1631] border border-[#243365] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{curl}</pre>
+        <CodeBlock code={curl} />
         <p className="text-[12px] text-[#8a96c2] leading-relaxed">
           Next step: paste this token into your agent. Vault, billing, and key list need a human email or passkey sign-in.
         </p>

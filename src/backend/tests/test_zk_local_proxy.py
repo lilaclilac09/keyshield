@@ -119,3 +119,13 @@ def test_root_file_permissions(tmp_path):
     p.chmod(0o644)
     with pytest.raises(kzk.ZkError, match="readable by other users"):
         kzk.load_root(p)
+
+
+def test_local_proxy_knows_tinker():
+    from keyshield.local_proxy import build_upstream
+
+    url, headers = build_upstream("tinker", "chat/completions", "", "tml-key")
+    assert url == (
+        "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1/chat/completions"
+    )
+    assert headers["authorization"] == "Bearer tml-key"

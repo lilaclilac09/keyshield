@@ -1,3 +1,5 @@
+Every agent here accepts work only against [ACCEPTANCE.md](ACCEPTANCE.md) (Aileen's standard). Every task and PR ends with its evidence closer.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

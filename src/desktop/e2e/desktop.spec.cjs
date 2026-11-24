@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const http = require('node:http');
-const { createHash, randomBytes } = require('node:crypto');
+const { randomBytes, createHash } = require('node:crypto');
 const { samples } = require('./keys.json');
 
 const desktop = path.resolve(__dirname, '..');
@@ -38,6 +38,7 @@ async function launch(label, overrides = {}) {
     },
   });
   const page = await app.firstWindow();
+  await page.waitForURL((url) => url.hostname === 'app.ks.aileena.xyz' || url.pathname.endsWith('/boot.html'));
   const session = { app, page, dir, requests: 0, leaks: 0 };
   page.on('request', (request) => {
     session.requests++;
@@ -64,6 +65,53 @@ function assertNoKeyRequests() {
 }
 
 test.afterEach(assertNoKeyRequests);
+
+test('branded DMG: read-only layout and exact installed bundle', async () => {
+  test.skip(process.platform !== 'darwin' || !process.env.KS_E2E_DMG || !process.env.KS_E2E_APP, 'Requires an installed Mac app and its DMG');
+  const mount = fs.mkdtempSync(path.join(run, 'dmg-'));
+  let mounted = false;
+  try {
+    execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', mount, process.env.KS_E2E_DMG]);
+    mounted = true;
+    expect(fs.readdirSync(mount).filter((name) => !name.startsWith('.')).sort()).toEqual(['Applications', 'BUILD-INFO.txt', 'KeyShield.app', 'OPEN-ME.txt']);
+    expect(fs.readlinkSync(path.join(mount, 'Applications'))).toBe('/Applications');
+    expect(fs.existsSync(path.join(mount, '.DS_Store'))).toBe(true);
+    expect(fs.existsSync(path.join(mount, '.background', 'installer.png'))).toBe(true);
+    const pin = JSON.parse(fs.readFileSync(path.join(desktop, 'renderer-inputs.json'), 'utf8'));
+    expect(fs.readFileSync(path.join(mount, 'BUILD-INFO.txt'), 'utf8')).toContain(`renderer commit: ${pin.commit}`);
+    const installed = path.resolve(process.env.KS_E2E_APP, '../../..');
+    const manifest = (root) => {
+      const entries = [];
+      const walk = (relative) => {
+        const file = path.join(root, relative);
+        const stat = fs.lstatSync(file);
+        if (stat.isSymbolicLink()) entries.push([relative, 'link', fs.readlinkSync(file)]);
+        else if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) walk(path.join(relative, name));
+        else entries.push([relative, stat.mode & 0o777, createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);
+      };
+      walk('');
+      return entries;
+    };
+    expect(manifest(installed)).toEqual(manifest(path.join(mount, 'KeyShield.app')));
+  } finally {
+    if (mounted) execFileSync('hdiutil', ['detach', mount]);
+    fs.rmdirSync(mount);
+  }
+});
+
+test('desktop-owned navy loading screen (held locally for visual capture)', async () => {
+  const { app, page, dir } = await launch('navy-loading');
+  await expect(page.getByTestId('email-signup')).toBeVisible();
+  await page.screenshot({ path: path.join(shots, `keyshield-${kind}-branded-login.png`) });
+  expect(fs.readFileSync(path.join(dir, 'launch.log'), 'utf8')).toContain('local loading screen shown');
+  await app.evaluate(async ({ BrowserWindow, app: electronApp }, source) => {
+    await BrowserWindow.getAllWindows()[0].loadFile(electronApp.isPackaged ? `${electronApp.getAppPath()}/../loading.html` : `${source}/loading.html`);
+  }, desktop);
+  await expect(page.getByRole('status')).toContainText('Loading KeyShield…');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(11, 18, 38)');
+  await page.screenshot({ path: path.join(shots, `keyshield-${kind}-navy-loading.png`) });
+  await app.close();
+});
 
 async function signup(page) {
   await page.getByTestId('email-login').fill(`ks-e2e+${Date.now()}-${Math.random().toString(16).slice(2)}@example.invalid`);
@@ -198,10 +246,12 @@ test('Mac tester onboarding: read-only DMG, prompt-free launch, synthetic PRF (n
   let mounted = false;
   let app;
   try {
-    execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg]);
+    execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', mount, dmg]);
     mounted = true;
     expect(execFileSync('mount', { encoding: 'utf8' }).split('\n').find((line) => line.includes(` on ${mount} (`))).toContain('read-only');
-    expect(fs.readdirSync(mount).sort()).toEqual(['Applications', 'BUILD-INFO.txt', 'KeyShield.app', 'OPEN-ME.txt']);
+    expect(fs.readdirSync(mount).filter((name) => !name.startsWith('.')).sort()).toEqual(['Applications', 'BUILD-INFO.txt', 'KeyShield.app', 'OPEN-ME.txt']);
+    expect(fs.statSync(path.join(mount, '.DS_Store')).isFile()).toBe(true);
+    expect(fs.statSync(path.join(mount, '.background', 'installer.png')).isFile()).toBe(true);
     expect(fs.statSync(path.join(mount, 'KeyShield.app')).isDirectory()).toBe(true);
     expect(fs.lstatSync(path.join(mount, 'Applications')).isSymbolicLink()).toBe(true);
     expect(fs.readlinkSync(path.join(mount, 'Applications'))).toBe('/Applications');

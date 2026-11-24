@@ -26,6 +26,9 @@ set.
 | `request-audit.cjs` | Opt-in, value-free HTTP(S) request shape audit |
 | `runtime-preflight.cjs` | Checks a packaged `.app` for its Chromium runtime files |
 | `boot.html` | Diagnostics screen shown when the dashboard cannot open |
+| `loading.html` | Local navy shield screen shown before the dashboard loads |
+| `assets/dmg-background.png` | Finder installer artwork (editable source: adjacent SVG) |
+| `assets/app-icon.png` | Transparent 1024px shield master (adjacent SVG); sips + iconutil generate all Mac sizes |
 | `scripts/build-renderer.cjs` | Builds `src/web` and verifies the output is complete |
 | `scripts/pack-mac.cjs` | Packs `KeyShield.app` (+ zip, and a DMG on macOS) |
 | `OPEN-ME.txt` | Install instructions shipped in the zip |
@@ -48,6 +51,16 @@ Output lands in `release/`:
 - `KeyShield.dmg.build-info.json` — full desktop/renderer commit and tree
   SHAs, per-source and whole-checkout dirty flags, and the final DMG SHA-256
   (renderer parent SHAs identify revisions included in integration merges)
+
+Set `KS_DESKTOP_RELEASE_DIR=/absolute/new/output` to keep earlier artifacts intact.
+The Mac pack step requires a logged-in Finder session with AppleScript automation
+available. It creates a writable HFS+ image, records the background, window bounds
+and icon positions in Finder, detaches it, then converts it to compressed UDZO.
+Missing Finder metadata fails the build instead of silently shipping an unstyled
+image. The hidden `.background/installer.png` and `.DS_Store` are presentation
+data, not install helpers. BUILD-INFO and OPEN-ME remain visible below the app.
+The SVG uses the shared login shield geometry and app.ks palette; the committed
+720×560 PNG needs no image-generation dependency at packaging time.
 
 To build with another reviewed integration pin without switching the desktop
 checkout:
@@ -85,7 +98,8 @@ build.
 
 ## How launch works
 
-1. The pack script builds the `src/web` dashboard and bundles it as
+1. After preflight succeeds, the shell displays its local navy loading screen.
+   The pack script builds the `src/web` dashboard and bundles it as
    `Contents/Resources/renderer/`. The app loads that copy through a
    session-only https intercept for `app.ks.aileena.xyz`, so the window
    works offline. Packaged builds never fall back to hosted dashboard content;
@@ -125,9 +139,25 @@ If the app shows its diagnostics screen, use **Copy diagnostics** (or
 - The preflight encodes the **Electron 33** bundle layout. Upgrading
   Electron means re-verifying the layout expectations in
   `runtime-preflight.cjs` against the new version before shipping.
-- The old `entitlements.mac.plist` was removed: it was never passed to
-  the packager (the build is unsigned), and entitlements only take effect
-  with a Developer ID signature.
+- Mac packaging uses packager's `@electron/osx-sign` integration to seal nested
+  helpers/frameworks inside-out, then the final app, after resources are copied.
+  `KS_MAC_SIGN_IDENTITY` defaults to `-` (ad-hoc); a future Developer ID identity
+  must be supplied explicitly. Electron's built-in per-role entitlements are used;
+  hardened runtime is enabled for Developer ID identities, not ad-hoc bundles
+  whose nested code has no Team ID for library validation. Ad-hoc signing disables timestamp requests and
+  provisioning-profile discovery; it does not confer Gatekeeper trust or notarization.
+  Strict deep verification must pass before zipping and after DMG staging.
+  `KS_DESKTOP_RELEASE_DIR` selects a separate output directory; custom outputs
+  inside the desktop source tree are excluded from the packaged app.
+  To run the real seal regression test, set `KS_MAC_VERIFY_APP` to a built `.app`
+  when running the desktop unit suite. Without it that packaging test is skipped.
+- The API default is `https://api.ks.aileena.xyz`; loopback/HTTPS runtime overrides
+  retain their existing policy. The renderer remains pinned to #154 as a baseline.
+  Desktop builds replace `src/web/lib/host-deploy.ts` in memory with the desktop-only
+  `src/desktop/host-deploy.ts` policy via a desktop Vite plugin. Shared web source
+  and its normal Vite configuration are never modified by this build. The
+  overlay file's SHA-256 is recorded in DMG build provenance under `renderer.overlays`.
+  `KS_MAC_VERIFY_APP` also enables the packaged ASAR/renderer forbidden-host check.
 - `KS_DESKTOP_LIVE=1` explicitly selects the live site instead of the bundled
   renderer; `KS_DESKTOP_SYNC_PROXY=1` routes the sync host to a local
   `127.0.0.1:8787` worker; `KS_DESKTOP_API_URL` overrides the API base
@@ -179,7 +209,8 @@ ciphertext-shaped fields alone are not proof of encryption.
 ### Mac tester onboarding
 
 On macOS, the `Mac tester onboarding` case additionally mounts a local DMG
-read-only, checks its exact four-entry layout (no launch helper), and checks
+read-only, checks its exact four visible entries (no launch helper), verifies
+the hidden `.DS_Store` and `.background/installer.png` branding files, and checks
 the renderer revision in `BUILD-INFO.txt`. That file lives at the DMG root,
 not inside the app. For an installed target, the test compares the entire
 installed bundle with the mounted app before launching. For source, it compares
