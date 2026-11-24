@@ -69,7 +69,7 @@ Useful repeatable shell searches (review callers and project resources too):
 
 ```sh
 rg -n 'CryptoKit|CommonCrypto|Security|PBKDF2|AES|GCM|SHA|HMAC|HKDF|Keychain|LocalAuthentication|SecRandom|SecItem|completeFileProtection' src/ios/KeyShield
-rg -n 'Cipher\\.|SecureRandom\\.|evaluatePolicy|URLSession|MockProviderTransport' src/ios/KeyShield
+rg -n 'Cipher\.\|SecureRandom\.\|evaluatePolicy|URLSession|MockProviderTransport' src/ios/KeyShield
 rg -n 'packageProductDependencies|PBXFrameworksBuildPhase|PBXResourcesBuildPhase' src/ios/KeyShield.xcodeproj/project.pbxproj
 otool -L /Users/devin/ks-testflight/KeyShield-unsigned.xcarchive/Products/Applications/KeyShield.app/KeyShield
 ```
