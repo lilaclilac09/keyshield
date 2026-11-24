@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createContext, runInContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
+import { PROD_API_BASE } from '../src/desktop/host-deploy';
 
 const requireDesktop = createRequire(new URL('../src/desktop/package.json', import.meta.url));
 const main = readFileSync('src/desktop/main.cjs', 'utf8');
@@ -96,7 +97,7 @@ describe('broker IPC main-frame boundary', () => {
   it.each([true, false])('accepts the main session registration GET without Origin (Referer present: %s)', async (withReferer) => {
     const w = await harness(); const event = { sender: w.wc, senderFrame: w.frame }; const payload = { requestId: 'r', assertion: {}, secret: 'synthetic' };
     w.handlers.get('ks-broker:approve')!(event, payload); expect(w.broker.approve).toHaveBeenCalledWith(payload);
-    const registrationRequest = new Request('https://keyshield-production.up.railway.app/auth/passkey/register-options', {
+    const registrationRequest = new Request(`${PROD_API_BASE}/auth/passkey/register-options`, {
       headers: { ...(withReferer ? { Referer: 'https://app.ks.aileena.xyz/device-vault' } : {}), Authorization: 'Bearer account-session' } });
     runInContext('installHttpsHandler(testSession)', w.context);
     expect([...w.protocols.keys()]).toEqual(['https', 'http']);
@@ -111,7 +112,7 @@ describe('broker IPC main-frame boundary', () => {
   it('does not observe registration through a different session', async () => {
     const w = await harness(); w.wc.session = {} as any;
     runInContext('installHttpsHandler(testSession)', w.context);
-    await w.protocols.get('https')!(new Request('https://keyshield-production.up.railway.app/auth/passkey/register-options', {
+    await w.protocols.get('https')!(new Request(`${PROD_API_BASE}/auth/passkey/register-options`, {
       headers: { Referer: 'https://app.ks.aileena.xyz/', Authorization: 'Bearer account-session' } }));
     expect(w.fetch).toHaveBeenCalledTimes(1);
     await expect(w.handlers.get('ks-broker:pinApprovalPasskey')!({ sender: w.wc, senderFrame: w.frame }, { response: {} })).rejects.toThrow('approval_registration_unavailable');
@@ -119,7 +120,7 @@ describe('broker IPC main-frame boundary', () => {
   });
   it.each([
     ['http://localhost:8787/auth/register', 'http://localhost:8787/auth/register'],
-    ['https://keyshield-production.up.railway.app/auth/passkey/register-verify', 'https://keyshield-production.up.railway.app/auth/passkey/register-verify'],
+    [`${PROD_API_BASE}/auth/passkey/register-verify`, `${PROD_API_BASE}/auth/passkey/register-verify`],
     ['https://sync.ks.aileena.xyz/auth/register', 'http://127.0.0.1:8787/auth/register'],
   ])('preserves POST method, headers and streaming body when forwarding %s', async (url, destination) => {
     const w = await harness(true, false, true);
