@@ -69,12 +69,17 @@ export class LocalVault {
     await this.storage.set({ vault: { version: 1, iterations: ITERATIONS, salt: encode(this.salt), iv: encode(iv), ciphertext: encode(ciphertext) } });
   }
 
+  async lookup(value) {
+    this.requireUnlocked();
+    const fingerprint = encode(await crypto.subtle.sign('HMAC', this.hmac, encoder.encode(value))).join(',');
+    this.requireUnlocked();
+    return { fingerprint, entry: this.entries.find((entry) => entry.fingerprint === fingerprint) };
+  }
+
   async save(candidate, label, confirmDuplicate = false) {
+    const { fingerprint, entry: existing } = await this.lookup(candidate.value);
     this.requireUnlocked();
-    const fingerprint = encode(await crypto.subtle.sign('HMAC', this.hmac, encoder.encode(candidate.value))).join(',');
-    this.requireUnlocked();
-    const existing = this.entries.find((entry) => entry.fingerprint === fingerprint);
-    if (existing && !confirmDuplicate) return { duplicate: true };
+    if (existing && !confirmDuplicate) return { duplicate: true, origin: existing.origin };
     const previous = structuredClone(this.entries);
     if (existing) existing.label = String(label).slice(0, 100);
     else this.entries.push({ ...candidate, label: String(label).slice(0, 100), fingerprint, id: crypto.randomUUID() });

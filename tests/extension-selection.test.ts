@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { LocalVault, audit } from '../src/extension/lib/vault.js';
 import { recognizeValue } from '../src/extension/lib/recognize.js';
 import { originPattern, permissionFor, requireProvider } from '../src/extension/lib/policy.js';
@@ -10,7 +10,7 @@ const patterns = samples.map((sample) => ({ provider: sample.provider, source: s
 const origin = 'https://dashboard.provider.test';
 const passphrase = 'FAKE local passphrase';
 
-async function background({ allowed = true, data = {} as Record<string, any> } = {}) {
+async function background({ allowed = true, data = {} as Record<string, any>, origins = [origin] } = {}) {
   let removed;
   let receive;
   let injections = 0;
@@ -33,7 +33,7 @@ async function background({ allowed = true, data = {} as Record<string, any> } =
   const source = readFileSync('src/extension/background.js', 'utf8').replace(/^import[^\n]+\n/gm, '');
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
   const api = await new AsyncFunction('chrome', 'LocalVault', 'audit', 'PROVIDER_ORIGINS', 'originPattern', 'permissionFor', 'requireProvider', 'PATTERNS', 'recognizeValue', 'crypto', `${source}\nreturn { handle, handleSelection, menuOptions, state: () => pending, lock: () => vault.lock() };`)(
-    chrome, LocalVault, audit, [origin], originPattern, (url) => permissionFor(url, [origin]), (url, permissions) => requireProvider(url, permissions, [origin]), patterns, (value) => recognizeValue(value, patterns), webcrypto,
+    chrome, LocalVault, audit, origins, originPattern, (url) => permissionFor(url, origins), (url, permissions) => requireProvider(url, permissions, origins), patterns, (value) => recognizeValue(value, patterns), webcrypto,
   );
   return { ...api, tab, data, grant: () => { allowed = true; }, injections: () => injections, close: () => removed(42), receive: (...args) => receive(...args) };
 }
@@ -42,7 +42,8 @@ it('selection retains exactly the selected value in memory and returns only mask
   const bg = await background();
   await bg.handleSelection({ menuItemId: 'save-selection', selectionText: samples[0].value }, bg.tab);
   const response = await bg.handle({ type: 'PENDING' });
-  expect(Object.keys(response.pending).sort()).toEqual(['id', 'origin', 'permissionNeeded', 'preview', 'provider', 'providers']);
+  expect(Object.keys(response.pending).sort()).toEqual(['duplicate', 'fillOrigin', 'id', 'origin', 'permissionNeeded', 'preview', 'provider', 'providers']);
+  expect(response.pending.fillOrigin).toBeNull();
   expect(JSON.stringify(response)).not.toContain(samples[0].value);
   expect(bg.state().value).toBe(samples[0].value);
   for (const sample of samples.slice(1)) expect(JSON.stringify(bg.state())).not.toContain(sample.value);
@@ -52,6 +53,48 @@ it('selection retains exactly the selected value in memory and returns only mask
   expect(bg.menuOptions.documentUrlPatterns).toEqual([`${origin}/*`]);
   bg.close();
   await expect(bg.handle({ type: 'PENDING' })).rejects.toThrow('No pending value');
+});
+
+it('resolves a duplicate binding before Save and returns its exact original origin, never its value', async () => {
+  const secondOrigin = 'https://dashboard.second-provider.test';
+  const bg = await background({ origins: [origin, secondOrigin] });
+  await bg.handle({ type: 'UNLOCK', passphrase });
+  const first = (await bg.handle({ type: 'ADD', value: samples[0].value })).pending;
+  expect(first).toMatchObject({ fillOrigin: origin, duplicate: false });
+  await bg.handle({ type: 'SAVE', id: first.id, provider: first.provider, label: 'First' });
+  bg.tab.url = `${secondOrigin}/input.html`;
+  const { pending } = await bg.handle({ type: 'ADD', value: samples[0].value });
+  expect(pending).toMatchObject({ origin: secondOrigin, fillOrigin: origin, duplicate: true });
+  expect(JSON.stringify(pending)).not.toContain(samples[0].value);
+  const save = { type: 'SAVE', id: pending.id, provider: pending.provider, label: 'Updated' };
+  expect(await bg.handle(save)).toEqual({ duplicate: true, origin });
+  await bg.handle({ ...save, confirmDuplicate: true });
+  expect((await bg.handle({ type: 'LIST' })).entries).toHaveLength(1);
+  expect((await bg.handle({ type: 'LIST' })).entries[0]).toMatchObject({ origin, label: 'Updated' });
+  expect(JSON.stringify(bg.data)).not.toContain(samples[0].value);
+  bg.lock();
+});
+
+it('promises no binding while locked or when lookup fails, and refuses Save without creating an entry', async () => {
+  const bg = await background();
+  await bg.handleSelection({ menuItemId: 'save-selection', selectionText: samples[0].value }, bg.tab);
+  const { pending } = await bg.handle({ type: 'PENDING' });
+  expect(pending.fillOrigin).toBeNull();
+  const save = { type: 'SAVE', id: pending.id, provider: pending.provider, label: 'Never saved' };
+  await expect(bg.handle(save)).rejects.toThrow('Unlock');
+  await bg.handle({ type: 'UNLOCK', passphrase });
+  expect((await bg.handle({ type: 'PENDING' })).pending.fillOrigin).toBe(origin);
+  const lookup = vi.spyOn(LocalVault.prototype, 'lookup').mockRejectedValue(new Error('lookup unavailable'));
+  try {
+    const metadata = (await bg.handle({ type: 'PENDING' })).pending;
+    expect(metadata.fillOrigin).toBeNull();
+    expect(JSON.stringify(metadata)).not.toContain(samples[0].value);
+    await expect(bg.handle(save)).rejects.toThrow('lookup unavailable');
+    expect((await bg.handle({ type: 'LIST' })).entries).toEqual([]);
+  } finally {
+    lookup.mockRestore();
+    bg.lock();
+  }
 });
 
 it('rejects unsupported origins and unrecognized selections without retaining values', async () => {
