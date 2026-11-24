@@ -104,7 +104,7 @@ it('rejects unsupported origins and unrecognized selections without retaining va
   expect(bg.data).toEqual({});
   expect(bg.injections()).toBe(0);
   bg.close();
-  expect(await bg.handleSelection({ menuItemId: 'save-selection', selectionText: '••••••' })).toMatchObject({ ok: false, error: 'Not a recognised key, nothing saved' });
+  expect(await bg.handleSelection({ menuItemId: 'save-selection', selectionText: '••••••' }, bg.tab)).toMatchObject({ ok: false, error: 'Not a recognised key, nothing saved' });
   expect(bg.state().value).toBeUndefined();
 });
 
