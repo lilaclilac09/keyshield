@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2C767C9CF3245E7BEE28163C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 270C3B73A802B039F3E05F79 /* PrivacyInfo.xcprivacy */; };
 		3425466B0FB2DE32704FF8E1 /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 638CEAB9D1196CE7061BD66B /* ClipboardService.swift */; };
 		36050BF4F22C2B61AA79402B /* Primitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B98DF0818EBDFF2855F425 /* Primitives.swift */; };
 		3879AA94EBD30036122EA1C3 /* VaultStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E01CD403FB7709EBE6714B54 /* VaultStore.swift */; };
@@ -26,6 +27,7 @@
 		BADB099CBB50B277F431B9D9 /* DeveloperReferenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D28DE3F1EA1F3A0BA620D2ED /* DeveloperReferenceViews.swift */; };
 		C609921C6B8B34BEB9263A79 /* SecondaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */; };
 		D402178F3CD13314FBEC48A4 /* DemoPaymentsLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C59BECDF1390C36F368EB0 /* DemoPaymentsLedger.swift */; };
+		D85109C45BA83B73E1816A11 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 195AD174033854AB6DEEF001 /* Assets.xcassets */; };
 		DB01641413B131364CB92795 /* auth.json in Resources */ = {isa = PBXBuildFile; fileRef = C055CB4179C8EEE97852511B /* auth.json */; };
 		DDD8FA148F31008258D7A05C /* AuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */; };
 		DE62535CD4FCCD6D1DFB5A41 /* BackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26EC857606E2674B705AB14 /* BackupService.swift */; };
@@ -57,6 +59,8 @@
 		0E479D7408C6267C986310B8 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		1284D1CCEB8F01BFC59675DF /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		13611F3765F4FC81C6F6228C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		195AD174033854AB6DEEF001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		270C3B73A802B039F3E05F79 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2A55159A48A89F80F568901B /* KeyShieldApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyShieldApp.swift; sourceTree = "<group>"; };
 		4E7DB5D7509329808938A48F /* KeyShieldUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KeyShieldUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		505F344BC9DDB85F3B636170 /* VaultViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultViews.swift; sourceTree = "<group>"; };
@@ -75,6 +79,7 @@
 		AF9DAF7A4704DEF5102812E6 /* AuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditLog.swift; sourceTree = "<group>"; };
 		C055CB4179C8EEE97852511B /* auth.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = auth.json; sourceTree = "<group>"; };
 		C947F06C890E86634E30E950 /* keys.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = keys.json; sourceTree = "<group>"; };
+		CF0DEDF30F1139EF9B6F709F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D26EC857606E2674B705AB14 /* BackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupService.swift; sourceTree = "<group>"; };
 		D28DE3F1EA1F3A0BA620D2ED /* DeveloperReferenceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperReferenceViews.swift; sourceTree = "<group>"; };
 		E01CD403FB7709EBE6714B54 /* VaultStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultStore.swift; sourceTree = "<group>"; };
@@ -99,9 +104,12 @@
 			isa = PBXGroup;
 			children = (
 				1284D1CCEB8F01BFC59675DF /* AppModel.swift */,
+				195AD174033854AB6DEEF001 /* Assets.xcassets */,
 				D28DE3F1EA1F3A0BA620D2ED /* DeveloperReferenceViews.swift */,
+				CF0DEDF30F1139EF9B6F709F /* Info.plist */,
 				2A55159A48A89F80F568901B /* KeyShieldApp.swift */,
 				82A6FB24F515FCA099EC6736 /* PaymentsView.swift */,
+				270C3B73A802B039F3E05F79 /* PrivacyInfo.xcprivacy */,
 				13611F3765F4FC81C6F6228C /* RootView.swift */,
 				9CCC2E82D7D7BF5B302F9D2D /* SecondaryViews.swift */,
 				9D3F055BB1393D7795C12A27 /* Simulator.entitlements */,
@@ -175,6 +183,7 @@
 			buildConfigurationList = FBE4A6A72FD17F0DB1D3569E /* Build configuration list for PBXNativeTarget "KeyShield" */;
 			buildPhases = (
 				7BD161B58B9BE284BBFCEF98 /* Sources */,
+				F1938D3F86A21A37FCDF8BA7 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -233,6 +242,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					19B399F14043A99A4FC9CA31 = {
+						DevelopmentTeam = "";
+					};
 					652E5D36D9C05C7EA2A27524 = {
 						TestTargetID = 19B399F14043A99A4FC9CA31;
 					};
@@ -268,6 +280,15 @@
 				DB01641413B131364CB92795 /* auth.json in Resources */,
 				83ACCE0A5D93EED8727EF4D1 /* keys.json in Resources */,
 				5EBCD59E0812548284C2C860 /* policy.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1938D3F86A21A37FCDF8BA7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D85109C45BA83B73E1816A11 /* Assets.xcassets in Resources */,
+				2C767C9CF3245E7BEE28163C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -519,15 +540,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = KeyShield/Simulator.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Approve a displayed KeyShield operation.";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KeyShield/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.aileena.keyshield.ios;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -627,15 +652,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = KeyShield/Simulator.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Approve a displayed KeyShield operation.";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KeyShield/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.aileena.keyshield.ios;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -646,15 +676,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = KeyShield/Simulator.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Approve a displayed KeyShield operation.";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KeyShield/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.aileena.keyshield.ios;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
