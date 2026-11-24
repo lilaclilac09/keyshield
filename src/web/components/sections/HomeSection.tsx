@@ -52,7 +52,7 @@ function planExpiry(snap: PlanSnapshot | null, planName?: string): string {
 }
 
 const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, label, sub }) => (
-  <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'`}>
+  <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
     <div className="flex items-center gap-2">
       <span className={`w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-[#5e6a91]'}`} />
       <span className="text-[18px] font-semibold text-white">{label}</span>
