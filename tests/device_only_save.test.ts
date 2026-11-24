@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect } from 'react';
 import { readFileSync } from 'node:fs';
+import { SAVE_SYNC_FAILED, VaultSyncChangeError, getVaultSyncStatus, reportVaultSyncChange } from '../src/web/lib/vault-sync-status';
 
 const hooks = vi.hoisted(() => ({ states: [] as any[], index: 0 }));
 vi.mock('react', async (importOriginal) => ({
@@ -23,7 +24,7 @@ import { apiFetch } from '../src/web/lib/auth';
 import { connectOpenRouter, fetchOpenRouterStatus } from '../src/web/lib/openrouter-interface';
 import { detectKeyOnServer, storeDetectedKeys } from '../src/web/lib/keychain';
 import { DeviceVaultRequiredError, DEVICE_VAULT_REQUIRED, DEVICE_CALL_SKIPPED, saveKeyOnDevice } from '../src/web/lib/device-save';
-import { registerSavingSecret } from '../src/web/lib/secret-guard';
+import { redactSavingSecrets, registerSavingSecret } from '../src/web/lib/secret-guard';
 import { emitAppFeedback } from '../src/web/lib/app-feedback';
 import { humanActionError } from '../src/web/lib/human-usable';
 import { storeUpstreamKey } from '../src/web/lib/api';
@@ -40,6 +41,7 @@ let requests: Array<{ url: string; headers: [string, string][]; body: string }>;
 let diagnostics: unknown[];
 let messages: unknown[];
 let failNetwork: boolean;
+let failureStatus: number | null;
 let storageWrites: unknown[];
 
 function findNode(node: any, predicate: (node: any) => boolean): any {
@@ -61,6 +63,7 @@ function storage() {
 beforeEach(() => {
   hooks.states = []; hooks.index = 0;
   requests = []; diagnostics = []; messages = []; storageWrites = []; failNetwork = false;
+  failureStatus = null;
   vi.stubGlobal('localStorage', storage());
   vi.stubGlobal('sessionStorage', storage());
   vi.stubGlobal('window', {
@@ -73,6 +76,7 @@ beforeEach(() => {
     requests.push({ url: String(url), headers: [...new Headers(init?.headers).entries()], body: String(init?.body ?? '') });
     if (url.endsWith('/auth/exchange')) return Response.json({ token: 'synthetic-token', expiresAt: Date.now() + 600000 });
     if (init?.method === 'PUT' && failNetwork) throw new Error(`network rejected ${raw}`);
+    if (init?.method === 'PUT' && failureStatus !== null) return Response.json({ detail: raw }, { status: failureStatus, statusText: raw });
     if (url.includes('/vault/') && init?.method === 'GET') return new Response(null, { status: 404 });
     if (url.endsWith('/manage/vault')) return Response.json([]);
     return Response.json({});
@@ -91,7 +95,7 @@ async function unlock() {
   requests = []; storageWrites = []; diagnostics = [];
 }
 function expectPrivate(secret = raw) {
-  for (const captured of [requests, diagnostics, storageWrites, messages]) {
+  for (const captured of [requests, diagnostics, storageWrites, messages, getVaultSyncStatus()]) {
     const text = JSON.stringify(captured);
     expect(text).not.toContain(secret);
     expect(text).not.toContain(JSON.stringify(secret).slice(1, -1));
@@ -101,6 +105,7 @@ function expectPrivate(secret = raw) {
 
 const vaultProps = { items: [], total: 0, searchQuery: '', onAdd: vi.fn(), onDelete: vi.fn(), onDecrypt: vi.fn() };
 async function quickSave(alsoCall: boolean): Promise<void> {
+  reportVaultSyncChange('save', true);
   let tree = render(() => VaultSection(vaultProps));
   findNode(tree, (node) => node.type === 'textarea').props.onChange({ target: { value: raw } });
   tree = render(() => VaultSection(vaultProps));
@@ -109,6 +114,7 @@ async function quickSave(alsoCall: boolean): Promise<void> {
   const last = hooks.states.find((state) => typeof state === 'string' && (state.startsWith(DEVICE_VAULT_REQUIRED) || state.startsWith('Device vault save failed')));
   if (last?.startsWith(DEVICE_VAULT_REQUIRED)) throw new DeviceVaultRequiredError();
   if (last) throw new Error(last);
+  if (getVaultSyncStatus().message) throw new Error(getVaultSyncStatus().message!);
 }
 const entries = [
   ['modal addItem', () => render(() => useVaults('', '')).addItem({ upstream: 'openrouter', rawKey: raw, value: raw, name: raw })],
@@ -141,14 +147,61 @@ describe.each(entries)('%s device-only save', (name, save) => {
     if (failure === 'sync network') failNetwork = true;
     if (failure === 'encryption') vi.spyOn(vaultCrypto, 'encryptVault').mockRejectedValue(new Error(raw));
     if (failure === 'unsafe ciphertext') vi.spyOn(vaultCrypto, 'encryptVault').mockResolvedValue({ version: 1, iv: 'iv', ciphertext: raw, updatedAt: 1 });
-    await expect(save()).rejects.toThrow('Device vault save failed. Unlock the vault and retry.');
+    await expect(save()).rejects.toThrow(failure === 'sync network' ? SAVE_SYNC_FAILED : 'Device vault save failed. Unlock the vault and retry.');
     expect(getDecryptedKey('openrouter')).toBeNull();
+    if (name.startsWith('quick paste')) {
+      const tree = render(() => VaultSection(vaultProps));
+      expect(findNode(tree, (node) => node.type === 'textarea').props.value).toBe(raw);
+    }
     expectPrivate();
     if (failure !== 'sync network') expect(requests).toHaveLength(0);
   });
 });
 
 describe('central guards and consent', () => {
+  it.each([401, 403, 409, 413, 422, 428, 503])('keeps typed errors and global status secret-free after HTTP %s without a hosted fallback', async (status) => {
+    await unlock();
+    failureStatus = status;
+    const error = await saveKeyOnDevice('openrouter', raw).catch((err) => err);
+    expect(error).toBeInstanceOf(VaultSyncChangeError);
+    expect(getVaultSyncStatus()).toEqual({ outcome: 'failed', message: error.message });
+    diagnostics.push(error.message, error.stack);
+    expect(getDecryptedKey('openrouter')).toBeNull();
+    expect(storageWrites).toHaveLength(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toContain('/vault/');
+    expectPrivate();
+  });
+  it('redacts typed error objects and status text through the saving-secret guard and feedback bus', () => {
+    const release = registerSavingSecret(raw);
+    try {
+      const error = new VaultSyncChangeError('save');
+      error.message += ` ${JSON.stringify(raw).replace(/s/g, '\\u0073')}`;
+      const status = { outcome: 'failed', message: `${error.message} ${encodeURIComponent(raw)}` };
+      expect(redactSavingSecrets(error)).toMatchObject({ name: 'VaultSyncChangeError', message: '[REDACTED]' });
+      expect(redactSavingSecrets(status)).toEqual({ outcome: 'failed', message: '[REDACTED]' });
+      console.error(error, status);
+      emitAppFeedback({ kind: 'error', title: error.message, detail: status.message, source: 'save' });
+      expect(diagnostics).toContainEqual(expect.objectContaining({ title: '[REDACTED]', detail: '[REDACTED]' }));
+      expectPrivate();
+    } finally { release(); }
+  });
+  it('retains modal input and stays open after a real typed sync failure', async () => {
+    await unlock();
+    failNetwork = true;
+    const props = { isOpen: true, onClose: vi.fn(), onSave: (item: Parameters<typeof saveKeyOnDevice>[2] & { rawKey?: string }) => saveKeyOnDevice('openrouter', item.rawKey!) };
+    let tree = render(() => AddKeyModal(props));
+    findNode(tree, (node) => node.type === 'input' && node.props?.type === 'password').props.onChange({ target: { value: raw } });
+    tree = render(() => AddKeyModal(props));
+    await findNode(tree, (node) => node.type === 'form').props.onSubmit({ preventDefault: vi.fn() });
+    tree = render(() => AddKeyModal(props));
+    expect(findNode(tree, (node) => node.type === 'input' && node.props?.type === 'password').props.value).toBe(raw);
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(getVaultSyncStatus()).toEqual({ outcome: 'failed', message: SAVE_SYNC_FAILED });
+    expect(getDecryptedKey('openrouter')).toBeNull();
+    expect(requests).toHaveLength(1);
+    expectPrivate();
+  });
   it.each([false, true])('ignores ambient pending messages and stored hits (unlocked=%s) without saving or requesting', async (unlocked) => {
     if (unlocked) await unlock();
     const queued = JSON.stringify([{ upstream: 'openrouter', value: raw }]);

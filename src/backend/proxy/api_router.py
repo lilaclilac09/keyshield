@@ -76,6 +76,14 @@ PROVIDERS: dict[str, dict] = {
             "X-Title": os.getenv("KS_OPENROUTER_TITLE", "KeyShield live e2e"),
         },
     },
+    # Thinking Machines Tinker: OpenAI-compatible sampling endpoint.
+    "tinker": {
+        "base": os.getenv(
+            "KS_TINKER_BASE",
+            "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1",
+        ).rstrip("/"),
+        "auth": "bearer",
+    },
     "ollama": {
         "base": os.getenv("KS_OLLAMA_BASE", "http://127.0.0.1:11434").rstrip("/"),
         "auth": "bearer",

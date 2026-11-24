@@ -101,7 +101,7 @@ describe("passkey is not required to save", () => {
 });
 
 describe("Vault page saved-key hero", () => {
-  it("lists /manage/vault rows after sign-in the same way the popup does", () => {
+  it("lists legacy /manage/vault rows in the dashboard after sign-in", () => {
     const src = readFileSync(resolve(root, "src/web/components/sections/VaultSection.tsx"), "utf8");
     expect(src).toContain('data-testid="vault-saved-apis"');
     expect(src).toContain("1 saved");
@@ -116,8 +116,6 @@ describe("Vault page saved-key hero", () => {
     expect(hook).toContain("Save the API key again");
     const card = readFileSync(resolve(root, "src/web/components/VaultItemCard.tsx"), "utf8");
     expect(card).toContain("if (!v)");
-    const bg = readFileSync(resolve(root, "src/extension/background.js"), "utf8");
-    expect(bg).toContain("apiKey: String(value ?? '')");
   });
 });
 

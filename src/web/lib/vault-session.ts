@@ -12,6 +12,7 @@
  */
 
 import { setZkRootFromPrf, clearZkRoot } from './zk';
+import { reportVaultSyncChange, VaultSyncChangeError } from './vault-sync-status';
 import {
   decryptVault,
   deriveMasterKey,
@@ -21,9 +22,11 @@ import {
   type VaultEntry,
   type VaultEntryMetadata,
   type VaultPlaintext,
+  type VaultCipher,
 } from './vault';
-import { makeBearerHolder, type BearerHolder } from './sync-auth';
-import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
+import { makeBearerHolder, prfSalt, type BearerHolder } from './sync-auth';
+import { unb64u, b64u } from './zk';
+import { makeHttpSyncBackend, SyncAuthError, SyncHttpError, type SyncBackend } from './sync';
 import { PROD_SYNC_URL, usePublicControlPlaneFallback } from './host-deploy';
 
 export const SYNC_URL: string = (() => {
@@ -89,6 +92,54 @@ interface SessionState {
 }
 
 let _state: SessionState | null = null;
+let approvalSnapshot: { vaultId: string; cipher: VaultCipher } | null = null;
+let snapshotEntries: Record<string, Record<string, unknown>> = {};
+let snapshotAccount = '';
+let approvalEpoch = 0;
+let invalidations: Promise<unknown> = Promise.resolve();
+
+function approvalAccount(): string {
+  try { return JSON.stringify(['ks_wallet', 'ks_passkey_user', 'ks_token'].map((key) => localStorage.getItem(key))); }
+  catch { return ''; }
+}
+
+export function invalidateApprovalSnapshot(): void {
+  approvalSnapshot = null;
+  snapshotEntries = {};
+  approvalEpoch++;
+  const broker = typeof window !== 'undefined' ? window.keyshieldDesktop?.broker : undefined;
+  if (broker) {
+    invalidations = invalidations.catch(() => {}).then(() => broker.invalidateApprovals());
+    void invalidations.catch(() => {});
+  }
+}
+
+if (typeof window !== 'undefined') {
+  const accountChanged = () => { if (snapshotAccount !== approvalAccount()) invalidateApprovalSnapshot(); };
+  window.addEventListener('storage', accountChanged);
+  window.addEventListener('ks-auth-changed', accountChanged);
+  window.addEventListener('ks-vault-sync-error', invalidateApprovalSnapshot);
+  window.addEventListener('ks-vault-cipher-pulled', (event) => {
+    const detail = (event as CustomEvent<{ vaultId: string; revision: number }>).detail;
+    if (approvalSnapshot && (detail.vaultId !== approvalSnapshot.vaultId || detail.revision !== approvalSnapshot.cipher.updatedAt)) invalidateApprovalSnapshot();
+  });
+}
+
+function retainApprovalSnapshot(vaultId: string, cipher: VaultCipher | null, plaintext: VaultPlaintext): void {
+  if (typeof window === 'undefined' || !window.keyshieldDesktop?.broker) return;
+  const entries = Object.fromEntries(Object.entries(plaintext.entries).map(([id, entry]) => [id,
+    Object.fromEntries(Object.entries(entry).filter(([key, value]) => (key === 'addedAt' || key === 'domain' || /label|expir|^(?:name|displayName)$/i.test(key)) &&
+      (value === null || typeof value === 'string' || typeof value === 'number')).map(([key, value]) =>
+      [key, typeof value === 'string' && entry.apiKey ? value.split(entry.apiKey).join('[REDACTED]') : value])),
+  ]));
+  if (approvalSnapshot && (approvalSnapshot.vaultId !== vaultId || approvalSnapshot.cipher.updatedAt !== cipher?.updatedAt ||
+      JSON.stringify(snapshotEntries) !== JSON.stringify(entries))) invalidateApprovalSnapshot();
+  snapshotEntries = entries;
+  snapshotAccount = approvalAccount();
+  approvalSnapshot = cipher ? { vaultId, cipher: {
+    version: cipher.version, iv: cipher.iv, ciphertext: cipher.ciphertext, updatedAt: cipher.updatedAt,
+  } } : null;
+}
 
 export function isVaultUnlocked(): boolean {
   return _state !== null;
@@ -118,10 +169,12 @@ export async function enrollVault(
       signal: AbortSignal.timeout(2500),
     });
   } catch (e) {
+    invalidateApprovalSnapshot();
     throw describeNetError(e, 'register');
   }
   // 409 = already registered = OK (cross-device race or re-enrollment)
   if (!res.ok && res.status !== 409) {
+    invalidateApprovalSnapshot();
     const err = await res.json().catch(() => ({ error: `register failed (${res.status})` }));
     throw new Error((err as { error?: string }).error ?? `register failed (${res.status})`);
   }
@@ -134,7 +187,13 @@ export async function unlockVault(
   prfOutput: ArrayBuffer,
   assertion: unknown,
 ): Promise<{ vaultId: string; entryCount: number }> {
+  try { return await unlockVaultSession(prfOutput, assertion); }
+  catch (e) { invalidateApprovalSnapshot(); throw e; }
+}
+
+async function unlockVaultSession(prfOutput: ArrayBuffer, assertion: unknown) {
   const vaultId = await deriveVaultId(prfOutput);
+  if (approvalSnapshot && approvalSnapshot.vaultId !== vaultId) invalidateApprovalSnapshot();
   const masterKey = await deriveMasterKey(prfOutput);
   await setZkRootFromPrf(prfOutput); // ZK mode root, memory only (lib/zk.ts)
 
@@ -160,10 +219,78 @@ export async function unlockVault(
 
   const cipher = await sync.pull(vaultId, () => bearer.get());
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
+  retainApprovalSnapshot(vaultId, cipher, plaintext);
 
   _state = { vaultId, masterKey, bearer, sync, plaintext };
   setCachedVaultId(vaultId);
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
+}
+
+async function decryptEntryForApproval(
+  prfOutput: ArrayBuffer,
+  entryId: string,
+): Promise<string> {
+  if (entryId.startsWith('device:')) throw new Error('entry not found');
+  if (!approvalSnapshot) throw new Error('unlock the device vault once first');
+  const snapshot = approvalSnapshot;
+  const vaultId = await deriveVaultId(prfOutput);
+  if (snapshot.vaultId !== vaultId) throw new Error('entry not found');
+  const masterKey = await deriveMasterKey(prfOutput);
+  const plaintext = await decryptVault(masterKey, snapshot.cipher);
+  const entry = Object.hasOwn(plaintext.entries, entryId) ? plaintext.entries[entryId] : undefined;
+  if (!entry) throw new Error('entry not found');
+  assertApprovalEntryActive({ expiresAt: entry.expiresAt });
+  return entry.apiKey;
+}
+
+function assertApprovalEntryActive(metadata: Record<string, unknown>): void {
+  const value = metadata.expiresAt;
+  if (value === undefined || value === '') return;
+  const expiry = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
+  if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error('entry expired');
+}
+
+export async function approveRequestWithPasskey(requestId: string): Promise<void> {
+  const broker = window.keyshieldDesktop?.broker;
+  if (!broker) throw new Error('mock broker unavailable');
+  if (snapshotAccount !== approvalAccount()) invalidateApprovalSnapshot();
+  await invalidations;
+  if (!approvalSnapshot) throw new Error('unlock the device vault once first');
+  const epoch = approvalEpoch;
+  const snapshot = approvalSnapshot;
+  const request = (await broker.listRequests()).find((item) => item.id === requestId);
+  if (!request || request.credential.startsWith('device:') || !Object.hasOwn(snapshotEntries, request.credential)) throw new Error('entry not found');
+  const descriptor = { vaultId: snapshot.vaultId, revision: snapshot.cipher.updatedAt,
+    entryId: request.credential, metadata: snapshotEntries[request.credential] };
+  assertApprovalEntryActive(descriptor.metadata);
+  const approval = await broker.beginApproval({ requestId, snapshot: descriptor });
+  if (approval.binding.requestId !== requestId) throw new Error('approval binding mismatch');
+  if (JSON.stringify(approval.binding.snapshot) !== JSON.stringify(descriptor)) throw new Error('approval binding mismatch');
+  const credential = await navigator.credentials.get({ publicKey: {
+    challenge: unb64u(approval.challenge).buffer,
+    rpId: approval.rpId,
+    allowCredentials: [{ type: 'public-key', id: unb64u(approval.credentialId).buffer }],
+    userVerification: 'required',
+    extensions: { prf: { eval: { first: await prfSalt() } } } as AuthenticationExtensionsClientInputs,
+  } }) as PublicKeyCredential | null;
+  if (!credential) throw new Error('Passkey ceremony cancelled');
+  const ext = credential.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } };
+  const prfOutput = ext.prf?.results?.first;
+  if (!prfOutput) throw new Error('Passkey did not return PRF');
+  if (epoch !== approvalEpoch || snapshot !== approvalSnapshot || snapshotAccount !== approvalAccount()) {
+    invalidateApprovalSnapshot(); throw new Error('approval snapshot changed');
+  }
+  const response = credential.response as AuthenticatorAssertionResponse;
+  const encode = (value: ArrayBuffer) => b64u(new Uint8Array(value));
+  const assertion = {
+    id: credential.id, rawId: encode(credential.rawId), type: credential.type,
+    clientExtensionResults: {},
+    response: { authenticatorData: encode(response.authenticatorData), clientDataJSON: encode(response.clientDataJSON),
+      signature: encode(response.signature), userHandle: response.userHandle ? encode(response.userHandle) : undefined },
+  };
+  const secret = await decryptEntryForApproval(prfOutput, approval.binding.entryId);
+  if (epoch !== approvalEpoch || snapshot !== approvalSnapshot) throw new Error('approval snapshot changed');
+  await broker.approve({ requestId, assertion, secret, snapshot: descriptor });
 }
 
 /** Get a fresh challenge from CF Worker for the unlock ceremony.
@@ -183,9 +310,11 @@ export async function getCfChallengeForVaultId(vaultId: string): Promise<string>
       body: JSON.stringify({ vaultId }),
     });
   } catch (e) {
+    invalidateApprovalSnapshot();
     throw describeNetError(e, 'challenge');
   }
   if (!res.ok) {
+    invalidateApprovalSnapshot();
     const err = await res.json().catch(() => ({ error: `challenge failed (${res.status})` }));
     const msg = (err as { error?: string }).error ?? `challenge failed (${res.status})`;
     const unregistered = res.status === 404 && /vault not registered/i.test(msg);
@@ -230,12 +359,19 @@ export async function addEntry(upstream: string, apiKey: string, metadata: Vault
 }
 
 export async function removeEntry(upstream: string): Promise<void> {
+  if (_state && !Object.hasOwn(_state.plaintext.entries, upstream)) return;
   await mutate((p) => {
     delete p.entries[upstream];
-  });
+  }, 'delete');
 }
 
-async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
+async function mutate(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete' = 'save'): Promise<void> {
+  invalidateApprovalSnapshot();
+  try { await mutateSession(fn, operation); }
+  catch (e) { invalidateApprovalSnapshot(); throw e; }
+}
+
+async function mutateSession(fn: (p: VaultPlaintext) => void, operation: 'save' | 'delete'): Promise<void> {
   if (!_state) throw new Error('vault locked');
   const next: VaultPlaintext = {
     entries: { ..._state.plaintext.entries },
@@ -253,14 +389,28 @@ async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
   if (Object.values(next.entries).some(({ apiKey }) => apiKey && outgoing.includes(JSON.stringify(apiKey).slice(1, -1)))) {
     throw new Error('Refusing unsafe vault sync payload');
   }
-  const result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  let result;
+  try {
+    result = await _state.sync.push(_state.vaultId, payload, () => _state!.bearer.get());
+  } catch (err) {
+    const reason = err instanceof SyncAuthError || (err instanceof SyncHttpError && (err.status === 401 || err.status === 403))
+      ? 'expired'
+      : err instanceof SyncHttpError
+        ? err.status === 413 ? 'too-large' : err.status >= 500 && err.status < 600 ? 'unreachable' : 'rejected'
+        : 'unreachable';
+    reportVaultSyncChange(operation, false, reason);
+    throw new VaultSyncChangeError(operation, reason);
+  }
   if (result === 'conflict') {
     // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
     // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
     // protects against silent overwrite (we threw, caller can retry).
-    throw new Error('vault conflict — another device wrote first; reload to refresh');
+    reportVaultSyncChange(operation, false, 'conflict');
+    throw new VaultSyncChangeError(operation, 'conflict');
   }
   _state.plaintext = next;
+  retainApprovalSnapshot(_state.vaultId, payload, next);
+  reportVaultSyncChange(operation, true);
 }
 
 export class VaultLockedError extends Error {

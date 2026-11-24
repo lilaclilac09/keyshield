@@ -43,6 +43,8 @@ fi
 echo "    OK — $(xcrun --find safari-web-extension-converter)"
 
 mkdir -p "${SAFARI_PROJECT_ROOT}"
+RESOURCE_DIR="${SAFARI_PROJECT_ROOT}/resources"
+node "${EXT_DIR}/build.mjs" "${RESOURCE_DIR}"
 
 echo ""
 echo "==> Converting extension..."
@@ -53,7 +55,7 @@ echo "    Bundle : ${SAFARI_BUNDLE_ID}"
 echo ""
 
 xcrun safari-web-extension-converter \
-  "${EXT_DIR}" \
+  "${RESOURCE_DIR}" \
   --project-location "${SAFARI_PROJECT_ROOT}" \
   --app-name "${SAFARI_APP_NAME}" \
   --bundle-identifier "${SAFARI_BUNDLE_ID}" \

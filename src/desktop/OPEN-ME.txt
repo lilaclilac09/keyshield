@@ -1,20 +1,16 @@
-KeyShield for Mac (unsigned personal build)
+KeyShield for Mac
 
-Open this way (Apple Silicon zip):
+Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.
 
-1. Double-click Open-KeyShield.command
-2. If macOS asks, click Open
-3. KeyShield should appear with the login screen
+Mount KeyShield.dmg and copy KeyShield.app to /Applications using Finder.
+For a zip, extract the archive for your Mac and copy KeyShield.app to /Applications.
+Apple Silicon uses the arm64 zip; Intel uses the x64 zip.
 
-If that is blocked:
+macOS may refuse to launch this build. This package does not modify system
+security settings or provide a launch override. Tester distribution requires
+a Developer ID signed and notarized build.
 
-  xattr -cr /Applications/KeyShield.app
-  open /Applications/KeyShield.app
-
-Intel Mac: use KeyShield-mac-x64.zip from the same folder.
-
-Do not expect a Linux-built KeyShield.dmg to contain a double-clickable app.
-The zip is the installable Mac bundle.
-
-Same dashboard as https://app.ks.aileena.xyz
-Does not need local Python :8001 or Rust :8000.
+If the app opens but shows an error screen, use its Copy diagnostics
+button, or read the launch log at:
+  ~/Library/Logs/KeyShield/keyshield-desktop.log
+BUILD-INFO.txt next to this file records which build you installed.

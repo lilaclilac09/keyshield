@@ -1,8 +1,10 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { PROD_API_BASE as DESKTOP_API_BASE, isLegacyBakedUrl as isDesktopLegacyUrl } from "../src/desktop/host-deploy";
 import { isDesktopShell } from "../src/web/lib/desktop-shell";
 
 const root = resolve(__dirname, "..");
@@ -122,28 +124,32 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(main).toContain("app.ks.aileena.xyz");
     expect(main).toContain("renderer");
     expect(main).toContain("KS_DESKTOP_LIVE");
-    expect(main).toContain("promptTouchID");
+    expect(read("src/desktop/startup-policy.cjs")).toContain("promptTouchID");
     expect(main).toContain("persist:keyshield");
     expect(main).toContain("packagedRuntimePreflight");
     expect(main).toContain("inspectMacBundle");
+    expect(main).toContain("renderer-server.cjs");
+    expect(main).toContain("showDiagnosticsScreen");
+    expect(main).toContain("probeMounted");
+    expect(main).toContain("render-process-gone");
+    expect(main).toContain("ks-reveal-log");
+    expect(read("src/desktop/preload.cjs")).toContain("revealLog");
+    expect(read("src/desktop/preload.cjs")).toContain("getDiagnostics");
     expect(main).not.toContain("vault-only");
     expect(main).not.toContain("protocol.registerSchemesAsPrivileged");
   });
 
-  it("shows the window before Touch ID and does not quit on preflight warnings", () => {
+  it("shows the window without unsolicited Touch ID and keeps a local preflight error window", () => {
     const main = read("src/desktop/main.cjs");
     expect(main).toContain("show: true");
     expect(main).toContain("const win = await createWindow();");
-    expect(main).toContain("void maybeTouchId();");
-    expect(main.indexOf("const win = await createWindow();")).toBeLessThan(
-      main.indexOf("void maybeTouchId();"),
-    );
+    expect(main).not.toContain("void maybeTouchId();");
     expect(main).not.toContain("const unlock = await maybeTouchId();");
     expect(main).toContain("bringWindowToForeground(win);");
     expect(main).toContain("loadDashboard");
     expect(main).toContain("boot.html");
     expect(main).not.toMatch(/blockStartup\(preflight\);\s*app\.quit\(\)/);
-    expect(main).toContain("await systemPreferences.promptTouchID");
+    expect(main).toContain("await authorizeTouchId");
     expect(main).toContain("bringWindowToForeground(BrowserWindow.getAllWindows()[0]);");
     expect(main).toContain("flushPendingShellFeedback(win);");
   });
@@ -169,21 +175,35 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
 
   it("packed renderer talks to the hosted control plane by default", () => {
     const build = read("src/desktop/scripts/build-renderer.cjs");
-    expect(build).toContain("https://keyshield-production.up.railway.app");
+    expect(build).toContain("https://api.ks.aileena.xyz");
+    const { env } = require("../src/desktop/scripts/build-renderer.cjs");
+    expect(env.KEYSHIELD_API_URL).toBe("https://api.ks.aileena.xyz");
+    expect(env.KEYSHIELD_PUBLIC_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(DESKTOP_API_BASE).toBe("https://api.ks.aileena.xyz");
+    expect(isDesktopLegacyUrl(DESKTOP_API_BASE)).toBe(false);
+    for (const file of ["src/desktop/main.cjs", "src/desktop/scripts/build-renderer.cjs", "src/desktop/host-deploy.ts"]) {
+      expect(read(file), file).not.toContain("keyshield-production.up.railway.app");
+    }
+    expect(read("src/desktop/main.cjs")).toContain("const PROD_API = 'https://api.ks.aileena.xyz'");
     expect(build).toContain("build:vite");
+    expect(build).toContain("verifyRendererDist");
+    expect(build).toContain("assets");
   });
 
-  it("pack script preserves helper symlinks, uses Electron 33 checks, and ships Open-KeyShield.command", () => {
+  it("pack script preserves runtime symlinks and ships only plain install notes", () => {
     const pack = read("src/desktop/scripts/pack-mac.cjs");
     expect(pack).toContain("stageAppBundle");
     expect(pack).toContain("verbatimSymlinks: true");
     expect(pack).toContain("verifyMacBundleRuntime");
     expect(pack).toContain("runtime-preflight.cjs");
-    expect(pack).toContain("Open-KeyShield.command");
+    expect(pack).not.toContain("Open-KeyShield.command");
     expect(pack).toContain("OPEN-ME.txt");
     expect(pack).toContain("skip dmg on");
     expect(pack).not.toContain("Helper.app/Contents/Frameworks/Electron Framework.framework/Resources/icudtl.dat");
     expect(pack).toContain("boot.html");
+    expect(pack).toContain("BUILD-INFO");
+    expect(pack).toContain("ditto");
+    expect(pack).toContain("verifyRendererDist");
   });
 
   it("accepts a real Electron 33 bundle that PR #137 preflight rejected", () => {
@@ -311,13 +331,99 @@ describe("KeyShield Mac app is a 1:1 wrap of src/web", () => {
     expect(docsSection).toContain("human-usable-ui-standards.md");
   });
 
-  it("ships an Open-KeyShield.command that clears quarantine and opens /Applications", () => {
-    const cmd = read("src/desktop/Open-KeyShield.command");
-    expect(cmd).toContain("xattr -cr");
-    expect(cmd).toContain("/Applications/KeyShield.app");
-    expect(cmd).toContain("codesign --sign - --force --deep");
-    expect(cmd).toContain("open \"$DEST\"");
-    expect(read("src/desktop/OPEN-ME.txt")).toContain("Open-KeyShield.command");
-    expect(read("src/desktop/boot.html")).toContain("Open login");
+  it.each([undefined, "", "  ", "-"])("defaults to offline ad-hoc sealing without Team ID library validation: %s", (identity) => {
+    const { macSigningOptions } = require("../src/desktop/scripts/pack-mac.cjs");
+    const options = macSigningOptions(identity ?? "");
+    expect(options.identity).toBe("-");
+    expect(options.identityValidation).toBe(false);
+    expect(options.preAutoEntitlements).toBe(false);
+    expect(options.preEmbedProvisioningProfile).toBe(false);
+    expect(options.strictVerify).toBe(true);
+    expect(options.optionsForFile("KeyShield Helper.app")).toEqual({ hardenedRuntime: false, timestamp: "none" });
+    expect(read("src/desktop/scripts/pack-mac.cjs")).toContain("osxSign: macSigningOptions()");
+  });
+
+  it("provides a validated identity hook without overriding Electron's per-role entitlements", () => {
+    const { macSigningOptions } = require("../src/desktop/scripts/pack-mac.cjs");
+    const options = macSigningOptions("Developer ID Application: Synthetic Identity");
+    expect(options.identityValidation).toBe(true);
+    expect(options.preAutoEntitlements).toBe(true);
+    expect(options.optionsForFile("KeyShield.app")).toEqual({ hardenedRuntime: true, timestamp: undefined });
+    expect(options.optionsForFile("KeyShield.app")).not.toHaveProperty("entitlements");
+  });
+
+  it("requires strict verification and propagates broken-seal errors", () => {
+    const { verifyMacSeal } = require("../src/desktop/scripts/pack-mac.cjs");
+    const calls: unknown[][] = [];
+    verifyMacSeal("/synthetic/KeyShield.app", (...args: unknown[]) => calls.push(args));
+    expect(calls).toEqual([["codesign", ["--verify", "--deep", "--strict", "/synthetic/KeyShield.app"], { stdio: "inherit" }]]);
+    expect(() => verifyMacSeal("/synthetic/KeyShield.app", () => { throw new Error("broken seal"); })).toThrow("broken seal");
+  });
+
+  it.runIf(process.platform === "darwin" && Boolean(process.env.KS_MAC_VERIFY_APP))("strictly verifies the built Mac app, including nested helpers and frameworks", () => {
+    execFileSync("codesign", ["--verify", "--deep", "--strict", process.env.KS_MAC_VERIFY_APP!], { stdio: "pipe" });
+  });
+
+  it.runIf(Boolean(process.env.KS_MAC_VERIFY_APP))("ships no Railway host in the packaged ASAR or renderer", () => {
+    const resources = join(process.env.KS_MAC_VERIFY_APP!, "Contents/Resources");
+    expect(readFileSync(join(resources, "app.asar")).toString("utf8")).not.toMatch(/railway/i);
+    for (const name of readdirSync(join(resources, "renderer/assets"))) {
+      expect(readFileSync(join(resources, "renderer/assets", name)).toString("utf8"), name).not.toContain("keyshield-production.up.railway.app");
+    }
+  });
+
+  it("overlays only the desktop endpoint policy in memory without modifying shared source", () => {
+    const { rendererPolicyPlugin, rendererPolicyRevision } = require("../src/desktop/scripts/build-renderer.cjs");
+    const source = tempDir();
+    const policy = join(source, "src/web/lib/host-deploy.ts");
+    mkdirSync(join(source, "src/web/lib"), { recursive: true });
+    writeFileSync(policy, "original pinned policy");
+    expect(rendererPolicyRevision()).toMatchObject({ file: "src/desktop/host-deploy.ts", target: "src/web/lib/host-deploy.ts", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const plugin = rendererPolicyPlugin(source);
+    expect(plugin.load(policy)).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load(`${policy}?v=synthetic`)).toBe(read("src/desktop/host-deploy.ts"));
+    const alias = join(tempDir(), "source-alias");
+    symlinkSync(source, alias);
+    expect(rendererPolicyPlugin(alias).load(realpathSync(policy))).toBe(read("src/desktop/host-deploy.ts"));
+    expect(plugin.load("")).toBe(null);
+    expect(plugin.load(join(source, "src/web/lib/auth.ts"))).toBe(null);
+    expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
+    expect(() => rendererPolicyPlugin(source, () => { throw new Error("synthetic build failure"); }).load(policy)).toThrow("synthetic build failure");
+    expect(readFileSync(policy, "utf8")).toBe("original pinned policy");
+  });
+
+  it("excludes custom release artifacts while keeping similarly named source paths", () => {
+    const { createPackagerIgnore } = require("../src/desktop/scripts/pack-mac.cjs");
+    const ignore = createPackagerIgnore(resolve(root, "src/desktop/builds/../builds/tester"));
+    for (const file of ["/builds/tester", "/builds/tester/KeyShield.dmg", "/builds/tester/KeyShield.zip", "/builds/tester/dmg-root/KeyShield.app", "/release/old.dmg", "/out/app"]) {
+      expect(ignore(file), file).toBe(true);
+    }
+    for (const file of ["", "/main.cjs", "/builds/tester-other/config.json"]) expect(ignore(file), file).toBe(false);
+    expect(createPackagerIgnore(resolve(root, "../external-release"))("/main.cjs")).toBe(false);
+    expect(() => createPackagerIgnore(resolve(root, "src/desktop"))).toThrow("Release directory must not be the desktop source root");
+  });
+
+  it("stages a DMG without executable install helpers or security override advice", () => {
+    const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
+    const source = makeElectron33Fixture(tempDir());
+    const staging = tempDir();
+    writeFileSync(join(staging, "Open-KeyShield.command"), "stale helper");
+    const buildInfo = join(tempDir(), "BUILD-INFO.txt");
+    writeFileSync(buildInfo, "synthetic build");
+    stageDmgContents(source, staging, buildInfo);
+    expect(readdirSync(staging).sort()).toEqual(["Applications", "BUILD-INFO.txt", "KeyShield.app", "OPEN-ME.txt"]);
+    expect(preflight.inspectMacBundle(join(staging, "KeyShield.app")).ok).toBe(true);
+    expect(readFileSync(join(staging, "OPEN-ME.txt"), "utf8")).toContain("Local synthetic test build — not signed with a Developer ID and not notarized; macOS Gatekeeper protections are left intact.");
+    expect(existsSync(resolve(root, "src/desktop/Open-KeyShield.command"))).toBe(false);
+    for (const file of ["main.cjs", "OPEN-ME.txt", "README.md", "scripts/pack-mac.cjs"]) {
+      expect(read(`src/desktop/${file}`)).not.toMatch(/xattr|spctl|--no-quarantine|right[- ]click.{0,40}open|open anyway|disabl.{0,40}gatekeeper/i);
+    }
+    expect(read("src/desktop/boot.html")).toContain("Retry the app");
+    expect(read("src/desktop/boot.html")).toContain("Copy diagnostics");
+  });
+
+  it("refuses to stage a missing app instead of providing an install helper fallback", () => {
+    const { stageDmgContents } = require("../src/desktop/scripts/pack-mac.cjs");
+    expect(() => stageDmgContents(join(tempDir(), "missing.app"), tempDir(), "missing-build-info")).toThrow();
   });
 });

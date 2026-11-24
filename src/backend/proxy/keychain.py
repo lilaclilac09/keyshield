@@ -57,6 +57,13 @@ _PROVIDERS: dict[str, dict[str, str | tuple[str, ...]]] = {
         "domain": "console.groq.com",
         "tags": ("AI", "GROQ", "FAST"),
     },
+    "tinker": {
+        "name": "Thinking Machines Tinker",
+        "family": "AI",
+        "product": "Tinker",
+        "domain": "thinkingmachines.ai",
+        "tags": ("AI", "TINKER"),
+    },
     "openrouter": {
         "name": "OpenRouter",
         "family": "AI",

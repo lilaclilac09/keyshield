@@ -58,7 +58,7 @@ export function openrouterChatBody(
   };
 }
 
-export function openrouterCurlSnippet(token = '<TOKEN_HERE>', apiBase = API_BASE): string {
+export function openrouterCurlSnippet(token = '<YOUR_AGENT_TOKEN>', apiBase = API_BASE): string {
   return `curl -sS ${apiBase}/vproxy/openrouter/${OPENROUTER_CHAT_PATH} \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
@@ -66,12 +66,13 @@ export function openrouterCurlSnippet(token = '<TOKEN_HERE>', apiBase = API_BASE
   -d '${JSON.stringify(openrouterChatBody())}'`;
 }
 
-export function openrouterPythonSnippet(token = '<TOKEN_HERE>'): string {
-  return `from keyshield_sdk import KeyShield
-ks = KeyShield(token="${token}")
-# paste once — KeyShield stores the key; Meter / vproxy reuse it
-ks.store("openrouter", "sk-or-v1-paste-here")
-r = ks.proxy("openrouter", "${OPENROUTER_CHAT_PATH}", json=${JSON.stringify(openrouterChatBody())})
+export function openrouterPythonSnippet(token = '<YOUR_AGENT_TOKEN>', apiBase = API_BASE): string {
+  return `import requests
+r = requests.post(
+    "${apiBase}/vproxy/openrouter/${OPENROUTER_CHAT_PATH}",
+    headers={"Authorization": "Bearer ${token}"},
+    json=${JSON.stringify(openrouterChatBody())},
+)
 print(r.json())`;
 }
 

@@ -190,7 +190,9 @@ curl -X POST http://localhost:8001/proxy/openai/v1/chat/completions \
   -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Supported upstreams: `openai`, `anthropic`, `groq`, `mistral`, `cohere`, `helius`. Add more in `src/backend/proxy/api_router.py`.
+Supported upstreams include `openai`, `anthropic`, `groq`, `mistral`, `cohere`, `openrouter`, `tinker`, `helius`. The full list is `PROVIDERS` in `src/backend/proxy/api_router.py`.
+
+Tinker (OpenAI-compatible) path: `/vproxy/tinker/chat/completions` maps to `https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1/chat/completions`. Store the Tinker key under upstream `tinker`, then point an OpenAI client at `$KS_BASE/vproxy/tinker` with a proxy-only token as its API key.
 
 ---
 

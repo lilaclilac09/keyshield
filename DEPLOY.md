@@ -125,7 +125,7 @@ npx wrangler pages deployment tail --project-name keyshield-web   # optional
 
 Or in the Cloudflare dashboard: Pages → keyshield-web → Custom Domains → **Set up a custom domain** → `app.ks.aileena.xyz`. Cloudflare auto-creates the DNS record.
 
-Verify: open `https://app.ks.aileena.xyz/` in your browser. AuthScreen should render. Connect Wallet → sign → enroll passkey end-to-end should work because `RP_ID=ks.aileena.xyz` is the eTLD+1 of the page origin.
+Verify on the intended deployment: open `https://app.ks.aileena.xyz/`, inspect the sign-in screen, then exercise wallet sign-in and passkey enrollment with the intended browser/device. Record the actual result; an RP_ID setting alone does not establish an end-to-end pass. The 2026-11-22 audit observed the public sign-in screen and empty-form validation only, not successful authentication or enrollment.
 
 ---
 
