@@ -1,11 +1,7 @@
 /**
  * Compare-and-set logic for vault writes.
  *
- * The contract: a PUT /vault/:id only succeeds if the incoming
- * `updatedAt` is strictly greater than what's already stored. This
- * gives us optimistic concurrency without a database — two devices
- * editing the same vault at the same wall-clock millisecond will see
- * one push fail with 409, prompting a pull-merge-retry on the client.
+ * Clients must build on the stored revision and win an atomic R2 write.
  *
  * The vault payload itself is opaque to us — we only inspect the
  * `updatedAt` field for ordering. Everything else is end-to-end
@@ -22,10 +18,16 @@ export const VaultCipherSchema = z.object({
 });
 export type VaultCipher = z.infer<typeof VaultCipherSchema>;
 
+const VaultTombstoneSchema = z.object({
+  deleted: z.literal(true),
+  deletedAt: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+}).strict();
+
 /**
  * Read whatever is currently in R2 for a vault ID. Returns null if
- * absent OR if the stored bytes are corrupt (we treat corrupt = absent
- * for write purposes, so a CAS push will succeed and overwrite).
+ * absent, tombstoned, OR if the stored bytes are corrupt. Writes distinguish
+ * tombstones from corruption and never replace corrupt objects as absent.
  */
 export async function readVault(
   bucket: R2Bucket,
@@ -42,51 +44,72 @@ export async function readVault(
 export async function readVaultWithEtag(
   bucket: R2Bucket,
   vaultId: string,
-): Promise<{ cipher: VaultCipher | null; etag: string | null }> {
+): Promise<{ cipher: VaultCipher | null; etag: string | null; tombstone: boolean }> {
   const obj = await bucket.get(vaultId);
-  if (!obj) return { cipher: null, etag: null };
+  if (!obj) return { cipher: null, etag: null, tombstone: false };
   try {
     const json = await obj.json();
+    if (VaultTombstoneSchema.safeParse(json).success) {
+      return { cipher: null, etag: obj.etag, tombstone: true };
+    }
     const parsed = VaultCipherSchema.safeParse(json);
     return {
       cipher: parsed.success ? parsed.data : null,
       etag: obj.etag,
+      tombstone: false,
     };
   } catch {
-    return { cipher: null, etag: obj.etag };
+    return { cipher: null, etag: obj.etag, tombstone: false };
   }
 }
 
 /**
- * Try to write `cipher` for `vaultId`. Returns true on success, false
- * if the existing stored cipher's updatedAt is >= cipher.updatedAt.
- *
- * Note: R2 doesn't have native CAS. The race window between
- * read-then-write is small — milliseconds — but two concurrent writes
- * to the same vault could in principle both succeed. The on-chain
- * `updatedAt` ordering still gives us last-write-wins, just not strict
- * linearizability. For Path A this is acceptable: any "loss" still
- * leaves the user with a consistent ciphertext that the next pull
- * will reflect.
+ * Returns false on a revision mismatch or a lost conditional-write race.
  */
 export async function writeVault(
   bucket: R2Bucket,
   vaultId: string,
   cipher: VaultCipher,
+  baseRevision: string,
 ): Promise<boolean> {
-  const existing = await readVault(bucket, vaultId);
+  if (!isVaultBaseRevision(baseRevision)) return false;
+  const { cipher: existing, etag, tombstone } = await readVaultWithEtag(bucket, vaultId);
+  if (baseRevision === 'none' ? etag !== null && !tombstone : !matchesRevision(existing, baseRevision)) return false;
   if (existing && existing.updatedAt >= cipher.updatedAt) {
     return false;
   }
-  await bucket.put(vaultId, JSON.stringify(cipher), {
+  const written = await bucket.put(vaultId, JSON.stringify(cipher), {
     httpMetadata: { contentType: 'application/json' },
+    onlyIf: etag === null ? { etagDoesNotMatch: '*' } : { etagMatches: etag },
   });
-  return true;
+  return written !== null;
 }
 
+export function isVaultBaseRevision(base: string | undefined): base is string {
+  return base === 'none' || (typeof base === 'string' && /^(0|[1-9]\d*)$/.test(base) && Number.isSafeInteger(Number(base)));
+}
+
+function matchesRevision(cipher: VaultCipher | null, base: string): boolean {
+  return cipher !== null && cipher.updatedAt === Number(base);
+}
+
+/** Whole-vault deletion; single-entry removals use a re-encrypted PUT. */
 export async function deleteVault(
   bucket: R2Bucket,
   vaultId: string,
-): Promise<void> {
-  await bucket.delete(vaultId);
+  baseRevision: string,
+): Promise<boolean> {
+  if (!isVaultBaseRevision(baseRevision)) return false;
+  const { cipher, etag, tombstone } = await readVaultWithEtag(bucket, vaultId);
+  if (etag === null || tombstone) return true;
+  if (!cipher || !matchesRevision(cipher, baseRevision)) return false;
+  const written = await bucket.put(vaultId, JSON.stringify({
+    deleted: true,
+    deletedAt: Date.now(),
+    revision: cipher.updatedAt,
+  }), {
+    httpMetadata: { contentType: 'application/json' },
+    onlyIf: { etagMatches: etag },
+  });
+  return written !== null;
 }

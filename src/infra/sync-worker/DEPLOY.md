@@ -8,6 +8,30 @@ This document walks through deploying it the first time and
 rotating secrets later. It assumes you have a Cloudflare account
 and have run `wrangler login` at least once on this machine.
 
+## Vault mutation protocol
+
+Every PUT or DELETE `/vault/:id` requires `X-Vault-Base-Revision`:
+the last confirmed ciphertext `updatedAt`, or `none` after a 404.
+Missing/malformed headers return 428 (update the app); stale revisions
+or lost conditional-write races return 409 (reload and unlock).
+
+- Single-entry deletion uses client `removeEntry`: re-encrypt the remaining
+  entries and PUT the ciphertext with its confirmed base. It is not DELETE.
+- Whole-vault deletion uses transport `remove`: DELETE conditionally replaces
+  ciphertext with `{ deleted: true, deletedAt, revision }`, where `revision`
+  records the removed ciphertext's `updatedAt`. No physical R2 deletion occurs.
+  An absent or already-tombstoned vault returns idempotent 204 for any valid base.
+- GET returns 404 for tombstones, including conditional GETs. Live ciphertext
+  keeps its existing ETag/304 behavior; reads inspect the body before returning
+  304 so tombstones cannot appear as cached live vaults.
+- Recreating with base `none` conditionally replaces a tombstone by ETag,
+  or creates an absent object with `etagDoesNotMatch: '*'`. Numeric bases
+  against tombstones and writes over corrupt objects return 409.
+
+Tombstones are the only new stored shape. Ciphertext and plaintext formats
+are unchanged, with no migration. Retain tombstones; do not add unconditional
+vault deletes or cleanup jobs that could race with a save or recreation.
+
 ## 0. One-time prerequisites
 
 ```bash

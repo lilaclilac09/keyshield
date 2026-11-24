@@ -26,7 +26,7 @@ import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { ed25519 } from '@noble/curves/ed25519';
 import { extractBearer, issueJwt, verifyJwt } from './auth';
-import { readVaultWithEtag, writeVault, deleteVault, VaultCipherSchema } from './cas';
+import { readVaultWithEtag, writeVault, deleteVault, isVaultBaseRevision, VaultCipherSchema } from './cas';
 import {
   bumpCounter,
   consumeChallenge,
@@ -86,7 +86,7 @@ app.use(
       'https://app.keyshield.dev',
     ],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Vault-Base-Revision'],
     credentials: true,
     maxAge: 600,
   }),
@@ -138,6 +138,13 @@ app.use('/vault/:id', async (c, next) => {
   await next();
 });
 
+app.use('/vault/:id', async (c, next) => {
+  if ((c.req.method === 'PUT' || c.req.method === 'DELETE') && !isVaultBaseRevision(c.req.header('X-Vault-Base-Revision'))) {
+    return c.json({ error: 'Update KeyShield to keep syncing. Update the app and refresh.' }, 428);
+  }
+  await next();
+});
+
 // Browser/agent caches use ETag/If-None-Match for cheap freshness
 // checks. We respond with `Cache-Control: private` so the response
 // is cacheable BY THE BROWSER ONLY — never by an intermediate proxy
@@ -162,25 +169,14 @@ app.get('/vault/:id', async (c) => {
   const id = c.req.param('id');
   const ifNoneMatch = c.req.header('if-none-match');
 
-  // Conditional-GET fast path: if the client has a cached etag and
-  // it still matches what's in R2, return 304 without reading the
-  // body. R2 HEAD is cheaper than GET (metadata only).
-  if (ifNoneMatch) {
-    const head = await c.env.VAULTS.head(id);
-    if (!head) return c.json({ error: 'not found' }, 404);
-    if (ifNoneMatchHits(head.etag, ifNoneMatch)) {
-      return new Response(null, {
-        status: 304,
-        headers: {
-          ETag: quoteEtag(head.etag),
-          'Cache-Control': VAULT_CACHE_CONTROL,
-        },
-      });
-    }
-  }
-
   const { cipher, etag } = await readVaultWithEtag(c.env.VAULTS, id);
   if (!cipher) return c.json({ error: 'not found' }, 404);
+  if (etag && ifNoneMatch && ifNoneMatchHits(etag, ifNoneMatch)) {
+    return new Response(null, {
+      status: 304,
+      headers: { ETag: quoteEtag(etag), 'Cache-Control': VAULT_CACHE_CONTROL },
+    });
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Cache-Control': VAULT_CACHE_CONTROL,
@@ -205,14 +201,19 @@ app.put('/vault/:id', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'invalid cipher shape', issues: parsed.error.issues }, 400);
   }
-  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data);
-  if (!ok) return c.json({ error: 'stale write — pull and retry' }, 409);
+  const ok = await writeVault(c.env.VAULTS, c.req.param('id'), parsed.data, c.req.header('X-Vault-Base-Revision')!);
+  if (!ok) return c.json({ error: 'vault changed in another tab/device — reload and unlock to refresh' }, 409);
   return c.json({ ok: true });
 });
 
 app.delete('/vault/:id', async (c) => {
-  await deleteVault(c.env.VAULTS, c.req.param('id'));
-  return new Response(null, { status: 204 });
+  try {
+    const ok = await deleteVault(c.env.VAULTS, c.req.param('id'), c.req.header('X-Vault-Base-Revision')!);
+    if (!ok) return c.json({ error: 'vault changed — nothing was deleted, reload' }, 409);
+    return new Response(null, { status: 204 });
+  } catch {
+    return c.json({ error: 'Vault deletion unavailable — nothing was deleted. Try again after refreshing.' }, 503);
+  }
 });
 
 // --------------------------------------------------------------------
