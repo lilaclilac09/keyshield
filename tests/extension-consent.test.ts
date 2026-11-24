@@ -74,6 +74,48 @@ describe('provider policy', () => {
 });
 
 describe('popup permission consent', () => {
+  it.each([
+    ['https://github.com/settings/tokens', false],
+    ['https://github.com/example/repository', true],
+    ['https://github.com/settings-other', true],
+  ])('shows policy-aware availability on %s (unavailable=%s)', async (url, unavailable) => {
+    const nodes = new Map<string, any>();
+    const node = () => ({
+      value: '', textContent: '', children: [] as any[],
+      replaceChildren(...children) { this.children = children; this.value = children[0]?.value || ''; },
+      append(...children) { this.children.push(...children); },
+      addEventListener() {},
+    });
+    const document = {
+      getElementById(id) {
+        if (!nodes.has(id)) nodes.set(id, node());
+        return nodes.get(id);
+      },
+      createElement: node,
+    };
+    const entry = { id: 'github-key', provider: 'github', origin: 'https://github.com', preview: '••••AAAA', label: 'Synthetic GitHub key' };
+    const chrome = {
+      tabs: { query: async () => [{ url }] },
+      runtime: { sendMessage: async ({ type }) => type === 'LIST' ? { ok: true, entries: [entry] } : { ok: false } },
+      storage: { onChanged: { addListener() {} } },
+    };
+    const source = readFileSync('src/extension/popup.js', 'utf8').replace(/^import .*;\n/, '');
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+    await new AsyncFunction('originPattern', 'permissionFor', 'document', 'chrome', 'window', 'location', 'Option', source)(
+      originPattern, permissionFor, document, chrome, { addEventListener() {} }, { pathname: '/popup.html' },
+      function (text, value) { this.textContent = text; this.value = value; },
+    );
+    const permissions = { contains: async () => true };
+    if (unavailable) {
+      await expect(requireProvider(url, permissions)).rejects.toThrow('not a supported provider page');
+      expect(nodes.get('fill-availability').textContent).toBe('Not available on this site. Fill only on https://github.com');
+      expect(nodes.get('entry-list').children[0].children.at(-1).textContent).toBe('Not available on this site');
+    } else {
+      await expect(requireProvider(url, permissions)).resolves.toBe('https://github.com');
+      expect(nodes.get('fill-availability').textContent).toBe('Fill only on https://github.com');
+      expect(nodes.get('entry-list').children[0].children).toHaveLength(3);
+    }
+  });
   const clicks = [['add', '/popup.html'], ['save', '/popup.html'], ['confirm', '/popup.html'], ['fill', '/popup.html'], ['save', '/confirm.html'], ['confirm', '/confirm.html']];
   const cases = clicks.flatMap(([button, pathname]) => [false, true].flatMap((accepted) => ['https://platform.openai.com', 'https://localhost:8443'].map((tabOrigin) => ({ button, pathname, accepted, tabOrigin }))));
   it.each(cases)('$pathname $button at $tabOrigin requests permission synchronously before any other API (accepted=$accepted)', async ({ button, pathname, accepted, tabOrigin }) => {
@@ -88,12 +130,12 @@ describe('popup permission consent', () => {
     const calls: string[] = [];
     let inGesture = false;
     let allow = true;
-    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: tabOrigin, providers: ['openai'], permissionNeeded: true };
+    const pending = { id: 'one', preview: '••••AAAA', provider: 'openai', origin: tabOrigin, fillOrigin: tabOrigin, duplicate: false, providers: ['openai'], permissionNeeded: true };
     const chrome = {
       runtime: { async sendMessage(message) {
         calls.push(message.type); messages.push(message.type);
         if (['PENDING', 'ADD'].includes(message.type)) return { ok: true, pending };
-        if (message.type === 'SAVE') return { ok: true, duplicate: true };
+        if (message.type === 'SAVE') return { ok: true, duplicate: true, origin: tabOrigin };
         return { ok: true, entries: [] };
       } },
       tabs: { async query() { calls.push('query'); return [{ url: pathname === '/confirm.html' ? 'chrome-extension://unit/confirm.html' : `${tabOrigin}/api-keys` }]; } },
@@ -166,12 +208,22 @@ describe('device local vault', () => {
     await vault.unlock(passphrase);
     await vault.save(candidate, 'First');
     const before = structuredClone(local.data);
-    expect(await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Changed')).toEqual({ duplicate: true });
+    expect(await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Changed')).toEqual({ duplicate: true, origin });
     expect(local.data).toEqual(before);
     await vault.save({ ...candidate, origin: 'https://evil.test' }, 'Confirmed', true);
     expect(vault.list()).toHaveLength(1);
     expect(vault.list()[0]).toMatchObject({ label: 'Confirmed', origin });
+    expect((await vault.lookup(candidate.value)).entry?.origin).toBe(origin);
+    expect((await vault.lookup(samples[1].value)).entry).toBeUndefined();
     vault.lock();
+    await expect(vault.lookup(candidate.value)).rejects.toThrow('Unlock');
+  });
+  it('fails a binding lookup closed if the vault locks while HMAC is pending', async () => {
+    const vault = new LocalVault(storage());
+    await vault.unlock(passphrase);
+    const lookup = vault.lookup(candidate.value);
+    vault.lock();
+    await expect(lookup).rejects.toThrow('Unlock');
   });
   it('decline records only metadata and never creates a vault or queue', async () => {
     const local = storage();
