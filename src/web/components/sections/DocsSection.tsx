@@ -1,5 +1,5 @@
 import React from 'react';
-import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, Zap, Key, DollarSign, FileText, ArrowRight, Puzzle } from 'lucide-react';
+import { Rocket, Shield, Bot, Code2, Terminal, CreditCard, Lock, Zap, Key, DollarSign, FileText, ArrowRight } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
@@ -10,6 +10,7 @@ import { OPENROUTER_CHAT_PATH, OPENROUTER_DEMO_MODEL, OPENROUTER_MODEL_URL, open
 import { TroubleshootingSection } from './TroubleshootingSection';
 import { copyWithFeedback } from '../../lib/app-feedback';
 import { frameworkSnippets } from '../../lib/keychain';
+import { ExtensionInstallHint } from '../ExtensionInstallHint';
 
 const CHAPTERS = [
   { id: 'docs-ch-1', label: '1 · Quickstart' },
@@ -92,29 +93,7 @@ export const DocsSection: React.FC = () => {
         <p className="text-[11px] text-[#8a96c2] mt-3">The installer creates a Python venv, downloads the SDK, generates an ed25519 keypair for the agent, and writes a ready-to-use <code className="text-white">.env</code> file.</p>
       </Card>
 
-      <Card variant="bordered">
-        <div className="flex items-center gap-2 text-white mb-3">
-          <Puzzle size={14} className="text-[#93b4ff]" />
-          <span className="text-[13px] font-semibold uppercase tracking-wider">Browser extension (separate from the packaged app)</span>
-        </div>
-        <p className="text-[12px] text-[#a8b3d8] leading-relaxed mb-3">
-          Extension detection is not available in the packaged app. The Safari extension saves to its own separate vault, not this Device Vault. These instructions are for installing the browser extension separately in <strong className="text-white">Chrome</strong> (Edge / Brave / Arc also work). Latest Load unpacked is <strong className="text-white">1.2.5 · latest</strong>. There is no Chrome Web Store listing yet — load from the repo folder below. Firefox uses the same KeyShield name via <code className="text-white">manifest.muse.json</code> (browser-agnostic MV3). Cursor Muse is a model, not an extension host.
-        </p>
-        <ol className="space-y-2 list-decimal list-inside text-[12px] text-[#e8ecff]">
-          <li>Print the folder (do not paste HTML into zsh): <code className="text-white">python3 -c &quot;import os; print(os.path.abspath(&apos;src/extension&apos;))&quot;</code></li>
-          <li>Open <code className="text-white">chrome://extensions</code>. Developer mode ON.</li>
-          <li>Remove every KeyShield card (Reload is not enough).</li>
-          <li>Load unpacked → the printed folder. Card must read <strong className="text-white">KeyShield — Sovereign Vault · 1.2.5</strong>.</li>
-          <li>Click the toolbar icon. First green line must be exactly <code className="text-white">ok 1.2.5 &lt;all_urls&gt;</code>. Popup also shows <code className="text-white">1.2.5 · latest</code>.</li>
-          <li>Open a page with an empty API Key blank, or <code className="text-white">http://127.0.0.1:5173/nvidia-fill-demo.html</code> after <code className="text-white">node dev.cjs</code>. The saved NVIDIA key fills. No toast.</li>
-        </ol>
-        <p className="text-[11px] text-[#8a96c2] mt-3">
-          <strong className="text-[#a8b3d8]">Firefox / Muse:</strong> <code className="text-white">about:debugging</code> → This Firefox → Load Temporary Add-on → choose <code className="text-white">manifest.muse.json</code> under the same folder (<code className="text-white">manifest.firefox.json</code> is the same MV3 package). Temporary loads clear when you quit the browser. Steps: <code className="text-white">src/extension/MUSE.md</code>.
-        </p>
-        <p className="text-[11px] text-[#8a96c2] mt-2">
-          After changing <code className="text-white">manifest.json</code>, press <strong className="text-[#a8b3d8]">Reload</strong> on the extension card in <code className="text-white">chrome://extensions</code>.
-        </p>
-      </Card>
+      <ExtensionInstallHint variant="home" />
 
       <Card variant="bordered">
         <div className="flex items-center gap-2 text-white mb-3"><Zap size={14} /><span className="text-[13px] font-semibold uppercase tracking-wider">Legacy OpenRouter proxy examples — separate from Device Vault</span></div>

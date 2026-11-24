@@ -21,7 +21,7 @@ import {
   type VaultPlaintext,
 } from './vault';
 import { makeBearerHolder, type BearerHolder } from './sync-auth';
-import { makeHttpSyncBackend, SyncAuthError, type SyncBackend } from './sync';
+import { makeHttpSyncBackend, SyncAuthError, SyncHttpError, type SyncBackend } from './sync';
 
 export const SYNC_URL: string = (() => {
   if (typeof process !== 'undefined') {
@@ -37,6 +37,7 @@ interface SessionState {
   bearer: BearerHolder;
   sync: SyncBackend;
   plaintext: VaultPlaintext;
+  baseRevision: number | null;
 }
 
 let _state: SessionState | null = null;
@@ -96,7 +97,7 @@ export async function unlockVault(
   const cipher = await sync.pull(vaultId, () => bearer.get());
   const plaintext = cipher ? await decryptVault(masterKey, cipher) : emptyVault();
 
-  _state = { vaultId, masterKey, bearer, sync, plaintext };
+  _state = { vaultId, masterKey, bearer, sync, plaintext, baseRevision: cipher?.updatedAt ?? null };
   return { vaultId, entryCount: Object.keys(plaintext.entries).length };
 }
 
@@ -139,20 +140,21 @@ export async function removeEntry(upstream: string): Promise<void> {
 
 async function mutate(fn: (p: VaultPlaintext) => void): Promise<void> {
   if (!_state) throw new Error('vault locked');
+  const session = _state;
+  const baseRevision = session.baseRevision;
   const next: VaultPlaintext = {
-    entries: { ..._state.plaintext.entries },
-    updatedAt: Date.now(),
+    entries: { ...session.plaintext.entries },
+    updatedAt: Math.max(Date.now(), (baseRevision ?? -1) + 1),
   };
   fn(next);
-  const cipher = await encryptVault(_state.masterKey, next);
-  const result = await _state.sync.push(_state.vaultId, cipher, () => _state!.bearer.get());
+  const cipher = await encryptVault(session.masterKey, next);
+  const result = await session.sync.push(session.vaultId, cipher, () => session.bearer.get(), baseRevision);
   if (result === 'conflict') {
-    // Last-write-wins for v1 — pull, take server's, surface to user via re-render.
-    // Why: full conflict-merge UX is out of scope for hackathon; the CAS still
-    // protects against silent overwrite (we threw, caller can retry).
-    throw new Error('vault conflict — another device wrote first; reload to refresh');
+    throw new SyncHttpError(409, '');
   }
-  _state.plaintext = next;
+  if (_state !== session) throw new VaultLockedError();
+  session.plaintext = next;
+  session.baseRevision = cipher.updatedAt;
 }
 
 export class VaultLockedError extends Error {

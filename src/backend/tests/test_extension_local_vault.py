@@ -38,13 +38,16 @@ assert.equal(firstWrite.salt.length, 16);
 assert.equal(firstWrite.iv.length, 12);
 assert.equal(JSON.stringify(data).includes(candidate.value), false);
 assert.equal(JSON.stringify(data).includes('FAKE passphrase'), false);
-assert.deepEqual(await vault.save(candidate, 'not confirmed'), { duplicate: true });
+const duplicate = { ...candidate, origin: 'https://dashboard.second-provider.test' };
+assert.deepEqual(await vault.save(duplicate, 'not confirmed'), {
+  duplicate: true, origin: candidate.origin,
+});
 assert.deepEqual(data.vault, firstWrite);
 assert.equal(vault.list()[0].label, 'original');
-await vault.save({ ...candidate, origin: 'https://other.test' }, 'updated', true);
+const beforeUpdate = vault.list()[0];
+await vault.save(duplicate, 'updated', true);
 assert.equal(vault.list().length, 1);
-assert.equal(vault.list()[0].origin, candidate.origin);
-assert.equal(vault.list()[0].label, 'updated');
+assert.deepEqual(vault.list()[0], { ...beforeUpdate, label: 'updated' });
 assert.notDeepEqual(data.vault.iv, firstWrite.iv);
 vault.lock();
 assert.throws(() => vault.list(), /Unlock the vault first/);

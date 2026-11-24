@@ -38,13 +38,11 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             Chrome extension <span className="text-[#93b4ff] font-medium">(preferred)</span>
           </p>
           <p className={`${compact ? 'text-[12px] mt-1' : 'text-[14px] mt-1.5'} text-[#a8b3d8] leading-relaxed`}>
-            Auto-detects API keys on OpenAI, Anthropic, OpenRouter, NVIDIA NIM, Groq, Helius pages and offers Save to vault. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
+            The extension saves a key only when you select it or enter it manually. There is no Chrome Web Store listing yet — load unpacked from the repo. Use Chrome (Edge / Brave / Arc also work).
           </p>
           <p className={`${compact ? 'text-[12px] mt-2' : 'text-[14px] mt-2'} text-[#e8ecff] leading-relaxed`}>
-            Load unpacked <strong className="text-white">v1.2.5 · latest</strong> from <code className="text-white">src/extension</code>.
-            Sign-in then opens already logged in when a token is in the popup or on{' '}
-            <a href="https://app.ks.aileena.xyz" className="text-[#93b4ff] hover:underline">https://app.ks.aileena.xyz</a>.
-            Sign-in stuck? Open the Docs & Troubleshooting tab.
+            Load the device-local extension from <code className="text-white">src/extension</code>.
+            Its encrypted vault is separate from the dashboard Device Vault. No dashboard account, session token or sync is needed.
           </p>
           <div className={`${compact ? 'mt-2' : 'mt-3'} flex flex-wrap gap-2 text-[11px]`}>
             <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-amber-200">Test build</span>
@@ -82,10 +80,12 @@ export const ExtensionInstallHint: React.FC<Props> = ({ variant, onOpenDocs }) =
             {copied === 'path' ? 'Copied' : 'Copy path'}
           </button>
         </li>
-        <li>Pin the KeyShield icon, then sign in here so the popup gets a session token.</li>
+        <li>Pin the KeyShield icon and open its popup. Enter a vault passphrase of at least 12 characters, then choose <strong className="text-white">Create / unlock vault</strong>. Keep the passphrase safe: there is no recovery if you forget it.</li>
+        <li>On a supported provider page, select one key and choose <strong className="text-white">Save selection to KeyShield</strong>, or type/paste one key in the popup and choose <strong className="text-white">Add key</strong>. Confirm the provider and label, approve the requested site permission, then click <strong className="text-white">Save</strong>.</li>
+        <li>To fill a saved key, focus an editable input on the same saved origin, then open the toolbar popup and click <strong className="text-white">Fill into this page</strong>. Nothing is filled automatically.</li>
       </ol>
       <p className={`${compact ? 'text-[11px] mt-2' : 'text-[13px] mt-3'} text-[#5e6a91] leading-relaxed`}>
-        Firefox / Muse (browser-agnostic): <code className="text-[#a8b3d8]">about:debugging</code> → This Firefox → Load Temporary Add-on → <code className="text-[#a8b3d8]">manifest.muse.json</code> (same folder; <code className="text-[#a8b3d8]">manifest.firefox.json</code> is identical). Temporary loads clear when Firefox quits. Cursor Muse and Cursor Browser cannot load extensions — use Chrome or Firefox.
+        Firefox: package a copy of the extension folder using <code className="text-[#a8b3d8]">manifest.firefox.json</code> as <code className="text-[#a8b3d8]">manifest.json</code>, then load that manifest via <code className="text-[#a8b3d8]">about:debugging</code> → This Firefox → Load Temporary Add-on. Temporary loads clear when Firefox quits.
       </p>
       {onOpenDocs && (
         <button

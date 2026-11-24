@@ -1,4 +1,6 @@
 import XCTest
+import CommonCrypto
+import CryptoKit
 @testable import KeyShield
 
 typealias Operation = KeyShield.Operation
@@ -508,5 +510,166 @@ final class CoreTests: XCTestCase {
         let invalid = Operation(kind: .providerRequest, keyId: id, host: "evil.test", method: "POST", path: "/v1/mock")
         do { _ = try await executor.execute(operation: invalid, authorization: grant(invalid)); XCTFail() } catch {}
         XCTAssertEqual(calls, 1)
+    }
+
+    private var betaNegativeValues: [String] {
+        ["", "not-a-real-sk-negative-0001", "sk-proj-NEGATIVEFIXTURE",
+         "sk-proj-" + String(repeating: "N", count: 32),
+         "sk-ant-api03-" + String(repeating: "N", count: 32),
+         "sk_test_" + String(repeating: "N", count: 24),
+         "sk_live_" + String(repeating: "N", count: 24),
+         "ghp_" + String(repeating: "N", count: 36),
+         "AKIA" + String(repeating: "N", count: 16),
+         String(repeating: "N", count: 40), String(repeating: "1", count: 88),
+         "Bearer " + String(repeating: "N", count: 32),
+         "FAKE_KEYSHIELD_NOT_A_KEY:sk-proj-" + String(repeating: "N", count: 32)]
+    }
+    private func betaFiles() throws -> [String: Data] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [:] }
+        return try Dictionary(uniqueKeysWithValues: FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .map { ($0.lastPathComponent, try Data(contentsOf: $0)) })
+    }
+    private func betaBackup(_ values: [String]) throws -> Data {
+        struct Entry: Encodable { let metadata: VaultEntry; let value: Data }
+        struct Envelope: Encodable { let salt: Data; let ciphertext: Data }
+        let salt = Data(repeating: 83, count: 16)
+        let password = Array("non-secret-boundary-fixture-passphrase".utf8)
+        var key = [UInt8](repeating: 0, count: 32)
+        let status = password.withUnsafeBytes { p in salt.withUnsafeBytes { s in
+            CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), p.baseAddress!.assumingMemoryBound(to: Int8.self), password.count,
+                s.baseAddress!.assumingMemoryBound(to: UInt8.self), salt.count, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), 200_000, &key, 32)
+        } }
+        guard status == kCCSuccess else { throw ShieldError.storage }
+        let entries = values.map { candidate in
+            Entry(metadata: VaultEntry(id: UUID(), label: "Boundary fixture", provider: "openai", version: 1,
+                createdAt: clock.now, updatedAt: clock.now,
+                fingerprint: SHA256.hash(data: Data(candidate.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()),
+                value: Data(candidate.utf8))
+        }
+        return try JSONEncoder().encode(Envelope(salt: salt, ciphertext: Cipher.seal(JSONEncoder().encode(entries), key: Data(key))))
+    }
+    private func assertBetaRestoreRejectedWithoutWrites() throws {
+        let before = try betaFiles(), key = keys.key
+        let service = BackupService(vault: vault, audit: audit)
+        for candidate in betaNegativeValues {
+            for payload in [[candidate], [value, candidate], [candidate, value]] {
+                let backup = try betaBackup(payload)
+                XCTAssertThrowsError(try service.restore(backup, passphrase: "non-secret-boundary-fixture-passphrase")) { error in
+                    guard case ShieldError.invalid = error else { return XCTFail("Expected synthetic-only rejection") }
+                }
+                XCTAssertTrue(try betaFiles() == before, "Rejected restore changed persisted files")
+                XCTAssertTrue(keys.key == key, "Rejected restore changed the vault key")
+            }
+        }
+    }
+    func testBetaImportRejectsUnmarkedValuesWithoutWrites() throws {
+        try vault.createVault()
+        let before = try betaFiles(), key = keys.key
+        XCTAssertNotNil(KeyDetector().detect("sk-proj-" + String(repeating: "N", count: 32)))
+        for candidate in betaNegativeValues {
+            XCTAssertThrowsError(try vault.save(label: "Negative fixture", value: candidate))
+            XCTAssertTrue(try betaFiles() == before)
+            XCTAssertTrue(keys.key == key)
+            XCTAssertTrue(try vault.list().isEmpty)
+        }
+    }
+    func testBetaDuplicateResolutionsRejectUnmarkedValuesWithoutWrites() throws {
+        let id = try entry(), session = try token(id)
+        let before = try betaFiles(), entries = try vault.list(), key = keys.key
+        for resolution in [DuplicateResolution.reject, .replace, .keepBoth] {
+            for candidate in betaNegativeValues {
+                XCTAssertThrowsError(try vault.save(label: "Test", value: candidate, resolution: resolution))
+                XCTAssertTrue(try betaFiles() == before)
+                XCTAssertTrue(try vault.list() == entries)
+                XCTAssertTrue(keys.key == key)
+                XCTAssertNoThrow(try sessions.validate(session, method: "POST", url: url))
+            }
+        }
+    }
+    func testBetaRotateRejectsUnmarkedValuesWithoutWrites() throws {
+        let id = try entry(), session = try token(id)
+        _ = try vault.save(label: "Control", value: second, resolution: .keepBoth)
+        let before = try betaFiles(), entries = try vault.list(), key = keys.key
+        for candidate in betaNegativeValues {
+            XCTAssertThrowsError(try vault.rotate(id, value: candidate))
+            XCTAssertTrue(try betaFiles() == before)
+            XCTAssertTrue(try vault.list() == entries)
+            XCTAssertTrue(keys.key == key)
+            XCTAssertNoThrow(try sessions.validate(session, method: "POST", url: url))
+        }
+    }
+    func testBetaRestoreRejectsNonSyntheticPayloadWithoutWrites() throws {
+        let id = try entry(), session = try token(id), entries = try vault.list()
+        try assertBetaRestoreRejectedWithoutWrites()
+        XCTAssertTrue(try vault.list() == entries)
+        XCTAssertNoThrow(try sessions.validate(session, method: "POST", url: url))
+    }
+    func testBetaEmptyVaultRestoreRejectsNonSyntheticPayloadWithoutWrites() throws {
+        try vault.createVault()
+        try assertBetaRestoreRejectedWithoutWrites()
+        XCTAssertTrue(try vault.list().isEmpty)
+    }
+    func testBetaMissingKeyRecoveryRejectsNonSyntheticPayloadWithoutWrites() throws {
+        _ = try entry()
+        keys.key = nil
+        try assertBetaRestoreRejectedWithoutWrites()
+        XCTAssertNil(keys.key)
+    }
+    func testBetaFreshRecoveryRejectsNonSyntheticPayloadWithoutWrites() throws {
+        try assertBetaRestoreRejectedWithoutWrites()
+        XCTAssertNil(keys.key)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+    func testBetaConstructedBackupAcceptsSyntheticAndEmptyPayloads() throws {
+        try vault.createVault()
+        let service = BackupService(vault: vault, audit: audit)
+        try service.restore(betaBackup([value, second]), passphrase: "non-secret-boundary-fixture-passphrase")
+        XCTAssertEqual(try vault.list().count, 2)
+        try service.restore(betaBackup([]), passphrase: "non-secret-boundary-fixture-passphrase")
+        XCTAssertTrue(try vault.list().isEmpty)
+    }
+    func testBetaDisallowedOriginsNeverReachInProcessTransport() async throws {
+        policy.approvedProviders += ["evil.test", "127.0.0.1"]
+        sessions = AgentSessions(clock: clock, policy: policy, lock: lock)
+        vault = VaultStore(clock: clock, lock: lock, keyStore: keys, location: TestLocation(directory: directory), sessions: sessions)
+        let id = try entry()
+        var calls = 0
+        let transport = MockProviderTransport { _ in
+            calls += 1
+            return ProviderResponse(status: 204, headers: [:], body: Data())
+        }
+        let executor = ProviderRequestExecutor(vault: vault, audit: audit, transport: transport)
+        let blocked = ["https://evil.test/v1/mock", "http://127.0.0.1/v1/mock", "https://api.openai.com/v1/mock",
+            "http://api.provider.test/v1/mock", "https://api.provider.test:444/v1/mock",
+            "https://user@api.provider.test/v1/mock", "https://api.provider.test.evil.test/v1/mock"]
+        let validToken = try token(id)
+        let before = try betaFiles()
+        for (index, address) in blocked.enumerated() {
+            let target = try XCTUnwrap(URL(string: address))
+            let host = try XCTUnwrap(target.host)
+            let operation = Operation(kind: .agentToken, keyId: id, host: host, method: "POST", path: "/v1/mock")
+            let scopedToken = sessions.isApprovedHost(host)
+                ? try sessions.issue(operation: operation, authorization: grant(operation)) : validToken
+            do { _ = try await executor.execute(token: scopedToken, keyId: id, method: "POST", url: target); XCTFail("Blocked origin reached executor result") }
+            catch { if case ShieldError.denied = error {} else { XCTFail("Expected pre-transport denial") } }
+            XCTAssertThrowsError(try transport.send(URLRequest(url: target)))
+            if index < 3 {
+                let direct = Operation(kind: .providerRequest, keyId: id, host: host, method: "POST", path: "/v1/mock")
+                do { _ = try await executor.execute(operation: direct, authorization: grant(direct)); XCTFail("Blocked host reached human result") }
+                catch { if case ShieldError.denied = error {} else { XCTFail("Expected pre-transport denial") } }
+            }
+            XCTAssertEqual(calls, 0)
+            XCTAssertTrue(try betaFiles() == before, "Blocked request wrote a transport-outcome event")
+        }
+        let result = try await executor.execute(token: validToken, keyId: id, method: "POST", url: url)
+        XCTAssertEqual(result.status, 204)
+        XCTAssertEqual(calls, 1)
+    }
+    func testBetaDefaultProviderTransportIsInProcess() async throws {
+        let id = try entry()
+        let operation = Operation(kind: .providerRequest, keyId: id, host: "api.provider.test", method: "POST", path: "/v1/mock")
+        let response = try await ProviderRequestExecutor(vault: vault, audit: audit).execute(operation: operation, authorization: grant(operation))
+        XCTAssertEqual(response.status, 200)
+        XCTAssertTrue(response.body == Data("Simulated provider response".utf8))
     }
 }

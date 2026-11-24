@@ -9,8 +9,8 @@
  *   - `globalThis.crypto`    → react-native-quick-crypto via cryptoBackend
  *   - `navigator.credentials` → react-native-passkey via passkeyAdapter
  *
- * Sync backend + JWT exchange + BearerHolder come straight from
- * `@keyshield/extension-sync` — no fork.
+ * This nonshipping scaffold still lacks its auth/vault runtime.
+ * Only the ciphertext sync boundary is mobile-owned.
  */
 
 import {
@@ -24,11 +24,7 @@ import {
   ExtensionSession,
   type SessionStorageBackend,
 } from '@keyshield/extension-sync/src/lib/session';
-import {
-  HttpSyncBackend,
-  InMemorySyncBackend,
-  type SyncBackend,
-} from '@keyshield/extension-sync/src/lib/sync';
+import { MobileSyncBoundary } from '../sync/boundary';
 import {
   BearerHolder,
   SyncAuthClient,
@@ -47,9 +43,8 @@ export interface MobileServicesConfig {
   crypto: SubtleCryptoLike;
   /** WebAuthn provider — react-native-passkey, mocked in tests. */
   credentials: AuthServiceConfig['credentials'];
-  /** Sync worker URL. If omitted, falls back to InMemorySyncBackend
-   *  (vault won't survive an app restart). */
-  syncUrl?: string;
+  /** Explicit sync worker URL; there is no successful offline-write fallback. */
+  syncUrl: string;
 }
 
 export function buildMobileServices(cfg: MobileServicesConfig) {
@@ -65,12 +60,10 @@ export function buildMobileServices(cfg: MobileServicesConfig) {
   const crypto = cryptoBackend(cfg.crypto);
   const bearer = new BearerHolder();
   const syncAuth = cfg.syncUrl ? new SyncAuthClient({ baseUrl: cfg.syncUrl }) : null;
-  const sync: SyncBackend = cfg.syncUrl
-    ? new HttpSyncBackend({
-        baseUrl: cfg.syncUrl,
-        getToken: () => bearer.getValidToken(),
-      })
-    : new InMemorySyncBackend();
+  const sync = new MobileSyncBoundary({
+    baseUrl: cfg.syncUrl,
+    getToken: () => bearer.getValidToken(),
+  });
 
   return {
     auth: new AuthService({
