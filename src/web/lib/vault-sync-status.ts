@@ -1,13 +1,14 @@
 export const SAVE_SYNC_FAILED = 'Key NOT saved because vault sync could not be reached. Press Save again once vault sync is back.';
 export const DELETE_SYNC_FAILED = 'Entry NOT deleted and is still in the vault. Delete again after vault sync returns.';
-export const SAVE_SYNC_CONFLICT = 'Key NOT saved: the vault changed on another device. Reload, unlock and try again.';
-export const DELETE_SYNC_CONFLICT = 'Entry NOT deleted and is still in the vault: the vault changed on another device. Reload, unlock and try again.';
+export const SAVE_SYNC_CONFLICT = 'Key NOT saved: the vault changed in another tab/device. Reload and unlock to refresh.';
+export const DELETE_SYNC_CONFLICT = 'Entry NOT deleted and is still in the vault: the vault changed in another tab/device. Reload and unlock to refresh.';
 
-type FailureReason = 'unreachable' | 'conflict' | 'expired' | 'too-large' | 'rejected';
+type FailureReason = 'unreachable' | 'conflict' | 'expired' | 'too-large' | 'rejected' | 'update';
 
 function failureMessage(operation: 'save' | 'delete', reason: FailureReason) {
   if (reason === 'conflict') return operation === 'save' ? SAVE_SYNC_CONFLICT : DELETE_SYNC_CONFLICT;
   const prefix = operation === 'save' ? 'Key NOT saved' : 'Entry NOT deleted';
+  if (reason === 'update') return `${prefix}: Update KeyShield to keep syncing. Update the app and refresh.`;
   if (reason === 'expired') return `${prefix}: vault sync session expired. Lock and unlock the vault, then try again.`;
   if (reason === 'too-large') return `${prefix}: the vault is too large to sync.`;
   if (reason === 'rejected') return `${prefix}: vault sync rejected the change.`;
