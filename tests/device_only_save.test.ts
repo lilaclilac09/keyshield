@@ -35,6 +35,9 @@ import { AddKeyModal } from '../src/web/components/AddKeyModal';
 import { DeviceVaultConsent } from '../src/web/components/DeviceVaultConsent';
 import { makeHttpSyncBackend } from '../src/web/lib/sync';
 import { HomeSection } from '../src/web/components/sections/HomeSection';
+import { ExtensionInstallHint } from '../src/web/components/ExtensionInstallHint';
+import { SessionsSection } from '../src/web/components/sections/SessionsSection';
+import { RevealField } from '../src/web/components/ui/RevealField';
 
 const raw = 'sk-or-v1-SYNTHETIC-device-local-new-key';
 let requests: Array<{ url: string; headers: [string, string][]; body: string }>;
@@ -50,6 +53,12 @@ function findNode(node: any, predicate: (node: any) => boolean): any {
   return findNode(node.props?.children, predicate);
 }
 function render<T>(fn: () => T): T { hooks.index = 0; return fn(); }
+function renderedText(node: any): string {
+  if (Array.isArray(node)) return node.map(renderedText).join('');
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node !== 'object') return String(node);
+  return renderedText(node.props?.children);
+}
 function storage() {
   const data = new Map<string, string>();
   return {
@@ -299,6 +308,75 @@ describe('central guards and consent', () => {
     lockVault();
     tree = render(() => HomeSection(props));
     expect(findNode(tree, (node) => node.props?.['data-testid'] === 'home-saved-apis').props.children[0].props.children[0]).toBe(0);
+  });
+  it('Home starts with a vault action for an empty locked account and keeps secondary tools collapsed', () => {
+    const onGo = vi.fn();
+    const tree = render(() => HomeSection({ home: null, walletConnected: false, onRefresh: vi.fn(), onGo }));
+    expect(tree.props.children[0].props['data-testid']).toBe('home-vault-summary');
+    const open = findNode(tree, node => node.props?.['data-testid'] === 'home-open-vault');
+    expect(renderedText(open)).toBe('Open or create vault');
+    open.props.onClick();
+    expect(onGo).toHaveBeenCalledOnce();
+    expect(onGo).toHaveBeenCalledWith('vault');
+    expect(renderedText(tree)).toContain('No saved APIs available. Open Vault to add a key.');
+    for (const id of ['home-wallet-tools', 'home-extension-setup']) {
+      const details = findNode(tree, node => node.props?.['data-testid'] === id);
+      expect(details.type).toBe('details');
+      expect(details.props.open).not.toBe(true);
+    }
+    expect(requests).toHaveLength(0);
+  });
+  it('Home keeps the existing unlock and refresh callbacks and exposes loading/error states', () => {
+    const onUnlock = vi.fn(), onRefresh = vi.fn();
+    const tree = render(() => HomeSection({ home: null, loading: true, error: 'Synthetic offline', walletConnected: false, onRefresh, onUnlock, onGo: vi.fn() }));
+    expect(renderedText(findNode(tree, node => node.props?.role === 'status'))).toContain('Refreshing account status');
+    expect(renderedText(findNode(tree, node => node.props?.role === 'alert'))).toContain('Synthetic offline');
+    findNode(tree, node => node.type === 'button' && node.props.onClick === onUnlock).props.onClick();
+    findNode(tree, node => node.type === 'button' && node.props.onClick === onRefresh).props.onClick();
+    expect(onUnlock).toHaveBeenCalledOnce();
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+  it('Home reflects an open device vault without changing navigation', async () => {
+    await unlock();
+    const tree = render(() => HomeSection({ home: null, walletConnected: false, onRefresh: vi.fn(), onGo: vi.fn() }));
+    expect(renderedText(findNode(tree, node => node.props?.['data-testid'] === 'home-open-vault'))).toBe('Open vault');
+    expect(renderedText(tree)).toContain('Your Device Vault is open.');
+  });
+  it('Vault offers the existing create/unlock panel before a failed save, but not when already unlocked', () => {
+    const onUnlock = vi.fn();
+    let tree = render(() => VaultSection({ ...vaultProps, unlocked: false, onUnlock }));
+    expect(findNode(tree, node => node.type === DeviceVaultConsent).props.onUnlock).toBe(onUnlock);
+    tree = render(() => VaultSection({ ...vaultProps, unlocked: true, onUnlock }));
+    expect(findNode(tree, node => node.type === DeviceVaultConsent)).toBeUndefined();
+    expect(requests).toHaveLength(0);
+  });
+  it.each(['sessions', 'reveal field'] as const)('%s never renders token characters or fragments until explicitly revealed', (surface) => {
+    const token = 'SYNTHETIC-TOKEN-PRIVATE-PREFIX-and-private-suffix-993355';
+    vi.stubGlobal('window', { ...window, setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
+    localStorage.setItem('ks_token', token);
+    const component = () => surface === 'sessions' ? SessionsSection({ onLogout: vi.fn() }) : RevealField({ value: token, label: 'Session token' });
+    let tree = render(component);
+    for (const fragment of [token, token.slice(0, 12), token.slice(-6)]) expect(renderedText(tree)).not.toContain(fragment);
+    const show = findNode(tree, node => node.type === 'button' && ['Show token', 'Reveal'].includes(renderedText(node)));
+    show.props.onClick();
+    tree = render(component);
+    expect(renderedText(tree)).toContain(token);
+    findNode(tree, node => node.type === 'button' && ['Hide token', 'Hide'].includes(renderedText(node))).props.onClick();
+    tree = render(component);
+    expect(renderedText(tree)).not.toContain(token.slice(0, 12));
+    expect(renderedText(tree)).not.toContain(token.slice(-6));
+    expect(requests).toHaveLength(0);
+  });
+  it.each(['auth', 'home'] as const)('extension setup on %s needs no session and never offers a token handoff', (variant) => {
+    const renderSetup = () => render(() => ExtensionInstallHint({ variant }));
+    expect(renderedText(renderSetup())).toContain('Create / unlock vault');
+    const token = 'SYNTHETIC-PRIVATE-TOKEN-NEVER-FOR-EXTENSION-993355';
+    localStorage.setItem('ks_token', token);
+    const tree = renderSetup();
+    expect(renderedText(tree)).toContain('No dashboard account, session token or sync is needed.');
+    for (const fragment of [token, token.slice(0, 12), token.slice(-6)]) expect(renderedText(tree)).not.toContain(fragment);
+    expect(findNode(tree, node => node.type === 'button' && /token/i.test(renderedText(node)))).toBeUndefined();
+    expect(requests).toHaveLength(0);
   });
   it('Home still calls existing hosted rows even when a device entry uses the same provider', async () => {
     await unlock();
