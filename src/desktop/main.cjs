@@ -523,6 +523,9 @@ async function probeMounted(win) {
 
 async function loadDashboard(win) {
   try {
+    await withTimeout(win.loadFile(path.join(app.isPackaged ? process.resourcesPath : __dirname, 'loading.html')), 12000, 'loading-screen-timeout');
+    await withTimeout(win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))'), 2000, 'loading-paint-timeout');
+    diagnostics.log('local loading screen shown');
     await withTimeout(win.loadURL(startUrl()), 12000, 'dashboard-load-timeout');
     diagnostics.log('dashboard loaded');
     return 'dashboard';
