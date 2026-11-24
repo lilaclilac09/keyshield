@@ -22,7 +22,7 @@ import {
 } from '../../lib/purchases';
 import type { PlanSnapshot } from '../PlanCatalog';
 import { emitAppFeedback } from '../../lib/app-feedback';
-import { ExtensionTokenCopy } from '../ExtensionTokenCopy';
+import { ExtensionInstallHint } from '../ExtensionInstallHint';
 
 interface Props {
   home: KeychainHome | null;
@@ -52,7 +52,7 @@ function planExpiry(snap: PlanSnapshot | null, planName?: string): string {
 }
 
 const Pill: React.FC<{ ok: boolean; label: string; sub?: string }> = ({ ok, label, sub }) => (
-  <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'}`}>
+  <div className={`flex-1 min-w-[140px] rounded-2xl border px-5 py-4 ${ok ? 'border-emerald-900/50 bg-emerald-950/20' : 'border-[#243365] bg-[#0e1631]'`}>
     <div className="flex items-center gap-2">
       <span className={`w-2.5 h-2.5 rounded-full ${ok ? 'bg-emerald-400' : 'bg-[#5e6a91]'}`} />
       <span className="text-[18px] font-semibold text-white">{label}</span>
@@ -161,171 +161,202 @@ export const HomeSection: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-8" data-testid="home-metrics">
-      <ExtensionTokenCopy />
-      <div>
-        <p className="text-[15px] text-[#8a96c2]">RPC ping · API call latency · subscription</p>
-        <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Speed</h2>
-        <p className="text-[14px] text-[#8a96c2] mt-2">
-          Metrics, saved API timings, and one-click buy or call. Purchase explorer links and receipts live in Payments.
-        </p>
+    <div className="space-y-6" data-testid="home-metrics">
+      <section data-testid="home-vault-summary" className="rounded-2xl border border-[#243365] bg-[#131c39] p-6">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-xl">
+            <p className="text-[13px] text-[#8a96c2]">Your keychain, on your device</p>
+            <h2 className="text-[32px] leading-tight font-bold text-white mt-1">Welcome to KeyShield</h2>
+            <p className="text-[14px] text-[#8a96c2] mt-3 leading-relaxed">
+              {vaultOpen
+                ? 'Your Device Vault is open. View your saved keys or add a key in Vault.'
+                : 'Open Vault to create your Device Vault or unlock an existing one. Then enter a key to save it.'}
+            </p>
+            <p className="text-[13px] text-[#8a96c2] mt-3">
+              {vaultOpen ? 'Device Vault open' : 'Device Vault locked'} · {apis.length} saved API{apis.length === 1 ? '' : 's'} available
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" data-testid="home-open-vault" onClick={() => onGo('vault')} className="h-12 px-5 rounded-xl bg-white text-black text-[14px] font-semibold">
+              {vaultOpen ? 'Open vault' : 'Open or create vault'}
+            </button>
+          {onUnlock && !vaultOpen && (
+            <button
+              type="button"
+              onClick={onUnlock}
+              disabled={unlocking}
+              className="h-12 px-5 rounded-xl border border-[#243365] text-white text-[14px] font-semibold disabled:opacity-50"
+            >
+              {unlocking ? 'Unlocking…' : 'Unlock with passkey'}
+            </button>
+          )}
+          </div>
+        </div>
+        {loading && <p role="status" className="text-[13px] text-[#8a96c2] mt-4">Refreshing account status…</p>}
+        {error && <p role="alert" className="text-[13px] text-red-400 mt-4">Account status unavailable · {error}</p>}
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+        <section className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">API activity</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+                {lastCall ? `${Math.round(lastCall.latency_ms)}ms` : '—'}
+              </p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">Last call</p>
+            </div>
+            <div>
+              <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+                {homeMs != null ? `${Math.round(homeMs)}ms` : '—'}
+              </p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">Health</p>
+            </div>
+            <div>
+              <p className="text-[20px] font-semibold text-white leading-tight mt-1">
+                {lastCall ? `${lastCall.upstream} · ${lastCall.cache}` : 'No call yet'}
+              </p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">Upstream / cache</p>
+            </div>
+          </div>
+          <div data-testid="home-saved-apis" className="space-y-2">
+            <p className="text-[13px] text-[#8a96c2]">{apis.length} saved API{apis.length === 1 ? '' : 's'} · interval {intervalSec}s</p>
+            {apis.length === 0 ? (
+              <p className="text-[14px] text-[#5e6a91]">No saved APIs available. Open Vault to add a key. Device-local calls remain skipped.</p>
+            ) : (
+              apis.slice(0, 8).map((api) => {
+                const active = lastCall?.upstream === api.upstream;
+                const connecting = api.deviceOnly ? 'Device-local · call skipped' : active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
+                return (
+                  <div key={api.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3">
+                    <div>
+                      <p className="text-[15px] font-semibold text-white">{api.name || api.upstream}</p>
+                      <p className="text-[12px] text-[#8a96c2] mt-1">
+                        {api.upstream} · connect {active ? `${Math.round(lastCall.latency_ms)}ms` : 'not called'} · interval {intervalSec}s · {formatExpiry(api.expires_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-[12px] ${active && lastCall?.live ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>{connecting}</span>
+                      <button
+                        type="button"
+                        data-testid={`api-call-${api.upstream}`}
+                        disabled={busy !== null}
+                        onClick={() => void runCall(api.upstream, api.deviceOnly)}
+                        className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
+                      >
+                        {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {lastCall && (
+            <p data-testid="call-latency" className="text-[16px] font-mono text-white">
+              Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
+            </p>
+          )}
+          {msg && busy !== 'rpc' && (
+            <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
+          )}
+        </section>
+
+        <section data-testid="home-metrics-strip" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
+          <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">RPC performance</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p data-testid="rpc-repeat-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.secondMs)}</p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? `Repeat call · cache ${rpcSample.cache || 'n/a'}` : 'Repeat call · run RPC speed check'}</p>
+            </div>
+            <div>
+              <p data-testid="rpc-first-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.firstMs)}</p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? 'First call (measured)' : 'First call · no data yet'}</p>
+            </div>
+            <div>
+              <p className="text-[40px] font-bold text-white leading-none tracking-tight">
+                {home?.latency?.wallet_ms != null ? `${Math.round(home.latency.wallet_ms)}ms` : '—'}
+              </p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">Wallet ping</p>
+            </div>
+            <div>
+              <p className="text-[40px] font-bold text-white leading-none tracking-tight">{intervalSec}s</p>
+              <p className="text-[13px] text-[#8a96c2] mt-2">RPC TTL / interval</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="shop-rpc"
+            disabled={busy !== null}
+            onClick={() => {
+              setBusy('rpc');
+              setMsg(null);
+              emitAppFeedback({ kind: 'busy', title: 'Pinging RPC…', source: 'proxy' });
+              const addr = home?.wallet.address ?? '';
+              const t0 = performance.now();
+              void fetchKeychainHome(addr)
+                .then(async (first) => {
+                  const ms1 = performance.now() - t0;
+                  const t1 = performance.now();
+                  const second = await fetchKeychainHome(addr);
+                  const ms2 = performance.now() - t1;
+                  const line = describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc);
+                  const sample = { firstMs: ms1, secondMs: ms2, cache: second.wallet.cache || first.wallet.cache || '', rpc: second.wallet.rpc || '', at: Date.now() };
+                  saveRpcPing(sample);
+                  setRpcSample(sample);
+                  setOk(true);
+                  setRpcPing(line);
+                  setMsg(line);
+                  emitAppFeedback({ kind: 'success', title: 'RPC ping', detail: line, source: 'proxy' });
+                  onRefresh();
+                })
+                .catch((err) => {
+                  setOk(false);
+                  const detail = err instanceof Error ? err.message : 'RPC ping failed';
+                  setMsg(detail);
+                  emitAppFeedback({ kind: 'error', title: 'RPC ping failed', detail, source: 'proxy' });
+                })
+                .finally(() => setBusy(null));
+            }}
+            className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
+          >
+            {busy === 'rpc' ? 'Pinging…' : 'RPC speed check'}
+          </button>
+          {rpcPing && <p data-testid="shop-msg" className="text-[15px] text-emerald-400">{rpcPing}</p>}
+        </section>
+
       </div>
 
-      <section data-testid="home-metrics-strip" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
-        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">1 · RPC</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <p data-testid="rpc-repeat-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.secondMs)}</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? `Repeat call · cache ${rpcSample.cache || 'n/a'}` : 'Repeat call · run RPC speed check'}</p>
-          </div>
-          <div>
-            <p data-testid="rpc-first-ms" className="text-[40px] font-bold text-white leading-none tracking-tight">{formatRpcMs(rpcSample?.firstMs)}</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">{rpcSample ? 'First call (measured)' : 'First call · no data yet'}</p>
-          </div>
-          <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
-              {home?.latency?.wallet_ms != null ? `${Math.round(home.latency.wallet_ms)}ms` : '—'}
-            </p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">Wallet ping</p>
-          </div>
-          <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">{intervalSec}s</p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">RPC TTL / interval</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          data-testid="shop-rpc"
-          disabled={busy !== null}
-          onClick={() => {
-            setBusy('rpc');
-            setMsg(null);
-            emitAppFeedback({ kind: 'busy', title: 'Pinging RPC…', source: 'proxy' });
-            const addr = home?.wallet.address ?? '';
-            const t0 = performance.now();
-            void fetchKeychainHome(addr)
-              .then(async (first) => {
-                const ms1 = performance.now() - t0;
-                const t1 = performance.now();
-                const second = await fetchKeychainHome(addr);
-                const ms2 = performance.now() - t1;
-                const line = describeRpcPing(ms1, ms2, second.wallet.cache || first.wallet.cache, second.wallet.rpc);
-                const sample = { firstMs: ms1, secondMs: ms2, cache: second.wallet.cache || first.wallet.cache || '', rpc: second.wallet.rpc || '', at: Date.now() };
-                saveRpcPing(sample);
-                setRpcSample(sample);
-                setOk(true);
-                setRpcPing(line);
-                setMsg(line);
-                emitAppFeedback({ kind: 'success', title: 'RPC ping', detail: line, source: 'proxy' });
-                onRefresh();
-              })
-              .catch((err) => {
-                setOk(false);
-                const detail = err instanceof Error ? err.message : 'RPC ping failed';
-                setMsg(detail);
-                emitAppFeedback({ kind: 'error', title: 'RPC ping failed', detail, source: 'proxy' });
-              })
-              .finally(() => setBusy(null));
-          }}
-          className="h-11 px-5 rounded-xl border border-zinc-500 text-white text-[15px] font-semibold disabled:opacity-50"
-        >
-          {busy === 'rpc' ? 'Pinging…' : 'RPC speed check'}
-        </button>
-        {rpcPing && <p data-testid="shop-msg" className="text-[15px] text-emerald-400">{rpcPing}</p>}
-      </section>
-
-      <section className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-5">
-        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">2 · API call</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
-              {lastCall ? `${Math.round(lastCall.latency_ms)}ms` : '—'}
-            </p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">Last call</p>
-          </div>
-          <div>
-            <p className="text-[40px] font-bold text-white leading-none tracking-tight">
-              {homeMs != null ? `${Math.round(homeMs)}ms` : '—'}
-            </p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">Health</p>
-          </div>
-          <div>
-            <p className="text-[20px] font-semibold text-white leading-tight mt-1">
-              {lastCall ? `${lastCall.upstream} · ${lastCall.cache}` : 'No call yet'}
-            </p>
-            <p className="text-[13px] text-[#8a96c2] mt-2">Upstream / cache</p>
-          </div>
-        </div>
-        <div data-testid="home-saved-apis" className="space-y-2">
-          <p className="text-[13px] text-[#8a96c2]">{apis.length} saved API{apis.length === 1 ? '' : 's'} · interval {intervalSec}s</p>
-          {apis.length === 0 ? (
-            <p className="text-[14px] text-[#5e6a91]">No stored APIs yet. Save a key in Vault, then Call from here.</p>
-          ) : (
-            apis.slice(0, 8).map((api) => {
-              const active = lastCall?.upstream === api.upstream;
-              const connecting = api.deviceOnly ? 'Device-local · call skipped' : active ? (lastCall.live ? 'Active now' : `Last status ${lastCall.status}`) : (conn?.api ? 'Ready' : 'Offline');
-              return (
-                <div key={api.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#243365] bg-[#0e1631] px-4 py-3">
-                  <div>
-                    <p className="text-[15px] font-semibold text-white">{api.name || api.upstream}</p>
-                    <p className="text-[12px] text-[#8a96c2] mt-1">
-                      {api.upstream} · connect {active ? `${Math.round(lastCall.latency_ms)}ms` : 'not called'} · interval {intervalSec}s · {formatExpiry(api.expires_at)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[12px] ${active && lastCall?.live ? 'text-emerald-400' : 'text-[#8a96c2]'}`}>{connecting}</span>
-                    <button
-                      type="button"
-                      data-testid={`api-call-${api.upstream}`}
-                      disabled={busy !== null}
-                      onClick={() => void runCall(api.upstream, api.deviceOnly)}
-                      className="h-10 px-4 rounded-xl bg-white text-black text-[14px] font-semibold disabled:opacity-50"
-                    >
-                      {busy === api.upstream ? 'Calling…' : `Call ${api.upstream}`}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-        {lastCall && (
-          <p data-testid="call-latency" className="text-[16px] font-mono text-white">
-            Timed on this call: {lastCall.latency_ms}ms · {lastCall.live ? 'live' : `status ${lastCall.status}`} · {lastCall.upstream} {lastCall.path} · cache {lastCall.cache}
-          </p>
-        )}
-        {msg && busy !== 'rpc' && (
-          <p data-testid="key-msg" className={`text-[15px] ${ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg}</p>
-        )}
-      </section>
-
-      <section data-testid="home-one-click" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-4">
-        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">One-click</p>
-        <p className="text-[14px] text-[#8a96c2]">Buy makes an on-chain Solana Devnet MPP tx. Call hits the first saved API through the proxy.</p>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            data-testid="home-buy-mpp"
-            disabled={busy !== null}
-            onClick={buyOnChain}
-            className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
-          >
-            {busy === 'buy' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} on-chain`}
-          </button>
-          <button
-            type="button"
-            data-testid="home-call-first"
-            disabled={busy !== null || !firstApi}
-            onClick={() => firstApi && void runCall(firstApi.upstream, firstApi.deviceOnly)}
-            className="h-12 px-5 rounded-xl border border-zinc-500 text-white text-[16px] font-semibold disabled:opacity-50"
-          >
-            {firstApi ? (busy === firstApi.upstream ? 'Calling…' : `Call ${firstApi.upstream}`) : 'Call API (none saved)'}
-          </button>
+      <details data-testid="home-wallet-tools" className="rounded-2xl border border-[#243365] bg-[#0e1631] p-5">
+        <summary className="cursor-pointer text-[15px] font-semibold text-white">Wallet, payments & connection details</summary>
+        <div className="space-y-5 mt-5">
+          <section data-testid="home-one-click" className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-5 space-y-4">
+            <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">One-click</p>
+            <p className="text-[14px] text-[#8a96c2]">Buy makes an on-chain Solana Devnet MPP tx. Call hits the first saved API through the proxy.</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                data-testid="home-buy-mpp"
+                disabled={busy !== null}
+                onClick={buyOnChain}
+                className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
+              >
+                {busy === 'buy' ? 'Settling…' : `Buy $${SHOP_MPP_USD.toFixed(2)} on-chain`}
+              </button>
+              <button
+                type="button"
+                data-testid="home-call-first"
+                disabled={busy !== null || !firstApi}
+                onClick={() => firstApi && void runCall(firstApi.upstream, firstApi.deviceOnly)}
+                className="h-12 px-5 rounded-xl border border-zinc-500 text-white text-[16px] font-semibold disabled:opacity-50"
+              >
+                {firstApi ? (busy === firstApi.upstream ? 'Calling…' : `Call ${firstApi.upstream}`) : 'Call API (none saved)'}
+              </button>
         </div>
       </section>
 
       <section className="space-y-4">
-        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">3 · Status</p>
+        <p className="text-[13px] uppercase tracking-wider text-[#8a96c2]">Account & connections</p>
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-2xl border border-[#243365] bg-[#131c39] px-5 py-4">
             <p className="text-[13px] text-[#8a96c2]">SOL</p>
@@ -385,16 +416,6 @@ export const HomeSection: React.FC<Props> = ({
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          {onUnlock && !vaultOpen && (
-            <button
-              type="button"
-              onClick={onUnlock}
-              disabled={unlocking}
-              className="h-12 px-5 rounded-xl bg-white text-black text-[16px] font-semibold disabled:opacity-50"
-            >
-              {unlocking ? 'Unlocking…' : 'Unlock with passkey'}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => onGo('activity')}
@@ -411,6 +432,14 @@ export const HomeSection: React.FC<Props> = ({
           </button>
         </div>
       </section>
+
+        </div>
+      </details>
+
+      <details data-testid="home-extension-setup" className="rounded-2xl border border-[#243365] bg-[#0e1631] p-5">
+        <summary className="cursor-pointer text-[15px] font-semibold text-white">Set up the Chrome extension</summary>
+        <div className="mt-4"><ExtensionInstallHint variant="home" onOpenDocs={() => onGo('troubleshooting')} /></div>
+      </details>
 
       <button type="button" onClick={onRefresh} className="text-[14px] text-[#8a96c2] hover:text-white inline-flex items-center gap-2">
         <Plug size={14} /> Refresh
